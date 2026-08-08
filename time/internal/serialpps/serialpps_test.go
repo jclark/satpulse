@@ -229,17 +229,45 @@ func TestGeneratorKeepsNewestMessage(t *testing.T) {
 	}
 }
 
-func TestGeneratorSuppressesLeapAcrossDayBoundary(t *testing.T) {
-	g := NewGenerator()
-	utc := time.Unix(86_399, 500_000_000).UTC()
-	read := time.Unix(86_399, 600_000_000)
-	g.MsgUTCTime(utc, read, ptime.LeapSecondPositive)
-	sample, ok := g.Edge(Edge{T: read.Add(900 * time.Millisecond)})
-	if !ok {
-		t.Fatal("Edge returned no sample")
+func TestGeneratorLeapCrossing(t *testing.T) {
+	tests := []struct {
+		name       string
+		utc        time.Time
+		leap       ptime.LeapSecondKind
+		elapsed    time.Duration // edge.T - tRead
+		expectRef  time.Time
+		expectLeap ptime.LeapSecondKind
+		expectOK   bool
+	}{
+		{name: "pulse before positive leap", utc: time.Unix(86_398, 500_000_000), leap: ptime.LeapSecondPositive,
+			elapsed: 900 * time.Millisecond, expectRef: time.Unix(86_399, 0), expectLeap: ptime.LeapSecondPositive, expectOK: true},
+		{name: "inserted second pulse yields no sample", utc: time.Unix(86_399, 500_000_000), leap: ptime.LeapSecondPositive,
+			elapsed: 900 * time.Millisecond},
+		{name: "first pulse after positive leap", utc: time.Unix(86_399, 500_000_000), leap: ptime.LeapSecondPositive,
+			elapsed: 1900 * time.Millisecond, expectRef: time.Unix(86_400, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
+		{name: "second pulse after positive leap", utc: time.Unix(86_399, 500_000_000), leap: ptime.LeapSecondPositive,
+			elapsed: 2900 * time.Millisecond, expectRef: time.Unix(86_401, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
+		{name: "pulse before negative leap", utc: time.Unix(86_397, 500_000_000), leap: ptime.LeapSecondNegative,
+			elapsed: 900 * time.Millisecond, expectRef: time.Unix(86_398, 0), expectLeap: ptime.LeapSecondNegative, expectOK: true},
+		{name: "first pulse after negative leap", utc: time.Unix(86_398, 500_000_000), leap: ptime.LeapSecondNegative,
+			elapsed: 900 * time.Millisecond, expectRef: time.Unix(86_400, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
 	}
-	if !sample.Reference.Equal(time.Unix(86_400, 0)) || sample.Leap != ptime.LeapSecondNone {
-		t.Fatalf("sample = %+v, want midnight reference and no leap", sample)
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGenerator()
+			read := tc.utc.Add(100 * time.Millisecond)
+			g.MsgUTCTime(tc.utc, read, tc.leap)
+			sample, ok := g.Edge(Edge{T: read.Add(tc.elapsed)})
+			if ok != tc.expectOK {
+				t.Fatalf("Edge ok = %v, want %v", ok, tc.expectOK)
+			}
+			if !ok {
+				return
+			}
+			if !sample.Reference.Equal(tc.expectRef) || sample.Leap != tc.expectLeap {
+				t.Errorf("sample = %+v, want reference %v and leap %v", sample, tc.expectRef, tc.expectLeap)
+			}
+		})
 	}
 }
 
@@ -278,7 +306,7 @@ func TestPoll(t *testing.T) {
 		expectTol        time.Duration // per-edge timestamp error bound
 	}{
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
-			expectFirstPulse: 5, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
+			expectFirstPulse: 4, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
 		{name: "fast query (spacing floor binds)", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
 		{name: "cold start inside pulse", epochOffset: -20 * time.Millisecond, callDur: 20 * time.Microsecond,

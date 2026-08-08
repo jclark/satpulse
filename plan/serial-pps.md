@@ -20,7 +20,8 @@ does.
 ## Measured basis
 
 Experiments on 2026-08-06 with a u-blox F9P and an FTDI FT232R on macOS
-(`cmd/pollpps` on the `serial-pps-tmp` branch) established:
+(`cmd/pollpps` on the `serial-pps-tmp` branch, on a MacBook Air with the
+adapter attached directly) established:
 
 - The `TIOCMGET` ioctl blocks for ~2 ms on this adapter (a USB round
   trip), capping polling at ~500 polls/s regardless of strategy.
@@ -35,6 +36,36 @@ Experiments on 2026-08-06 with a u-blox F9P and an FTDI FT232R on macOS
   edge is the only usable one. Message timing is still easily good
   enough to identify which second a pulse belongs to (mean delay
   ~124 ms at 38400 baud, far inside the +/-0.5 s bound).
+
+Experiments on 2026-08-08 with the same FT232R and an FT232H
+(high-speed USB) on both machines, measured directly with
+`pollpps --ioctltime`, located the `TIOCMGET` cost precisely: it is the
+host controller's handling of full-speed transactions, and only that.
+The median read is ~135 us for the FT232R on the desktop Mac (any
+topology) but ~2 ms on the MacBook Air when attached directly; behind a
+high-speed hub the Air improves to ~283 us, because the hub's
+transaction translator runs the full-speed leg itself and the host's
+side stays high-speed. The FT232H, natively high-speed, measures
+~95-130 us on both machines regardless of topology -- which is the real
+argument for a high-speed adapter at 1 Hz. Drivers were ruled out:
+Apple's `AppleUSBFTDI` and FTDI's VCP dext measure identically on both
+chips. (The FTDI dext, if installed, binds every FTDI adapter alongside
+Apple's driver and creates a duplicate tty whose name collides with the
+serial-number name; deactivate it, or device paths become unstable.)
+Nothing in the design depends on which regime holds -- the loop
+calibrates itself to either -- but the same-day findings that do
+generalize are:
+
+- Edge delivery has a millisecond-scale late tail (a small fraction of
+  edges arrive up to ~1 ms late), which on a fast-ioctl machine makes
+  the settled window far wider than the bracket gap; the safety factor
+  is sized for that tail (a sweep on the FT232R: c = 4 caught 68% of
+  pulses, c = 10 99%, c = 16 100%, with CPU flat at ~1% across
+  c = 7..16).
+- Phase 1 was validated end to end on that machine: chrony selects the
+  SOCK refclock and tracks it with ~100 us error bounds; per-sample
+  offsets have sd ~70-100 us, and successive median-filtered estimates
+  wander by ~40 us regardless of filter length.
 
 ## Configuration
 
@@ -149,10 +180,14 @@ misses that widen the window instead. Lock takes on the order of
 ten pulses at about N polls per second, on any hardware, with no
 retuning.
 
-Constants: N = 8 polls per window, safety factor c = 4, spacing
-floor 50 us. All are dimensionless shape parameters with wide safe
-ranges; nothing encodes hardware timing, so there is nothing to
-revise per adapter.
+Constants: safety factor c = 16 (the window half-width in bracket
+gaps, chosen from the measured FT232R delivery tail), shrink rate
+r = 1/2 per catch, spacing floor 50 us. N is not chosen: it is
+derived as c/r (32), since the shrink per catch is c/N and choosing
+c and N independently allows a non-convergent pair (c >= N leaves
+the window stuck at the cap). All are dimensionless shape
+parameters with wide safe ranges; nothing encodes hardware timing,
+so there is nothing to revise per adapter.
 
 Publishing is gated by a latched settling state, not a threshold.
 While each catch still improves on the previous catch's bracket
@@ -172,21 +207,21 @@ outliers. Chrony has no notion of an initial settling period, so the
 loop provides one.
 
 The bracket needs a poll inside the pulse, so the poll spacing must
-stay below the pulse width; the cold-start spacing of about 62 ms
+stay below the pulse width; the cold-start spacing of about 16 ms
 suits the u-blox default width of 100 ms, and microsecond-width
 pulses remain unsupported by this backend.
 
 The polling goroutine locks its OS thread.
 
-### Wait (phase 2: Linux; phase 3 via D2XX on macOS; phase 4: Windows)
+### Wait (phase 2: Linux, Windows)
 
 Linux `TIOCMIWAIT` blocks until a chosen modem control line changes;
 Windows has the equivalent `SetCommMask`/`WaitCommEvent`. Neither
 reports the transition's direction nor a timestamp, so the wait
 primitive returns a timestamp taken immediately on wakeup -- before
-any further calls, since on hardware like the FT232R a state read is
-itself a ~2 ms round trip -- and the backend then reads the line
-state to classify the transition. Every wakeup where the line has entered its pulse-asserted
+any further calls, since a state read can itself be a
+millisecond-scale USB round trip -- and the backend then reads the
+line state to classify the transition. Every wakeup where the line has entered its pulse-asserted
 sense produces a sample, subject only to identifying the second from
 the time messages. Unlike the polling backend, nothing here relies on
 the pulses being 1 s apart.
@@ -197,9 +232,9 @@ capability interface that the PPS source asserts for, not a method of
 `Term`:
 
 ```go
-type ModemControlLineWaiter interface {
-	WaitModemControlLineChange(line ModemControlLine) (time.Time, error)
-	CancelModemControlLineWait()
+type ModemControlPinWaiter interface {
+	WaitModemControlPinChange(pin ModemControlPin) (time.Time, error)
+	CancelModemControlPinWait()
 }
 ```
 
@@ -208,11 +243,10 @@ call return and all subsequent calls return immediately, whether or
 not the backend can interrupt the underlying primitive (see the
 shutdown discussion below).
 
-The primitive may return without the line having changed (a spurious
-wakeup, an interrupted syscall, a cancelled wait, or -- on D2XX -- an
-event for another line or for received data); callers detect actual
-transitions by reading the state, which the backend does after every
-wakeup anyway.
+The primitive may return without the pin having changed (a spurious
+wakeup, an interrupted syscall, or a cancelled wait); callers detect
+actual transitions by reading the state, which the backend does after
+every wakeup anyway.
 
 `gpsio.SerialConn` forwards it as usual, and whether the underlying
 terminal satisfies the capability is how the PPS source chooses
@@ -249,54 +283,24 @@ the ioctl is runtime noise and is retried. (On D2XX, cancel signals
 the event's condition variable, so nothing is left parked; on
 Windows, `SetCommMask` aborts a pending `WaitCommEvent`.)
 
-### D2XX on macOS
+### D2XX on macOS (dropped)
 
 FTDI's proprietary D2XX library delivers modem status change
-notifications, giving macOS a wait-style backend after all -- but only
-for FTDI adapters, and only when the user has installed the library.
-Measured on the FT232R (2026-08-06, 2.5 minute run): edge intervals
-with sd 85 us, 90% within +/-140 us, worst deviation 262 us, ~1% CPU,
-no missed pulses -- roughly 5-10x better than the polling backend can
-achieve, with none of the adaptive machinery. Longer-run stability, an
-FT232H (high-speed USB, so possibly tighter still), and the absolute
-latency offset (needs a calibrated reference) remain to be measured.
-
-The library is loaded dynamically (dlopen), so binaries have no
-mandatory dependency on it; it coexists with the Apple VCP driver (no
-driver removal needed, unlike Linux). The
-definitions derived from FTDI's headers (constants, struct layouts)
-are generated with `cgo -godefs` and the generated file committed, so
-the FTDI headers are needed only when regenerating, not at build time;
-the hand-written C shim is limited to the pthread wait and uses only
-system headers. D2XX support therefore requires cgo (a C toolchain) at
-build time: the Homebrew formula's environment guarantees that, so
-packaged macOS builds always include it, and a cgo-disabled build
-still succeeds with only the polling backend (Go disables cgo
-automatically when no C toolchain is present). The
-`cmd/pollpps --d2xx` mode is the measurement diagnostic.
-
-Structurally this is a new kind of device in `term`, not in `gpsio`,
-and not a separate package: build-tagged (`darwin && cgo`) files
-inside `gps/lib/term`, parallel to the existing platform files. It is
-a D2XX-backed implementation of the same surface (read, write, speed,
-`ModemControlLineState`, and the blocking line-change wait), selected
-at open time on Darwin when the device is an FTDI adapter and the
-library is present, with the termios path as fallback. Everything from
-`gpsio` up is unchanged, and the PPS source sees the wait primitive
-through the same availability probe as on Linux/Windows. The D2XX
-backend must own the data stream as well as the PPS line: the receive
-queue has to be drained promptly (a full queue degrades event
-delivery -- measured as event timing collapsing after ~40 s), and the
-drained bytes are the receiver's output, so data reads go through
-D2XX (`FT_Read`) rather than the tty. In satpulsed the scan worker's
-ordinary reads are the draining; the wait path never touches data. An
-explicit drain exists only in the standalone diagnostic, where nothing
-else reads.
-
-D2XX is deliberately not used on other platforms: on Linux it would
-require detaching `ftdi_sio` and duplicates what `TIOCMIWAIT` provides
-for any serial driver; on Windows `WaitCommEvent` already goes through
-FTDI's own driver stack.
+notifications, and a wait-style macOS backend on it was built and
+measured (the parked `serial-d2xx` branch). It was dropped on the
+2026-08-08 measurements: with the loop constants sized for the
+delivery tail, polling matches or beats it on the same hardware --
+D2XX gave interval sd ~60 us on the FT232R against polling's ~72 us,
+and sd ~80 us on the FT232H against polling's ~50 us, at equal ~1%
+CPU. The implementation also had to absorb two library defects:
+`FT_Read` implements its read timeout as a busy loop (a reader waiting
+in it spins a full core), and the event condition variable wakes only
+one waiter per event, forcing a single event-pump goroutine to fan
+wakeups out to the data reader and the pin waiter. A proprietary
+dlopen'd dependency plus that machinery, for no measured gain over
+polling, is not worth shipping. If a machine class reappears where
+polling is genuinely capped (the 2 ms-ioctl regime), the branch
+records a working implementation and the measurements to revisit.
 
 ## Interface changes
 
@@ -305,32 +309,32 @@ FTDI's own driver stack.
 `cmd/pollpps`, is updated):
 
 ```go
-// ModemControlLine identifies a modem control line that is an input
+// ModemControlPin identifies a modem control pin that is an input
 // to the host.
-type ModemControlLine int
+type ModemControlPin int
 
 const (
-	ModemCTS ModemControlLine = iota
+	ModemCTS ModemControlPin = iota
 	ModemDCD
 	ModemDSR
 	ModemRI
 )
 
-// ModemControlLineState is the set of modem control input lines that
+// ModemControlPinState is the set of modem control input pins that
 // are asserted.
-type ModemControlLineState int
+type ModemControlPinState int
 
-func (s ModemControlLineState) Asserted(l ModemControlLine) bool
+func (s ModemControlPinState) Asserted(p ModemControlPin) bool
 
-// ModemControlLineState is a method of the Term interface.
-ModemControlLineState() (ModemControlLineState, error)
+// ModemControlPinState is a method of the Term interface.
+ModemControlPinState() (ModemControlPinState, error)
 ```
 
 Each platform fills the state from its native call (`TIOCMGET`;
 `GetCommModemStatus` on Windows, which reports exactly these four input
-lines). `gpsio.SerialConn` exposes the same interface, re-exporting the
+pins). `gpsio.SerialConn` exposes the same interface, re-exporting the
 `term` types, with an error when the connection is not TTY-backed; the
-daemon layer imports only `gpsio`. `WaitModemControlLineChange` (see
+daemon layer imports only `gpsio`. `WaitModemControlPinChange` (see
 the Wait section) is a further capability interface rather than a
 `Term` method; it arrives with the first wait-capable device backend.
 
@@ -378,14 +382,11 @@ hardware per the phasing below.
 
 1. macOS end to end: the `term`/`gpsio` interface above, the polling
    backend, sample generation wired into the daemon as described under
-   Configuration, validated against chrony on real hardware (F9P +
-   FT232R).
-2. The `TIOCMIWAIT` implementation of the wait primitive for Linux,
-   together with the wait-consuming edge backend in `serialpps`
-   (Linux is its first provider); the polling backend remains as the
-   fallback for tty drivers without the ioctl.
-3. The D2XX-backed `term` device for macOS; the polling backend
-   remains as the fallback for non-FTDI adapters or when the library
-   is absent.
-4. The `WaitCommEvent` implementation of the wait primitive for
-   Windows.
+   Configuration, validated against chrony on real hardware
+   (done 2026-08-08, with an FT232R and an FT232H).
+2. The wait-consuming edge backend in `serialpps` with the
+   `TIOCMIWAIT` and `WaitCommEvent` implementations of the wait
+   primitive for Linux and Windows; the polling backend remains as
+   the fallback for tty drivers without the ioctl. (A D2XX-backed
+   macOS provider was built as the originally planned phase 2 and
+   dropped; see "D2XX on macOS" above.)

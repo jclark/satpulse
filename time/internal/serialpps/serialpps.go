@@ -14,8 +14,17 @@ import (
 )
 
 const (
-	pollsPerWindow = 8
-	safetyFactor   = 4
+	// The chosen constants are the safety factor (the window half-width in
+	// units of the measured bracket gap, absorbing that much prediction
+	// error) and the shrink rate (what each catch multiplies the window by
+	// during acquisition). The polls per window follow from them: spacing
+	// is window/pollsPerWindow and a catch's gap is one spacing, so the
+	// shrink per catch is safetyFactor/pollsPerWindow. Deriving rather
+	// than choosing pollsPerWindow keeps the pair convergent; a shrink
+	// rate of 1 or more would leave the window stuck at the cap.
+	safetyFactor   = 16
+	shrinkRate     = 0.5
+	pollsPerWindow = safetyFactor / shrinkRate
 	minPollSpacing = 50 * time.Microsecond
 	pulsePeriod    = time.Second
 	maxMargin      = pulsePeriod / 2
@@ -282,8 +291,8 @@ func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) 
 }
 
 // Edge turns a precisely detected PPS edge into a sample. It returns false
-// until a time message is available or when the newest message is over three
-// seconds old.
+// until a time message is available, when the newest message is over three
+// seconds old, or for the pulse marking an inserted leap second.
 func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	if g.tRead.IsZero() || edge.T.Sub(g.tRead) > maxMessageAge {
 		return Sample{}, false
@@ -292,11 +301,26 @@ func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	// within half a second of the UTC second it marks, and is immune to any
 	// wall-clock step between the message and the edge.
 	reference := g.utc.Add(edge.T.Sub(g.tRead)).Round(time.Second)
-	leap := g.leap
 	// The message's leap flag announces a leap at the end of the message's
-	// UTC day. If the edge falls in a different day, that announcement does
-	// not apply to it; a retained pre-midnight flag must not re-announce a
-	// leap that has already happened.
+	// UTC day, which the monotonic extrapolation cannot see: past the
+	// boundary it runs one second ahead of UTC after a positive leap and
+	// one second behind after a negative one. The inserted second itself
+	// has no value on the leap-free timescale of time.Time and the refclock
+	// samples (midnight is the next pulse's label, 23:59:59 the previous
+	// one's), so its pulse yields no sample.
+	midnight := g.utc.Truncate(24 * time.Hour).Add(24 * time.Hour)
+	if g.leap == ptime.LeapSecondPositive && !reference.Before(midnight) {
+		if reference.Equal(midnight) {
+			return Sample{}, false
+		}
+		reference = reference.Add(-time.Second)
+	} else if g.leap == ptime.LeapSecondNegative && !reference.Before(midnight.Add(-time.Second)) {
+		reference = reference.Add(time.Second)
+	}
+	leap := g.leap
+	// If the edge falls in a different day than the message, the
+	// announcement does not apply to it; a retained pre-midnight flag must
+	// not re-announce a leap that has already happened.
 	if !reference.Truncate(24 * time.Hour).Equal(g.utc.Truncate(24 * time.Hour)) {
 		leap = ptime.LeapSecondNone
 	}

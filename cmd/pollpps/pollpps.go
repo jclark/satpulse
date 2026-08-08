@@ -10,18 +10,46 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"slices"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/spf13/pflag"
 )
 
 func main() {
-	if len(os.Args) != 2 {
-		fmt.Fprintf(os.Stderr, "usage: %s <device>\n", os.Args[0])
-		os.Exit(1)
+	var help bool
+	var showVersion bool
+	var ioctlTime bool
+
+	flags := pflag.NewFlagSet("pollpps", pflag.ContinueOnError)
+
+	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
+	flags.BoolVarP(&ioctlTime, "ioctltime", "i", false, "time back-to-back modem status reads and exit")
+
+	err := flags.Parse(os.Args[1:])
+	progName := os.Args[0]
+	if err != nil {
+		cmd.ErrPrintln(progName, err)
+		usage(progName, flags)
+		os.Exit(2)
+	}
+	if showVersion {
+		fmt.Fprintln(os.Stderr, cmd.VersionInfo())
+		os.Exit(0)
+	}
+	if help {
+		usage(progName, flags)
+		os.Exit(0)
+	}
+	if flags.NArg() != 1 {
+		usage(progName, flags)
+		os.Exit(2)
 	}
 
-	device := os.Args[1]
+	device := flags.Args()[0]
 
 	// Open terminal in raw mode
 	t, err := term.Open(device, term.RawMode)
@@ -32,6 +60,10 @@ func main() {
 		t.Restore()
 		t.Close()
 	}()
+	if ioctlTime {
+		timeIoctl(t)
+		return
+	}
 	fmt.Printf("Monitoring PPS on CTS pin of %s\n", device)
 
 	var lastCTS bool
@@ -82,4 +114,31 @@ func main() {
 			return
 		}
 	}
+}
+
+// timeIoctl measures the modem status read directly: back-to-back calls with
+// no sleeps, so the distribution of call durations is the poll pacing floor.
+func timeIoctl(t term.Term) {
+	const n = 2000
+	ds := make([]time.Duration, n)
+	for i := range ds {
+		start := time.Now()
+		if _, err := t.ModemControlPinState(); err != nil {
+			log.Fatalf("Error reading modem status: %v", err)
+		}
+		ds[i] = time.Since(start)
+	}
+	slices.Sort(ds)
+	var sum time.Duration
+	for _, d := range ds {
+		sum += d
+	}
+	fmt.Printf("modem status read over %d calls: min=%v median=%v mean=%v p90=%v max=%v\n",
+		n, ds[0], ds[n/2], sum/n, ds[n*9/10], ds[n-1])
+}
+
+func usage(progName string, flags *pflag.FlagSet) {
+	fmt.Fprintln(os.Stderr, "Usage:", progName, "[-i|--ioctltime] <device>")
+	fmt.Fprintln(os.Stderr, "Options:")
+	flags.PrintDefaults()
 }
