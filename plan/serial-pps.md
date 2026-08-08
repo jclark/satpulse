@@ -37,14 +37,24 @@ adapter attached directly) established:
   enough to identify which second a pulse belongs to (mean delay
   ~124 ms at 38400 baud, far inside the +/-0.5 s bound).
 
-Experiments on 2026-08-08 on a desktop Mac, with the same FT232R and an
-FT232H (high-speed USB), showed the ioctl cost is a property of the
-machine, not the adapter: there `TIOCMGET` takes ~150-190 us on the
-FT232R and ~125 us (one high-speed microframe) on the FT232H, through a
-USB3 hub or attached directly, and edge jitter is sd ~50-95 us on both.
-The 2 ms figure did not reproduce at all on that machine. Nothing in
-the design depends on which regime holds -- the loop calibrates itself
-to either -- but the same-day findings that do generalize are:
+Experiments on 2026-08-08 with the same FT232R and an FT232H
+(high-speed USB) on both machines, measured directly with
+`pollpps --ioctltime`, located the `TIOCMGET` cost precisely: it is the
+host controller's handling of full-speed transactions, and only that.
+The median read is ~135 us for the FT232R on the desktop Mac (any
+topology) but ~2 ms on the MacBook Air when attached directly; behind a
+high-speed hub the Air improves to ~283 us, because the hub's
+transaction translator runs the full-speed leg itself and the host's
+side stays high-speed. The FT232H, natively high-speed, measures
+~95-130 us on both machines regardless of topology -- which is the real
+argument for a high-speed adapter at 1 Hz. Drivers were ruled out:
+Apple's `AppleUSBFTDI` and FTDI's VCP dext measure identically on both
+chips. (The FTDI dext, if installed, binds every FTDI adapter alongside
+Apple's driver and creates a duplicate tty whose name collides with the
+serial-number name; deactivate it, or device paths become unstable.)
+Nothing in the design depends on which regime holds -- the loop
+calibrates itself to either -- but the same-day findings that do
+generalize are:
 
 - Edge delivery has a millisecond-scale late tail (a small fraction of
   edges arrive up to ~1 ms late), which on a fast-ioctl machine makes
