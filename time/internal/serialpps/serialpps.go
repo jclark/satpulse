@@ -1,4 +1,4 @@
-// Package serialpps detects PPS edges on serial modem-control lines and turns
+// Package serialpps detects PPS edges on serial modem-control pins and turns
 // them into refclock samples using UTC time messages from the receiver.
 package serialpps
 
@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	slowPollSpacing = 100 * time.Millisecond
-	windowMargin    = 5 * time.Millisecond
-	maxWindowMargin = 100 * time.Millisecond
-	minPollSpacing  = 100 * time.Microsecond
-	pulsePeriod     = time.Second
-	maxMessageAge   = 3 * time.Second
+	pollsPerWindow = 8
+	safetyFactor   = 4
+	minPollSpacing = 50 * time.Microsecond
+	pulsePeriod    = time.Second
+	maxMargin      = pulsePeriod / 2
+	maxMessageAge  = 3 * time.Second
 )
 
 // Edge is a precisely polled leading edge. T is the midpoint of the two modem
@@ -30,27 +30,27 @@ type Edge struct {
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
 type StateReader interface {
-	ModemControlLineState() (gpsio.ModemControlLineState, error)
+	ModemControlPinState() (gpsio.ModemControlPinState, error)
 }
 
 // ChangeWaiter is a StateReader that may be able to block until a modem
 // control input changes, reporting the time of the wakeup;
-// CanWaitModemControlLineChange reports whether it actually can. Implemented
+// CanWaitModemControlPinChange reports whether it actually can. Implemented
 // by a TTY-backed gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
-	CanWaitModemControlLineChange() bool
-	WaitModemControlLineChange(gpsio.ModemControlLine) (time.Time, error)
+	CanWaitModemControlPinChange() bool
+	WaitModemControlPinChange(gpsio.ModemControlPin) (time.Time, error)
 }
 
 // Wiring describes how the PPS pulse is represented on the serial port's
 // modem-control inputs.
 type Wiring struct {
-	Line gpsio.ModemControlLine
+	Pin gpsio.ModemControlPin
 }
 
 type reading struct {
-	state gpsio.ModemControlLineState
+	state gpsio.ModemControlPinState
 	at    time.Time
 	start time.Time
 }
@@ -60,86 +60,102 @@ type reading struct {
 // otherwise. A tty driver without the wait shows up only as the first wait
 // failing with errors.ErrUnsupported; Detect then falls back to polling.
 func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, edges chan<- Edge) error {
-	if cw, ok := r.(ChangeWaiter); ok && cw.CanWaitModemControlLineChange() {
+	if cw, ok := r.(ChangeWaiter); ok && cw.CanWaitModemControlPinChange() {
 		lg.Debug("serial PPS wait backend selected")
 		err := Wait(ctx, cw, w, edges)
 		if !errors.Is(err, errors.ErrUnsupported) {
 			return err
 		}
-		lg.Info("serial driver cannot wait for modem control line changes; polling instead")
+		lg.Info("serial driver cannot wait for modem control pin changes; polling instead")
 	}
 	lg.Debug("serial PPS polling backend selected")
 	return Poll(ctx, r, w, edges)
 }
 
-// Poll adaptively polls for the pulse described by w and sends precisely
-// detected leading edges to edges. Edges found during slow phase acquisition
-// are used only to predict the next pulse and are not sent.
+// Poll adaptively polls for the pulse described by w and sends detected
+// leading edges to edges. One loop with two rules: a caught edge shrinks the
+// window to safetyFactor times the measured bracket gap (capped at half the
+// pulse period), and a miss doubles it up to that cap, where the window
+// covers the whole period and polling is uniform (the cold-start state). A
+// pulse already in progress when a window opens is polled through, not
+// declared a miss: the search resumes on its far side. Everything hardware-
+// and load-dependent comes from measured poll timestamps: the shrink
+// bottoms out wherever the state-query time or the spacing floor binds,
+// without the loop knowing which.
+//
+// Edges are sent only once settled: while each catch still improves on the
+// previous catch's bracket gap, caught edges are too coarse to publish. The
+// settled state latches at the first catch whose gap does not improve on
+// the previous one (misses in between do not affect the comparison), and
+// clears only when the window walks back up to the cap, i.e. on signal
+// loss. After the latch every caught edge is sent, however coarse: a
+// stretched sample is characteristic of what the system delivers, and
+// outliers are the NTP daemon's filtering's job.
 func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	prev, err := readState(ctx, r, time.Time{})
+	first, err := readState(ctx, r, time.Time{})
 	if err != nil {
 		return err
 	}
+	predicted := first.at.Add(maxMargin)
+	margin := maxMargin
+	settled := false
+	var prevGap time.Duration
 	for {
-		// Slow polling acquires the approximate pulse phase. The acquisition
-		// edge itself is too coarsely known to publish.
-		var coarseEdge time.Time
-		for coarseEdge.IsZero() {
-			cur, err := readState(ctx, r, prev.start.Add(slowPollSpacing))
+		spacing := max(margin/pollsPerWindow, minPollSpacing)
+		deadline := predicted.Add(margin)
+		cur, err := readState(ctx, r, predicted.Add(-margin))
+		if err != nil {
+			return err
+		}
+		// The windows advance in lockstep with the pulses, so treating an
+		// in-progress pulse at the open as a miss would reopen at the same
+		// phase every period and never acquire; poll through it instead.
+		for inPulse(cur.state, w) && cur.at.Before(deadline) {
+			cur, err = readState(ctx, r, cur.start.Add(spacing))
 			if err != nil {
 				return err
 			}
-			if !inPulse(prev.state, w) && inPulse(cur.state, w) {
-				coarseEdge = midpoint(prev.at, cur.at)
+		}
+		prev := cur
+		missed := inPulse(cur.state, w)
+		var edge time.Time
+		var gap time.Duration
+		for !missed && edge.IsZero() {
+			cur, err = readState(ctx, r, prev.start.Add(spacing))
+			if err != nil {
+				return err
+			}
+			edge, missed = classifyReading(prev, cur, w, deadline)
+			if !edge.IsZero() {
+				gap = cur.at.Sub(prev.at)
 			}
 			prev = cur
 		}
-
-		predicted := coarseEdge.Add(pulsePeriod)
-		// The first window's margin covers the coarse phase knowledge from
-		// slow polling; each caught edge resets it to windowMargin. A miss
-		// of the first window therefore doubles past maxWindowMargin and
-		// goes straight back to slow polling.
-		margin := windowMargin + slowPollSpacing/2
-		for {
-			cur, err := readState(ctx, r, predicted.Add(-margin))
-			if err != nil {
-				return err
+		if !edge.IsZero() {
+			predicted = edge.Add(pulsePeriod)
+			if !settled && prevGap > 0 && gap >= prevGap {
+				settled = true
 			}
-			prev = cur
-			missed := inPulse(cur.state, w)
-			deadline := predicted.Add(margin)
-			var edge time.Time
-			for !missed && edge.IsZero() {
-				cur, err = readState(ctx, r, prev.start.Add(minPollSpacing))
-				if err != nil {
-					return err
-				}
-				edge, missed = classifyReading(prev, cur, w, deadline)
-				prev = cur
-			}
-			if !edge.IsZero() {
+			prevGap = gap
+			margin = min(safetyFactor*gap, maxMargin)
+			if settled {
 				select {
 				case edges <- Edge{T: edge}:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
-				predicted = edge.Add(pulsePeriod)
-				margin = windowMargin
-				continue
 			}
-
-			// A missed pulse widens both sides of the next window. Once the
-			// margin would exceed the slow-poll interval, reacquire phase.
-			margin *= 2
-			if margin > maxWindowMargin {
-				break
-			}
-			predicted = predicted.Add(pulsePeriod)
+			continue
 		}
+		margin = min(2*margin, maxMargin)
+		if margin == maxMargin {
+			settled = false
+			prevGap = 0
+		}
+		predicted = predicted.Add(pulsePeriod)
 	}
 }
 
@@ -148,7 +164,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 // the wakeup, before the state read, because that read can require a USB
 // round trip.
 func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) error {
-	prev, err := r.ModemControlLineState()
+	prev, err := r.ModemControlPinState()
 	if err != nil {
 		return err
 	}
@@ -158,11 +174,11 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) erro
 			return ctx.Err()
 		default:
 		}
-		at, err := r.WaitModemControlLineChange(w.Line)
+		at, err := r.WaitModemControlPinChange(w.Pin)
 		if err != nil {
 			return err
 		}
-		cur, err := r.ModemControlLineState()
+		cur, err := r.ModemControlPinState()
 		if err != nil {
 			return err
 		}
@@ -178,9 +194,14 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) erro
 }
 
 // classifyReading gives a detected transition precedence over the deadline.
-// The deadline says when to stop looking, not whether a measured edge is valid.
+// The deadline says when to stop looking, not whether a measured edge is
+// valid. A bracket spanning a full period or more may contain several
+// leading edges, so its midpoint identifies none of them: it is a miss.
 func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (time.Time, bool) {
 	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
+		if cur.at.Sub(prev.at) >= pulsePeriod {
+			return time.Time{}, true
+		}
 		return midpoint(prev.at, cur.at), false
 	}
 	return time.Time{}, !cur.at.Before(deadline)
@@ -189,8 +210,8 @@ func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (time.Time
 // inPulse reports whether the state was observed during a pulse. The pulse's
 // electrically rising leading edge reaches the host inverted through the TTL
 // driver chain, so the flag reads deasserted during the pulse.
-func inPulse(s gpsio.ModemControlLineState, w Wiring) bool {
-	return !s.Asserted(w.Line)
+func inPulse(s gpsio.ModemControlPinState, w Wiring) bool {
+	return !s.Asserted(w.Pin)
 }
 
 func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading, error) {
@@ -198,7 +219,7 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 		return reading{}, err
 	}
 	start := time.Now()
-	state, err := r.ModemControlLineState()
+	state, err := r.ModemControlPinState()
 	end := time.Now()
 	if err != nil {
 		return reading{}, err
@@ -234,7 +255,6 @@ func midpoint(a, b time.Time) time.Time {
 type Sample struct {
 	Reference time.Time
 	System    time.Time
-	Offset    float64
 	Leap      ptime.LeapSecondKind
 }
 
@@ -283,7 +303,6 @@ func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	return Sample{
 		Reference: reference,
 		System:    edge.T,
-		Offset:    reference.Sub(edge.T).Seconds(),
 		Leap:      leap,
 	}, true
 }

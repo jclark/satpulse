@@ -19,8 +19,8 @@ import (
 // depending on the term package directly.
 type SerialError = term.Error
 
-// ModemControlLine identifies a modem control input line.
-type ModemControlLine = term.ModemControlLine
+// ModemControlPin identifies a modem control input pin.
+type ModemControlPin = term.ModemControlPin
 
 const (
 	// ModemCTS is clear to send.
@@ -33,8 +33,8 @@ const (
 	ModemRI = term.ModemRI
 )
 
-// ModemControlLineState is the set of asserted modem control input lines.
-type ModemControlLineState = term.ModemControlLineState
+// ModemControlPinState is the set of asserted modem control input pins.
+type ModemControlPinState = term.ModemControlPinState
 
 type OutPort interface {
 	io.Writer

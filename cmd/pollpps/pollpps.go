@@ -1,6 +1,6 @@
 //go:build !windows
 
-// This is an experiment for Darwin to try polling the CTS line to detect PPS signals.
+// This is an experiment for Darwin to try polling the CTS pin to detect PPS signals.
 // The GPS PPS output should be connected to the CTS pin of a USB to TTL adapter.
 // I have tested this with the Waveshare USB to TTL converter, which uses the FTDI FT232RNL.
 package main
@@ -32,7 +32,7 @@ func main() {
 		t.Restore()
 		t.Close()
 	}()
-	fmt.Printf("Monitoring PPS on CTS line of %s\n", device)
+	fmt.Printf("Monitoring PPS on CTS pin of %s\n", device)
 
 	var lastCTS bool
 	var ppsCount int
@@ -47,7 +47,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			status, err := t.ModemControlLineState()
+			status, err := t.ModemControlPinState()
 			if err != nil {
 				log.Printf("Error reading modem status: %v", err)
 				continue

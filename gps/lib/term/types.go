@@ -18,7 +18,7 @@ type Term interface {
 	Speed() int
 	TransmitTime(int) time.Duration
 	DevKind() DevKind
-	ModemControlLineState() (ModemControlLineState, error)
+	ModemControlPinState() (ModemControlPinState, error)
 	Flush() error
 	Drain() error
 	Restore() error
@@ -62,52 +62,52 @@ const (
 	DevFIFO
 )
 
-// ModemControlLine identifies a modem control line that is an input to the
+// ModemControlPin identifies a modem control pin that is an input to the
 // host.
-type ModemControlLine int
+type ModemControlPin int
 
 const (
-	ModemCTS ModemControlLine = iota
+	ModemCTS ModemControlPin = iota
 	ModemDCD
 	ModemDSR
 	ModemRI
 )
 
-// ModemControlLineState is the set of asserted modem control input lines.
+// ModemControlPinState is the set of asserted modem control input pins.
 // Its representation is independent of the platform's native modem-status
 // bits.
-type ModemControlLineState int
+type ModemControlPinState int
 
 // Asserted reports whether l is asserted in s.
-func (s ModemControlLineState) Asserted(l ModemControlLine) bool {
+func (s ModemControlPinState) Asserted(l ModemControlPin) bool {
 	if l < ModemCTS || l > ModemRI {
 		return false
 	}
 	return s&(1<<l) != 0
 }
 
-func modemControlLineState(asserted ...ModemControlLine) ModemControlLineState {
-	var state ModemControlLineState
-	for _, line := range asserted {
-		state |= 1 << line
+func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
+	var state ModemControlPinState
+	for _, pin := range asserted {
+		state |= 1 << pin
 	}
 	return state
 }
 
-// ModemControlLineWaiter is implemented by terminals that can block until a
+// ModemControlPinWaiter is implemented by terminals that can block until a
 // modem control input changes, rather than having to poll for it. Callers
 // discover the capability by asserting for this interface.
-type ModemControlLineWaiter interface {
-	// WaitModemControlLineChange blocks until a modem control input may
+type ModemControlPinWaiter interface {
+	// WaitModemControlPinChange blocks until a modem control input may
 	// have changed, returning the time the wakeup was observed. The
 	// timestamp is taken on the waiting thread as soon as the wait ends,
 	// before any other call. The caller must read the state to reject
 	// spurious wakeups and changes to other lines.
-	WaitModemControlLineChange(line ModemControlLine) (time.Time, error)
-	// CancelModemControlLineWait makes a pending wait return promptly
+	WaitModemControlPinChange(line ModemControlPin) (time.Time, error)
+	// CancelModemControlPinWait makes a pending wait return promptly
 	// and all subsequent waits return immediately. It is used to make
 	// shutdown prompt.
-	CancelModemControlLineWait()
+	CancelModemControlPinWait()
 }
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)

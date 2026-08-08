@@ -153,25 +153,25 @@ ntrip.nmeaSend = true`
 
 func TestSerialPPSConfig(t *testing.T) {
 	tests := []struct {
-		line string
-		ok   bool
+		pin string
+		ok  bool
 	}{
-		{line: "cts", ok: true},
-		{line: "dcd", ok: true},
-		{line: "dsr", ok: true},
-		{line: "ri", ok: true},
-		{line: ""},
-		{line: "CTS"},
-		{line: "rts"},
+		{pin: "cts", ok: true},
+		{pin: "dcd", ok: true},
+		{pin: "dsr", ok: true},
+		{pin: "ri", ok: true},
+		{pin: ""},
+		{pin: "CTS"},
+		{pin: "rts"},
 	}
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, tc := range tests {
-		t.Run(tc.line, func(t *testing.T) {
-			cfg, err := readConfig(strings.NewReader("[serial.pps]\nline = \"" + tc.line + "\""))
+		t.Run(tc.pin, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader("[serial.pps]\npin = \"" + tc.pin + "\""))
 			if err != nil {
 				t.Fatalf("readConfig: %v", err)
 			}
-			if cfg.Serial.PPS == nil || cfg.Serial.PPS.Line != tc.line {
+			if cfg.Serial.PPS == nil || cfg.Serial.PPS.Pin != tc.pin {
 				t.Fatalf("serial PPS config = %+v", cfg.Serial.PPS)
 			}
 			err = cfg.Validate(lg)
@@ -185,7 +185,7 @@ func TestSerialPPSConfig(t *testing.T) {
 func TestSerialPPSConfigRejectsPHC(t *testing.T) {
 	cfg, err := readConfig(strings.NewReader(`
 [serial.pps]
-line = "cts"
+pin = "cts"
 
 [phc]
 interface = "eth0"
@@ -194,7 +194,7 @@ interface = "eth0"
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), "serial.pps.line cannot be used with phc.interface") {
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface in the [phc] table") {
 		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
 	}
 }
@@ -247,7 +247,7 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)
 	}
-	cfg.Serial.PPS = &SerialPPSConfig{Line: "cts"}
+	cfg.Serial.PPS = &SerialPPSConfig{Pin: "cts"}
 	got = cfg.shmFixedPrecision()
 	if got == nil || *got != serialPPSSHMPrecision {
 		t.Fatalf("serial-PPS SHM fixed precision = %v, want %d", got, serialPPSSHMPrecision)

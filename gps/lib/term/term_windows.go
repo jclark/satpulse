@@ -242,24 +242,24 @@ const (
 	msRLSDOn = 0x0080
 )
 
-// ModemControlLineState returns the asserted modem control input lines.
-func (t *windowsTerm) ModemControlLineState() (ModemControlLineState, error) {
+// ModemControlPinState returns the asserted modem control input pins.
+func (t *windowsTerm) ModemControlPinState() (ModemControlPinState, error) {
 	var status uint32
 	if err := windows.GetCommModemStatus(t.handle, &status); err != nil {
 		return 0, t.wrapErr(err, "GetCommModemStatus")
 	}
-	var state ModemControlLineState
+	var state ModemControlPinState
 	if status&msCTSOn != 0 {
-		state |= modemControlLineState(ModemCTS)
+		state |= modemControlPinState(ModemCTS)
 	}
 	if status&msRLSDOn != 0 {
-		state |= modemControlLineState(ModemDCD)
+		state |= modemControlPinState(ModemDCD)
 	}
 	if status&msDSROn != 0 {
-		state |= modemControlLineState(ModemDSR)
+		state |= modemControlPinState(ModemDSR)
 	}
 	if status&msRingOn != 0 {
-		state |= modemControlLineState(ModemRI)
+		state |= modemControlPinState(ModemRI)
 	}
 	return state, nil
 }
