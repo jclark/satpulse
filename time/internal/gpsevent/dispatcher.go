@@ -190,7 +190,7 @@ func NewDispatcher(
 
 const (
 	tickPeriod                = time.Second / 4
-	serialPPSFirstEdgeTimeout = 5 * time.Second
+	serialPPSFirstEdgeTimeout = 30 * time.Second
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -224,8 +224,9 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 		firstTsDeadline = time.After(time.Second * 2)
 	}
 	if serialPPSCh != nil {
-		// Slow acquisition deliberately discards its first, coarse edge. Allow
-		// time to acquire phase and deliver the following precisely polled edge.
+		// Settling deliberately suppresses edges until the polling window has
+		// stopped shrinking, which takes on the order of ten pulses. Allow
+		// comfortably more before warning.
 		firstSerialPPSDeadline = time.After(serialPPSFirstEdgeTimeout)
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)

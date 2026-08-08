@@ -12,12 +12,12 @@ import (
 )
 
 const (
-	slowPollSpacing = 100 * time.Millisecond
-	windowMargin    = 5 * time.Millisecond
-	maxWindowMargin = 100 * time.Millisecond
-	minPollSpacing  = 100 * time.Microsecond
-	pulsePeriod     = time.Second
-	maxMessageAge   = 3 * time.Second
+	pollsPerWindow = 8
+	safetyFactor   = 4
+	minPollSpacing = 50 * time.Microsecond
+	pulsePeriod    = time.Second
+	maxMargin      = pulsePeriod / 2
+	maxMessageAge  = 3 * time.Second
 )
 
 // Edge is a precisely polled leading edge. T is the midpoint of the two modem
@@ -43,74 +43,77 @@ type reading struct {
 	start time.Time
 }
 
-// Poll adaptively polls for the pulse described by w and sends precisely
-// detected leading edges to edges. Edges found during slow phase acquisition
-// are used only to predict the next pulse and are not sent.
+// Poll adaptively polls for the pulse described by w and sends detected
+// leading edges to edges. One loop with two rules: a caught edge shrinks the
+// window to safetyFactor times the measured bracket gap, and a miss doubles
+// it up to half the pulse period, where the window covers the whole period
+// and polling is uniform (the cold-start state). Everything hardware- and
+// load-dependent comes from measured poll timestamps: the shrink bottoms out
+// wherever the state-query time, the spacing floor, pulse jitter, or clock
+// drift binds, without the loop knowing which.
+//
+// Edges are sent only once settled: while the window is still shrinking
+// toward its measured floor, caught edges are too coarse to publish. The
+// settled state latches at the first catch that does not shrink the window
+// (excluding catches that leave it at the cap, where settling has not
+// begun), and clears only when the window walks back up to the cap, i.e. on
+// signal loss. After the latch every caught edge is sent, however coarse: a
+// stretched sample is characteristic of what the system delivers, and
+// outliers are the NTP daemon's filtering's job.
 func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	prev, err := readState(ctx, r, time.Time{})
+	first, err := readState(ctx, r, time.Time{})
 	if err != nil {
 		return err
 	}
+	predicted := first.at.Add(maxMargin)
+	margin := maxMargin
+	settled := false
 	for {
-		// Slow polling acquires the approximate pulse phase. The acquisition
-		// edge itself is too coarsely known to publish.
-		var coarseEdge time.Time
-		for coarseEdge.IsZero() {
-			cur, err := readState(ctx, r, prev.start.Add(slowPollSpacing))
+		spacing := max(margin/pollsPerWindow, minPollSpacing)
+		cur, err := readState(ctx, r, predicted.Add(-margin))
+		if err != nil {
+			return err
+		}
+		prev := cur
+		missed := inPulse(cur.state, w)
+		deadline := predicted.Add(margin)
+		var edge time.Time
+		var gap time.Duration
+		for !missed && edge.IsZero() {
+			cur, err = readState(ctx, r, prev.start.Add(spacing))
 			if err != nil {
 				return err
 			}
-			if !inPulse(prev.state, w) && inPulse(cur.state, w) {
-				coarseEdge = midpoint(prev.at, cur.at)
+			edge, missed = classifyReading(prev, cur, w, deadline)
+			if !edge.IsZero() {
+				gap = cur.at.Sub(prev.at)
 			}
 			prev = cur
 		}
-
-		predicted := coarseEdge.Add(pulsePeriod)
-		// The first window's margin covers the coarse phase knowledge from
-		// slow polling; each caught edge resets it to windowMargin. A miss
-		// of the first window therefore doubles past maxWindowMargin and
-		// goes straight back to slow polling.
-		margin := windowMargin + slowPollSpacing/2
-		for {
-			cur, err := readState(ctx, r, predicted.Add(-margin))
-			if err != nil {
-				return err
+		if !edge.IsZero() {
+			predicted = edge.Add(pulsePeriod)
+			newMargin := min(safetyFactor*gap, maxMargin)
+			if !settled && newMargin >= margin && newMargin < maxMargin {
+				settled = true
 			}
-			prev = cur
-			missed := inPulse(cur.state, w)
-			deadline := predicted.Add(margin)
-			var edge time.Time
-			for !missed && edge.IsZero() {
-				cur, err = readState(ctx, r, prev.start.Add(minPollSpacing))
-				if err != nil {
-					return err
-				}
-				edge, missed = classifyReading(prev, cur, w, deadline)
-				prev = cur
-			}
-			if !edge.IsZero() {
+			margin = newMargin
+			if settled {
 				select {
 				case edges <- Edge{T: edge}:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
-				predicted = edge.Add(pulsePeriod)
-				margin = windowMargin
-				continue
 			}
-
-			// A missed pulse widens both sides of the next window. Once the
-			// margin would exceed the slow-poll interval, reacquire phase.
-			margin *= 2
-			if margin > maxWindowMargin {
-				break
-			}
-			predicted = predicted.Add(pulsePeriod)
+			continue
 		}
+		margin = min(2*margin, maxMargin)
+		if margin == maxMargin {
+			settled = false
+		}
+		predicted = predicted.Add(pulsePeriod)
 	}
 }
 

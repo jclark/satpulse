@@ -1,7 +1,9 @@
 package serialpps
 
 import (
+	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -141,5 +143,73 @@ func TestGeneratorSuppressesLeapAcrossDayBoundary(t *testing.T) {
 	}
 	if !sample.Reference.Equal(time.Unix(86_400, 0)) || sample.Leap != ptime.LeapSecondNone {
 		t.Fatalf("sample = %+v, want midnight reference and no leap", sample)
+	}
+}
+
+// fakePulse simulates a receiver pulsing at 1 Hz from epoch on, observed
+// through a modem-state query that blocks for callDur. The pin reads
+// deasserted (in pulse) for width after each pulse's leading edge.
+type fakePulse struct {
+	epoch   time.Time
+	width   time.Duration
+	callDur time.Duration
+}
+
+func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+	time.Sleep(f.callDur)
+	if since := time.Since(f.epoch); since >= 0 && since%pulsePeriod < f.width {
+		return 0, nil
+	}
+	return gpsio.ModemControlPinState(1 << gpsio.ModemCTS), nil
+}
+
+func TestPoll(t *testing.T) {
+	tests := []struct {
+		name             string
+		callDur          time.Duration
+		expectFirstPulse int           // settling length bounds, in pulses
+		expectLastPulse  int
+		expectTol        time.Duration // per-edge timestamp error bound
+	}{
+		{name: "slow query (FT232R class)", callDur: 2 * time.Millisecond,
+			expectFirstPulse: 5, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
+		{name: "fast query (spacing floor binds)", callDur: 20 * time.Microsecond,
+			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond, callDur: tc.callDur}
+				ctx, cancel := context.WithCancel(context.Background())
+				edges := make(chan Edge)
+				errCh := make(chan error, 1)
+				go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges) }()
+				var got []Edge
+				for len(got) < 3 {
+					got = append(got, <-edges)
+				}
+				cancel()
+				if err := <-errCh; err != context.Canceled {
+					t.Fatalf("Poll error = %v, want context.Canceled", err)
+				}
+				for i, e := range got {
+					since := e.T.Sub(f.epoch)
+					pulse := int((since + pulsePeriod/2) / pulsePeriod)
+					if err := since - time.Duration(pulse)*pulsePeriod; err < -tc.expectTol || err > tc.expectTol {
+						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.T, err, pulse, tc.expectTol)
+					}
+					if i == 0 && (pulse < tc.expectFirstPulse || pulse > tc.expectLastPulse) {
+						t.Errorf("first published edge is pulse %d, want settling to end between pulses %d and %d",
+							pulse, tc.expectFirstPulse, tc.expectLastPulse)
+					}
+					if i > 0 {
+						d := e.T.Sub(got[i-1].T)
+						if d < pulsePeriod-2*tc.expectTol || d > pulsePeriod+2*tc.expectTol {
+							t.Errorf("edge %d follows edge %d by %v, want ~%v", i, i-1, d, pulsePeriod)
+						}
+					}
+				}
+			})
+		})
 	}
 }

@@ -148,9 +148,10 @@ revise per adapter.
 Publishing is gated by a latched settling state, not a threshold.
 While M is still shrinking, caught edges are suppressed; a settled
 flag latches at the first catch that does not shrink M, which is the
-moment the measured floor is reached, and clears only when M walks
-back up to the cap (signal loss, hence a genuinely new settling
-period). The point of the suppression is only to withhold the
+moment the measured floor is reached (a catch that leaves M at the
+cap does not latch: settling has not begun), and clears only when M
+walks back up to the cap (signal loss, hence a genuinely new
+settling period). The point of the suppression is only to withhold the
 uncharacteristically bad cold-start samples: after the latch every
 catch is published, however coarse, because a sample stretched by an
 oversleep is characteristic of what that system delivers, and the
