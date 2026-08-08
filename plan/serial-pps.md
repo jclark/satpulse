@@ -67,6 +67,19 @@ generalize are:
   offsets have sd ~70-100 us, and successive median-filtered estimates
   wander by ~40 us regardless of filter length.
 
+The Linux wait backend was measured the same day on two full-speed
+FTDI adapters (`ftdi_sio`), on a host synced to a LAN stratum-1
+within tens of nanoseconds so the absolute sample error is visible:
+one sample per pulse with no gaps, a bias of about -200 us, and
+per-sample jitter of sd ~90 us, the same band as the polling
+backend on macOS. The bias is one-sided because the wait primitive
+timestamps the wakeup, which is strictly after the edge, so the
+full-speed USB delivery of the modem-status change appears
+wholesale; the polling backend's midpoint estimator cancels most of
+its own latency instead. Around 200 us is characteristic of
+full-speed FTDI adapters on Linux; compensate with the chrony
+refclock `offset` option (`offset 200e-6`).
+
 ## Configuration
 
 One new key in the `[serial]` table:
