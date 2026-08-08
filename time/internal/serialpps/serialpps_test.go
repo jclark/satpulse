@@ -188,7 +188,7 @@ func TestPoll(t *testing.T) {
 		expectTol        time.Duration // per-edge timestamp error bound
 	}{
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
-			expectFirstPulse: 5, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
+			expectFirstPulse: 4, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
 		{name: "fast query (spacing floor binds)", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
 		{name: "cold start inside pulse", epochOffset: -20 * time.Millisecond, callDur: 20 * time.Microsecond,

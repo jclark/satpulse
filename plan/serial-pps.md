@@ -149,10 +149,14 @@ misses that widen the window instead. Lock takes on the order of
 ten pulses at about N polls per second, on any hardware, with no
 retuning.
 
-Constants: N = 8 polls per window, safety factor c = 4, spacing
-floor 50 us. All are dimensionless shape parameters with wide safe
-ranges; nothing encodes hardware timing, so there is nothing to
-revise per adapter.
+Constants: safety factor c = 16 (the window half-width in bracket
+gaps, chosen from the measured FT232R delivery tail), shrink rate
+r = 1/2 per catch, spacing floor 50 us. N is not chosen: it is
+derived as c/r (32), since the shrink per catch is c/N and choosing
+c and N independently allows a non-convergent pair (c >= N leaves
+the window stuck at the cap). All are dimensionless shape
+parameters with wide safe ranges; nothing encodes hardware timing,
+so there is nothing to revise per adapter.
 
 Publishing is gated by a latched settling state, not a threshold.
 While each catch still improves on the previous catch's bracket
@@ -172,7 +176,7 @@ outliers. Chrony has no notion of an initial settling period, so the
 loop provides one.
 
 The bracket needs a poll inside the pulse, so the poll spacing must
-stay below the pulse width; the cold-start spacing of about 62 ms
+stay below the pulse width; the cold-start spacing of about 16 ms
 suits the u-blox default width of 100 ms, and microsecond-width
 pulses remain unsupported by this backend.
 

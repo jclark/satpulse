@@ -12,8 +12,17 @@ import (
 )
 
 const (
-	pollsPerWindow = 8
-	safetyFactor   = 4
+	// The chosen constants are the safety factor (the window half-width in
+	// units of the measured bracket gap, absorbing that much prediction
+	// error) and the shrink rate (what each catch multiplies the window by
+	// during acquisition). The polls per window follow from them: spacing
+	// is window/pollsPerWindow and a catch's gap is one spacing, so the
+	// shrink per catch is safetyFactor/pollsPerWindow. Deriving rather
+	// than choosing pollsPerWindow keeps the pair convergent; a shrink
+	// rate of 1 or more would leave the window stuck at the cap.
+	safetyFactor   = 16
+	shrinkRate     = 0.5
+	pollsPerWindow = safetyFactor / shrinkRate
 	minPollSpacing = 50 * time.Microsecond
 	pulsePeriod    = time.Second
 	maxMargin      = pulsePeriod / 2
