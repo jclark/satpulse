@@ -95,66 +95,73 @@ existing refclock path (SOCK and/or SHM); the fixed SHM precision
 reported in this mode is 2^-11 s (~500 us), not the 2^-1 s used for
 message-arrival sampling.
 
-With the polling backend, edges found while the pulse phase is unknown
-(see below) do not produce samples; they are known too coarsely and
-would inject bad data points. So the first pulse at startup, and the
-first after an outage, yields no sample; every pulse in steady
-operation yields one. The wait backend has no such restriction: every
-detected leading edge yields a sample. Sawtooth correction is
-irrelevant at this precision and is not used.
+With the polling backend, edges caught before the settling latch (see
+Edge detection) do not produce samples; they are known too coarsely
+and would inject uncharacteristically bad data points. So the first
+pulses at startup, and after a signal loss, yield no samples; after
+settling every caught pulse yields one. The wait backend has no such
+restriction: every detected leading edge yields a sample. Sawtooth
+correction is irrelevant at this precision and is not used.
 
 ## Edge detection
 
 Two backends behind one interface, selected by platform. For both, the
-implemented rule is: the pulse's leading edge is the configured line's
+implemented rule is: the pulse's leading edge is the configured pin's
 flag becoming deasserted (per the TTL-level assumption stated under
 Configuration), and that is the only transition that is timestamped.
 
 ### Polling (phase 1: macOS; also any platform without a wait primitive)
 
-Adaptive polling, driven by the fact that consecutive pulses are 1 s
-apart:
+One adaptive loop, driven by the fact that consecutive pulses are 1 s
+apart. The state is the predicted next edge time P (previous edge
+plus exactly 1 s, in the monotonic clock) and a window half-width M.
+Each second the loop polls the window [P - M, P + M] at a target
+spacing of M/N, floored at 50 us. It sleeps until each poll's
+scheduled time; when the state query takes longer than the target
+spacing the sleep never fires and the calls pace the loop by
+themselves. The query's duration is never measured or assumed.
 
-- While the pulse phase is unknown (startup, or the pulse stopped),
-  poll slowly -- tens of ms apart -- purely to find the approximate
-  phase.
-- Once the next pulse's time can be predicted, sleep until shortly
-  before it, then poll repeatedly until the line changes or the
-  expected time has passed by a sufficient margin. The edge timestamp
-  is the midpoint of the two polls that straddle the transition.
-- A minimum spacing between polls is enforced by sleeping, so the loop
-  is well behaved on drivers that answer from a cached value instead of
-  blocking; on hardware like the FT232R the ioctl's own blocking
-  exceeds the minimum and the sleep never fires.
-- Missed pulses widen the margin and eventually drop back to slow
-  polling.
+- Catch: two consecutive polls bracket the transition (the earlier
+  out of pulse, the later in pulse). The edge timestamp is the
+  midpoint of the pair; P becomes edge + 1 s and M becomes c times
+  the pair's measured gap. Using the measured gap rather than the
+  target spacing makes the window immune to sleep overshoot: a
+  stretched bracket widens the next window automatically.
+- Miss: the window closes without a transition, or the pin is
+  already in its pulse state when the window opens. P advances 1 s
+  and M doubles, capped at half the pulse period; at the cap the
+  window is the whole period and polling is uniform, which is the
+  cold-start state. Acquisition is not a separate mode.
 
-The tuning values are internal constants, at least initially; there is
-no configuration for them. Initial values, to be revised against real
-hardware:
+From cold, each catch shrinks M by the factor c/N until the bracket
+gaps stop shrinking, at the floor set by whichever binds first: the
+state-query time, the spacing floor, PPS jitter, or clock drift. The
+loop never needs to know which; the floor emerges from the measured
+gaps. Lock takes on the order of ten pulses at about N polls per
+second, on any hardware, with no retuning.
 
-- Slow polling spacing: 100 ms. An edge found this way is known to
-  within the spacing, which is enough to place the next window.
-- Prediction: previous edge time plus exactly 1 s, in the monotonic
-  clock. No period estimation: the clock's rate error (ppm-level) is
-  orders of magnitude below the window margin, so estimating the
-  inter-pulse period buys nothing.
-- Window margin: open 5 ms before the predicted edge; a miss is
-  declared 5 ms after it. The first window after a slow-poll detection
-  opens earlier and closes later by half the slow polling spacing,
-  reflecting the coarser phase knowledge.
-- If the line is already in its pulse-asserted state when the window
-  opens, that also counts as a miss.
-- On each miss the margin doubles and the prediction advances 1 s;
-  when the margin would exceed 100 ms, drop back to slow polling.
-- Minimum spacing between polls: 100 us.
+Constants: N = 8 polls per window, safety factor c = 4, spacing
+floor 50 us. All are dimensionless shape parameters with wide safe
+ranges; nothing encodes hardware timing, so there is nothing to
+revise per adapter.
 
-The selected flag's deasserted interval must overlap at least one poll.
-In tracking this means a practical minimum pulse width of roughly one
-modem-state query interval (about 2 ms on the tested FT232R). Slow phase
-acquisition samples at 100 ms spacing, so narrow pulses can take much
-longer to acquire. The u-blox default width of 100 ms works well;
-microsecond-width pulses are not supported by this backend.
+Publishing is gated by a latched settling state, not a threshold.
+While M is still shrinking, caught edges are suppressed; a settled
+flag latches at the first catch that does not shrink M, which is the
+moment the measured floor is reached, and clears only when M walks
+back up to the cap (signal loss, hence a genuinely new settling
+period). The point of the suppression is only to withhold the
+uncharacteristically bad cold-start samples: after the latch every
+catch is published, however coarse, because a sample stretched by an
+oversleep is characteristic of what that system delivers, and the
+NTP daemon's own filtering is the right place to handle such
+outliers. Chrony has no notion of an initial settling period, so the
+loop provides one.
+
+The bracket needs a poll inside the pulse, so the poll spacing must
+stay below the pulse width; the cold-start spacing of about 62 ms
+suits the u-blox default width of 100 ms, and microsecond-width
+pulses remain unsupported by this backend.
 
 The polling goroutine locks its OS thread.
 
