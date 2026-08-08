@@ -23,6 +23,9 @@ func main() {
 		if port.USB != (serialenum.USBID{}) {
 			fmt.Printf(" vid=%04x pid=%04x", port.USB.VID, port.USB.PID)
 		}
+		if port.Serial != "" {
+			fmt.Printf(" serial=%q", port.Serial)
+		}
 		fmt.Printf(" display=%q\n", port.Display)
 	}
 }
