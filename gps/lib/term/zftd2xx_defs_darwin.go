@@ -24,6 +24,7 @@ const (
 	ftOtherError              = 0x12
 	ftDeviceListNotReady      = 0x13
 	ftOpenBySerialNumber      = 0x1
+	ftOpenByLocation          = 0x4
 	ftBits8                   = 0x8
 	ftBits7                   = 0x7
 	ftStopBits1               = 0x0

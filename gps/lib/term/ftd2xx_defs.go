@@ -30,6 +30,7 @@ const (
 	ftOtherError              = C.FT_OTHER_ERROR
 	ftDeviceListNotReady      = C.FT_DEVICE_LIST_NOT_READY
 	ftOpenBySerialNumber      = C.FT_OPEN_BY_SERIAL_NUMBER
+	ftOpenByLocation          = C.FT_OPEN_BY_LOCATION
 	ftBits8                   = C.FT_BITS_8
 	ftBits7                   = C.FT_BITS_7
 	ftStopBits1               = C.FT_STOP_BITS_1

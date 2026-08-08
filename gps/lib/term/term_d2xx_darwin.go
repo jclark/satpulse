@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -28,6 +29,7 @@ type d2xxAPI struct {
 	createDeviceInfoList   func(*uint32) uint32
 	getDeviceInfoList      func(cPointer, *uint32) uint32
 	openEx                 func(string, uint32, *cPointer) uint32
+	openExByLocation       func(uintptr, uint32, *cPointer) uint32
 	close                  func(cPointer) uint32
 	setBaudRate            func(cPointer, uint32) uint32
 	setDataCharacteristics func(cPointer, uint8, uint8, uint8) uint32
@@ -53,10 +55,16 @@ type d2xxAPI struct {
 
 // d2xxTerm is a Term implemented on FTDI's D2XX library instead of a tty.
 type d2xxTerm struct {
-	api    *d2xxAPI
-	handle cPointer
-	event  *d2xxEvent
-	path   string
+	api        *d2xxAPI
+	handle     cPointer
+	event      *d2xxEvent
+	path       string
+	notifyMu   sync.Mutex
+	notify     chan struct{} // closed and replaced by eventPump on each event
+	notifyAt   time.Time     // when the closed notify's event was observed
+	cancel     chan struct{} // closed by CancelModemControlPinWait
+	cancelOnce sync.Once
+	pumpDone   chan struct{}
 	attrCache
 }
 
@@ -78,6 +86,7 @@ const (
 	ftDeviceInfoNodeSize     = unsafe.Sizeof(ftDeviceListInfoNode{})
 	ftDeviceInfoSerialOffset = unsafe.Offsetof(ftDeviceListInfoNode{}.SerialNumber)
 	ftDeviceInfoSerialLen    = len(ftDeviceListInfoNode{}.SerialNumber)
+	ftDeviceInfoLocIdOffset  = unsafe.Offsetof(ftDeviceListInfoNode{}.LocId)
 )
 
 var loadD2XX = sync.OnceValues(newD2XXAPI)
@@ -85,7 +94,7 @@ var loadD2XX = sync.OnceValues(newD2XXAPI)
 // tryD2XX opens path through the D2XX library, reporting false when the path
 // does not name an FTDI device that the library can open.
 func tryD2XX(path string, opts []AttrSetter) (Term, bool, error) {
-	serial, ok := d2xxPathSerial(path)
+	suffix, ok := d2xxPathSerial(path)
 	if !ok {
 		return nil, false, nil
 	}
@@ -93,17 +102,11 @@ func tryD2XX(path string, opts []AttrSetter) (Term, bool, error) {
 	if err != nil {
 		return nil, false, nil
 	}
-	serials, err := api.devices(path)
+	devs, err := api.devices(path)
 	if err != nil {
 		return nil, false, err
 	}
-	found := false
-	for _, s := range serials {
-		if s == serial {
-			found = true
-			break
-		}
-	}
+	dev, found := matchD2XXDevice(devs, suffix)
 	if !found {
 		return nil, false, nil
 	}
@@ -113,7 +116,7 @@ func tryD2XX(path string, opts []AttrSetter) (Term, bool, error) {
 			return nil, false, err
 		}
 	}
-	d, err := api.open(path, serial)
+	d, err := api.open(path, dev)
 	if err != nil {
 		return nil, false, err
 	}
@@ -137,6 +140,7 @@ func newD2XXAPI() (*d2xxAPI, error) {
 		{"FT_CreateDeviceInfoList", &api.createDeviceInfoList},
 		{"FT_GetDeviceInfoList", &api.getDeviceInfoList},
 		{"FT_OpenEx", &api.openEx},
+		{"FT_OpenEx", &api.openExByLocation},
 		{"FT_Close", &api.close},
 		{"FT_SetBaudRate", &api.setBaudRate},
 		{"FT_SetDataCharacteristics", &api.setDataCharacteristics},
@@ -202,7 +206,13 @@ func registerD2XXFunc(lib uintptr, name string, fn any) error {
 	return nil
 }
 
-func (api *d2xxAPI) devices(path string) ([]string, error) {
+// d2xxDevice is one entry of the D2XX device list.
+type d2xxDevice struct {
+	serial string
+	locID  uint32
+}
+
+func (api *d2xxAPI) devices(path string) ([]d2xxDevice, error) {
 	var n uint32
 	if st := api.createDeviceInfoList(&n); st != ftOK {
 		return nil, d2xxError(path, "FT_CreateDeviceInfoList", int(st))
@@ -222,21 +232,58 @@ func (api *d2xxAPI) devices(path string) ([]string, error) {
 	if n > allocated {
 		return nil, &os.PathError{Op: "FT_GetDeviceInfoList", Path: path, Err: errors.New("D2XX device list grew unexpectedly")}
 	}
-	serials := make([]string, n)
+	devs := make([]d2xxDevice, n)
 	for i := range n {
-		p := addCPointer(buf, uintptr(i)*ftDeviceInfoNodeSize+ftDeviceInfoSerialOffset)
-		serials[i] = cString(p, ftDeviceInfoSerialLen)
+		node := addCPointer(buf, uintptr(i)*ftDeviceInfoNodeSize)
+		devs[i] = d2xxDevice{
+			serial: cString(addCPointer(node, ftDeviceInfoSerialOffset), ftDeviceInfoSerialLen),
+			locID:  *(*uint32)(addCPointer(node, ftDeviceInfoLocIdOffset)),
+		}
 	}
-	return serials, nil
+	return devs, nil
 }
 
-func (api *d2xxAPI) open(path, serial string) (*d2xxTerm, error) {
+// matchD2XXDevice finds the device a cu.usbserial path suffix refers to. The
+// suffix is the EEPROM serial number when the device has one. With no serial
+// the Apple driver names the port after the IOKit location ID (dropping its
+// low byte), while D2XX identifies the same device by bus<<8|address; the
+// USB address is not derivable from the location ID, so only the bus is
+// common to both names, and a serial-less device is matched when it is the
+// only one on the path's bus.
+func matchD2XXDevice(devs []d2xxDevice, suffix string) (d2xxDevice, bool) {
+	for _, d := range devs {
+		if d.serial != "" && d.serial == suffix {
+			return d, true
+		}
+	}
+	loc, err := strconv.ParseUint(suffix, 16, 32)
+	if err != nil {
+		return d2xxDevice{}, false
+	}
+	var match d2xxDevice
+	n := 0
+	for _, d := range devs {
+		if d.serial == "" && d.locID>>8 == uint32(loc)>>16 {
+			match = d
+			n++
+		}
+	}
+	return match, n == 1
+}
+
+func (api *d2xxAPI) open(path string, dev d2xxDevice) (*d2xxTerm, error) {
 	event, err := newD2XXEvent(api)
 	if err != nil {
 		return nil, &os.PathError{Op: "create D2XX event", Path: path, Err: err}
 	}
 	var handle cPointer
-	if st := api.openEx(serial, ftOpenBySerialNumber, &handle); st != ftOK {
+	var st uint32
+	if dev.serial != "" {
+		st = api.openEx(dev.serial, ftOpenBySerialNumber, &handle)
+	} else {
+		st = api.openExByLocation(uintptr(dev.locID), ftOpenByLocation, &handle)
+	}
+	if st != ftOK {
 		event.close()
 		return nil, d2xxError(path, "FT_OpenEx", int(st))
 	}
@@ -245,7 +292,46 @@ func (api *d2xxAPI) open(path, serial string) (*d2xxTerm, error) {
 		event.close()
 		return nil, d2xxError(path, "FT_SetEventNotification", int(st))
 	}
-	return &d2xxTerm{api: api, handle: handle, event: event, path: path}, nil
+	d := &d2xxTerm{api: api, handle: handle, event: event, path: path,
+		notify: make(chan struct{}), cancel: make(chan struct{}), pumpDone: make(chan struct{})}
+	go d.eventPump()
+	return d, nil
+}
+
+// eventPump is the sole waiter on the library's event condition variable.
+// The library wakes only one waiter per event, so waiting there directly
+// would let the data reader and the pin waiter steal each other's events;
+// the pump fans each wakeup out to every Go-side waiter by closing the
+// current notification channel. An event firing while the pump is between
+// waits is lost, as for any condition-variable consumer; waiters treat
+// wakeups as hints and re-check their own state.
+// The pump timestamps each wakeup before fanning it out: the C-thread wake
+// is a kernel handoff taking microseconds, while scheduling the Go-side
+// waiters can occasionally take a millisecond, so their own clock readings
+// would be too late to timestamp the event.
+func (d *d2xxTerm) eventPump() {
+	defer close(d.pumpDone)
+	for {
+		err := d.event.wait()
+		at := time.Now()
+		d.notifyMu.Lock()
+		d.notifyAt = at
+		close(d.notify)
+		d.notify = make(chan struct{})
+		d.notifyMu.Unlock()
+		if err != nil || d.event.wake.Load() {
+			return
+		}
+	}
+}
+
+// notifyCh returns the channel the next event notification will close. To
+// avoid losing an event, callers must grab the channel before checking the
+// state they are waiting on.
+func (d *d2xxTerm) notifyCh() <-chan struct{} {
+	d.notifyMu.Lock()
+	defer d.notifyMu.Unlock()
+	return d.notify
 }
 
 func newD2XXEvent(api *d2xxAPI) (*d2xxEvent, error) {
@@ -416,6 +502,11 @@ func (d *d2xxTerm) TransmitTime(nBytes int) time.Duration {
 
 const maxD2XXTransfer = int(^uint32(0))
 
+// Read returns queued receive data, parking on the event pump's
+// notification while the queue is empty. FT_Read is called only for bytes
+// FT_GetStatus already reports queued, so it returns at once: letting it
+// wait for data would spin a core, because the library implements its read
+// timeout as a busy loop polling the clock.
 func (d *d2xxTerm) Read(buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
@@ -423,19 +514,34 @@ func (d *d2xxTerm) Read(buf []byte) (int, error) {
 	if len(buf) > maxD2XXTransfer {
 		buf = buf[:maxD2XXTransfer]
 	}
-	var n uint32
-	st := d.api.read(d.handle, buf, uint32(len(buf)), &n)
-	if st != ftOK {
-		return int(n), d2xxError(d.path, "FT_Read", int(st))
+	var timeout <-chan time.Time
+	if attr := d.loadAttr(); attr.readCanTimeout() {
+		t := time.NewTimer(time.Duration(attr.ts.Cc[unix.VTIME]) * decisecond)
+		defer t.Stop()
+		timeout = t.C
 	}
-	if n == 0 {
-		attr := d.loadAttr()
-		if attr.readCanTimeout() {
-			return 0, &os.PathError{Op: "read", Path: d.path, Err: os.ErrDeadlineExceeded}
+	for {
+		notify := d.notifyCh()
+		rx, _, err := d.status()
+		if err != nil {
+			return 0, err
 		}
-		return 0, io.EOF
+		if rx > 0 {
+			var n uint32
+			st := d.api.read(d.handle, buf, min(rx, uint32(len(buf))), &n)
+			if st != ftOK {
+				return int(n), d2xxError(d.path, "FT_Read", int(st))
+			}
+			return int(n), nil
+		}
+		select {
+		case <-notify:
+		case <-timeout:
+			return 0, &os.PathError{Op: "read", Path: d.path, Err: os.ErrDeadlineExceeded}
+		case <-d.cancel:
+			return 0, io.EOF
+		}
 	}
-	return int(n), nil
 }
 
 func (d *d2xxTerm) Write(buf []byte) (int, error) {
@@ -487,20 +593,24 @@ func (d *d2xxTerm) ModemControlPinState() (ModemControlPinState, error) {
 // changed, returning the time the wakeup was observed. The library notifies on
 // any modem-status event or on received data, so the caller must read the
 // state to tell what happened.
-func (d *d2xxTerm) WaitModemControlPinChange(line ModemControlPin) (time.Time, error) {
-	if line < ModemCTS || line > ModemRI {
-		return time.Time{}, fmt.Errorf("invalid modem control line: %d", line)
+func (d *d2xxTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time, error) {
+	if pin < ModemCTS || pin > ModemRI {
+		return time.Time{}, fmt.Errorf("invalid modem control pin: %d", pin)
 	}
-	err := d.event.wait()
-	at := time.Now()
-	if err != nil {
-		return time.Time{}, &os.PathError{Op: "wait for D2XX event", Path: d.path, Err: err}
+	select {
+	case <-d.notifyCh():
+		d.notifyMu.Lock()
+		defer d.notifyMu.Unlock()
+		return d.notifyAt, nil
+	case <-d.cancel:
+		return time.Now(), nil
 	}
-	return at, nil
 }
 
-// CancelModemControlPinWait unblocks a pending wait, to make shutdown prompt.
+// CancelModemControlPinWait unblocks pending waits and reads, to make
+// shutdown prompt; the event signal also stops the pump.
 func (d *d2xxTerm) CancelModemControlPinWait() {
+	d.cancelOnce.Do(func() { close(d.cancel) })
 	d.event.signal()
 }
 
@@ -536,7 +646,12 @@ func (d *d2xxTerm) Restore() error {
 	return nil
 }
 
+// Close stops the event pump before destroying the event: the pump may be
+// parked in pthread_cond_wait on the event's memory, and the library's
+// worker threads may signal it until FT_Close.
 func (d *d2xxTerm) Close() error {
+	d.CancelModemControlPinWait()
+	<-d.pumpDone
 	st := d.api.close(d.handle)
 	d.handle = nil
 	d.event.close()
