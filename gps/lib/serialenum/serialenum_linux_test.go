@@ -87,10 +87,12 @@ func TestListSyntheticFilesystem(t *testing.T) {
 				VID: 0x1546,
 				PID: 0x01a9,
 			},
+			Aliases: []string{filepath.Join(devDir, "gps0"), filepath.Join(devDir, "zz-gps")},
 		},
 		{
 			Device:  filepath.Join(devDir, "ttyAMA0"),
 			Display: filepath.Join(devDir, "ttyAMA0") + " (" + filepath.Join(devDir, "serial0") + ")",
+			Aliases: []string{filepath.Join(devDir, "serial0")},
 		},
 		{
 			Device:  filepath.Join(devDir, "ttyS0"),

@@ -13,8 +13,25 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"golang.org/x/sys/unix"
 )
+
+func TestSelectPortSymlink(t *testing.T) {
+	dir := t.TempDir()
+	node := filepath.Join(dir, "ttyACM0")
+	if err := os.WriteFile(node, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "receiver")
+	if err := os.Symlink(node, link); err != nil {
+		t.Fatal(err)
+	}
+	ports := []serialenum.Port{{Device: node}}
+	if port, ok := selectPort(ports, link); !ok || port.Device != node {
+		t.Errorf("selectPort(%q) = %+v, %v, want the port for %s", link, port, ok, node)
+	}
+}
 
 // TestProbeDevicePTY covers the probe lifecycle that the detection tests below
 // the command layer do not reach: the scan worker, the packet log's two

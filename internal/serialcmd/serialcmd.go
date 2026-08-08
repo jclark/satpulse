@@ -9,6 +9,8 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
+	"slices"
 	"sync"
 	"time"
 
@@ -22,7 +24,7 @@ import (
 )
 
 const (
-	summary        = `[-h|--help] [-j|--jsonl] [-s|--scan] [--packet-log path] [device]`
+	summary        = `[-h|--help] [-j|--jsonl] [-s|--detect-speed] [--packet-log path] [port]`
 	tryDuration    = 1250 * time.Millisecond
 	silentTryLimit = 5
 )
@@ -39,9 +41,9 @@ func (e commandError) Quiet() bool   { return e.quiet }
 
 type flags struct {
 	jsonl     bool
-	scan      bool
+	detect    bool
 	packetLog string
-	device    string
+	port      string
 }
 
 // Cmd executes the serial subcommand.
@@ -54,13 +56,13 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return usageFunc(progName), nil
 	}
 	lg := cmd.NewDefaultLogger(logWriter, logLevel)
-	if cfg.device == "" && !cfg.scan {
-		return "", enumerate(os.Stdout, cfg.jsonl)
+	if !cfg.detect {
+		return "", enumerate(os.Stdout, cfg.jsonl, cfg.port)
 	}
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
-	if cfg.device != "" {
-		result := probeDevice(ctx, lg, cfg.device, cfg.packetLog)
+	if cfg.port != "" {
+		result := probeDevice(ctx, lg, cfg.port, cfg.packetLog)
 		if ctx.Err() != nil {
 			return "", commandError{msg: "interrupted", code: 1}
 		}
@@ -75,8 +77,8 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 
 func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc func(string) string, err error) {
 	fs := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
-	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output one JSON object per serial port when enumerating")
-	fs.BoolVarP(&cfg.scan, "scan", "s", false, "detect the speed of every enumerated serial port")
+	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output one JSON object per serial port instead of a display label")
+	fs.BoolVarP(&cfg.detect, "detect-speed", "s", false, "detect receiver speeds instead of describing ports")
 	fs.StringVar(&cfg.packetLog, "packet-log", "", "write received packets and speed changes to a JSONL file")
 	fs.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
 	usageFunc = cmd.UsageFunc(cmdName, summary, fs)
@@ -84,31 +86,61 @@ func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc 
 		return
 	}
 	if fs.NArg() > 1 {
-		err = fmt.Errorf("expected at most one serial device argument")
+		err = fmt.Errorf("expected at most one serial port argument")
 		return
 	}
 	if fs.NArg() == 1 {
-		cfg.device = fs.Arg(0)
+		cfg.port = fs.Arg(0)
 	}
-	if cfg.scan && cfg.device != "" {
-		err = fmt.Errorf("--scan cannot be combined with a device argument")
-	} else if cfg.jsonl && (cfg.scan || cfg.device != "") {
-		err = fmt.Errorf("--jsonl applies only to serial port enumeration")
-	} else if cfg.packetLog != "" && cfg.device == "" {
-		err = fmt.Errorf("--packet-log requires a device argument")
+	if cfg.jsonl && cfg.detect {
+		err = fmt.Errorf("--jsonl cannot be combined with --detect-speed")
+	} else if cfg.packetLog != "" && (!cfg.detect || cfg.port == "") {
+		err = fmt.Errorf("--packet-log requires --detect-speed and a port")
 	}
 	return
 }
 
-func enumerate(w io.Writer, jsonl bool) error {
+func enumerate(w io.Writer, jsonl bool, selector string) error {
 	ports, err := serialenum.List()
 	if err != nil {
 		return err
 	}
-	if len(ports) == 0 {
+	return printPortInfo(w, ports, jsonl, selector)
+}
+
+func printPortInfo(w io.Writer, ports []serialenum.Port, jsonl bool, selector string) error {
+	if selector != "" {
+		port, ok := selectPort(ports, selector)
+		if !ok {
+			return commandError{msg: selector + " does not match a discovered serial port", code: 2}
+		}
+		ports = []serialenum.Port{port}
+	} else if len(ports) == 0 {
 		return commandError{msg: "no serial ports found", code: 2}
 	}
 	return printPorts(w, ports, jsonl)
+}
+
+// selectPort finds the discovered port that selector names, matching device
+// nodes and aliases first as given and then with symlinks resolved, so that a
+// path like /dev/serial/by-id/... selects the port it points to.
+func selectPort(ports []serialenum.Port, selector string) (serialenum.Port, bool) {
+	if port, ok := matchPort(ports, filepath.Clean(selector)); ok {
+		return port, true
+	}
+	if resolved, err := filepath.EvalSymlinks(selector); err == nil {
+		return matchPort(ports, resolved)
+	}
+	return serialenum.Port{}, false
+}
+
+func matchPort(ports []serialenum.Port, path string) (serialenum.Port, bool) {
+	for _, port := range ports {
+		if path == port.Device || slices.Contains(port.Aliases, path) {
+			return port, true
+		}
+	}
+	return serialenum.Port{}, false
 }
 
 func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
@@ -123,7 +155,13 @@ func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
 			}
 			continue
 		}
-		if _, err := fmt.Fprintln(w, port.Display); err != nil {
+		var err error
+		if port.Serial == "" {
+			_, err = fmt.Fprintln(w, port.Display)
+		} else {
+			_, err = fmt.Fprintf(w, "%s serial=%q\n", port.Display, port.Serial)
+		}
+		if err != nil {
 			return err
 		}
 	}

@@ -23,15 +23,17 @@ func TestParseFlags(t *testing.T) {
 		wantErr  bool
 		wantHelp bool
 	}{
-		{name: "enumerate"},
+		{name: "describe all"},
 		{name: "jsonl", args: []string{"-j"}, want: flags{jsonl: true}},
-		{name: "device", args: []string{"--packet-log", "capture.jsonl", "/dev/ttyS0"}, want: flags{packetLog: "capture.jsonl", device: "/dev/ttyS0"}},
-		{name: "scan", args: []string{"-s"}, want: flags{scan: true}},
+		{name: "describe selected", args: []string{"/dev/ttyS0"}, want: flags{port: "/dev/ttyS0"}},
+		{name: "jsonl selected", args: []string{"-j", "/dev/ttyS0"}, want: flags{jsonl: true, port: "/dev/ttyS0"}},
+		{name: "detect all", args: []string{"-s"}, want: flags{detect: true}},
+		{name: "detect selected", args: []string{"--detect-speed", "--packet-log", "capture.jsonl", "/dev/ttyS0"}, want: flags{detect: true, packetLog: "capture.jsonl", port: "/dev/ttyS0"}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
-		{name: "too many devices", args: []string{"one", "two"}, wantErr: true},
-		{name: "scan device conflict", args: []string{"--scan", "/dev/ttyS0"}, wantErr: true},
-		{name: "json detection conflict", args: []string{"--jsonl", "/dev/ttyS0"}, wantErr: true},
-		{name: "packet log enumeration conflict", args: []string{"--packet-log", "capture.jsonl"}, wantErr: true},
+		{name: "too many ports", args: []string{"one", "two"}, wantErr: true},
+		{name: "jsonl detection conflict", args: []string{"--jsonl", "--detect-speed"}, wantErr: true},
+		{name: "packet log without detection", args: []string{"--packet-log", "capture.jsonl", "/dev/ttyS0"}, wantErr: true},
+		{name: "packet log without port", args: []string{"-s", "--packet-log", "capture.jsonl"}, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, help, _, err := parseFlags("serial", tc.args)
@@ -51,7 +53,7 @@ func TestParseFlags(t *testing.T) {
 func TestCmdUsageError(t *testing.T) {
 	for _, args := range [][]string{
 		{"--bogus"},
-		{"--scan", "/dev/ttyS0"},
+		{"--jsonl", "--detect-speed"},
 	} {
 		usage, err := Cmd(io.Discard, slog.LevelInfo, "satpulsetool", "serial", args)
 		if err == nil {
@@ -74,6 +76,7 @@ func TestPrintPorts(t *testing.T) {
 			Device:  "/dev/ttyACM0",
 			Display: "/dev/ttyACM0 (/dev/gps0, u-blox gen 10)",
 			USB:     serialenum.USBID{VID: 0x1546, PID: 0x01a4},
+			Serial:  "BG02DBNX",
 		},
 	}
 	for _, tc := range []struct {
@@ -83,12 +86,12 @@ func TestPrintPorts(t *testing.T) {
 	}{
 		{
 			name: "human",
-			want: "/dev/ttyS0\n/dev/ttyACM0 (/dev/gps0, u-blox gen 10)\n",
+			want: "/dev/ttyS0\n/dev/ttyACM0 (/dev/gps0, u-blox gen 10) serial=\"BG02DBNX\"\n",
 		},
 		{
 			name:  "jsonl",
 			jsonl: true,
-			want:  "{\"device\":\"/dev/ttyS0\",\"display\":\"/dev/ttyS0\"}\n{\"device\":\"/dev/ttyACM0\",\"display\":\"/dev/ttyACM0 (/dev/gps0, u-blox gen 10)\",\"usb\":{\"vid\":5446,\"pid\":420}}\n",
+			want:  "{\"device\":\"/dev/ttyS0\",\"display\":\"/dev/ttyS0\"}\n{\"device\":\"/dev/ttyACM0\",\"display\":\"/dev/ttyACM0 (/dev/gps0, u-blox gen 10)\",\"usb\":{\"vid\":5446,\"pid\":420},\"serial\":\"BG02DBNX\"}\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -100,6 +103,51 @@ func TestPrintPorts(t *testing.T) {
 				t.Errorf("output:\n%s\nwant:\n%s", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPrintPortInfo(t *testing.T) {
+	ports := []serialenum.Port{
+		{Device: "/dev/ttyS0", Display: "/dev/ttyS0"},
+		{Device: "/dev/ttyACM0", Display: "/dev/ttyACM0 (/dev/gps0)", Serial: "BG02DBNX", Aliases: []string{"/dev/gps0"}},
+	}
+	for _, tc := range []struct {
+		name     string
+		selector string
+		want     string
+		wantCode int
+	}{
+		{name: "all", want: "/dev/ttyS0\n/dev/ttyACM0 (/dev/gps0) serial=\"BG02DBNX\"\n"},
+		{name: "device", selector: "/dev/ttyACM0", want: "/dev/ttyACM0 (/dev/gps0) serial=\"BG02DBNX\"\n"},
+		{name: "alias", selector: "/dev/gps0", want: "/dev/ttyACM0 (/dev/gps0) serial=\"BG02DBNX\"\n"},
+		{name: "unclean", selector: "/dev//ttyS0", want: "/dev/ttyS0\n"},
+		{name: "unmatched", selector: "/dev/ttyUSB0", wantCode: 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			err := printPortInfo(&buf, ports, false, tc.selector)
+			if tc.wantCode != 0 {
+				var cmdErr commandError
+				if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != tc.wantCode {
+					t.Fatalf("printPortInfo() error = %#v, want exit code %d", err, tc.wantCode)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := buf.String(); got != tc.want {
+				t.Errorf("output = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPrintPortInfoNoPorts(t *testing.T) {
+	err := printPortInfo(io.Discard, nil, false, "")
+	var cmdErr commandError
+	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 2 {
+		t.Fatalf("printPortInfo() error = %#v, want exit code 2", err)
 	}
 }
 
