@@ -2,6 +2,7 @@ package serialpps
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -43,6 +44,12 @@ func TestClassifyReading(t *testing.T) {
 			name:       "no transition crossing deadline",
 			curState:   asserted,
 			curAt:      6 * time.Millisecond,
+			deadline:   5 * time.Millisecond,
+			wantMissed: true,
+		},
+		{
+			name:       "bracket spanning a period",
+			curAt:      1100 * time.Millisecond,
 			deadline:   5 * time.Millisecond,
 			wantMissed: true,
 		},
@@ -148,38 +155,49 @@ func TestGeneratorSuppressesLeapAcrossDayBoundary(t *testing.T) {
 
 // fakePulse simulates a receiver pulsing at 1 Hz from epoch on, observed
 // through a modem-state query that blocks for callDur. The pin reads
-// deasserted (in pulse) for width after each pulse's leading edge.
+// deasserted (in pulse) for width after each pulse's leading edge. Pulses
+// with index in [offFrom, offTo) are suppressed (offTo 0 means none).
 type fakePulse struct {
-	epoch   time.Time
-	width   time.Duration
-	callDur time.Duration
+	epoch          time.Time
+	width          time.Duration
+	callDur        time.Duration
+	offFrom, offTo int
 }
 
 func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
 	time.Sleep(f.callDur)
-	if since := time.Since(f.epoch); since >= 0 && since%pulsePeriod < f.width {
+	since := time.Since(f.epoch)
+	if n := int(since / pulsePeriod); since >= 0 && since%pulsePeriod < f.width && !(f.offTo > 0 && n >= f.offFrom && n < f.offTo) {
 		return 0, nil
 	}
 	return gpsio.ModemControlPinState(1 << gpsio.ModemCTS), nil
 }
 
+// pulseIndex is the index of the pulse nearest t, counting from epoch.
+func pulseIndex(t, epoch time.Time) int {
+	return int((t.Sub(epoch) + pulsePeriod/2) / pulsePeriod)
+}
+
 func TestPoll(t *testing.T) {
 	tests := []struct {
 		name             string
+		epochOffset      time.Duration // pulse 0's leading edge relative to start
 		callDur          time.Duration
 		expectFirstPulse int           // settling length bounds, in pulses
 		expectLastPulse  int
 		expectTol        time.Duration // per-edge timestamp error bound
 	}{
-		{name: "slow query (FT232R class)", callDur: 2 * time.Millisecond,
+		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
 			expectFirstPulse: 5, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
-		{name: "fast query (spacing floor binds)", callDur: 20 * time.Microsecond,
+		{name: "fast query (spacing floor binds)", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
+			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
+		{name: "cold start inside pulse", epochOffset: -20 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond, callDur: tc.callDur}
+				f := &fakePulse{epoch: time.Now().Add(tc.epochOffset), width: 100 * time.Millisecond, callDur: tc.callDur}
 				ctx, cancel := context.WithCancel(context.Background())
 				edges := make(chan Edge)
 				errCh := make(chan error, 1)
@@ -194,7 +212,7 @@ func TestPoll(t *testing.T) {
 				}
 				for i, e := range got {
 					since := e.T.Sub(f.epoch)
-					pulse := int((since + pulsePeriod/2) / pulsePeriod)
+					pulse := pulseIndex(e.T, f.epoch)
 					if err := since - time.Duration(pulse)*pulsePeriod; err < -tc.expectTol || err > tc.expectTol {
 						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.T, err, pulse, tc.expectTol)
 					}
@@ -211,5 +229,61 @@ func TestPoll(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestPollMissedPulseKeepsLatch(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 17}
+		ctx, cancel := context.WithCancel(context.Background())
+		edges := make(chan Edge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges) }()
+		seen := make(map[int]bool)
+		for pulse := 0; pulse < 18; {
+			pulse = pulseIndex((<-edges).T, f.epoch)
+			seen[pulse] = true
+		}
+		cancel()
+		<-errCh
+		if seen[16] {
+			t.Error("edge published for suppressed pulse 16")
+		}
+		if !seen[15] || !seen[17] {
+			t.Errorf("pulses seen = %v, want 15 and 17 published around the missed pulse", seen)
+		}
+	})
+}
+
+func TestPollOutageResettles(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 31}
+		ctx, cancel := context.WithCancel(context.Background())
+		edges := make(chan Edge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges) }()
+		var first int
+		for first <= 15 {
+			first = pulseIndex((<-edges).T, f.epoch)
+		}
+		cancel()
+		<-errCh
+		if first < f.offTo+9 || first > f.offTo+18 {
+			t.Errorf("first edge after outage is pulse %d, want a fresh settle between pulses %d and %d",
+				first, f.offTo+9, f.offTo+18)
+		}
+	})
+}
+
+type errPin struct{ err error }
+
+func (p errPin) ModemControlPinState() (gpsio.ModemControlPinState, error) { return 0, p.err }
+
+func TestPollReaderError(t *testing.T) {
+	e := errors.New("query failed")
+	if err := Poll(context.Background(), errPin{err: e}, Wiring{Pin: gpsio.ModemCTS}, nil); err != e {
+		t.Fatalf("Poll error = %v, want %v", err, e)
 	}
 }

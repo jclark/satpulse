@@ -45,19 +45,21 @@ type reading struct {
 
 // Poll adaptively polls for the pulse described by w and sends detected
 // leading edges to edges. One loop with two rules: a caught edge shrinks the
-// window to safetyFactor times the measured bracket gap, and a miss doubles
-// it up to half the pulse period, where the window covers the whole period
-// and polling is uniform (the cold-start state). Everything hardware- and
-// load-dependent comes from measured poll timestamps: the shrink bottoms out
-// wherever the state-query time, the spacing floor, pulse jitter, or clock
-// drift binds, without the loop knowing which.
+// window to safetyFactor times the measured bracket gap (capped at half the
+// pulse period), and a miss doubles it up to that cap, where the window
+// covers the whole period and polling is uniform (the cold-start state). A
+// pulse already in progress when a window opens is polled through, not
+// declared a miss: the search resumes on its far side. Everything hardware-
+// and load-dependent comes from measured poll timestamps: the shrink
+// bottoms out wherever the state-query time or the spacing floor binds,
+// without the loop knowing which.
 //
-// Edges are sent only once settled: while the window is still shrinking
-// toward its measured floor, caught edges are too coarse to publish. The
-// settled state latches at the first catch that does not shrink the window
-// (excluding catches that leave it at the cap, where settling has not
-// begun), and clears only when the window walks back up to the cap, i.e. on
-// signal loss. After the latch every caught edge is sent, however coarse: a
+// Edges are sent only once settled: while each catch still improves on the
+// previous catch's bracket gap, caught edges are too coarse to publish. The
+// settled state latches at the first catch whose gap does not improve on
+// the previous one (misses in between do not affect the comparison), and
+// clears only when the window walks back up to the cap, i.e. on signal
+// loss. After the latch every caught edge is sent, however coarse: a
 // stretched sample is characteristic of what the system delivers, and
 // outliers are the NTP daemon's filtering's job.
 func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error {
@@ -71,15 +73,25 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 	predicted := first.at.Add(maxMargin)
 	margin := maxMargin
 	settled := false
+	var prevGap time.Duration
 	for {
 		spacing := max(margin/pollsPerWindow, minPollSpacing)
+		deadline := predicted.Add(margin)
 		cur, err := readState(ctx, r, predicted.Add(-margin))
 		if err != nil {
 			return err
 		}
+		// The windows advance in lockstep with the pulses, so treating an
+		// in-progress pulse at the open as a miss would reopen at the same
+		// phase every period and never acquire; poll through it instead.
+		for inPulse(cur.state, w) && cur.at.Before(deadline) {
+			cur, err = readState(ctx, r, cur.start.Add(spacing))
+			if err != nil {
+				return err
+			}
+		}
 		prev := cur
 		missed := inPulse(cur.state, w)
-		deadline := predicted.Add(margin)
 		var edge time.Time
 		var gap time.Duration
 		for !missed && edge.IsZero() {
@@ -95,11 +107,11 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 		}
 		if !edge.IsZero() {
 			predicted = edge.Add(pulsePeriod)
-			newMargin := min(safetyFactor*gap, maxMargin)
-			if !settled && newMargin >= margin && newMargin < maxMargin {
+			if !settled && prevGap > 0 && gap >= prevGap {
 				settled = true
 			}
-			margin = newMargin
+			prevGap = gap
+			margin = min(safetyFactor*gap, maxMargin)
 			if settled {
 				select {
 				case edges <- Edge{T: edge}:
@@ -112,15 +124,21 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 		margin = min(2*margin, maxMargin)
 		if margin == maxMargin {
 			settled = false
+			prevGap = 0
 		}
 		predicted = predicted.Add(pulsePeriod)
 	}
 }
 
 // classifyReading gives a detected transition precedence over the deadline.
-// The deadline says when to stop looking, not whether a measured edge is valid.
+// The deadline says when to stop looking, not whether a measured edge is
+// valid. A bracket spanning a full period or more may contain several
+// leading edges, so its midpoint identifies none of them: it is a miss.
 func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (time.Time, bool) {
 	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
+		if cur.at.Sub(prev.at) >= pulsePeriod {
+			return time.Time{}, true
+		}
 		return midpoint(prev.at, cur.at), false
 	}
 	return time.Time{}, !cur.at.Before(deadline)

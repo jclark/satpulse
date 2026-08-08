@@ -124,21 +124,30 @@ themselves. The query's duration is never measured or assumed.
 - Catch: two consecutive polls bracket the transition (the earlier
   out of pulse, the later in pulse). The edge timestamp is the
   midpoint of the pair; P becomes edge + 1 s and M becomes c times
-  the pair's measured gap. Using the measured gap rather than the
-  target spacing makes the window immune to sleep overshoot: a
-  stretched bracket widens the next window automatically.
-- Miss: the window closes without a transition, or the pin is
-  already in its pulse state when the window opens. P advances 1 s
-  and M doubles, capped at half the pulse period; at the cap the
+  the pair's measured gap, capped at half the pulse period. Using
+  the measured gap rather than the target spacing makes the window
+  immune to sleep overshoot: a stretched bracket widens the next
+  window automatically. A bracket whose gap is a full period or
+  more may span several leading edges, so its midpoint identifies
+  none of them; it counts as a miss.
+- Miss: the window closes without a transition. P advances 1 s and
+  M doubles, capped at half the pulse period; at the cap the
   window is the whole period and polling is uniform, which is the
-  cold-start state. Acquisition is not a separate mode.
+  cold-start state. Acquisition is not a separate mode. A pulse
+  already in progress when the window opens is not a miss: the
+  windows advance in lockstep with the pulses, so aborting would
+  reopen at the same phase every period and never acquire. The
+  loop polls through the pulse and resumes the search for the next
+  leading edge on its far side.
 
 From cold, each catch shrinks M by the factor c/N until the bracket
-gaps stop shrinking, at the floor set by whichever binds first: the
-state-query time, the spacing floor, PPS jitter, or clock drift. The
-loop never needs to know which; the floor emerges from the measured
-gaps. Lock takes on the order of ten pulses at about N polls per
-second, on any hardware, with no retuning.
+gaps stop shrinking, at the floor set by the state-query time or
+the spacing floor, whichever binds first. The loop never needs to
+know which; the floor emerges from the measured gaps. PPS jitter
+and clock drift do not enter the gaps: prediction error shows up as
+misses that widen the window instead. Lock takes on the order of
+ten pulses at about N polls per second, on any hardware, with no
+retuning.
 
 Constants: N = 8 polls per window, safety factor c = 4, spacing
 floor 50 us. All are dimensionless shape parameters with wide safe
@@ -146,12 +155,15 @@ ranges; nothing encodes hardware timing, so there is nothing to
 revise per adapter.
 
 Publishing is gated by a latched settling state, not a threshold.
-While M is still shrinking, caught edges are suppressed; a settled
-flag latches at the first catch that does not shrink M, which is the
-moment the measured floor is reached (a catch that leaves M at the
-cap does not latch: settling has not begun), and clears only when M
-walks back up to the cap (signal loss, hence a genuinely new
-settling period). The point of the suppression is only to withhold the
+While each catch still improves on the previous catch's bracket
+gap, caught edges are suppressed; a settled flag latches at the
+first catch whose gap does not improve on the previous one, which
+is the moment the measured floor is reached. Misses in between do
+not affect the comparison: a miss says the prediction was wrong,
+not that the resolution changed. The flag clears, and the gap
+memory with it, only when M walks back up to the cap (signal loss,
+hence a genuinely new settling period). The point of the
+suppression is only to withhold the
 uncharacteristically bad cold-start samples: after the latch every
 catch is published, however coarse, because a sample stretched by an
 oversleep is characteristic of what that system delivers, and the
