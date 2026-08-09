@@ -125,7 +125,7 @@ func printPortInfo(w io.Writer, ports []serialenum.Port, jsonl bool, selector st
 // nodes and aliases first as given and then with symlinks resolved, so that a
 // path like /dev/serial/by-id/... selects the port it points to.
 func selectPort(ports []serialenum.Port, selector string) (serialenum.Port, bool) {
-	if port, ok := matchPort(ports, filepath.Clean(selector)); ok {
+	if port, ok := matchPort(ports, selector); ok {
 		return port, true
 	}
 	if resolved, err := filepath.EvalSymlinks(selector); err == nil {

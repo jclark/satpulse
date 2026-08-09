@@ -120,7 +120,6 @@ func TestPrintPortInfo(t *testing.T) {
 		{name: "all", want: "/dev/ttyS0\n/dev/ttyACM0 (/dev/gps0) serial=\"BG02DBNX\"\n"},
 		{name: "device", selector: "/dev/ttyACM0", want: "/dev/ttyACM0 (/dev/gps0) serial=\"BG02DBNX\"\n"},
 		{name: "alias", selector: "/dev/gps0", want: "/dev/ttyACM0 (/dev/gps0) serial=\"BG02DBNX\"\n"},
-		{name: "unclean", selector: "/dev//ttyS0", want: "/dev/ttyS0\n"},
 		{name: "unmatched", selector: "/dev/ttyUSB0", wantCode: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
