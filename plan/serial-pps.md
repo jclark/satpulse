@@ -58,14 +58,31 @@ generalize are:
 
 - Edge delivery has a millisecond-scale late tail (a small fraction of
   edges arrive up to ~1 ms late), which on a fast-ioctl machine makes
-  the settled window far wider than the bracket gap; the safety factor
-  is sized for that tail (a sweep on the FT232R: c = 4 caught 68% of
-  pulses, c = 10 99%, c = 16 100%, with CPU flat at ~1% across
-  c = 7..16).
+  the needed window far wider than the bracket width; the window must
+  absorb that tail (a sweep on the FT232R with a fixed window of c
+  bracket widths: c = 4 caught 68% of pulses, c = 10 99%, c = 16 100%,
+  with CPU flat at ~1% across c = 7..16).
 - Phase 1 was validated end to end on that machine: chrony selects the
   SOCK refclock and tracks it with ~100 us error bounds; per-sample
   offsets have sd ~70-100 us, and successive median-filtered estimates
   wander by ~40 us regardless of filter length.
+
+The adaptive-window rework (settled window tracked additively at a
+target miss rate of 1/k) was validated on Linux on 2026-08-09, with
+an FT232R and an FT232H on `ftdi_sio`, on a host synced to a LAN
+stratum-1. `TIOCMGET` is far cheaper than on the macOS full-speed
+path: median ~110 us on the FT232R, ~40 us on the FT232H. Long
+runs of the loop against an otherwise idle port: the FT232R over
+40 minutes published 2319 edges with 29 isolated single-pulse
+misses (about 1 in 80), no signal-loss restarts, an equilibrium
+cost of ~4 state queries per pulse, and offsets of mean +54 us,
+sd ~62 us; the FT232H over 30 minutes published 1771 edges with 13
+misses (about 1 in 137), ~7 queries per pulse, and offset sd
+~230 us on that receiver's pulse. Two hardware behaviours the loop
+absorbed without tuning: the FT232H delivers modem-status changes
+in ~1.2 ms steps regardless of its ~40 us ioctl, and in the daemon,
+with the scan worker reading the same port, brackets on both
+adapters settle around 1.2-1.4 ms rather than the idle-port floor.
 
 ## Configuration
 
@@ -145,60 +162,78 @@ Configuration), and that is the only transition that is timestamped.
 
 One adaptive loop, driven by the fact that consecutive pulses are 1 s
 apart. The state is the predicted next edge time P (previous edge
-plus exactly 1 s, in the monotonic clock) and a window half-width M.
-Each second the loop polls the window [P - M, P + M] at a target
-spacing of M/N, floored at 50 us. It sleeps until each poll's
-scheduled time; when the state query takes longer than the target
-spacing the sleep never fires and the calls pace the loop by
+plus exactly 1 s, in the monotonic clock) and a poll window of
+width W centered on P. Each second the loop polls the window at a
+target spacing of W/N, floored at 50 us. It sleeps until each
+poll's scheduled time; when the state query takes longer than the
+target spacing the sleep never fires and the calls pace the loop by
 themselves. The query's duration is never measured or assumed.
 
 - Catch: two consecutive polls bracket the transition (the earlier
   out of pulse, the later in pulse). The edge timestamp is the
-  midpoint of the pair; P becomes edge + 1 s and M becomes c times
-  the pair's measured gap, capped at half the pulse period. Using
-  the measured gap rather than the target spacing makes the window
-  immune to sleep overshoot: a stretched bracket widens the next
-  window automatically. A bracket whose gap is a full period or
-  more may span several leading edges, so its midpoint identifies
-  none of them; it counts as a miss.
-- Miss: the window closes without a transition. P advances 1 s and
-  M doubles, capped at half the pulse period; at the cap the
-  window is the whole period and polling is uniform, which is the
-  cold-start state. Acquisition is not a separate mode. A pulse
-  already in progress when the window opens is not a miss: the
-  windows advance in lockstep with the pulses, so aborting would
-  reopen at the same phase every period and never acquire. The
-  loop polls through the pulse and resumes the search for the next
-  leading edge on its far side.
+  bracket's midpoint, and the bracket's width -- the time between
+  its two polls -- is the measurement resolution. P becomes
+  edge + 1 s. A bracket a full period or more wide may span
+  several leading edges, so its midpoint identifies none of them;
+  it counts as a miss.
+- Miss: the window closes without a transition. P advances 1 s. A
+  pulse already in progress when the window opens is not a miss:
+  the windows advance in lockstep with the pulses, so aborting
+  would reopen at the same phase every period and never acquire.
+  The loop polls through the pulse and resumes the search for the
+  next leading edge on its far side.
 
-From cold, each catch shrinks M by the factor c/N until the bracket
-gaps stop shrinking, at the floor set by the state-query time or
-the spacing floor, whichever binds first. The loop never needs to
-know which; the floor emerges from the measured gaps. PPS jitter
-and clock drift do not enter the gaps: prediction error shows up as
-misses that widen the window instead. Lock takes on the order of
-ten pulses at about N polls per second, on any hardware, with no
-retuning.
+The window moves through two regimes, separated by the settled
+latch (below). While settling, each catch halves the window; from
+cold it is the whole period, polled uniformly, and a miss leaves
+it alone (the prediction may simply still be coarse). The halving
+bottoms out wherever the bracket widths stop shrinking, at the
+floor set by the state-query time or the spacing floor, whichever
+binds first; the loop never needs to know which. Once settled,
+the window is tracked additively: a miss widens it by a bracket
+width at each end, and every k-th consecutive catch narrows it by
+the same. At equilibrium the window hovers just above the
+observed edge scatter, missing about one pulse in k; misses are
+cheap (the NTP daemon's filtering absorbs a lost second), so they
+are the probe that keeps the window, and with it the steady-state
+cost -- roughly the number of bracket widths in half the window,
+in state queries per second -- at the minimum the scatter
+permits. A stall or delivery-tail miss costs one widening step,
+not the lock. Window size changes are logged at debug level, so
+the equilibrium and the miss rate are visible on a long run.
 
-Constants: safety factor c = 16 (the window half-width in bracket
-gaps, chosen from the measured FT232R delivery tail), shrink rate
-r = 1/2 per catch, spacing floor 50 us. N is not chosen: it is
-derived as c/r (32), since the shrink per catch is c/N and choosing
-c and N independently allows a non-convergent pair (c >= N leaves
-the window stuck at the cap). All are dimensionless shape
-parameters with wide safe ranges; nothing encodes hardware timing,
-so there is nothing to revise per adapter.
+In either regime, missLimit consecutive misses mean the pulse is
+gone: the window returns to the whole period in one step and a
+genuinely new settling period begins. At full size, consecutive
+windows tile the period exactly, so the poll grid is advanced by
+a fixed fraction of the spacing each period; a locked grid would
+otherwise revisit the same phases every period and could
+indefinitely straddle a pulse narrower than the spacing, since
+clock drift alone sweeps phase far too slowly.
 
-Publishing is gated by a latched settling state, not a threshold.
-While each catch still improves on the previous catch's bracket
-gap, caught edges are suppressed; a settled flag latches at the
-first catch whose gap does not improve on the previous one, which
-is the moment the measured floor is reached. Misses in between do
-not affect the comparison: a miss says the prediction was wrong,
-not that the resolution changed. The flag clears, and the gap
-memory with it, only when M walks back up to the cap (signal loss,
-hence a genuinely new settling period). The point of the
-suppression is only to withhold the
+Constants: k = 60, the target miss rate, chosen against what
+chrony tolerates rather than against any hardware; N = 64, the
+initial polls per second, which sets the cold-start spacing of
+~16 ms and is nearly inert once settled, when the query time or
+the spacing floor paces the loop; missLimit = 10, how long a
+stopped pulse is waited on before cold restart; spacing floor
+50 us, a CPU bound
+for very fast state queries. None encodes an adapter's timing:
+the former safety factor c, sized from the measured FT232R
+delivery tail, is gone -- the tail is learned as equilibrium
+growth instead.
+
+Publishing is gated by the same latched settling state, not a
+threshold. While each catch still improves on the previous
+catch's bracket width, caught edges are suppressed; the settled
+flag latches at the first catch whose bracket does not improve on
+the previous one, which is the moment the measured floor is
+reached. Misses in between do not affect the comparison: a miss
+says the prediction was wrong, not that the resolution changed.
+The flag clears, and the bracket-width memory with it, only on
+the cold restart
+(signal loss, hence a genuinely new settling period). The point of
+the suppression is only to withhold the
 uncharacteristically bad cold-start samples: after the latch every
 catch is published, however coarse, because a sample stretched by an
 oversleep is characteristic of what that system delivers, and the
@@ -206,9 +241,13 @@ NTP daemon's own filtering is the right place to handle such
 outliers. Chrony has no notion of an initial settling period, so the
 loop provides one.
 
-The bracket needs a poll inside the pulse, so the poll spacing must
-stay below the pulse width; the cold-start spacing of about 16 ms
-suits the u-blox default width of 100 ms, and microsecond-width
+The bracket needs a poll inside the pulse. Once settled, the
+spacing sits at the measured floor, so tracking only needs the
+pulse to be wider than one achieved poll interval. Acquisition
+polls at period/N, about 16 ms: pulses at least that wide are
+caught deterministically, narrower ones (e.g. Septentrio's 5 ms
+default) are found by the phase sweep at full window size,
+stretching acquisition by roughly spacing/width. Microsecond-width
 pulses remain unsupported by this backend.
 
 The polling goroutine locks its OS thread.
@@ -352,7 +391,11 @@ package, `time/internal/serialpps`; the wiring lives in
 
 The generator gets table-driven unit tests covering second
 identification, the staleness rule, and leap passthrough, using
-synthetic messages and edges. The edge backends are validated on real
+synthetic messages and edges. The polling loop runs under
+`testing/synctest` against a simulated pulse source with configurable
+query duration, pulse width, delivery delay, and outages, so
+settling, steady-state poll cost, and miss handling are checked
+deterministically. The edge backends are also validated on real
 hardware per the phasing below.
 
 ## Phasing

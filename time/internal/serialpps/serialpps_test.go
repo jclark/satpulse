@@ -3,6 +3,8 @@ package serialpps
 import (
 	"context"
 	"errors"
+	"log/slog"
+	"sync/atomic"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -10,6 +12,8 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/ptime"
 )
+
+var testLog = slog.New(slog.DiscardHandler)
 
 func TestClassifyReading(t *testing.T) {
 	base := time.Unix(1_000, 0)
@@ -184,18 +188,29 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 // fakePulse simulates a receiver pulsing at 1 Hz from epoch on, observed
 // through a modem-state query that blocks for callDur. The pin reads
 // deasserted (in pulse) for width after each pulse's leading edge. Pulses
-// with index in [offFrom, offTo) are suppressed (offTo 0 means none).
+// with index in [offFrom, offTo) are suppressed (offTo 0 means none), and
+// every lateEvery-th pulse is delivered late by late (lateEvery 0 means
+// none), modelling a delivery tail. calls counts the state queries.
 type fakePulse struct {
 	epoch          time.Time
 	width          time.Duration
 	callDur        time.Duration
 	offFrom, offTo int
+	lateEvery      int
+	late           time.Duration
+	calls          atomic.Int64
 }
 
 func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+	f.calls.Add(1)
 	time.Sleep(f.callDur)
 	since := time.Since(f.epoch)
-	if n := int(since / pulsePeriod); since >= 0 && since%pulsePeriod < f.width && !(f.offTo > 0 && n >= f.offFrom && n < f.offTo) {
+	n := int(since / pulsePeriod)
+	off := since % pulsePeriod
+	if f.lateEvery > 0 && n%f.lateEvery == 0 {
+		off -= f.late
+	}
+	if since >= 0 && off >= 0 && off < f.width && !(f.offTo > 0 && n >= f.offFrom && n < f.offTo) {
 		return 0, nil
 	}
 	return gpsio.ModemControlPinState(1 << gpsio.ModemCTS), nil
@@ -229,7 +244,7 @@ func TestPoll(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				edges := make(chan Edge)
 				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges) }()
+				go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, testLog) }()
 				var got []Edge
 				for len(got) < 3 {
 					got = append(got, <-edges)
@@ -267,7 +282,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		edges := make(chan Edge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges) }()
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, testLog) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
 			pulse = pulseIndex((<-edges).T, f.epoch)
@@ -291,7 +306,7 @@ func TestPollOutageResettles(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		edges := make(chan Edge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges) }()
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, testLog) }()
 		var first int
 		for first <= 15 {
 			first = pulseIndex((<-edges).T, f.epoch)
@@ -305,13 +320,102 @@ func TestPollOutageResettles(t *testing.T) {
 	})
 }
 
+// TestPollShrinksToFloor checks that the additive shrink walks the settled
+// window down until steady state costs only a handful of state queries per
+// pulse. The descent is one bracket gap per shrinkAfter catches from a
+// settled window of about pollsPerWindow gaps, so it needs several hundred
+// simulated pulses to reach the floor.
+func TestPollShrinksToFloor(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 2 * time.Millisecond}
+		ctx, cancel := context.WithCancel(context.Background())
+		edges := make(chan Edge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, testLog) }()
+		for pulseIndex((<-edges).T, f.epoch) < 900 {
+		}
+		start := f.calls.Load()
+		for i := 0; i < 50; i++ {
+			<-edges
+		}
+		perPulse := (f.calls.Load() - start) / 50
+		cancel()
+		<-errCh
+		if perPulse > 6 {
+			t.Errorf("steady state costs %d queries per pulse, want at most 6", perPulse)
+		}
+	})
+}
+
+// TestPollLearnsDeliveryTail checks that a recurring 1 ms delivery delay,
+// which the settled window is initially shrunk too far to cover, is learned
+// as equilibrium growth: after the window has grown back, nearly every pulse
+// is caught again.
+func TestPollLearnsDeliveryTail(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 100 * time.Microsecond, lateEvery: 5, late: time.Millisecond}
+		ctx, cancel := context.WithCancel(context.Background())
+		edges := make(chan Edge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, testLog) }()
+		seen := make(map[int]bool)
+		for last := 0; last < 500; {
+			last = pulseIndex((<-edges).T, f.epoch)
+			seen[last] = true
+		}
+		cancel()
+		<-errCh
+		missed := 0
+		for p := 400; p < 500; p++ {
+			if !seen[p] {
+				missed++
+			}
+		}
+		if missed > 5 {
+			t.Errorf("%d of pulses 400-499 missed, want the window grown to cover the delivery tail", missed)
+		}
+	})
+}
+
+// TestPollNarrowPulse checks that a pulse narrower than the cold-start
+// spacing (Septentrio's 5 ms default) is acquired by the phase sweep at the
+// cap and then tracked normally, since the settled spacing is below the
+// width.
+func TestPollNarrowPulse(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 5 * time.Millisecond,
+			callDur: 2 * time.Millisecond}
+		ctx, cancel := context.WithCancel(context.Background())
+		edges := make(chan Edge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, testLog) }()
+		var got []Edge
+		for len(got) < 3 {
+			got = append(got, <-edges)
+		}
+		cancel()
+		<-errCh
+		if first := pulseIndex(got[0].T, f.epoch); first > 40 {
+			t.Errorf("first edge published at pulse %d, want acquisition well before pulse 40", first)
+		}
+		for i, e := range got {
+			pulse := pulseIndex(e.T, f.epoch)
+			if err := e.T.Sub(f.epoch) - time.Duration(pulse)*pulsePeriod; err < -3*time.Millisecond || err > 3*time.Millisecond {
+				t.Errorf("edge %d at %v: error %v from pulse %d, want within 3ms", i, e.T, err, pulse)
+			}
+		}
+	})
+}
+
 type errPin struct{ err error }
 
 func (p errPin) ModemControlPinState() (gpsio.ModemControlPinState, error) { return 0, p.err }
 
 func TestPollReaderError(t *testing.T) {
 	e := errors.New("query failed")
-	if err := Poll(context.Background(), errPin{err: e}, Wiring{Pin: gpsio.ModemCTS}, nil); err != e {
+	if err := Poll(context.Background(), errPin{err: e}, Wiring{Pin: gpsio.ModemCTS}, nil, testLog); err != e {
 		t.Fatalf("Poll error = %v, want %v", err, e)
 	}
 }
