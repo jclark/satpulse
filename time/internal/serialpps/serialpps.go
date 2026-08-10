@@ -309,6 +309,23 @@ func midpoint(a, b time.Time) time.Time {
 	return a.Add(b.Sub(a) / 2)
 }
 
+// TimeStateReads measures n back-to-back state queries with no sleeps, so
+// the distribution of call durations is the poll pacing floor. The caller
+// arranges the conditions to measure under, e.g. draining incoming serial
+// data as the daemon does.
+func TimeStateReads(r StateReader, n int) ([]time.Duration, error) {
+	ds := make([]time.Duration, n)
+	for i := range ds {
+		start, _ := now()
+		if _, err := r.ModemControlPinState(); err != nil {
+			return nil, err
+		}
+		end, _ := now()
+		ds[i] = end.Sub(start)
+	}
+	return ds, nil
+}
+
 // Sample is a serial-PPS refclock sample.
 type Sample struct {
 	Reference time.Time
