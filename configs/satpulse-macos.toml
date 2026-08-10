@@ -8,6 +8,12 @@ speed = 38400
 # serial adapter. CTS is the recommended and tested modem-control pin.
 #pps.pin = "cts"
 
+# Serial PPS samples accept inferred message delays in the interval
+# [-delayUncertainty, maxDelay). These are the defaults.
+#[sample.serial.pps]
+#delayUncertainty = 0.005
+#maxDelay = 0.8
+
 [gps]
 # Uncommenting the following line will enable configuration of the GPS
 # (changes are not persistent across GPS reboots)

@@ -301,14 +301,19 @@ type Sample struct {
 // Generator associates PPS edges with UTC seconds using the latest receiver
 // time message. It is intended to be called from one dispatcher goroutine.
 type Generator struct {
-	utc   time.Time
-	tRead time.Time // zero until the first message arrives
-	leap  ptime.LeapSecondKind
+	utc              time.Time
+	tRead            time.Time // zero until the first message arrives
+	leap             ptime.LeapSecondKind
+	delayUncertainty time.Duration
+	maxDelay         time.Duration
 }
 
-// NewGenerator creates an empty sample generator.
-func NewGenerator() *Generator {
-	return new(Generator)
+// NewGenerator creates an empty sample generator using cfg.
+func NewGenerator(cfg Config) *Generator {
+	return &Generator{
+		delayUncertainty: seconds(cfg.DelayUncertainty),
+		maxDelay:         seconds(cfg.MaxDelay),
+	}
 }
 
 // MsgUTCTime records the newest UTC/system-time pair from a receiver message.
@@ -323,15 +328,29 @@ func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) 
 
 // Edge turns a precisely detected PPS edge into a sample. It returns false
 // until a time message is available, when the newest message is over three
-// seconds old, or for the pulse marking an inserted leap second.
+// seconds old, when no unique UTC label satisfies the configured
+// pulse-to-message delay bounds, or for the pulse marking an inserted leap
+// second.
 func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	if g.tRead.IsZero() || edge.T.Sub(g.tRead) > maxMessageAge {
 		return Sample{}, false
 	}
-	// Advancing utc by the monotonic elapsed time since tRead puts the edge
-	// within half a second of the UTC second it marks, and is immune to any
-	// wall-clock step between the message and the edge.
-	reference := g.utc.Add(edge.T.Sub(g.tRead)).Round(time.Second)
+	// Advancing utc by the monotonic elapsed time since tRead gives the
+	// edge's position on the message's UTC timescale and is immune to any
+	// wall-clock step between the message and the edge. Select the integral
+	// second whose inferred pulse-to-message delay is in the configured
+	// causal interval. The validated interval is narrower than a second, so
+	// the label is unique when it exists.
+	candidate := g.utc.Add(edge.T.Sub(g.tRead))
+	reference := candidate.Truncate(time.Second)
+	delay := reference.Sub(candidate)
+	if delay < -g.delayUncertainty {
+		reference = reference.Add(time.Second)
+		delay += time.Second
+	}
+	if delay < -g.delayUncertainty || delay >= g.maxDelay {
+		return Sample{}, false
+	}
 	// The message's leap flag announces a leap at the end of the message's
 	// UTC day, which the monotonic extrapolation cannot see: past the
 	// boundary it runs one second ahead of UTC after a positive leap and

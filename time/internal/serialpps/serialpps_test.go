@@ -121,7 +121,7 @@ func TestGenerator(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g := NewGenerator()
+			g := NewGenerator(DefaultConfig())
 			tEdge := edge
 			utc := msgUTC
 			read := msgRead
@@ -154,7 +154,7 @@ func TestGenerator(t *testing.T) {
 }
 
 func TestGeneratorKeepsNewestMessage(t *testing.T) {
-	g := NewGenerator()
+	g := NewGenerator(DefaultConfig())
 	newRead := time.Unix(100, 100_000_000)
 	g.MsgUTCTime(time.Unix(200, 0), newRead, ptime.LeapSecondPositive)
 	g.MsgUTCTime(time.Unix(300, 0), newRead.Add(-time.Second), ptime.LeapSecondNegative)
@@ -164,6 +164,36 @@ func TestGeneratorKeepsNewestMessage(t *testing.T) {
 	}
 	if !sample.Reference.Equal(time.Unix(200, 0)) || sample.Leap != ptime.LeapSecondPositive {
 		t.Fatalf("sample = %+v, want newest message reference and leap", sample)
+	}
+}
+
+func TestGeneratorDelayBounds(t *testing.T) {
+	cfg := DefaultConfig()
+	tests := []struct {
+		name  string
+		delay time.Duration
+		ok    bool
+	}{
+		{name: "at negative uncertainty bound", delay: -seconds(cfg.DelayUncertainty), ok: true},
+		{name: "below negative uncertainty bound", delay: -seconds(cfg.DelayUncertainty) - time.Nanosecond},
+		{name: "zero delay", delay: 0, ok: true},
+		{name: "below maximum delay", delay: seconds(cfg.MaxDelay) - time.Nanosecond, ok: true},
+		{name: "at maximum delay", delay: seconds(cfg.MaxDelay)},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGenerator(cfg)
+			utc := time.Unix(1_000, 0).UTC()
+			tRead := time.Unix(900, 0)
+			g.MsgUTCTime(utc, tRead, ptime.LeapSecondNone)
+			sample, ok := g.Edge(Edge{T: tRead.Add(-tc.delay)})
+			if ok != tc.ok {
+				t.Fatalf("Edge ok = %v, want %v", ok, tc.ok)
+			}
+			if ok && !sample.Reference.Equal(utc) {
+				t.Errorf("reference = %v, want %v", sample.Reference, utc)
+			}
+		})
 	}
 }
 
@@ -177,23 +207,23 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 		expectLeap ptime.LeapSecondKind
 		expectOK   bool
 	}{
-		{name: "pulse before positive leap", utc: time.Unix(86_398, 500_000_000), leap: ptime.LeapSecondPositive,
-			elapsed: 900 * time.Millisecond, expectRef: time.Unix(86_399, 0), expectLeap: ptime.LeapSecondPositive, expectOK: true},
-		{name: "inserted second pulse yields no sample", utc: time.Unix(86_399, 500_000_000), leap: ptime.LeapSecondPositive,
-			elapsed: 900 * time.Millisecond},
-		{name: "first pulse after positive leap", utc: time.Unix(86_399, 500_000_000), leap: ptime.LeapSecondPositive,
-			elapsed: 1900 * time.Millisecond, expectRef: time.Unix(86_400, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
-		{name: "second pulse after positive leap", utc: time.Unix(86_399, 500_000_000), leap: ptime.LeapSecondPositive,
-			elapsed: 2900 * time.Millisecond, expectRef: time.Unix(86_401, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
-		{name: "pulse before negative leap", utc: time.Unix(86_397, 500_000_000), leap: ptime.LeapSecondNegative,
-			elapsed: 900 * time.Millisecond, expectRef: time.Unix(86_398, 0), expectLeap: ptime.LeapSecondNegative, expectOK: true},
-		{name: "first pulse after negative leap", utc: time.Unix(86_398, 500_000_000), leap: ptime.LeapSecondNegative,
-			elapsed: 900 * time.Millisecond, expectRef: time.Unix(86_400, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
+		{name: "pulse before positive leap", utc: time.Unix(86_399, 0), leap: ptime.LeapSecondPositive,
+			elapsed: -125 * time.Millisecond, expectRef: time.Unix(86_399, 0), expectLeap: ptime.LeapSecondPositive, expectOK: true},
+		{name: "inserted second pulse yields no sample", utc: time.Unix(86_399, 0), leap: ptime.LeapSecondPositive,
+			elapsed: 875 * time.Millisecond},
+		{name: "first pulse after positive leap", utc: time.Unix(86_399, 0), leap: ptime.LeapSecondPositive,
+			elapsed: 1875 * time.Millisecond, expectRef: time.Unix(86_400, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
+		{name: "second pulse after positive leap", utc: time.Unix(86_399, 0), leap: ptime.LeapSecondPositive,
+			elapsed: 2875 * time.Millisecond, expectRef: time.Unix(86_401, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
+		{name: "pulse before negative leap", utc: time.Unix(86_398, 0), leap: ptime.LeapSecondNegative,
+			elapsed: -125 * time.Millisecond, expectRef: time.Unix(86_398, 0), expectLeap: ptime.LeapSecondNegative, expectOK: true},
+		{name: "first pulse after negative leap", utc: time.Unix(86_398, 0), leap: ptime.LeapSecondNegative,
+			elapsed: 875 * time.Millisecond, expectRef: time.Unix(86_400, 0), expectLeap: ptime.LeapSecondNone, expectOK: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g := NewGenerator()
-			read := tc.utc.Add(100 * time.Millisecond)
+			g := NewGenerator(DefaultConfig())
+			read := time.Unix(1_000_000, 125_000_000)
 			g.MsgUTCTime(tc.utc, read, tc.leap)
 			sample, ok := g.Edge(Edge{T: read.Add(tc.elapsed)})
 			if ok != tc.expectOK {

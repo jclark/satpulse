@@ -34,8 +34,9 @@ adapter attached directly) established:
   receiver's own emission timing (it is the same over native USB CDC),
   so message arrival times cannot serve as a precise fiducial; the PPS
   edge is the only usable one. Message timing is still easily good
-  enough to identify which second a pulse belongs to (mean delay
-  ~124 ms at 38400 baud, far inside the +/-0.5 s bound).
+  enough to identify which second a pulse belongs to: a non-prepulse
+  message is emitted after its pulse, and its measured delay is checked
+  against configurable causal bounds.
 
 Experiments on 2026-08-08 with the same FT232R and an FT232H
 (high-speed USB) on both machines, measured directly with
@@ -102,7 +103,7 @@ loop.
 
 ## Configuration
 
-One new key in the `[serial]` table:
+One new key in the `[serial]` table enables the physical PPS source:
 
 ```toml
 [serial]
@@ -126,6 +127,22 @@ else (FIFO, socket) is a startup error.
 higher-precision source, and configuring both is an error rather than
 silently replacing it with serial PPS.
 
+The bounds used to associate messages with pulses are configured
+separately from the physical serial source and have these defaults:
+
+```toml
+[sample.serial.pps]
+delayUncertainty = 0.005
+maxDelay = 0.8
+```
+
+`delayUncertainty` allows the inferred delay to be slightly negative
+because the relative pulse and message timestamps have measurement
+uncertainty; it is not a physically negative message delay. `maxDelay`
+is the maximum credible delay from a pulse to its post-pulse message.
+The sum must be less than one second, ensuring that at most one integer
+second can satisfy the interval.
+
 In the daemon package the `pps` table maps to a pointer field, nil when
 the table is absent, following the existing pattern of `ntp.sock` and
 `ntp.shm`:
@@ -148,16 +165,27 @@ messages are still consumed: they identify which second each pulse marks.
 
 ## Sample generation
 
-A detected edge at system time T becomes one refclock sample: the
-reference time is the integer second the pulse marks, identified from
-recent time messages (whose `utc - tRead` bounds the system clock error
-to well under the +/-0.5 s needed for correct rounding); the offset is
-reference minus T; the leap indication comes from the time messages, as
-in the existing message-based sampling. If the newest time message is
-more than 3 s old, the edge produces no sample. Emission uses the
-existing refclock path (SOCK and/or SHM); the fixed SHM precision
-reported in this mode is 2^-11 s (~500 us), not the 2^-1 s used for
-message-arrival sampling.
+A detected edge at system time T becomes one refclock sample. Labelling
+uses only the monotonic components of T and the adjusted first-byte
+message timestamp `tRead`: advancing the message UTC by `T - tRead`
+places the edge on the message's UTC timescale without consulting the
+system wall clock. For each nearby integer second the generator infers
+the corresponding post-pulse message delay and accepts the unique label
+satisfying
+
+```text
+-delayUncertainty <= inferredDelay < maxDelay
+```
+
+The lower allowance represents measurement uncertainty; the physical
+message is guaranteed to be emitted after its pulse. If no label
+satisfies the interval, the edge produces no sample. The offset is the
+accepted reference time minus T, and the leap indication comes from the
+time messages, as in the existing message-based sampling. If the newest
+time message is more than 3 s old, the edge also produces no sample.
+Emission uses the existing refclock path (SOCK and/or SHM); the fixed
+SHM precision reported in this mode is 2^-11 s (~500 us), not the 2^-1 s
+used for message-arrival sampling.
 
 With the polling backend, edges caught before the settling latch (see
 Edge detection) do not produce samples; they are known too coarsely
