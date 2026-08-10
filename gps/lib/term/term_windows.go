@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 	"unsafe"
 
@@ -48,12 +49,19 @@ var baudRates = []int{
 	230400, 460800, 921600,
 }
 
+type modemWaitState struct {
+	mu        sync.Mutex
+	cancelled bool
+	mask      uint32
+}
+
 type windowsTerm struct {
 	handle        windows.Handle
 	path          string
 	attr          Attr
 	dcbSaved      windows.DCB
 	timeoutsSaved windows.CommTimeouts
+	miwait        modemWaitState
 }
 
 var _ Term = (*windowsTerm)(nil)
@@ -80,13 +88,15 @@ func (t *windowsTerm) init(path string, opts ...AttrSetter) (err error) {
 	if err != nil {
 		return t.wrapErr(err, "open")
 	}
+	// WaitCommEvent must overlap the scan reader, and every operation on an
+	// overlapped handle must receive its own OVERLAPPED structure.
 	h, err := windows.CreateFile(
 		name,
 		windows.GENERIC_READ|windows.GENERIC_WRITE,
 		0, // exclusive: no sharing
 		nil,
 		windows.OPEN_EXISTING,
-		windows.FILE_ATTRIBUTE_NORMAL,
+		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OVERLAPPED,
 		0,
 	)
 	if err != nil {
@@ -192,7 +202,9 @@ func (t *windowsTerm) Read(buf []byte) (int, error) {
 		return 0, nil
 	}
 	var n uint32
-	err := windows.ReadFile(t.handle, buf, &n, nil)
+	err := t.overlapped(func(o *windows.Overlapped) error {
+		return windows.ReadFile(t.handle, buf, &n, o)
+	}, &n, nil)
 	if err != nil {
 		return int(n), t.wrapErr(err, "read")
 	}
@@ -214,7 +226,9 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 	total := 0
 	for len(buf) > 0 {
 		var n uint32
-		err := windows.WriteFile(t.handle, buf, &n, nil)
+		err := t.overlapped(func(o *windows.Overlapped) error {
+			return windows.WriteFile(t.handle, buf, &n, o)
+		}, &n, nil)
 		if err != nil {
 			return total, t.wrapErr(err, "write")
 		}
@@ -222,6 +236,23 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 		buf = buf[n:]
 	}
 	return total, nil
+}
+
+func (t *windowsTerm) overlapped(op func(*windows.Overlapped) error, n *uint32, at *time.Time) error {
+	event, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(event)
+	o := windows.Overlapped{HEvent: event}
+	err = op(&o)
+	if errors.Is(err, windows.ERROR_IO_PENDING) {
+		err = windows.GetOverlappedResult(t.handle, &o, n, true)
+	}
+	if at != nil {
+		*at = time.Now()
+	}
+	return err
 }
 
 func (t *windowsTerm) Buffered() (int, error) {
@@ -262,6 +293,90 @@ func (t *windowsTerm) ModemControlPinState() (ModemControlPinState, error) {
 		state |= modemControlPinState(ModemRI)
 	}
 	return state, nil
+}
+
+var _ ModemControlPinWaiter = (*windowsTerm)(nil)
+
+// WaitModemControlPinChange blocks in WaitCommEvent until pin may have
+// changed state, returning the time the wait returned. The event mask is set
+// only when it changes: SetCommMask resets the event history, so setting it
+// before every wait could lose a transition between successive waits.
+func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time, error) {
+	mask, err := commEventMask(pin)
+	if err != nil {
+		return time.Time{}, err
+	}
+	w := &t.miwait
+	w.mu.Lock()
+	if w.cancelled {
+		w.mu.Unlock()
+		return time.Now(), nil
+	}
+	if w.mask != mask {
+		err = windows.SetCommMask(t.handle, mask)
+		if err == nil {
+			w.mask = mask
+		}
+	}
+	w.mu.Unlock()
+	if err != nil {
+		return time.Time{}, t.wrapErr(commWaitError(err), "SetCommMask")
+	}
+	var events uint32
+	var n uint32
+	var at time.Time
+	err = t.overlapped(func(o *windows.Overlapped) error {
+		return windows.WaitCommEvent(t.handle, &events, o)
+	}, &n, &at)
+	w.mu.Lock()
+	cancelled := w.cancelled
+	w.mu.Unlock()
+	if cancelled {
+		return at, nil
+	}
+	if err != nil {
+		return time.Time{}, t.wrapErr(commWaitError(err), "WaitCommEvent")
+	}
+	return at, nil
+}
+
+// CancelModemControlPinWait makes a pending wait return promptly and all
+// future waits on this terminal return immediately. CancelIoEx is needed
+// before changing the event mask because some serial drivers serialize
+// SetCommMask behind a synchronous pending WaitCommEvent.
+func (t *windowsTerm) CancelModemControlPinWait() {
+	w := &t.miwait
+	w.mu.Lock()
+	if !w.cancelled {
+		w.cancelled = true
+		windows.CancelIoEx(t.handle, nil)
+		windows.SetCommMask(t.handle, 0)
+		w.mask = 0
+	}
+	w.mu.Unlock()
+}
+
+func commEventMask(pin ModemControlPin) (uint32, error) {
+	switch pin {
+	case ModemCTS:
+		return windows.EV_CTS, nil
+	case ModemDCD:
+		return windows.EV_RLSD, nil
+	case ModemDSR:
+		return windows.EV_DSR, nil
+	case ModemRI:
+		return windows.EV_RING, nil
+	}
+	return 0, fmt.Errorf("invalid modem control pin: %d", pin)
+}
+
+func commWaitError(err error) error {
+	if errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
+		errors.Is(err, windows.ERROR_NOT_SUPPORTED) ||
+		errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return fmt.Errorf("%w: %v", errors.ErrUnsupported, err)
+	}
+	return err
 }
 
 func (t *windowsTerm) Flush() error {

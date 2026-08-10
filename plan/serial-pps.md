@@ -331,6 +331,21 @@ sense produces a sample, subject only to identifying the second from
 the time messages. Unlike the polling backend, nothing here relies on
 the pulses being 1 s apart.
 
+On Windows the event mask is installed only on the first wait for a
+pin, or when the selected pin changes. `SetCommMask` resets the event
+history, so calling it before every wait would create a window in
+which a transition between successive waits could be lost. A driver
+that rejects a valid pin's event mask as unsupported triggers the
+polling fallback.
+
+The Windows COM handle is opened with `FILE_FLAG_OVERLAPPED`, and
+`ReadFile`, `WriteFile`, and `WaitCommEvent` are all performed as
+overlapped operations. This is required for the event wait and the
+scan reader to operate concurrently. With a synchronous handle, an
+FT232R produced only the first two CTS edges and the scan reader
+stopped receiving; with overlapped I/O, the same daemon run produced
+91 consecutive edges and 90 serial-PPS samples over 90 seconds.
+
 `term` gains a primitive that only waits; reading the state afterwards
 is the existing method. Since only some terminals can wait, it is a
 capability interface that the PPS source asserts for, not a method of
@@ -386,7 +401,12 @@ number reused after close cannot be touched. Until then the dup keeps
 the port's flock held; process exit releases everything. `EINTR` from
 the ioctl is runtime noise and is retried. (On D2XX, cancel signals
 the event's condition variable, so nothing is left parked; on
-Windows, `SetCommMask` aborts a pending `WaitCommEvent`.)
+Windows, cancel first calls `CancelIoEx` on the serial handle and then
+clears the event mask. Although changing the mask is specified to
+complete a pending wait, the FTDI Windows driver was observed to
+serialize a synchronous `SetCommMask` behind that wait and deadlock
+shutdown. `CancelIoEx` releases the wait first; clearing the mask
+afterwards also covers cancellation racing just ahead of the wait.)
 
 ### D2XX on macOS (dropped)
 
@@ -502,4 +522,7 @@ hardware per the phasing below.
    primitive for Linux and Windows; the polling backend remains as
    the fallback for tty drivers without the ioctl. (A D2XX-backed
    macOS provider was built as the originally planned phase 2 and
-   dropped; see "D2XX on macOS" above.)
+   dropped; see "D2XX on macOS" above.) (done 2026-08-10; the Windows
+   backend was validated with CTS on an FT232R, including cancellation
+   while `WaitCommEvent` was pending and a 90-second continuous daemon
+   run using overlapped serial I/O.)

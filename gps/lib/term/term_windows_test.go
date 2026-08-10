@@ -42,6 +42,67 @@ func TestRawModeLeavesParityChecking(t *testing.T) {
 	}
 }
 
+func TestCommEventMask(t *testing.T) {
+	tests := []struct {
+		name      string
+		pin       ModemControlPin
+		expect    uint32
+		expectErr bool
+	}{
+		{name: "CTS", pin: ModemCTS, expect: windows.EV_CTS},
+		{name: "DCD", pin: ModemDCD, expect: windows.EV_RLSD},
+		{name: "DSR", pin: ModemDSR, expect: windows.EV_DSR},
+		{name: "RI", pin: ModemRI, expect: windows.EV_RING},
+		{name: "invalid", pin: ModemControlPin(99), expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := commEventMask(tc.pin)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("commEventMask: %v", err)
+			}
+			if got != tc.expect {
+				t.Errorf("got  %d\nwant %d", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestCommWaitError(t *testing.T) {
+	tests := []struct {
+		name              string
+		err               error
+		expectUnsupported bool
+	}{
+		{name: "invalid function", err: windows.ERROR_INVALID_FUNCTION, expectUnsupported: true},
+		{name: "not supported", err: windows.ERROR_NOT_SUPPORTED, expectUnsupported: true},
+		{name: "invalid parameter", err: windows.ERROR_INVALID_PARAMETER, expectUnsupported: true},
+		{name: "other", err: windows.ERROR_ACCESS_DENIED},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := commWaitError(tc.err)
+			if errors.Is(got, errors.ErrUnsupported) != tc.expectUnsupported {
+				t.Errorf("commWaitError(%v) = %v", tc.err, got)
+			}
+		})
+	}
+}
+
+func TestCancelModemControlPinWait(t *testing.T) {
+	w := new(windowsTerm)
+	w.CancelModemControlPinWait()
+	if at, err := w.WaitModemControlPinChange(ModemCTS); err != nil || at.IsZero() {
+		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v; want a timestamp", at, err)
+	}
+}
+
 // TestOpenFallbackPipe exercises the Windows named-pipe fallback end to end:
 // a live pipe server on one end, term.OpenFallback (the daemon's path) on the
 // other. It is the proof that os.NewFile gives an overlapped pipe handle a
