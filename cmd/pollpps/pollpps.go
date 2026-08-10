@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
-	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/spf13/pflag"
 )
 
@@ -22,12 +23,14 @@ func main() {
 	var help bool
 	var showVersion bool
 	var ioctlTime bool
+	var speed int
 
 	flags := pflag.NewFlagSet("pollpps", pflag.ContinueOnError)
 
 	flags.BoolVarP(&help, "help", "h", false, "show help")
 	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
 	flags.BoolVarP(&ioctlTime, "ioctltime", "i", false, "time back-to-back modem status reads and exit")
+	flags.IntVarP(&speed, "speed", "s", 0, "set the baud rate so serial data flows while measuring (0 leaves it unchanged)")
 
 	err := flags.Parse(os.Args[1:])
 	progName := os.Args[0]
@@ -51,15 +54,13 @@ func main() {
 
 	device := flags.Args()[0]
 
-	// Open terminal in raw mode
-	t, err := term.Open(device, term.RawMode)
+	// Use the daemon's serial connection so reads have the same timeout and
+	// shutdown synchronization as the scan worker.
+	t, _, err := gpsio.OpenSerial(device, speed)
 	if err != nil {
 		log.Fatalf("Failed to open %s: %v", device, err)
 	}
-	defer func() {
-		t.Restore()
-		t.Close()
-	}()
+	defer t.Close()
 	if ioctlTime {
 		timeIoctl(t)
 		return
@@ -86,7 +87,7 @@ func main() {
 			}
 
 			// Check if CTS flag is set
-			cts := status.Asserted(term.ModemCTS)
+			cts := status.Asserted(gpsio.ModemCTS)
 
 			// Check for transition from flag being on to off.
 			// This is the opposite of what you might expect.
@@ -118,7 +119,27 @@ func main() {
 
 // timeIoctl measures the modem status read directly: back-to-back calls with
 // no sleeps, so the distribution of call durations is the poll pacing floor.
-func timeIoctl(t term.Term) {
+// A goroutine drains incoming serial data throughout, because that is the
+// condition the daemon polls under: measured on an FT232R on Linux
+// ftdi_sio, the read is ~110 us with the port undrained but the daemon,
+// which drains it, sees ~1.3 ms brackets on the same adapter.
+func timeIoctl(t *gpsio.SerialConn) {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		b := make([]byte, 4096)
+		for {
+			if _, err := t.Read(b); errors.Is(err, os.ErrDeadlineExceeded) {
+				continue
+			} else if err != nil {
+				return
+			}
+		}
+	}()
+	defer func() {
+		t.Stop()
+		<-done
+	}()
 	const n = 2000
 	ds := make([]time.Duration, n)
 	for i := range ds {
@@ -138,7 +159,7 @@ func timeIoctl(t term.Term) {
 }
 
 func usage(progName string, flags *pflag.FlagSet) {
-	fmt.Fprintln(os.Stderr, "Usage:", progName, "[-i|--ioctltime] <device>")
+	fmt.Fprintln(os.Stderr, "Usage:", progName, "[-i|--ioctltime] [-s|--speed <baud>] <device>")
 	fmt.Fprintln(os.Stderr, "Options:")
 	flags.PrintDefaults()
 }

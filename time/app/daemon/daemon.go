@@ -326,7 +326,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	var serialPPSGen *serialpps.Generator
 	if cfg.Serial.PPS != nil {
 		pin, _ := cfg.Serial.PPS.modemControlPin() // checked by Config.Validate
-		serialPPSGen = serialpps.NewGenerator()
+		serialPPSGen = serialpps.NewGenerator(cfg.Sample.Serial.PPS)
 		ch := make(chan serialpps.Edge, 1)
 		serialPPSCh = ch
 		wg.Go(func() {

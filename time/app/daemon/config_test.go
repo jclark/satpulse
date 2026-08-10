@@ -199,6 +199,49 @@ interface = "eth0"
 	}
 }
 
+func TestSerialPPSSampleConfig(t *testing.T) {
+	cfg := defaultConfig()
+	if got := cfg.Sample.Serial.PPS.DelayUncertainty; got != 0.005 {
+		t.Errorf("default delayUncertainty = %v, want 0.005", got)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.8 {
+		t.Errorf("default maxDelay = %v, want 0.8", got)
+	}
+
+	cfg, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+delayUncertainty = 0.01
+maxDelay = 0.7
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Sample.Serial.PPS.DelayUncertainty; got != 0.01 {
+		t.Errorf("configured delayUncertainty = %v, want 0.01", got)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.7 {
+		t.Errorf("configured maxDelay = %v, want 0.7", got)
+	}
+	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+}
+
+func TestSerialPPSSampleConfigRejectsWideInterval(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+delayUncertainty = 0.2
+maxDelay = 0.8
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "delayUncertainty + maxDelay") {
+		t.Fatalf("Validate error = %v, want interval-width error", err)
+	}
+}
+
 func TestPTPConfig(t *testing.T) {
 	cfgStr := `[ptp]
 	ptp4l.udsAddress = "/tmp/ptp4l"

@@ -13,26 +13,38 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
+// None of these constants encodes hardware timing; everything hardware- and
+// load-dependent is measured by the polling loop itself.
 const (
-	// The chosen constants are the safety factor (the window half-width in
-	// units of the measured bracket gap, absorbing that much prediction
-	// error) and the shrink rate (what each catch multiplies the window by
-	// during acquisition). The polls per window follow from them: spacing
-	// is window/pollsPerWindow and a catch's gap is one spacing, so the
-	// shrink per catch is safetyFactor/pollsPerWindow. Deriving rather
-	// than choosing pollsPerWindow keeps the pair convergent; a shrink
-	// rate of 1 or more would leave the window stuck at the cap.
-	safetyFactor   = 16
-	shrinkRate     = 0.5
-	pollsPerWindow = safetyFactor / shrinkRate
+	// initialPollsPerSecond is the polling rate from cold, when the
+	// window is the whole period; it determines the cold-start spacing,
+	// and with it the narrowest pulse acquired promptly. The spacing
+	// scales with the window (window divided by this), so once it falls
+	// below the state-query time or minPollSpacing, those pace the loop
+	// instead and the constant has no further effect.
+	initialPollsPerSecond = 64
+	// shrinkAfter is the target miss rate: the settled window widens by a
+	// bracket width at each end on a miss and narrows by the same after
+	// this many consecutive catches, so it hovers just above the observed
+	// edge scatter, missing about one pulse in shrinkAfter.
+	shrinkAfter = 60
+	// missLimit consecutive misses declare the pulse gone, restarting
+	// acquisition from the full-period window.
+	missLimit = 10
+	// minPollSpacing bounds the CPU spent when the state query is very
+	// fast.
 	minPollSpacing = 50 * time.Microsecond
 	pulsePeriod    = time.Second
-	maxMargin      = pulsePeriod / 2
-	maxMessageAge  = 3 * time.Second
+	// maxPollWindow is the whole period: the cold-start window, within
+	// which polling is uniform.
+	maxPollWindow = pulsePeriod
+	// maxMessageAge is how old the newest receiver time message may be
+	// for an edge to still be identified with a UTC second.
+	maxMessageAge = 3 * time.Second
 )
 
-// Edge is a precisely polled leading edge. T is the midpoint of the two modem
-// state observations that straddled the transition.
+// Edge is a detected leading edge. T is the polling-bracket midpoint or the
+// wait primitive's wakeup timestamp, depending on the selected backend.
 type Edge struct {
 	T time.Time
 }
@@ -62,6 +74,8 @@ type reading struct {
 	state gpsio.ModemControlPinState
 	at    time.Time
 	start time.Time
+	sched time.Time // when this poll was scheduled to run
+	slept bool      // whether the schedule was still in the future
 }
 
 // Detect sends detected leading edges of the pulse described by w to edges,
@@ -78,29 +92,46 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, edges
 		lg.Info("serial driver cannot wait for modem control pin changes; polling instead")
 	}
 	lg.Debug("serial PPS polling backend selected")
-	return Poll(ctx, r, w, edges)
+	return Poll(ctx, r, w, edges, lg)
 }
 
 // Poll adaptively polls for the pulse described by w and sends detected
-// leading edges to edges. One loop with two rules: a caught edge shrinks the
-// window to safetyFactor times the measured bracket gap (capped at half the
-// pulse period), and a miss doubles it up to that cap, where the window
-// covers the whole period and polling is uniform (the cold-start state). A
-// pulse already in progress when a window opens is polled through, not
-// declared a miss: the search resumes on its far side. Everything hardware-
-// and load-dependent comes from measured poll timestamps: the shrink
-// bottoms out wherever the state-query time or the spacing floor binds,
-// without the loop knowing which.
+// leading edges to edges. Each period it polls a window centered on the
+// predicted next edge time. A caught edge is located by its bracket: the
+// pair of consecutive polls with one poll on each side of the transition.
+// The bracket's width -- the time between those two polls -- is how
+// precisely the edge is located, and is the unit the window is sized in.
 //
-// Edges are sent only once settled: while each catch still improves on the
-// previous catch's bracket gap, caught edges are too coarse to publish. The
-// settled state latches at the first catch whose gap does not improve on
-// the previous one (misses in between do not affect the comparison), and
-// clears only when the window walks back up to the cap, i.e. on signal
-// loss. After the latch every caught edge is sent, however coarse: a
-// stretched sample is characteristic of what the system delivers, and
-// outliers are the NTP daemon's filtering's job.
-func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error {
+// From cold the window is the whole pulse period, polled uniformly, and
+// each catch halves it; a miss leaves it alone. Halving ends at its floor
+// of two bracket widths, or at the first settled miss (the halving
+// overshot the edge scatter); the window is then tracked additively: a
+// miss widens it by a bracket width at each end and every shrinkAfter-th
+// consecutive catch narrows it by the same, so it hovers just above the
+// observed edge scatter, missing about one pulse in shrinkAfter. missLimit
+// consecutive misses mean the pulse is gone: the window returns to the
+// whole period in one step. At that size the poll grid is advanced by a
+// fraction of the spacing each period, sweeping the phase so that a pulse
+// narrower than the spacing is still found. A pulse already in progress
+// when a window opens is polled through, not declared a miss: the search
+// resumes on its far side.
+//
+// Edges are sent only once the settled latch is set. The loop observes that
+// the polling schedule no longer controls resolution from its pacing rather
+// than inferring it from bracket measurements, which sleep overshoot
+// contaminates while the loop is sleep-paced. A catch settles immediately
+// when the spacing target sits at minPollSpacing, which halving no longer
+// changes. Otherwise two consecutive caught windows must be polled without
+// a single sleep firing; since each catch halves the window, the second
+// confirms at a smaller spacing that the queries pace the loop. A
+// sleep-paced catch or a miss clears the confirmation, so a transient run
+// of slow queries cannot open the publishing gate. The latch clears only on
+// the cold restart, i.e. on signal loss. Before the latch, caught edges are
+// too coarse to publish; after it every caught edge is sent, however coarse:
+// a stretched sample is characteristic of what the system delivers, and
+// outliers are the NTP daemon's filtering's job. Every caught edge and
+// every window size change is logged to lg at debug level.
+func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *slog.Logger) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
@@ -108,48 +139,88 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 	if err != nil {
 		return err
 	}
-	predicted := first.at.Add(maxMargin)
-	margin := maxMargin
-	settled := false
-	var prevGap time.Duration
+	predicted := first.at.Add(maxPollWindow / 2)
+	window := maxPollWindow
+	settled := false  // publishing gate: polling schedule no longer binds
+	tracking := false // halving is over; the window moves additively
+	catches, misses := 0, 0
+	queryPacedCatches := 0
+	var prevBracketWidth time.Duration
 	for {
-		spacing := max(margin/pollsPerWindow, minPollSpacing)
-		deadline := predicted.Add(margin)
-		cur, err := readState(ctx, r, predicted.Add(-margin))
+		spacing := max(window/initialPollsPerSecond, minPollSpacing)
+		deadline := predicted.Add(window / 2)
+		cur, err := readState(ctx, r, predicted.Add(-window/2))
 		if err != nil {
 			return err
 		}
+		polls := 1
 		// The windows advance in lockstep with the pulses, so treating an
 		// in-progress pulse at the open as a miss would reopen at the same
 		// phase every period and never acquire; poll through it instead.
+		// slept accumulates over the window's scheduled polls (the wait for
+		// the window open is excluded: it always sleeps).
+		slept := false
 		for inPulse(cur.state, w) && cur.at.Before(deadline) {
 			cur, err = readState(ctx, r, cur.start.Add(spacing))
 			if err != nil {
 				return err
 			}
+			polls++
+			slept = slept || cur.slept
 		}
 		prev := cur
 		missed := inPulse(cur.state, w)
 		var edge time.Time
-		var gap time.Duration
+		var bracketWidth time.Duration
 		for !missed && edge.IsZero() {
 			cur, err = readState(ctx, r, prev.start.Add(spacing))
 			if err != nil {
 				return err
 			}
+			polls++
+			slept = slept || cur.slept
 			edge, missed = classifyReading(prev, cur, w, deadline)
 			if !edge.IsZero() {
-				gap = cur.at.Sub(prev.at)
+				bracketWidth = cur.at.Sub(prev.at)
 			}
 			prev = cur
 		}
 		if !edge.IsZero() {
+			// "late" is how far past its scheduled time the catching poll
+			// started: sleep overshoot when the loop is sleep-paced, queue
+			// debt when the queries pace it.
+			lg.Debug("serial PPS caught edge", "window", window, "bracket", bracketWidth,
+				"offset", edge.Sub(predicted), "late", cur.start.Sub(cur.sched), "polls", polls)
 			predicted = edge.Add(pulsePeriod)
-			if !settled && prevGap > 0 && gap >= prevGap {
-				settled = true
+			misses = 0
+			if !settled {
+				if spacing == minPollSpacing {
+					settled = true
+				} else if slept {
+					queryPacedCatches = 0
+				} else {
+					queryPacedCatches++
+					if queryPacedCatches >= 2 {
+						settled = true
+					}
+				}
+				if settled {
+					lg.Debug("serial PPS settled", "window", window, "bracket", bracketWidth)
+				}
 			}
-			prevGap = gap
-			margin = min(safetyFactor*gap, maxMargin)
+			if !tracking {
+				if halved := max(window/2, 2*bracketWidth); halved != window {
+					window = halved
+					lg.Debug("serial PPS poll window halved", "window", window)
+				} else {
+					tracking = true
+				}
+			} else if catches++; catches >= shrinkAfter && window >= 4*bracketWidth {
+				catches = 0
+				window -= 2 * bracketWidth
+				lg.Debug("serial PPS poll window shrank", "window", window)
+			}
+			prevBracketWidth = bracketWidth
 			if settled {
 				select {
 				case edges <- Edge{T: edge}:
@@ -159,12 +230,30 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge) error
 			}
 			continue
 		}
-		margin = min(2*margin, maxMargin)
-		if margin == maxMargin {
-			settled = false
-			prevGap = 0
-		}
 		predicted = predicted.Add(pulsePeriod)
+		queryPacedCatches = 0
+		if window == maxPollWindow {
+			// At full size, consecutive windows tile the period exactly, so a
+			// locked poll grid would revisit the same phases every period and
+			// could straddle a pulse narrower than the spacing indefinitely;
+			// advancing the grid by an irregular fraction of the spacing
+			// sweeps the phase instead.
+			predicted = predicted.Add(spacing * 618 / 1000)
+			continue
+		}
+		if misses++; misses >= missLimit || ((settled || tracking) && window+2*prevBracketWidth >= maxPollWindow) {
+			window = maxPollWindow
+			lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window, "misses", misses)
+			settled = false
+			tracking = false
+			prevBracketWidth = 0
+			catches, misses, queryPacedCatches = 0, 0, 0
+		} else if settled || tracking {
+			tracking = true
+			window += 2 * prevBracketWidth
+			catches = 0
+			lg.Debug("serial PPS poll window grew", "window", window, "misses", misses, "polls", polls)
+		}
 	}
 }
 
@@ -224,7 +313,8 @@ func inPulse(s gpsio.ModemControlPinState, w Wiring) bool {
 }
 
 func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading, error) {
-	if err := waitUntil(ctx, notBefore); err != nil {
+	slept, err := waitUntil(ctx, notBefore)
+	if err != nil {
 		return reading{}, err
 	}
 	start := time.Now()
@@ -233,26 +323,29 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, at: midpoint(start, end), start: start}, nil
+	return reading{state: state, at: midpoint(start, end), start: start, sched: notBefore, slept: slept}, nil
 }
 
-func waitUntil(ctx context.Context, t time.Time) error {
+// waitUntil reports whether it actually had to wait: false means the
+// scheduled time was already past, i.e. the previous state query outlasted
+// the poll spacing.
+func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 	d := time.Until(t)
 	if d <= 0 {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return false, ctx.Err()
 		default:
-			return nil
+			return false, nil
 		}
 	}
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-		return nil
+		return true, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return false, ctx.Err()
 	}
 }
 
@@ -270,14 +363,19 @@ type Sample struct {
 // Generator associates PPS edges with UTC seconds using the latest receiver
 // time message. It is intended to be called from one dispatcher goroutine.
 type Generator struct {
-	utc   time.Time
-	tRead time.Time // zero until the first message arrives
-	leap  ptime.LeapSecondKind
+	utc              time.Time
+	tRead            time.Time // zero until the first message arrives
+	leap             ptime.LeapSecondKind
+	delayUncertainty time.Duration
+	maxDelay         time.Duration
 }
 
-// NewGenerator creates an empty sample generator.
-func NewGenerator() *Generator {
-	return new(Generator)
+// NewGenerator creates an empty sample generator using cfg.
+func NewGenerator(cfg Config) *Generator {
+	return &Generator{
+		delayUncertainty: seconds(cfg.DelayUncertainty),
+		maxDelay:         seconds(cfg.MaxDelay),
+	}
 }
 
 // MsgUTCTime records the newest UTC/system-time pair from a receiver message.
@@ -292,15 +390,29 @@ func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) 
 
 // Edge turns a precisely detected PPS edge into a sample. It returns false
 // until a time message is available, when the newest message is over three
-// seconds old, or for the pulse marking an inserted leap second.
+// seconds old, when no unique UTC label satisfies the configured
+// pulse-to-message delay bounds, or for the pulse marking an inserted leap
+// second.
 func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	if g.tRead.IsZero() || edge.T.Sub(g.tRead) > maxMessageAge {
 		return Sample{}, false
 	}
-	// Advancing utc by the monotonic elapsed time since tRead puts the edge
-	// within half a second of the UTC second it marks, and is immune to any
-	// wall-clock step between the message and the edge.
-	reference := g.utc.Add(edge.T.Sub(g.tRead)).Round(time.Second)
+	// Advancing utc by the monotonic elapsed time since tRead gives the
+	// edge's position on the message's UTC timescale and is immune to any
+	// wall-clock step between the message and the edge. Select the integral
+	// second whose inferred pulse-to-message delay is in the configured
+	// causal interval. The validated interval is narrower than a second, so
+	// the label is unique when it exists.
+	candidate := g.utc.Add(edge.T.Sub(g.tRead))
+	reference := candidate.Truncate(time.Second)
+	delay := reference.Sub(candidate)
+	if delay < -g.delayUncertainty {
+		reference = reference.Add(time.Second)
+		delay += time.Second
+	}
+	if delay < -g.delayUncertainty || delay >= g.maxDelay {
+		return Sample{}, false
+	}
 	// The message's leap flag announces a leap at the end of the message's
 	// UTC day, which the monotonic extrapolation cannot see: past the
 	// boundary it runs one second ahead of UTC after a positive leap and

@@ -92,6 +92,30 @@ speed = 38400
 pps.pin = "cts"
 ```
 
+## `sample.serial.pps` table
+
+The `sample.serial.pps` table controls how serial PPS edges are associated with UTC-labelled receiver messages.
+It is used when `pps.pin` in the `[serial]` table is configured.
+A non-prepulse message is emitted after the pulse whose UTC second it reports, but timestamp measurement uncertainty can make the inferred delay slightly negative.
+The accepted interval must be narrower than one second so that a pulse has at most one possible UTC label.
+
+It can have the following keys:
+
+* `delayUncertainty` - the allowed uncertainty in the inferred pulse-to-message delay, in seconds;
+  the inferred delay may be this far below zero; the default is 0.005
+* `maxDelay` - the maximum accepted inferred delay from the pulse to its post-pulse message, in seconds;
+  the default is 0.8
+
+The sum of `delayUncertainty` and `maxDelay` must be less than 1.
+
+Example using the defaults explicitly:
+
+```toml
+[sample.serial.pps]
+delayUncertainty = 0.005
+maxDelay = 0.8
+```
+
 
 ## `gps` table
 

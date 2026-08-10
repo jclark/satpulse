@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
@@ -29,6 +30,7 @@ const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
+	Sample     SampleConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
@@ -59,6 +61,14 @@ type SerialConfig struct {
 
 type SerialPPSConfig struct {
 	Pin string `toml:"pin"`
+}
+
+type SampleConfig struct {
+	Serial SerialSampleConfig `toml:"serial"`
+}
+
+type SerialSampleConfig struct {
+	PPS serialpps.Config `toml:"pps"`
 }
 
 type PHCConfig struct {
@@ -166,6 +176,7 @@ func readConfig(r io.Reader) (*Config, error) {
 func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
+	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
@@ -217,6 +228,9 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		if cfg.PHC.Interface != "" {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
 		}
+	}
+	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
+		return &configError{err: err}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}

@@ -283,7 +283,7 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 func TestDispatcherSerialPPSEdgeWritesSample(t *testing.T) {
 	shm := &fakeSHM{precision: -9}
 	observer := &ntpSampleObserver{}
-	g := serialpps.NewGenerator()
+	g := serialpps.NewGenerator(serialpps.DefaultConfig())
 	d := &Dispatcher{
 		serialPPS: g,
 		shm:       shm,
