@@ -301,16 +301,17 @@ var _ ModemControlPinWaiter = (*windowsTerm)(nil)
 // changed state, returning the time the wait returned. The event mask is set
 // only when it changes: SetCommMask resets the event history, so setting it
 // before every wait could lose a transition between successive waits.
-func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time, error) {
+func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono time.Time, err error) {
 	mask, err := commEventMask(pin)
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, time.Time{}, err
 	}
 	w := &t.miwait
 	w.mu.Lock()
 	if w.cancelled {
 		w.mu.Unlock()
-		return time.Now(), nil
+		now := time.Now()
+		return now, now, nil
 	}
 	if w.mask != mask {
 		err = windows.SetCommMask(t.handle, mask)
@@ -320,7 +321,7 @@ func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time,
 	}
 	w.mu.Unlock()
 	if err != nil {
-		return time.Time{}, t.wrapErr(commWaitError(err), "SetCommMask")
+		return time.Time{}, time.Time{}, t.wrapErr(commWaitError(err), "SetCommMask")
 	}
 	var events uint32
 	var n uint32
@@ -332,12 +333,12 @@ func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time,
 	cancelled := w.cancelled
 	w.mu.Unlock()
 	if cancelled {
-		return at, nil
+		return at, at, nil
 	}
 	if err != nil {
-		return time.Time{}, t.wrapErr(commWaitError(err), "WaitCommEvent")
+		return time.Time{}, time.Time{}, t.wrapErr(commWaitError(err), "WaitCommEvent")
 	}
-	return at, nil
+	return at, at, nil
 }
 
 // CancelModemControlPinWait makes a pending wait return promptly and all

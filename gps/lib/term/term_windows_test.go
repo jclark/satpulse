@@ -98,8 +98,8 @@ func TestCommWaitError(t *testing.T) {
 func TestCancelModemControlPinWait(t *testing.T) {
 	w := new(windowsTerm)
 	w.CancelModemControlPinWait()
-	if at, err := w.WaitModemControlPinChange(ModemCTS); err != nil || at.IsZero() {
-		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v; want a timestamp", at, err)
+	if wall, mono, err := w.WaitModemControlPinChange(ModemCTS); err != nil || wall.IsZero() || mono.IsZero() {
+		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v, %v; want timestamps", wall, mono, err)
 	}
 }
 

@@ -177,13 +177,14 @@ messages are still consumed: they identify which second each pulse marks.
 
 ## Sample generation
 
-A detected edge at system time T becomes one refclock sample. Labelling
-uses only the monotonic components of T and the adjusted first-byte
-message timestamp `tRead`: advancing the message UTC by `T - tRead`
-places the edge on the message's UTC timescale without consulting the
-system wall clock. For each nearby integer second the generator infers
-the corresponding post-pulse message delay and accepts the unique label
-satisfying
+A detected edge becomes one refclock sample. Both backends deliver the
+edge as two readings of the same instant, wall and mono (see the Wait
+section for why they can be distinct clocks). Labelling uses the mono
+reading and the adjusted first-byte message timestamp `tRead`:
+advancing the message UTC by `mono - tRead` places the edge on the
+message's UTC timescale without consulting the system wall clock. For
+each nearby integer second the generator infers the corresponding
+post-pulse message delay and accepts the unique label satisfying
 
 ```text
 -delayUncertainty <= inferredDelay < maxDelay
@@ -191,9 +192,10 @@ satisfying
 
 The lower allowance represents measurement uncertainty; the physical
 message is guaranteed to be emitted after its pulse. If no label
-satisfies the interval, the edge produces no sample. The offset is the
-accepted reference time minus T, and the leap indication comes from the
-time messages, as in the existing message-based sampling. If the newest
+satisfies the interval, the edge produces no sample. The sample's
+system time is the edge's wall reading, the offset is the accepted
+reference time minus it, and the leap indication comes from the time
+messages, as in the existing message-based sampling. If the newest
 time message is more than 3 s old, the edge also produces no sample.
 Emission uses the existing refclock path (SOCK and/or SHM); the fixed
 SHM precision reported in this mode is 2^-11 s (~500 us), not the 2^-1 s
@@ -323,10 +325,22 @@ The polling goroutine locks its OS thread.
 Linux `TIOCMIWAIT` blocks until a chosen modem control line changes;
 Windows has the equivalent `SetCommMask`/`WaitCommEvent`. Neither
 reports the transition's direction nor a timestamp, so the wait
-primitive returns a timestamp taken immediately on wakeup -- before
+primitive returns timestamps taken immediately on wakeup -- before
 any further calls, since a state read can itself be a
 millisecond-scale USB round trip -- and the backend then reads the
-line state to classify the transition. Every wakeup where the line has entered its pulse-asserted
+line state to classify the transition. The wakeup is timestamped on
+two clocks, because its two consumers need different clock
+properties: `wall`, the most precise system-time reading the platform
+offers, becomes the published sample time, and `mono`, an ordinary
+`time.Now` reading, serves the elapsed-time arithmetic that labels
+the edge with a UTC second against the message read times. On Unix
+one `time.Now` reading is both; on Windows `time.Now` is quantized to
+the shared clock page (~0.5 ms measured) while
+`GetSystemTimePreciseAsFileTime` reads to ~100 ns but carries no
+monotonic component, so the two are separate readings taken
+back-to-back, and labelling, whose tolerance is the millisecond-scale
+`delayUncertainty`, absorbs both the coarse quantum and the
+acquisition skew between them. Every wakeup where the line has entered its pulse-asserted
 sense produces a sample, subject only to identifying the second from
 the time messages. Unlike the polling backend, nothing here relies on
 the pulses being 1 s apart.
@@ -353,7 +367,7 @@ capability interface that the PPS source asserts for, not a method of
 
 ```go
 type ModemControlPinWaiter interface {
-	WaitModemControlPinChange(pin ModemControlPin) (time.Time, error)
+	WaitModemControlPinChange(pin ModemControlPin) (wall, mono time.Time, err error)
 	CancelModemControlPinWait()
 }
 ```

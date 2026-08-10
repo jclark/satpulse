@@ -99,11 +99,16 @@ func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
 // discover the capability by asserting for this interface.
 type ModemControlPinWaiter interface {
 	// WaitModemControlPinChange blocks until a modem control input may
-	// have changed, returning the time the wakeup was observed. The
-	// timestamp is taken on the waiting thread as soon as the wait ends,
-	// before any other call. The caller must read the state to reject
-	// spurious wakeups and changes to other lines.
-	WaitModemControlPinChange(line ModemControlPin) (time.Time, error)
+	// have changed, returning the time the wakeup was observed on two
+	// clocks: wall is the most precise system-time reading the platform
+	// offers and may carry no monotonic reading, so it must not be used
+	// for elapsed-time arithmetic; mono is an ordinary time.Now reading,
+	// for elapsed time against other time.Now values. Where time.Now is
+	// the best clock available they are the same reading. The readings
+	// are taken on the waiting thread as soon as the wait ends, before
+	// any other call. The caller must read the state to reject spurious
+	// wakeups and changes to other lines.
+	WaitModemControlPinChange(line ModemControlPin) (wall, mono time.Time, err error)
 	// CancelModemControlPinWait makes a pending wait return promptly
 	// and all subsequent waits return immediately. It is used to make
 	// shutdown prompt.
