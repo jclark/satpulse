@@ -1,6 +1,4 @@
-//go:build !windows
-
-// This is an experiment for Darwin to try polling the CTS pin to detect PPS signals.
+// This is an experiment to try polling the CTS pin to detect PPS signals.
 // The GPS PPS output should be connected to the CTS pin of a USB to TTL adapter.
 // I have tested this with the Waveshare USB to TTL converter, which uses the FTDI FT232RNL.
 package main
@@ -67,6 +65,12 @@ func main() {
 	}
 	fmt.Printf("Monitoring PPS on CTS pin of %s\n", device)
 
+	done := drainInput(t)
+	defer func() {
+		t.Stop()
+		<-done
+	}()
+
 	var lastCTS bool
 	var ppsCount int
 
@@ -124,18 +128,7 @@ func main() {
 // ftdi_sio, the read is ~110 us with the port undrained but the daemon,
 // which drains it, sees ~1.3 ms brackets on the same adapter.
 func timeIoctl(t *gpsio.SerialConn) {
-	done := make(chan struct{})
-	go func() {
-		defer close(done)
-		b := make([]byte, 4096)
-		for {
-			if _, err := t.Read(b); errors.Is(err, os.ErrDeadlineExceeded) {
-				continue
-			} else if err != nil {
-				return
-			}
-		}
-	}()
+	done := drainInput(t)
 	defer func() {
 		t.Stop()
 		<-done
@@ -156,6 +149,22 @@ func timeIoctl(t *gpsio.SerialConn) {
 	}
 	fmt.Printf("modem status read over %d calls: min=%v median=%v mean=%v p90=%v max=%v\n",
 		n, ds[0], ds[n/2], sum/n, ds[n*9/10], ds[n-1])
+}
+
+func drainInput(t *gpsio.SerialConn) <-chan struct{} {
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		b := make([]byte, 4096)
+		for {
+			if _, err := t.Read(b); errors.Is(err, os.ErrDeadlineExceeded) {
+				continue
+			} else if err != nil {
+				return
+			}
+		}
+	}()
+	return done
 }
 
 func usage(progName string, flags *pflag.FlagSet) {

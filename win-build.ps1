@@ -1,4 +1,4 @@
-# Build satpulsetool and satpulsed for Windows. Analogous to bsd-build.sh.
+# Build Windows commands. Analogous to bsd-build.sh.
 
 $ErrorActionPreference = 'Stop'
 
@@ -56,10 +56,10 @@ $ldflags = "-X `"github.com/jclark/satpulse/gps/app/cmd.version=$cmd_version`" -
 $go_ldflags = "'-ldflags=$ldflags'"
 try {
     $env:GOFLAGS = (@($old_go_flags, $go_ldflags) | Where-Object { $_ }) -join ' '
-    & go build -tags 'netgo,osusergo' -o $outdir ./cmd/satpulsetool ./cmd/satpulsed ./cmd/satpulsewb
+    & go build -tags 'netgo,osusergo' -o $outdir ./cmd/satpulsetool ./cmd/satpulsed ./cmd/satpulsewb ./cmd/pollpps
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
     $env:GOFLAGS = $old_go_flags
 }
 
-Write-Output "Built satpulsetool, satpulsed and satpulsewb in $outdir"
+Write-Output "Built satpulsetool, satpulsed, satpulsewb and pollpps in $outdir"
