@@ -113,6 +113,27 @@ estimator cancels most of its own latency instead. Around 200 us is
 characteristic of full-speed FTDI adapters on Linux; compensate with
 the chrony refclock `offset` option (`offset 200e-6`).
 
+The Windows clocks were measured on 2026-08-10 (Windows 11, an FT232R
+on the FTDI VCP driver) before wiring the backend to them. time.Now's
+wall reading advances in ~523 us steps on this machine, 99% of
+consecutive readings being equal, while `GetSystemTimePreciseAsFileTime`
+resolves its 100 ns representation at ~57 ns per read with no backwards
+step over 10^6 reads; the two read the same system clock, the coarse
+one lagging by 8-368 us, always within one quantum. `GetCommModemStatus`
+answers in ~1.5 us median (p99 2.9 us, max 15.5 us) -- far too fast for
+a USB round trip, so the VCP driver answers from its cached modem
+status: the polling loop brackets the cache flip, the status-delivery
+cadence appears as edge scatter for the window to learn, and the 50 us
+spacing floor, near-inert on the adapters above, is what paces the
+settled loop and bounds its CPU here. The same 2000 calls timed with
+time.Now report min=0 median=0 p90=0: the earlier `-i` distributions
+on Windows were clock quantization, not measurement. With the wait
+backend wired to the two clocks, the same adapter delivered one edge
+per second with no misses and the published timestamps resolved to
+100 ns, scattering a few hundred us per edge (delivery jitter, no
+longer clock quantization); `pollpps -i` on the wired port reports
+median 1.1 us.
+
 ## Configuration
 
 One new key in the `[serial]` table enables the physical PPS source:

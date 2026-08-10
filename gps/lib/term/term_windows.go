@@ -204,7 +204,7 @@ func (t *windowsTerm) Read(buf []byte) (int, error) {
 	var n uint32
 	err := t.overlapped(func(o *windows.Overlapped) error {
 		return windows.ReadFile(t.handle, buf, &n, o)
-	}, &n, nil)
+	}, &n, nil, nil)
 	if err != nil {
 		return int(n), t.wrapErr(err, "read")
 	}
@@ -228,7 +228,7 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 		var n uint32
 		err := t.overlapped(func(o *windows.Overlapped) error {
 			return windows.WriteFile(t.handle, buf, &n, o)
-		}, &n, nil)
+		}, &n, nil, nil)
 		if err != nil {
 			return total, t.wrapErr(err, "write")
 		}
@@ -238,7 +238,7 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-func (t *windowsTerm) overlapped(op func(*windows.Overlapped) error, n *uint32, at *time.Time) error {
+func (t *windowsTerm) overlapped(op func(*windows.Overlapped) error, n *uint32, wall, mono *time.Time) error {
 	event, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
 		return err
@@ -249,10 +249,21 @@ func (t *windowsTerm) overlapped(op func(*windows.Overlapped) error, n *uint32, 
 	if errors.Is(err, windows.ERROR_IO_PENDING) {
 		err = windows.GetOverlappedResult(t.handle, &o, n, true)
 	}
-	if at != nil {
-		*at = time.Now()
+	if wall != nil {
+		*wall = preciseNow()
+		*mono = time.Now()
 	}
 	return err
+}
+
+// preciseNow reads the system clock via GetSystemTimePreciseAsFileTime,
+// which resolves ~100 ns where time.Now is quantized to the shared clock
+// page's update (~0.5 ms measured). The result carries no monotonic
+// reading, so it must not be used for elapsed-time arithmetic.
+func preciseNow() time.Time {
+	var ft windows.Filetime
+	windows.GetSystemTimePreciseAsFileTime(&ft)
+	return time.Unix(0, ft.Nanoseconds())
 }
 
 func (t *windowsTerm) Buffered() (int, error) {
@@ -298,9 +309,10 @@ func (t *windowsTerm) ModemControlPinState() (ModemControlPinState, error) {
 var _ ModemControlPinWaiter = (*windowsTerm)(nil)
 
 // WaitModemControlPinChange blocks in WaitCommEvent until pin may have
-// changed state, returning the time the wait returned. The event mask is set
-// only when it changes: SetCommMask resets the event history, so setting it
-// before every wait could lose a transition between successive waits.
+// changed state, returning the time the wait returned as a precise wall
+// reading and an adjacent time.Now reading. The event mask is set only when
+// it changes: SetCommMask resets the event history, so setting it before
+// every wait could lose a transition between successive waits.
 func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono time.Time, err error) {
 	mask, err := commEventMask(pin)
 	if err != nil {
@@ -325,20 +337,19 @@ func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono
 	}
 	var events uint32
 	var n uint32
-	var at time.Time
 	err = t.overlapped(func(o *windows.Overlapped) error {
 		return windows.WaitCommEvent(t.handle, &events, o)
-	}, &n, &at)
+	}, &n, &wall, &mono)
 	w.mu.Lock()
 	cancelled := w.cancelled
 	w.mu.Unlock()
 	if cancelled {
-		return at, at, nil
+		return wall, mono, nil
 	}
 	if err != nil {
 		return time.Time{}, time.Time{}, t.wrapErr(commWaitError(err), "WaitCommEvent")
 	}
-	return at, at, nil
+	return wall, mono, nil
 }
 
 // CancelModemControlPinWait makes a pending wait return promptly and all

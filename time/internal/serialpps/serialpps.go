@@ -335,15 +335,6 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 		start: start, sched: notBefore, slept: slept}, nil
 }
 
-// now reads the clocks behind Edge: wall locates edges and paces the loop,
-// mono serves elapsed-time arithmetic against other time.Now values. Here
-// they are one time.Now reading; a platform whose precise wall-clock read
-// carries no monotonic reading separates them.
-func now() (wall, mono time.Time) {
-	t := time.Now()
-	return t, t
-}
-
 // waitUntil reports whether it actually had to wait: false means the
 // scheduled time was already past, i.e. the previous state query outlasted
 // the poll spacing.

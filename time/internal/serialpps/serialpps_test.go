@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
@@ -14,6 +15,17 @@ import (
 )
 
 var testLog = slog.New(slog.DiscardHandler)
+
+// TestMain pins now to the time.Now clock: the synctest tests run the loop
+// against the bubble's fake clock, which a platform now reading a real
+// clock (Windows) would escape.
+func TestMain(m *testing.M) {
+	now = func() (wall, mono time.Time) {
+		t := time.Now()
+		return t, t
+	}
+	os.Exit(m.Run())
+}
 
 // settleCapture records the window attribute of the "serial PPS settled"
 // debug line, so tests can check where in the descent the latch fired. Read
