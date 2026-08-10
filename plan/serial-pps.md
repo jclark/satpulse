@@ -84,6 +84,22 @@ in ~1.2 ms steps regardless of its ~40 us ioctl, and in the daemon,
 with the scan worker reading the same port, brackets on both
 adapters settle around 1.2-1.4 ms rather than the idle-port floor.
 
+On 2026-08-10, per-catch diagnostics located the cause of those
+wide in-daemon brackets and a daemon-only failure of the original
+settling latch. Draining the port and traffic on a second adapter
+were both ruled out by measurement (`TIOCMGET` stays at ~110 us
+with a concurrent reader, and a lone adapter reproduced the
+effect); the cause is that the daemon's sleeps overshoot by
+0.3-1 ms, against microseconds in a bare test process, so bracket
+widths plateau near 1.2 ms while the loop is still sleep-paced.
+The original latch -- settle at the first catch whose bracket does
+not improve on the previous one -- misfired on that noise inside
+that plateau. With the latch reworked to observe pacing directly,
+the same daemon and FT232R settle in ~9 s at the ~110 us bracket
+floor and hover at a ~1.8 ms window: 8-10 state queries per pulse
+and offsets within ~150 us, in the daemon, matching the idle-port
+loop.
+
 ## Configuration
 
 One new key in the `[serial]` table:
@@ -183,24 +199,25 @@ themselves. The query's duration is never measured or assumed.
   The loop polls through the pulse and resumes the search for the
   next leading edge on its far side.
 
-The window moves through two regimes, separated by the settled
-latch (below). While settling, each catch halves the window; from
-cold it is the whole period, polled uniformly, and a miss leaves
-it alone (the prediction may simply still be coarse). The halving
-bottoms out wherever the bracket widths stop shrinking, at the
-floor set by the state-query time or the spacing floor, whichever
-binds first; the loop never needs to know which. Once settled,
-the window is tracked additively: a miss widens it by a bracket
-width at each end, and every k-th consecutive catch narrows it by
-the same. At equilibrium the window hovers just above the
-observed edge scatter, missing about one pulse in k; misses are
-cheap (the NTP daemon's filtering absorbs a lost second), so they
-are the probe that keeps the window, and with it the steady-state
-cost -- roughly the number of bracket widths in half the window,
-in state queries per second -- at the minimum the scatter
-permits. A stall or delivery-tail miss costs one widening step,
-not the lock. Window size changes are logged at debug level, so
-the equilibrium and the miss rate are visible on a long run.
+The window moves through two regimes. While halving, each catch
+halves the window (floored at two bracket widths); from cold it
+is the whole period, polled uniformly, and a miss leaves it alone
+(the prediction may simply still be coarse). Halving ends at its
+floor, or at the first miss after the settled latch (below) is
+set -- the halving overshot the edge scatter -- and the window is
+then tracked additively: a miss widens it by a bracket width at
+each end, and every k-th consecutive catch narrows it by the
+same. At equilibrium the window hovers just above the observed
+edge scatter, missing about one pulse in k; misses are cheap (the
+NTP daemon's filtering absorbs a lost second), so they are the
+probe that keeps the window, and with it the steady-state cost --
+roughly the number of bracket widths in half the window, in state
+queries per second -- at the minimum the scatter permits. A stall
+or delivery-tail miss costs one widening step, not the lock.
+Every caught edge (with its bracket, prediction offset, and poll
+lateness) and every window size change is logged at debug level,
+so settling, the equilibrium, and the miss rate are visible on a
+long run.
 
 In either regime, missLimit consecutive misses mean the pulse is
 gone: the window returns to the whole period in one step and a
@@ -223,15 +240,21 @@ the former safety factor c, sized from the measured FT232R
 delivery tail, is gone -- the tail is learned as equilibrium
 growth instead.
 
-Publishing is gated by the same latched settling state, not a
-threshold. While each catch still improves on the previous
-catch's bracket width, caught edges are suppressed; the settled
-flag latches at the first catch whose bracket does not improve on
-the previous one, which is the moment the measured floor is
-reached. Misses in between do not affect the comparison: a miss
-says the prediction was wrong, not that the resolution changed.
-The flag clears, and the bracket-width memory with it, only on
-the cold restart
+Publishing is gated by a latched settled state, meaning the
+resolution has reached its floor: further halving cannot improve
+it. The loop observes that condition directly from its pacing
+rather than inferring it from bracket measurements: a catch
+settles the loop when its window was polled without a single
+sleep firing (the state queries outlast the spacing target and
+pace the loop themselves), or when the spacing target sits at the
+50 us floor, which halving no longer changes. Bracket widths play
+no part in the latch: sleep overshoot stretches them while the
+loop is sleep-paced (measured at 0.3-1 ms inside the daemon,
+against microseconds in a bare test process), and the earlier
+latch -- settle at the first catch whose bracket does not improve
+on the previous one -- misfired on that noise, publishing
+millisecond-class samples from a still-wide window. The flag
+clears only on the cold restart
 (signal loss, hence a genuinely new settling period). The point of
 the suppression is only to withhold the
 uncharacteristically bad cold-start samples: after the latch every
@@ -395,7 +418,10 @@ synthetic messages and edges. The polling loop runs under
 `testing/synctest` against a simulated pulse source with configurable
 query duration, pulse width, delivery delay, and outages, so
 settling, steady-state poll cost, and miss handling are checked
-deterministically. The edge backends are also validated on real
+deterministically. The source also models the daemon's sleep
+overshoot (jittered and stalled wakeups), pinning the settled
+latch to the query-paced floor rather than the bracket noise the
+earlier latch misfired on. The edge backends are also validated on real
 hardware per the phasing below.
 
 ## Phasing

@@ -15,6 +15,30 @@ import (
 
 var testLog = slog.New(slog.DiscardHandler)
 
+// settleCapture records the window attribute of the "serial PPS settled"
+// debug line, so tests can check where in the descent the latch fired. Read
+// it only after Poll has returned.
+type settleCapture struct {
+	slog.Handler
+	window time.Duration
+}
+
+func (h *settleCapture) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *settleCapture) Handle(_ context.Context, r slog.Record) error {
+	if r.Message == "serial PPS settled" {
+		r.Attrs(func(a slog.Attr) bool {
+			if a.Key == "window" {
+				if d, ok := a.Value.Any().(time.Duration); ok {
+					h.window = d
+				}
+			}
+			return true
+		})
+	}
+	return nil
+}
+
 func TestClassifyReading(t *testing.T) {
 	base := time.Unix(1_000, 0)
 	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
@@ -190,7 +214,14 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 // deasserted (in pulse) for width after each pulse's leading edge. Pulses
 // with index in [offFrom, offTo) are suppressed (offTo 0 means none), and
 // every lateEvery-th pulse is delivered late by late (lateEvery 0 means
-// none), modelling a delivery tail. calls counts the state queries.
+// none), modelling a delivery tail. A nonzero wakeJitter delays any query
+// that follows an idle gap, alternating between the full amount and an
+// eighth of it, modelling the sleep overshoot observed inside the daemon:
+// queries after a sleep run late by a varying amount, back-to-back queries
+// do not. A nonzero stall delays the single first query at or after
+// stallAfter (relative to epoch) by that much, stretching one bracket --
+// the noise event that made a latch comparing consecutive brackets misfire
+// in the daemon. calls counts the state queries.
 type fakePulse struct {
 	epoch          time.Time
 	width          time.Duration
@@ -198,11 +229,29 @@ type fakePulse struct {
 	offFrom, offTo int
 	lateEvery      int
 	late           time.Duration
+	wakeJitter     time.Duration
+	stallAfter     time.Duration
+	stall          time.Duration
+	stalled        bool
+	lastEnd        time.Time
+	seq            uint32
 	calls          atomic.Int64
 }
 
 func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
 	f.calls.Add(1)
+	if f.wakeJitter > 0 && !f.lastEnd.IsZero() && time.Since(f.lastEnd) > 0 {
+		if f.seq++; f.seq%2 == 0 {
+			time.Sleep(f.wakeJitter)
+		} else {
+			time.Sleep(f.wakeJitter / 8)
+		}
+	}
+	if f.stall > 0 && !f.stalled && time.Since(f.epoch) >= f.stallAfter {
+		f.stalled = true
+		time.Sleep(f.stall)
+	}
+	defer func() { f.lastEnd = time.Now() }()
 	time.Sleep(f.callDur)
 	since := time.Since(f.epoch)
 	n := int(since / pulsePeriod)
@@ -231,7 +280,7 @@ func TestPoll(t *testing.T) {
 		expectTol        time.Duration // per-edge timestamp error bound
 	}{
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
-			expectFirstPulse: 4, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
+			expectFirstPulse: 3, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
 		{name: "fast query (spacing floor binds)", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
 		{name: "cold start inside pulse", epochOffset: -20 * time.Millisecond, callDur: 20 * time.Microsecond,
@@ -375,6 +424,47 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		}
 		if missed > 5 {
 			t.Errorf("%d of pulses 400-499 missed, want the window grown to cover the delivery tail", missed)
+		}
+	})
+}
+
+// TestPollSettlesDespiteSleepJitter reproduces the daemon's sleep-overshoot
+// regime: wakeups after an idle gap run up to ~0.9 ms late, and one poll
+// mid-settling stalls outright, stretching its bracket -- the noise the
+// former bracket-comparison latch settled on, publishing millisecond-class
+// samples from a still-wide window. Settling must ignore bracket noise and
+// wait until the queries pace the loop, where the jitter vanishes and
+// edges are located to the query time. The stall is timed to hit the
+// bracket of the pulse-4 catch, mid-halving.
+func TestPollSettlesDespiteSleepJitter(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 100 * time.Microsecond, wakeJitter: 900 * time.Microsecond,
+			stallAfter: 3999 * time.Millisecond, stall: 3 * time.Millisecond}
+		capture := &settleCapture{Handler: slog.DiscardHandler}
+		ctx, cancel := context.WithCancel(context.Background())
+		edges := make(chan Edge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, slog.New(capture)) }()
+		var got []Edge
+		for len(got) < 20 {
+			got = append(got, <-edges)
+		}
+		cancel()
+		<-errCh
+		if first := pulseIndex(got[0].T, f.epoch); first > 15 {
+			t.Errorf("first edge published at pulse %d, want settling despite the jitter plateau", first)
+		}
+		// Settling in the jitter plateau leaves the window at 15.625ms or
+		// wider; the query-paced floor is reached at 3.9ms.
+		if capture.window == 0 || capture.window > 8*time.Millisecond {
+			t.Errorf("settled at window %v, want the latch to hold out until the queries pace the loop", capture.window)
+		}
+		for i, e := range got {
+			pulse := pulseIndex(e.T, f.epoch)
+			if err := e.T.Sub(f.epoch) - time.Duration(pulse)*pulsePeriod; err < -500*time.Microsecond || err > 500*time.Microsecond {
+				t.Errorf("edge %d at pulse %d: error %v, want within 500µs of the query-time floor", i, pulse, err)
+			}
 		}
 	})
 }

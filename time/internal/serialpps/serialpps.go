@@ -63,6 +63,8 @@ type reading struct {
 	state gpsio.ModemControlPinState
 	at    time.Time
 	start time.Time
+	sched time.Time // when this poll was scheduled to run
+	slept bool      // whether the schedule was still in the future
 }
 
 // Poll adaptively polls for the pulse described by w and sends detected
@@ -71,32 +73,34 @@ type reading struct {
 // pair of consecutive polls with one poll on each side of the transition.
 // The bracket's width -- the time between those two polls -- is how
 // precisely the edge is located, and is the unit the window is sized in.
-// The window moves through a settling and a tracking regime, separated by
-// the settled latch. While settling, each
-// catch halves the window (from cold it is the whole pulse period, polled
-// uniformly) and a miss leaves it alone. Once settled, the window is
-// tracked additively: a miss widens it by a bracket width at each end and
-// every shrinkAfter-th consecutive catch narrows it by the same, so it
-// hovers just above the observed edge scatter, missing about one pulse in
-// shrinkAfter. missLimit consecutive misses mean the pulse is gone: the
-// window returns to the whole period in one step. At that size the poll
-// grid is advanced by a fraction of the spacing each period, sweeping the
-// phase so that a pulse narrower than the spacing is still found. A pulse
-// already in progress when a window opens is polled through, not declared
-// a miss: the search resumes on its far side. Everything hardware- and
-// load-dependent comes from measured poll timestamps: the halving bottoms
-// out wherever the state-query time or the spacing floor binds, without
-// the loop knowing which.
 //
-// Edges are sent only once settled: while each catch still improves on the
-// previous catch's bracket width, caught edges are too coarse to publish.
-// The settled state latches at the first catch whose bracket does not
-// improve on the previous one (misses in between do not affect the
-// comparison), and clears only on the cold restart after missLimit
-// consecutive misses, i.e. on signal loss. After the latch every caught
-// edge is sent, however coarse: a stretched sample is characteristic of
-// what the system delivers, and outliers are the NTP daemon's filtering's
-// job. Window size changes are logged to lg at debug level.
+// From cold the window is the whole pulse period, polled uniformly, and
+// each catch halves it; a miss leaves it alone. Halving ends at its floor
+// of two bracket widths, or at the first settled miss (the halving
+// overshot the edge scatter); the window is then tracked additively: a
+// miss widens it by a bracket width at each end and every shrinkAfter-th
+// consecutive catch narrows it by the same, so it hovers just above the
+// observed edge scatter, missing about one pulse in shrinkAfter. missLimit
+// consecutive misses mean the pulse is gone: the window returns to the
+// whole period in one step. At that size the poll grid is advanced by a
+// fraction of the spacing each period, sweeping the phase so that a pulse
+// narrower than the spacing is still found. A pulse already in progress
+// when a window opens is polled through, not declared a miss: the search
+// resumes on its far side.
+//
+// Edges are sent only once the settled latch is set. The latch means the
+// resolution has reached its floor, and the loop observes that directly
+// from its pacing rather than inferring it from bracket measurements,
+// which sleep overshoot contaminates while the loop is sleep-paced: a
+// catch settles the loop when its window was polled without a single
+// sleep firing (the queries pace the loop, so halving cannot improve
+// resolution further) or when the spacing target sits at minPollSpacing,
+// which halving no longer changes. The latch clears only on the cold
+// restart, i.e. on signal loss. Before the latch, caught edges are too
+// coarse to publish; after it every caught edge is sent, however coarse:
+// a stretched sample is characteristic of what the system delivers, and
+// outliers are the NTP daemon's filtering's job. Every caught edge and
+// every window size change is logged to lg at debug level.
 func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *slog.Logger) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -107,7 +111,8 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 	}
 	predicted := first.at.Add(maxPollWindow / 2)
 	window := maxPollWindow
-	settled := false
+	settled := false  // publishing gate: resolution at its floor
+	tracking := false // halving is over; the window moves additively
 	catches, misses := 0, 0
 	var prevBracketWidth time.Duration
 	for {
@@ -120,11 +125,15 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 		// The windows advance in lockstep with the pulses, so treating an
 		// in-progress pulse at the open as a miss would reopen at the same
 		// phase every period and never acquire; poll through it instead.
+		// slept accumulates over the window's scheduled polls (the wait for
+		// the window open is excluded: it always sleeps).
+		slept := false
 		for inPulse(cur.state, w) && cur.at.Before(deadline) {
 			cur, err = readState(ctx, r, cur.start.Add(spacing))
 			if err != nil {
 				return err
 			}
+			slept = slept || cur.slept
 		}
 		prev := cur
 		missed := inPulse(cur.state, w)
@@ -135,6 +144,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			if err != nil {
 				return err
 			}
+			slept = slept || cur.slept
 			edge, missed = classifyReading(prev, cur, w, deadline)
 			if !edge.IsZero() {
 				bracketWidth = cur.at.Sub(prev.at)
@@ -142,16 +152,23 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			prev = cur
 		}
 		if !edge.IsZero() {
+			// "late" is how far past its scheduled time the catching poll
+			// started: sleep overshoot when the loop is sleep-paced, queue
+			// debt when the queries pace it.
+			lg.Debug("serial PPS caught edge", "window", window, "bracket", bracketWidth,
+				"offset", edge.Sub(predicted), "late", cur.start.Sub(cur.sched))
 			predicted = edge.Add(pulsePeriod)
 			misses = 0
-			if !settled && prevBracketWidth > 0 && bracketWidth >= prevBracketWidth {
+			if !settled && (!slept || spacing == minPollSpacing) {
 				settled = true
 				lg.Debug("serial PPS settled", "window", window, "bracket", bracketWidth)
 			}
-			if !settled {
+			if !tracking {
 				if halved := max(window/2, 2*bracketWidth); halved != window {
 					window = halved
 					lg.Debug("serial PPS poll window halved", "window", window)
+				} else {
+					tracking = true
 				}
 			} else if catches++; catches >= shrinkAfter && window >= 4*bracketWidth {
 				catches = 0
@@ -178,13 +195,15 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			predicted = predicted.Add(spacing * 618 / 1000)
 			continue
 		}
-		if misses++; misses >= missLimit || (settled && window+2*prevBracketWidth >= maxPollWindow) {
+		if misses++; misses >= missLimit || ((settled || tracking) && window+2*prevBracketWidth >= maxPollWindow) {
 			window = maxPollWindow
 			lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window, "misses", misses)
 			settled = false
+			tracking = false
 			prevBracketWidth = 0
 			catches, misses = 0, 0
-		} else if settled {
+		} else if settled || tracking {
+			tracking = true
 			window += 2 * prevBracketWidth
 			catches = 0
 			lg.Debug("serial PPS poll window grew", "window", window, "misses", misses)
@@ -214,7 +233,8 @@ func inPulse(s gpsio.ModemControlPinState, w Wiring) bool {
 }
 
 func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading, error) {
-	if err := waitUntil(ctx, notBefore); err != nil {
+	slept, err := waitUntil(ctx, notBefore)
+	if err != nil {
 		return reading{}, err
 	}
 	start := time.Now()
@@ -223,26 +243,29 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, at: midpoint(start, end), start: start}, nil
+	return reading{state: state, at: midpoint(start, end), start: start, sched: notBefore, slept: slept}, nil
 }
 
-func waitUntil(ctx context.Context, t time.Time) error {
+// waitUntil reports whether it actually had to wait: false means the
+// scheduled time was already past, i.e. the previous state query outlasted
+// the poll spacing.
+func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 	d := time.Until(t)
 	if d <= 0 {
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
+			return false, ctx.Err()
 		default:
-			return nil
+			return false, nil
 		}
 	}
 	timer := time.NewTimer(d)
 	defer timer.Stop()
 	select {
 	case <-timer.C:
-		return nil
+		return true, nil
 	case <-ctx.Done():
-		return ctx.Err()
+		return false, ctx.Err()
 	}
 }
 
