@@ -1,7 +1,8 @@
-// Package pollppscmd implements pollpps, an internal tool that runs the
-// serialpps polling backend against a serial port's CTS pin and prints the
-// edges it detects, or times the modem status read that paces the polling.
-// The GPS PPS output should be connected to the CTS pin of a USB to TTL
+// Package pollppscmd implements pollpps, an internal tool that runs
+// serialpps edge detection (the wait backend where the driver provides it,
+// polling otherwise) against a serial port's CTS pin and prints the edges
+// it detects, or times the modem status read that paces the polling. The
+// GPS PPS output should be connected to the CTS pin of a USB to TTL
 // adapter.
 package pollppscmd
 
@@ -78,9 +79,9 @@ func Main() {
 	monitor(t)
 }
 
-// monitor runs the polling backend, echoing its debug log to stderr so
-// settling, the window equilibrium, and the miss rate are visible, and
-// prints each published edge.
+// monitor runs edge detection, echoing its debug log to stderr so the
+// backend choice and, when polling, settling, the window equilibrium, and
+// the miss rate are visible, and prints each published edge.
 func monitor(t *gpsio.SerialConn) {
 	lg := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: slog.LevelDebug}))
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
@@ -88,7 +89,7 @@ func monitor(t *gpsio.SerialConn) {
 	edges := make(chan serialpps.Edge)
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- serialpps.Poll(ctx, t, serialpps.Wiring{Pin: gpsio.ModemCTS}, edges, lg)
+		errCh <- serialpps.Detect(ctx, lg, t, serialpps.Wiring{Pin: gpsio.ModemCTS}, edges)
 	}()
 	ppsCount := 0
 	for {

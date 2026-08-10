@@ -184,7 +184,7 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
-`time/app/pollppscmd` implements pollpps, an internal tool that runs the `time/internal/serialpps` polling backend against a serial port's CTS pin and prints the edges it detects, or times the modem status read that paces the polling. It is provisional scaffolding: equivalent functionality is expected to become a satpulsetool subcommand once its shape is decided.
+`time/app/pollppscmd` implements pollpps, an internal tool that runs `time/internal/serialpps` edge detection against a serial port's CTS pin and prints the edges it detects, or times the modem status read that paces the polling backend. It is provisional scaffolding: equivalent functionality is expected to become a satpulsetool subcommand once its shape is decided.
 
 ### time/internal/
 
