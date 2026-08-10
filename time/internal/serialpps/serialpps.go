@@ -42,10 +42,17 @@ const (
 	maxMessageAge = 3 * time.Second
 )
 
-// Edge is a precisely polled leading edge. T is the midpoint of the two modem
-// state observations that straddled the transition.
+// Edge is a precisely polled leading edge, located at the midpoint of the
+// two modem state observations that straddled the transition. Wall and Mono
+// are readings of that one instant on the two clocks now provides: Wall is
+// the most precise available system-time reading and is what published
+// samples carry; Mono is an ordinary time.Now reading, the only one valid
+// for elapsed-time arithmetic against other time.Now values such as message
+// read times. Where time.Now is the best clock available they are the same
+// reading.
 type Edge struct {
-	T time.Time
+	Wall time.Time
+	Mono time.Time
 }
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
@@ -60,11 +67,12 @@ type Wiring struct {
 }
 
 type reading struct {
-	state gpsio.ModemControlPinState
-	at    time.Time
-	start time.Time
-	sched time.Time // when this poll was scheduled to run
-	slept bool      // whether the schedule was still in the future
+	state  gpsio.ModemControlPinState
+	at     time.Time
+	atMono time.Time // mono-clock reading of the same observation
+	start  time.Time
+	sched  time.Time // when this poll was scheduled to run
+	slept  bool      // whether the schedule was still in the future
 }
 
 // Poll adaptively polls for the pulse described by w and sends detected
@@ -142,9 +150,9 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 		}
 		prev := cur
 		missed := inPulse(cur.state, w)
-		var edge time.Time
+		var edge Edge
 		var bracketWidth time.Duration
-		for !missed && edge.IsZero() {
+		for !missed && edge.Wall.IsZero() {
 			cur, err = readState(ctx, r, prev.start.Add(spacing))
 			if err != nil {
 				return err
@@ -152,18 +160,18 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			polls++
 			slept = slept || cur.slept
 			edge, missed = classifyReading(prev, cur, w, deadline)
-			if !edge.IsZero() {
+			if !edge.Wall.IsZero() {
 				bracketWidth = cur.at.Sub(prev.at)
 			}
 			prev = cur
 		}
-		if !edge.IsZero() {
+		if !edge.Wall.IsZero() {
 			// "late" is how far past its scheduled time the catching poll
 			// started: sleep overshoot when the loop is sleep-paced, queue
 			// debt when the queries pace it.
 			lg.Debug("serial PPS caught edge", "window", window, "bracket", bracketWidth,
-				"offset", edge.Sub(predicted), "late", cur.start.Sub(cur.sched), "polls", polls)
-			predicted = edge.Add(pulsePeriod)
+				"offset", edge.Wall.Sub(predicted), "late", cur.start.Sub(cur.sched), "polls", polls)
+			predicted = edge.Wall.Add(pulsePeriod)
 			misses = 0
 			if !settled {
 				if spacing == minPollSpacing {
@@ -195,7 +203,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			prevBracketWidth = bracketWidth
 			if settled {
 				select {
-				case edges <- Edge{T: edge}:
+				case edges <- edge:
 				case <-ctx.Done():
 					return ctx.Err()
 				}
@@ -233,14 +241,14 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 // The deadline says when to stop looking, not whether a measured edge is
 // valid. A bracket spanning a full period or more may contain several
 // leading edges, so its midpoint identifies none of them: it is a miss.
-func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (time.Time, bool) {
+func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (Edge, bool) {
 	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
 		if cur.at.Sub(prev.at) >= pulsePeriod {
-			return time.Time{}, true
+			return Edge{}, true
 		}
-		return midpoint(prev.at, cur.at), false
+		return Edge{Wall: midpoint(prev.at, cur.at), Mono: midpoint(prev.atMono, cur.atMono)}, false
 	}
-	return time.Time{}, !cur.at.Before(deadline)
+	return Edge{}, !cur.at.Before(deadline)
 }
 
 // inPulse reports whether the state was observed during a pulse. The pulse's
@@ -255,13 +263,23 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 	if err != nil {
 		return reading{}, err
 	}
-	start := time.Now()
+	start, startMono := now()
 	state, err := r.ModemControlPinState()
-	end := time.Now()
+	end, endMono := now()
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, at: midpoint(start, end), start: start, sched: notBefore, slept: slept}, nil
+	return reading{state: state, at: midpoint(start, end), atMono: midpoint(startMono, endMono),
+		start: start, sched: notBefore, slept: slept}, nil
+}
+
+// now reads the clocks behind Edge: wall locates edges and paces the loop,
+// mono serves elapsed-time arithmetic against other time.Now values. Here
+// they are one time.Now reading; a platform whose precise wall-clock read
+// carries no monotonic reading separates them.
+func now() (wall, mono time.Time) {
+	t := time.Now()
+	return t, t
 }
 
 // waitUntil reports whether it actually had to wait: false means the
@@ -332,7 +350,7 @@ func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) 
 // pulse-to-message delay bounds, or for the pulse marking an inserted leap
 // second.
 func (g *Generator) Edge(edge Edge) (Sample, bool) {
-	if g.tRead.IsZero() || edge.T.Sub(g.tRead) > maxMessageAge {
+	if g.tRead.IsZero() || edge.Mono.Sub(g.tRead) > maxMessageAge {
 		return Sample{}, false
 	}
 	// Advancing utc by the monotonic elapsed time since tRead gives the
@@ -341,7 +359,7 @@ func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	// second whose inferred pulse-to-message delay is in the configured
 	// causal interval. The validated interval is narrower than a second, so
 	// the label is unique when it exists.
-	candidate := g.utc.Add(edge.T.Sub(g.tRead))
+	candidate := g.utc.Add(edge.Mono.Sub(g.tRead))
 	reference := candidate.Truncate(time.Second)
 	delay := reference.Sub(candidate)
 	if delay < -g.delayUncertainty {
@@ -376,7 +394,7 @@ func (g *Generator) Edge(edge Edge) (Sample, bool) {
 	}
 	return Sample{
 		Reference: reference,
-		System:    edge.T,
+		System:    edge.Wall,
 		Leap:      leap,
 	}, true
 }

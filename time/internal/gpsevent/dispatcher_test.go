@@ -294,7 +294,7 @@ func TestDispatcherSerialPPSEdgeWritesSample(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.serialPPSEdge(serialpps.Edge{T: edge})
+	d.serialPPSEdge(serialpps.Edge{Wall: edge, Mono: edge})
 
 	if len(shm.writes) != 1 {
 		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
