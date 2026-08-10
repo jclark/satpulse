@@ -122,6 +122,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 		if err != nil {
 			return err
 		}
+		polls := 1
 		// The windows advance in lockstep with the pulses, so treating an
 		// in-progress pulse at the open as a miss would reopen at the same
 		// phase every period and never acquire; poll through it instead.
@@ -133,6 +134,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			if err != nil {
 				return err
 			}
+			polls++
 			slept = slept || cur.slept
 		}
 		prev := cur
@@ -144,6 +146,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			if err != nil {
 				return err
 			}
+			polls++
 			slept = slept || cur.slept
 			edge, missed = classifyReading(prev, cur, w, deadline)
 			if !edge.IsZero() {
@@ -156,7 +159,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			// started: sleep overshoot when the loop is sleep-paced, queue
 			// debt when the queries pace it.
 			lg.Debug("serial PPS caught edge", "window", window, "bracket", bracketWidth,
-				"offset", edge.Sub(predicted), "late", cur.start.Sub(cur.sched))
+				"offset", edge.Sub(predicted), "late", cur.start.Sub(cur.sched), "polls", polls)
 			predicted = edge.Add(pulsePeriod)
 			misses = 0
 			if !settled && (!slept || spacing == minPollSpacing) {
@@ -206,7 +209,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			tracking = true
 			window += 2 * prevBracketWidth
 			catches = 0
-			lg.Debug("serial PPS poll window grew", "window", window, "misses", misses)
+			lg.Debug("serial PPS poll window grew", "window", window, "misses", misses, "polls", polls)
 		}
 	}
 }
