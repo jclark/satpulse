@@ -6,6 +6,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,7 +15,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
-	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/spf13/pflag"
 )
 
@@ -53,25 +54,13 @@ func main() {
 
 	device := flags.Args()[0]
 
-	// Open with the same line attributes the daemon uses for a GPS port.
-	opts := []term.AttrSetter{term.RawMode, term.Local, term.NoParity, term.NoFlowControl}
-	if speed != 0 {
-		if !term.IsValidSpeed(speed) {
-			log.Fatalf("non-standard serial speed %d is not supported", speed)
-		}
-		opts = append(opts, term.Speed(speed))
-	}
-	t, err := term.Open(device, opts...)
+	// Use the daemon's serial connection so reads have the same timeout and
+	// shutdown synchronization as the scan worker.
+	t, _, err := gpsio.OpenSerial(device, speed)
 	if err != nil {
 		log.Fatalf("Failed to open %s: %v", device, err)
 	}
-	defer func() {
-		t.Restore()
-		t.Close()
-	}()
-	if err := t.Flush(); err != nil {
-		log.Fatalf("Failed to flush %s: %v", device, err)
-	}
+	defer t.Close()
 	if ioctlTime {
 		timeIoctl(t)
 		return
@@ -98,7 +87,7 @@ func main() {
 			}
 
 			// Check if CTS flag is set
-			cts := status.Asserted(term.ModemCTS)
+			cts := status.Asserted(gpsio.ModemCTS)
 
 			// Check for transition from flag being on to off.
 			// This is the opposite of what you might expect.
@@ -134,14 +123,22 @@ func main() {
 // condition the daemon polls under: measured on an FT232R on Linux
 // ftdi_sio, the read is ~110 us with the port undrained but the daemon,
 // which drains it, sees ~1.3 ms brackets on the same adapter.
-func timeIoctl(t term.Term) {
+func timeIoctl(t *gpsio.SerialConn) {
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		b := make([]byte, 4096)
 		for {
-			if _, err := t.Read(b); err != nil {
+			if _, err := t.Read(b); errors.Is(err, os.ErrDeadlineExceeded) {
+				continue
+			} else if err != nil {
 				return
 			}
 		}
+	}()
+	defer func() {
+		t.Stop()
+		<-done
 	}()
 	const n = 2000
 	ds := make([]time.Duration, n)
