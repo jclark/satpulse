@@ -108,9 +108,10 @@ type fakeWaitTerm struct {
 
 var _ term.ModemControlPinWaiter = (*fakeWaitTerm)(nil)
 
-func (f *fakeWaitTerm) WaitModemControlPinChange(term.ModemControlPin) (time.Time, error) {
+func (f *fakeWaitTerm) WaitModemControlPinChange(term.ModemControlPin) (wall, mono time.Time, err error) {
 	f.waits++
-	return time.Now(), nil
+	now := time.Now()
+	return now, now, nil
 }
 
 func (f *fakeWaitTerm) CancelModemControlPinWait() { f.cancelled = true }
@@ -122,8 +123,8 @@ func TestSerialConnWaitCapability(t *testing.T) {
 	if !c.CanWaitModemControlPinChange() {
 		t.Fatal("CanWaitModemControlPinChange() = false, want true")
 	}
-	if at, err := c.WaitModemControlPinChange(ModemCTS); err != nil || at.IsZero() {
-		t.Fatalf("WaitModemControlPinChange = %v, %v; want a timestamp", at, err)
+	if wall, mono, err := c.WaitModemControlPinChange(ModemCTS); err != nil || wall.IsZero() || mono.IsZero() {
+		t.Fatalf("WaitModemControlPinChange = %v, %v, %v; want timestamps", wall, mono, err)
 	}
 	if f.waits != 1 {
 		t.Errorf("waits = %d, want 1", f.waits)
@@ -147,7 +148,7 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	if _, err := c.ModemControlPinState(); !errors.Is(err, term.ErrNotATTY) {
 		t.Errorf("ModemControlPinState error = %v, want ErrNotATTY", err)
 	}
-	if _, err := c.WaitModemControlPinChange(ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
+	if _, _, err := c.WaitModemControlPinChange(ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
 		t.Errorf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {

@@ -252,7 +252,8 @@ type modemWaitState struct {
 }
 
 // WaitModemControlPinChange blocks in TIOCMIWAIT until pin may have changed
-// state, returning the time the ioctl returned. A Close preceded by
+// state, returning the time the ioctl returned; time.Now is the best clock
+// here, so one reading serves as both wall and mono. A Close preceded by
 // CancelModemControlPinWait (the order SerialConn.Stop ensures) is safe at
 // any point relative to a wait call: cancel serializes with the dup below.
 //
@@ -265,16 +266,17 @@ type modemWaitState struct {
 // dup of the descriptor, so however late it wakes it cannot touch a
 // descriptor number reused after Close; the dup (and with it the port's
 // flock) is held until it wakes, and process exit releases everything.
-func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time, error) {
+func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono time.Time, err error) {
 	mask, err := tiocmPinMask(pin)
 	if err != nil {
-		return time.Time{}, err
+		return time.Time{}, time.Time{}, err
 	}
 	w := &t.miwait
 	w.mu.Lock()
 	if w.cancelled {
 		w.mu.Unlock()
-		return time.Now(), nil
+		now := time.Now()
+		return now, now, nil
 	}
 	if w.cancelCh == nil {
 		w.cancelCh = make(chan struct{})
@@ -287,7 +289,7 @@ func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time, er
 	fd, err := unix.FcntlInt(uintptr(t.fd), unix.F_DUPFD_CLOEXEC, 0)
 	w.mu.Unlock()
 	if err != nil {
-		return time.Time{}, t.wrapErr(err, "fcntl(F_DUPFD_CLOEXEC)")
+		return time.Time{}, time.Time{}, t.wrapErr(err, "fcntl(F_DUPFD_CLOEXEC)")
 	}
 	ch := make(chan miwaitResult, 1)
 	go miwaitIoctl(fd, mask, ch)
@@ -295,14 +297,15 @@ func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (time.Time, er
 	case r := <-ch:
 		if r.errno == unix.ENOTTY {
 			// The tty driver does not implement TIOCMIWAIT.
-			return time.Time{}, t.wrapErr(fmt.Errorf("%w: %v", errors.ErrUnsupported, r.errno), "ioctl(TIOCMIWAIT)")
+			return time.Time{}, time.Time{}, t.wrapErr(fmt.Errorf("%w: %v", errors.ErrUnsupported, r.errno), "ioctl(TIOCMIWAIT)")
 		}
 		if r.errno != 0 {
-			return time.Time{}, t.wrapErr(r.errno, "ioctl(TIOCMIWAIT)")
+			return time.Time{}, time.Time{}, t.wrapErr(r.errno, "ioctl(TIOCMIWAIT)")
 		}
-		return r.at, nil
+		return r.at, r.at, nil
 	case <-cancelCh:
-		return time.Now(), nil
+		now := time.Now()
+		return now, now, nil
 	}
 }
 

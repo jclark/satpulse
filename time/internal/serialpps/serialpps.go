@@ -61,13 +61,14 @@ type StateReader interface {
 }
 
 // ChangeWaiter is a StateReader that may be able to block until a modem
-// control input changes, reporting the time of the wakeup;
+// control input changes, reporting the time of the wakeup as a wall and a
+// mono reading per term.ModemControlPinWaiter;
 // CanWaitModemControlPinChange reports whether it actually can. Implemented
 // by a TTY-backed gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
 	CanWaitModemControlPinChange() bool
-	WaitModemControlPinChange(gpsio.ModemControlPin) (time.Time, error)
+	WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error)
 }
 
 // Wiring describes how the PPS pulse is represented on the serial port's
@@ -279,7 +280,7 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) erro
 			return ctx.Err()
 		default:
 		}
-		at, err := r.WaitModemControlPinChange(w.Pin)
+		wall, mono, err := r.WaitModemControlPinChange(w.Pin)
 		if err != nil {
 			return err
 		}
@@ -289,7 +290,7 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) erro
 		}
 		if !inPulse(prev, w) && inPulse(cur, w) {
 			select {
-			case edges <- Edge{Wall: at, Mono: at}:
+			case edges <- Edge{Wall: wall, Mono: mono}:
 			case <-ctx.Done():
 				return ctx.Err()
 			}

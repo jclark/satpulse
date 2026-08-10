@@ -50,9 +50,11 @@ func (w *testChangeWaiter) ModemControlPinState() (gpsio.ModemControlPinState, e
 
 func (w *testChangeWaiter) CanWaitModemControlPinChange() bool { return true }
 
-func (w *testChangeWaiter) WaitModemControlPinChange(gpsio.ModemControlPin) (time.Time, error) {
+func (w *testChangeWaiter) WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error) {
 	w.state = <-w.next
-	return time.Now(), nil
+	// Distinct readings, so a backend crossing the two roles is caught.
+	mono = time.Now()
+	return mono.Add(time.Millisecond), mono, nil
 }
 
 func TestWait(t *testing.T) {
@@ -68,6 +70,9 @@ func TestWait(t *testing.T) {
 	case edge := <-edges:
 		if edge.Wall.IsZero() || edge.Mono.IsZero() {
 			t.Fatal("Wait emitted a zero timestamp")
+		}
+		if got := edge.Wall.Sub(edge.Mono); got != time.Millisecond {
+			t.Fatalf("edge.Wall - edge.Mono = %v, want the waiter's readings passed through unswapped", got)
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Wait did not emit the deasserting edge")
@@ -94,10 +99,10 @@ func (w *testFallbackWaiter) ModemControlPinState() (gpsio.ModemControlPinState,
 
 func (w *testFallbackWaiter) CanWaitModemControlPinChange() bool { return w.canWait }
 
-func (w *testFallbackWaiter) WaitModemControlPinChange(gpsio.ModemControlPin) (time.Time, error) {
+func (w *testFallbackWaiter) WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error) {
 	w.waits++
 	w.cancel()
-	return time.Time{}, errors.ErrUnsupported
+	return time.Time{}, time.Time{}, errors.ErrUnsupported
 }
 
 func TestDetectFallsBackToPolling(t *testing.T) {

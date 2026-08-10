@@ -112,7 +112,7 @@ func TestExclusiveModeReleased(t *testing.T) {
 // is what triggers the fallback to the polling backend.
 func TestWaitModemControlPinChangeUnsupported(t *testing.T) {
 	w := openTestWaiter(t)
-	if _, err := w.WaitModemControlPinChange(ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
+	if _, _, err := w.WaitModemControlPinChange(ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("WaitModemControlPinChange error = %v, want errors.ErrUnsupported", err)
 	}
 }
@@ -123,14 +123,14 @@ func TestWaitModemControlPinChangeUnsupported(t *testing.T) {
 func TestCancelModemControlPinWait(t *testing.T) {
 	w := openTestWaiter(t)
 	w.CancelModemControlPinWait()
-	if at, err := w.WaitModemControlPinChange(ModemCTS); err != nil || at.IsZero() {
-		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v; want a timestamp", at, err)
+	if wall, mono, err := w.WaitModemControlPinChange(ModemCTS); err != nil || wall.IsZero() || mono.IsZero() {
+		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v, %v; want timestamps", wall, mono, err)
 	}
 }
 
 func TestWaitModemControlPinChangeInvalidLine(t *testing.T) {
 	w := openTestWaiter(t)
-	if _, err := w.WaitModemControlPinChange(ModemControlPin(99)); err == nil {
+	if _, _, err := w.WaitModemControlPinChange(ModemControlPin(99)); err == nil {
 		t.Fatal("WaitModemControlPinChange accepted an invalid line")
 	}
 }
