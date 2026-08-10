@@ -88,16 +88,18 @@ type reading struct {
 // when a window opens is polled through, not declared a miss: the search
 // resumes on its far side.
 //
-// Edges are sent only once the settled latch is set. The latch means the
-// resolution has reached its floor, and the loop observes that directly
-// from its pacing rather than inferring it from bracket measurements,
-// which sleep overshoot contaminates while the loop is sleep-paced: a
-// catch settles the loop when its window was polled without a single
-// sleep firing (the queries pace the loop, so halving cannot improve
-// resolution further) or when the spacing target sits at minPollSpacing,
-// which halving no longer changes. The latch clears only on the cold
-// restart, i.e. on signal loss. Before the latch, caught edges are too
-// coarse to publish; after it every caught edge is sent, however coarse:
+// Edges are sent only once the settled latch is set. The loop observes that
+// the polling schedule no longer controls resolution from its pacing rather
+// than inferring it from bracket measurements, which sleep overshoot
+// contaminates while the loop is sleep-paced. A catch settles immediately
+// when the spacing target sits at minPollSpacing, which halving no longer
+// changes. Otherwise two consecutive caught windows must be polled without
+// a single sleep firing; since each catch halves the window, the second
+// confirms at a smaller spacing that the queries pace the loop. A
+// sleep-paced catch or a miss clears the confirmation, so a transient run
+// of slow queries cannot open the publishing gate. The latch clears only on
+// the cold restart, i.e. on signal loss. Before the latch, caught edges are
+// too coarse to publish; after it every caught edge is sent, however coarse:
 // a stretched sample is characteristic of what the system delivers, and
 // outliers are the NTP daemon's filtering's job. Every caught edge and
 // every window size change is logged to lg at debug level.
@@ -111,9 +113,10 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 	}
 	predicted := first.at.Add(maxPollWindow / 2)
 	window := maxPollWindow
-	settled := false  // publishing gate: resolution at its floor
+	settled := false  // publishing gate: polling schedule no longer binds
 	tracking := false // halving is over; the window moves additively
 	catches, misses := 0, 0
+	queryPacedCatches := 0
 	var prevBracketWidth time.Duration
 	for {
 		spacing := max(window/initialPollsPerSecond, minPollSpacing)
@@ -162,9 +165,20 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 				"offset", edge.Sub(predicted), "late", cur.start.Sub(cur.sched), "polls", polls)
 			predicted = edge.Add(pulsePeriod)
 			misses = 0
-			if !settled && (!slept || spacing == minPollSpacing) {
-				settled = true
-				lg.Debug("serial PPS settled", "window", window, "bracket", bracketWidth)
+			if !settled {
+				if spacing == minPollSpacing {
+					settled = true
+				} else if slept {
+					queryPacedCatches = 0
+				} else {
+					queryPacedCatches++
+					if queryPacedCatches >= 2 {
+						settled = true
+					}
+				}
+				if settled {
+					lg.Debug("serial PPS settled", "window", window, "bracket", bracketWidth)
+				}
 			}
 			if !tracking {
 				if halved := max(window/2, 2*bracketWidth); halved != window {
@@ -189,6 +203,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			continue
 		}
 		predicted = predicted.Add(pulsePeriod)
+		queryPacedCatches = 0
 		if window == maxPollWindow {
 			// At full size, consecutive windows tile the period exactly, so a
 			// locked poll grid would revisit the same phases every period and
@@ -204,7 +219,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			settled = false
 			tracking = false
 			prevBracketWidth = 0
-			catches, misses = 0, 0
+			catches, misses, queryPacedCatches = 0, 0, 0
 		} else if settled || tracking {
 			tracking = true
 			window += 2 * prevBracketWidth

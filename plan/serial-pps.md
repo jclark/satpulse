@@ -241,20 +241,22 @@ delivery tail, is gone -- the tail is learned as equilibrium
 growth instead.
 
 Publishing is gated by a latched settled state, meaning the
-resolution has reached its floor: further halving cannot improve
-it. The loop observes that condition directly from its pacing
-rather than inferring it from bracket measurements: a catch
-settles the loop when its window was polled without a single
-sleep firing (the state queries outlast the spacing target and
-pace the loop themselves), or when the spacing target sits at the
-50 us floor, which halving no longer changes. Bracket widths play
-no part in the latch: sleep overshoot stretches them while the
-loop is sleep-paced (measured at 0.3-1 ms inside the daemon,
-against microseconds in a bare test process), and the earlier
-latch -- settle at the first catch whose bracket does not improve
-on the previous one -- misfired on that noise, publishing
-millisecond-class samples from a still-wide window. The flag
-clears only on the cold restart
+polling schedule no longer controls resolution. The loop observes
+that condition directly from its pacing rather than inferring it
+from bracket measurements. A catch settles immediately when the
+spacing target sits at the 50 us floor, which halving no longer
+changes. Otherwise two consecutive caught windows must be polled
+without a single sleep firing; since each catch halves the window,
+the second confirms at a smaller spacing that the state queries,
+not the target spacing, pace the loop. A sleep-paced catch or a
+miss clears the confirmation, so a transient run of slow queries
+cannot open the gate. Bracket widths play no part in the latch:
+sleep overshoot stretches them while the loop is sleep-paced
+(measured at 0.3-1 ms inside the daemon, against microseconds in a
+bare test process), and the earlier latch -- settle at the first
+catch whose bracket does not improve on the previous one --
+misfired on that noise, publishing millisecond-class samples from
+a still-wide window. The flag clears only on the cold restart
 (signal loss, hence a genuinely new settling period). The point of
 the suppression is only to withhold the
 uncharacteristically bad cold-start samples: after the latch every
@@ -265,8 +267,9 @@ outliers. Chrony has no notion of an initial settling period, so the
 loop provides one.
 
 The bracket needs a poll inside the pulse. Once settled, the
-spacing sits at the measured floor, so tracking only needs the
-pulse to be wider than one achieved poll interval. Acquisition
+achieved poll interval is paced by the state query or the spacing
+floor, so tracking only needs the pulse to be wider than one
+achieved poll interval. Acquisition
 polls at period/N, about 16 ms: pulses at least that wide are
 caught deterministically, narrower ones (e.g. Septentrio's 5 ms
 default) are found by the phase sweep at full window size,
@@ -416,12 +419,13 @@ The generator gets table-driven unit tests covering second
 identification, the staleness rule, and leap passthrough, using
 synthetic messages and edges. The polling loop runs under
 `testing/synctest` against a simulated pulse source with configurable
-query duration, pulse width, delivery delay, and outages, so
+query duration and transient slowdowns, pulse width, delivery delay,
+and outages, so
 settling, steady-state poll cost, and miss handling are checked
 deterministically. The source also models the daemon's sleep
 overshoot (jittered and stalled wakeups), pinning the settled
-latch to the query-paced floor rather than the bracket noise the
-earlier latch misfired on. The edge backends are also validated on real
+latch to confirmed query pacing rather than the bracket noise or
+a single slow-query burst. The edge backends are also validated on real
 hardware per the phasing below.
 
 ## Phasing

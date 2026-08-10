@@ -221,7 +221,9 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 // do not. A nonzero stall delays the single first query at or after
 // stallAfter (relative to epoch) by that much, stretching one bracket --
 // the noise event that made a latch comparing consecutive brackets misfire
-// in the daemon. calls counts the state queries.
+// in the daemon. A nonzero slowCallDur replaces callDur from slowFrom until
+// slowTo, modelling a transient run of slow queries. calls counts the state
+// queries.
 type fakePulse struct {
 	epoch          time.Time
 	width          time.Duration
@@ -232,6 +234,9 @@ type fakePulse struct {
 	wakeJitter     time.Duration
 	stallAfter     time.Duration
 	stall          time.Duration
+	slowFrom       time.Duration
+	slowTo         time.Duration
+	slowCallDur    time.Duration
 	stalled        bool
 	lastEnd        time.Time
 	seq            uint32
@@ -252,8 +257,13 @@ func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
 		time.Sleep(f.stall)
 	}
 	defer func() { f.lastEnd = time.Now() }()
-	time.Sleep(f.callDur)
+	callDur := f.callDur
 	since := time.Since(f.epoch)
+	if f.slowCallDur > 0 && since >= f.slowFrom && since < f.slowTo {
+		callDur = f.slowCallDur
+	}
+	time.Sleep(callDur)
+	since = time.Since(f.epoch)
 	n := int(since / pulsePeriod)
 	off := since % pulsePeriod
 	if f.lateEvery > 0 && n%f.lateEvery == 0 {
@@ -275,7 +285,7 @@ func TestPoll(t *testing.T) {
 		name             string
 		epochOffset      time.Duration // pulse 0's leading edge relative to start
 		callDur          time.Duration
-		expectFirstPulse int           // settling length bounds, in pulses
+		expectFirstPulse int // settling length bounds, in pulses
 		expectLastPulse  int
 		expectTol        time.Duration // per-edge timestamp error bound
 	}{
@@ -465,6 +475,37 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 			if err := e.T.Sub(f.epoch) - time.Duration(pulse)*pulsePeriod; err < -500*time.Microsecond || err > 500*time.Microsecond {
 				t.Errorf("edge %d at pulse %d: error %v, want within 500µs of the query-time floor", i, pulse, err)
 			}
+		}
+	})
+}
+
+// TestPollConfirmsQueryPacing checks that a single query slowdown does not
+// open the publishing gate. The slowdown covers the catch at the 15.625 ms
+// window, where its 400 us queries outlast the 244 us target. Normal 20 us
+// queries resume at the next pulse, so settling must continue until the
+// 50 us spacing floor is reached.
+func TestPollConfirmsQueryPacing(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		f := &fakePulse{
+			epoch:       time.Now().Add(350 * time.Millisecond),
+			width:       100 * time.Millisecond,
+			callDur:     20 * time.Microsecond,
+			slowFrom:    6*time.Second - 10*time.Millisecond,
+			slowTo:      6*time.Second + 10*time.Millisecond,
+			slowCallDur: 400 * time.Microsecond,
+		}
+		capture := &settleCapture{Handler: slog.DiscardHandler}
+		ctx, cancel := context.WithCancel(context.Background())
+		edges := make(chan Edge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, edges, slog.New(capture)) }()
+		for range 3 {
+			<-edges
+		}
+		cancel()
+		<-errCh
+		if capture.window == 0 || capture.window >= 15*time.Millisecond {
+			t.Errorf("settled at window %v, want the one-window query slowdown suppressed", capture.window)
 		}
 	})
 }
