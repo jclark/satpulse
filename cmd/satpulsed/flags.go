@@ -1,10 +1,11 @@
-package daemon
+package main
 
 import (
 	"fmt"
 	"os"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/time/app/daemon"
 	"github.com/spf13/pflag"
 )
 
@@ -22,6 +23,8 @@ const summary = `[-h|--help] [-V|--version] [-v|--verbose] [-w|--wait] [-s|--sys
 // parseFlags parses the command line flags and returns the flagVars, a string to display, and an error.
 // The caller will display the string and exit if the flagVars are nil.
 // If returned error is non-nil, then the flagVars should be nil.
+// Whether a config file is required depends on the run mode, so the check
+// is left to the caller (see requireConfigFiles).
 func parseFlags(cmdName string, args []string) (*flagVars, string, error) {
 	help := false
 	showVersion := false
@@ -51,12 +54,18 @@ func parseFlags(cmdName string, args []string) (*flagVars, string, error) {
 	if flags.NArg() != 0 {
 		return nil, usage(), fmt.Errorf("%s command must not have non-option arguments", cmdName)
 	}
+	return &vars, "", nil
+}
+
+// requireConfigFiles ensures that a config file was specified, falling back
+// to the environment variable, and returns an error if there is none.
+func requireConfigFiles(vars *flagVars) error {
 	if len(vars.configFiles) == 0 {
-		f := os.Getenv(configFileEnvVar)
+		f := os.Getenv(daemon.ConfigFileEnvVar)
 		if f == "" {
-			return nil, "", fmt.Errorf("must specify a config file with -f option or %s environment variable", configFileEnvVar)
+			return fmt.Errorf("must specify a config file with -f option or %s environment variable", daemon.ConfigFileEnvVar)
 		}
 		vars.configFiles = []string{f}
 	}
-	return &vars, "", nil
+	return nil
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"os"
 	"sync"
 	"time"
 
@@ -34,64 +33,32 @@ import (
 	"github.com/jclark/satpulse/time/phc"
 )
 
-func Cmd(progName string, args []string) {
-	vars, msg, err := parseFlags(progName, args)
-	if vars == nil {
-		exitCode := 0
-		if err != nil {
-			cmd.ErrPrintln(progName, err)
-			exitCode = exitUsage
-		}
-		fmt.Fprint(os.Stderr, msg)
-		os.Exit(exitCode)
-	}
-	cfg, configPath, err := LoadConfig(vars.configFiles...)
-	if err != nil {
-		cmd.ErrPrintlnWithDetail(progName, err)
-		os.Exit(exitConfig)
-	}
+// Run executes the daemon until ctx is cancelled or it exits on its own,
+// and returns the settled error. The caller owns flag parsing, logger
+// construction, signal/service handling, and process exit.
+//
+// A plain cancellation of ctx (the normal stop path: a signal, or a
+// service stop request) is success and returns nil. Run returns a non-nil
+// error only for a genuine fault: a startup failure, or a cancellation
+// cause other than context.Canceled, such as the scan worker reporting
+// that serial input disappeared.
+func Run(ctx context.Context, cfg *Config, lg *slog.Logger) error {
 	vendors, err := cmd.ResolveVendors(cfg.GPS.Vendor)
 	if err != nil {
-		cmd.ErrPrintlnWithDetail(progName, err)
-		os.Exit(exitConfig)
+		return &configError{err: err}
 	}
-	if vars.wait {
-		cfg.PHC.Wait = true
-	}
-	if vars.serialDevice != "" {
-		cfg.Serial.Device = vars.serialDevice
-	}
-	level := slog.LevelInfo
-	if vars.verbose || cfg.Log.Verbose {
-		level = slog.LevelDebug
-	}
-	var handler slog.Handler
-	if vars.sdLog {
-		handler = NewSdHandler(level, os.Stdout)
-	} else {
-		handler = slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: level})
-	}
-	lg := slog.New(handler)
-	slog.SetDefault(lg)
-	ver, buildDate := cmd.Version()
-	lg.Info("starting", "version", ver, "buildDate", buildDate, "configPath", configPath)
-	ctx := context.Background()
-	ctx, _ = cmd.CancelOnSignal(ctx, lg)
 	ctx, cancelCause := context.WithCancelCause(ctx)
 	err = run(ctx, lg, cancelCause, cfg, vendors)
 	// run returns only after shutdown completes, so the cancellation cause is
 	// settled. A non-signal cause -- the scan worker sets one when the serial
-	// input disappears -- becomes the process error, so exitCode picks a
-	// non-zero status and systemd restarts us.
+	// input disappears -- becomes the returned error, so the caller exits
+	// with a non-zero status and the service manager restarts us.
 	if err == nil {
 		if cause := context.Cause(ctx); cause != nil && cause != context.Canceled {
 			err = cause
 		}
 	}
-	if err != nil {
-		cmd.ErrPrintln(progName, err)
-		os.Exit(exitCode(err))
-	}
+	return err
 }
 
 func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, cfg *Config, vendors []gpsreg.Vendor) error {
