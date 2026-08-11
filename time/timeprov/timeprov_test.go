@@ -6,10 +6,46 @@ import (
 	"encoding/binary"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/sockrefclock"
 )
+
+// TestNew checks pipe-path validation, including that the case-
+// insensitive named-pipe prefix is accepted in any casing.
+func TestNew(t *testing.T) {
+	tests := []struct {
+		name       string
+		path       string
+		expectPath string
+		expectErr  bool
+	}{
+		{name: "default", path: "", expectPath: DefaultPipe},
+		{name: "explicit", path: `\\.\pipe\foo`, expectPath: `\\.\pipe\foo`},
+		{name: "uppercase prefix", path: `\\.\PIPE\foo`, expectPath: `\\.\PIPE\foo`},
+		{name: "not a pipe", path: `C:\tmp\foo`, expectErr: true},
+		{name: "too short", path: `\\.\`, expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c, err := New(tc.path, time.Millisecond)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			defer c.Close()
+			if got := c.RemotePath(); got != tc.expectPath {
+				t.Errorf("got  %q\nwant %q", got, tc.expectPath)
+			}
+		})
+	}
+}
 
 // TestRecord checks the wire layout against independently computed
 // field values at their documented offsets (pipe-timeprov wire format

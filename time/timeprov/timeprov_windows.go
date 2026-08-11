@@ -39,8 +39,12 @@ type pipeConn struct {
 	path string
 }
 
+const pipePrefix = `\\.\pipe\`
+
 func newPipeConn(path string) (*pipeConn, error) {
-	if !strings.HasPrefix(path, `\\.\pipe\`) {
+	// Named pipe names are case-insensitive, so accept any casing of
+	// the prefix.
+	if len(path) < len(pipePrefix) || !strings.EqualFold(path[:len(pipePrefix)], pipePrefix) {
 		return nil, fmt.Errorf(`timeprov pipe path %q must start with \\.\pipe\`, path)
 	}
 	return &pipeConn{path: path}, nil
