@@ -369,12 +369,66 @@ test('messages: the preset buttons set the group controls', async ({ page, workb
   await expect(page.getByRole('checkbox', { name: 'RMC' })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'GGA' })).not.toBeChecked();
 
-  // Daemon: satellites messages on (speed 38400 >= 19200) and the PVT preset
-  // set (time-pulse time and position among them).
-  await page.getByRole('button', { name: 'Daemon' }).click();
+  // NTP: navigation time over serial, no time-pulse messages, satellites
+  // messages on (speed 38400 meets the threshold).
+  await page.getByRole('button', { name: 'NTP' }).click();
+  await expect(page.getByRole('checkbox', { name: 'Navigation time' })).toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Time-pulse time' })).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: 'Satellite positions' })).toBeChecked();
+
+  // PTP: the time-pulse PVT preset (time-pulse time and position among them).
+  await page.getByRole('button', { name: 'PTP' }).click();
   await expect(page.getByRole('checkbox', { name: 'Satellite positions' })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Time-pulse time' })).toBeChecked();
   await expect(page.getByRole('checkbox', { name: 'Position', exact: true })).toBeChecked();
+});
+
+test('messages: the groups start from the messages satpulsed uses', async ({ page, workbenchUbxsim }) => {
+  await gotoWorkbench(page, workbenchUbxsim.baseURL);
+  await openConfig(page, 'Messages');
+
+  const sub = (title: string) => page.getByText(title, { exact: true }).locator('xpath=following-sibling::div[1]');
+
+  // NMEA: the sentences satpulsed decodes, minus ZDA and VTG.
+  const nmea = sub('NMEA');
+  for (const s of ['RMC', 'GGA', 'GSA', 'GSV']) {
+    await expect(nmea.getByRole('checkbox', { name: s })).toBeChecked();
+  }
+  for (const s of ['GLL', 'VTG', 'ZDA']) {
+    await expect(nmea.getByRole('checkbox', { name: s })).not.toBeChecked();
+  }
+
+  // RTCM: MSM4 with fallback and ARP.
+  const rtcm = sub('RTCM');
+  await expect(rtcm.getByRole('radio', { name: 'MSM4' })).toBeChecked();
+  await expect(rtcm.getByRole('checkbox', { name: 'Allow MSM fallback' })).toBeChecked();
+  await expect(rtcm.getByRole('checkbox', { name: 'Antenna reference point' })).toBeChecked();
+
+  // PVT: navigation time, position, solution quality, end of epoch, and
+  // turn off the rest.
+  const pvt = sub('PVT');
+  for (const s of ['Navigation time', 'Position', 'Solution quality', 'End of epoch', 'Turn off unselected']) {
+    await expect(pvt.getByRole('checkbox', { name: s, exact: true })).toBeChecked();
+  }
+  await expect(pvt.getByRole('checkbox', { name: 'Time-pulse time' })).not.toBeChecked();
+
+  // Satellites: both. Raw: observations only.
+  const sats = sub('Satellites');
+  await expect(sats.getByRole('checkbox', { name: 'Satellite positions' })).toBeChecked();
+  await expect(sats.getByRole('checkbox', { name: 'Signals' })).toBeChecked();
+  const raw = sub('Raw');
+  await expect(raw.getByRole('checkbox', { name: 'Observations (RINEX .obs)' })).toBeChecked();
+  await expect(raw.getByRole('checkbox', { name: 'Navigation data (RINEX .nav)' })).not.toBeChecked();
+
+  // Ticking Change only enables the selection, and edits survive unticking
+  // and re-ticking it.
+  const change = nmea.getByRole('checkbox', { name: 'Change' });
+  await change.check();
+  await expect(nmea.getByRole('checkbox', { name: 'GGA' })).toBeChecked();
+  await nmea.getByRole('checkbox', { name: 'GGA' }).uncheck();
+  await change.uncheck();
+  await change.check();
+  await expect(nmea.getByRole('checkbox', { name: 'GGA' })).not.toBeChecked();
 });
 
 test('messages: enabling the satellites messages makes satellite data appear', async ({ page, workbenchUbxsim }) => {

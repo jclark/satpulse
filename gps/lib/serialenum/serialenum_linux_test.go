@@ -48,14 +48,14 @@ func TestListSyntheticFilesystem(t *testing.T) {
 	acmInterface := filepath.Join(usbDevice, "1-1:1.0")
 	acmPort := filepath.Join(acmInterface, "tty", "ttyACM0")
 	makePort(t, "ttyACM0", acmPort)
-	makeUSBDevice(t, usbDevice, "1546", "01A9", "u-blox GNSS receiver")
+	makeUSBDevice(t, usbDevice, "1546", "01A9", "u-blox GNSS receiver", "")
 	makeUSBInterface(t, acmInterface)
 
 	usbSerialDevice := filepath.Join(root, "sys", "devices", "pci0000:00", "usb2", "2-1")
 	usbSerialInterface := filepath.Join(usbSerialDevice, "2-1:1.0")
 	usbSerialPort := filepath.Join(usbSerialInterface, "ttyUSB0", "tty", "ttyUSB0")
 	makePort(t, "ttyUSB0", usbSerialPort)
-	makeUSBDevice(t, usbSerialDevice, "0403", "6001", "FT232R USB UART")
+	makeUSBDevice(t, usbSerialDevice, "0403", "6001", "FT232R USB UART", "BG02DBNX")
 	makeUSBInterface(t, usbSerialInterface)
 
 	for _, name := range []string{"rfcomm0", "ttyS0", "ttyS2", "ttyAMA0", "ttyACM0", "ttyUSB0"} {
@@ -103,6 +103,7 @@ func TestListSyntheticFilesystem(t *testing.T) {
 				VID: 0x0403,
 				PID: 0x6001,
 			},
+			Serial: "BG02DBNX",
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -149,7 +150,10 @@ func makePort(t *testing.T, name, portPath string) {
 	makeLink(t, filepath.Join(sysClassTTYDir, name), target)
 }
 
-func makeUSBDevice(t *testing.T, dir, vid, pid, product string) {
+// makeUSBDevice writes the sysfs attributes of a USB device. An empty serial
+// stands for a device that publishes no serial number, so the attribute is
+// absent rather than empty.
+func makeUSBDevice(t *testing.T, dir, vid, pid, product, serial string) {
 	t.Helper()
 	mkdir(t, dir)
 	sysDir := filepath.Dir(filepath.Dir(sysClassTTYDir))
@@ -158,6 +162,9 @@ func makeUSBDevice(t *testing.T, dir, vid, pid, product string) {
 	writeFile(t, filepath.Join(dir, "idVendor"), vid+"\n")
 	writeFile(t, filepath.Join(dir, "idProduct"), pid+"\n")
 	writeFile(t, filepath.Join(dir, "product"), product+"\n")
+	if serial != "" {
+		writeFile(t, filepath.Join(dir, "serial"), serial+"\n")
+	}
 }
 
 func makeUSBInterface(t *testing.T, dir string) {

@@ -171,6 +171,10 @@ func readUSBDetails(dir string, port *portInfo) error {
 	if err != nil {
 		return fmt.Errorf("reading USB attribute product: %w", err)
 	}
+	port.Serial, err = readOptionalFile(filepath.Join(dir, "serial"))
+	if err != nil {
+		return fmt.Errorf("reading USB attribute serial: %w", err)
+	}
 	return nil
 }
 

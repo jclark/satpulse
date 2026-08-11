@@ -88,7 +88,7 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/septentrio` implements `gps/gpsprot` abstractions for the Septentrio SBF protocol. It uses `gps/lib/sbfbin` to frame and parse SBF blocks.
 
-`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol. It uses `gps/lib/casbin` to do this.
+`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol, including the configuration protocol for CASIC receivers. It uses `gps/lib/casbin` and `gps/lib/casmsg` to do this.
 
 `gps/internal/unc` implements `gps/gpsprot` abstractions for the Unicore protocol. It uses `gps/lib/uncmsg` to parse Unicore binary and ASCII message formats.
 
@@ -113,6 +113,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/ubxcfgval/cfgschema` contains a YAML schema for configuration data handled by `gps/lib/ubxcfgval`. This is used to generate code in the `gps/lib/ubxcfgval` package.
 
 `gps/lib/casbin` translates binary packets in the CASIC protocol to and from Go structs.
+
+`gps/lib/casmsg` builds CASIC proprietary PCAS NMEA sentences and interprets their GPTXT responses.
 
 `gps/lib/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 

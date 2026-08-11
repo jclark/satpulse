@@ -3,7 +3,7 @@
 # workbench keeps serving and reports the receiver disconnected.
 -L
 127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
--t
+--token
 -d
 ${SATPULSE_TEST_SERIAL}
 -s

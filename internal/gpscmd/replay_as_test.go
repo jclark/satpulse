@@ -38,7 +38,7 @@ func TestReplayAS(t *testing.T) {
 	}
 }
 
-func asPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
+func asPacketsEqual(t *testing.T, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
 
@@ -46,6 +46,6 @@ func asPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.Pa
 		return true, false
 	}
 
-	t.Errorf("%s: packets differ: actual %q, expected %q", msgID, actualStr, expectedStr)
+	t.Errorf("packets differ: actual %q, expected %q", actualStr, expectedStr)
 	return false, false
 }

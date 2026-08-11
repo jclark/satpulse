@@ -22,8 +22,8 @@ func TestHubPrimeCache(t *testing.T) {
 		{
 			name: "sticky cached in fixed order",
 			events: []session.Event{
-				{Name: session.EventSpeed, Data: 9600},
-				{Name: session.EventState, Data: session.StateConnected},
+				session.SpeedEvent(9600),
+				session.StateConnected,
 			},
 			expect: []sse.Event{
 				mustMake(t, "gps:state", session.StateConnected),
@@ -33,25 +33,25 @@ func TestHubPrimeCache(t *testing.T) {
 		{
 			name: "latest event wins",
 			events: []session.Event{
-				{Name: session.EventSpeed, Data: 9600},
-				{Name: session.EventSpeed, Data: 115200},
+				session.SpeedEvent(9600),
+				session.SpeedEvent(115200),
 			},
 			expect: []sse.Event{mustMake(t, "gps:speed", 115200)},
 		},
 		{
 			name: "transient events not cached",
 			events: []session.Event{
-				{Name: session.EventLog, Data: session.LogEvent{Message: "x"}},
-				{Name: session.EventPacket, Data: struct{}{}},
+				session.LogEvent{Message: "x"},
+				session.PacketEvent{},
 			},
 			expect: nil,
 		},
 		{
 			name: "disconnect clears connection-scoped entries",
 			events: []session.Event{
-				{Name: session.EventSpeed, Data: 9600},
-				{Name: session.EventCorrections, Data: session.CorrEvent{State: "stopped"}},
-				{Name: session.EventState, Data: session.StateDisconnected},
+				session.SpeedEvent(9600),
+				session.CorrEvent{State: "stopped"},
+				session.StateDisconnected,
 			},
 			expect: []sse.Event{
 				mustMake(t, "gps:state", session.StateDisconnected),
@@ -61,16 +61,16 @@ func TestHubPrimeCache(t *testing.T) {
 		{
 			name: "corrections stop drops stale base ARP",
 			events: []session.Event{
-				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 1}},
-				{Name: session.EventCorrections, Data: session.CorrEvent{State: "stopped"}},
+				session.BaseARPEvent{StationID: 1},
+				session.CorrEvent{State: "stopped"},
 			},
 			expect: []sse.Event{mustMake(t, "gps:corrections", session.CorrEvent{State: "stopped"})},
 		},
 		{
 			name: "corrections connecting drops stale base ARP",
 			events: []session.Event{
-				{Name: session.EventBaseARP, Data: session.BaseARPEvent{StationID: 1}},
-				{Name: session.EventCorrections, Data: session.CorrEvent{State: "connecting"}},
+				session.BaseARPEvent{StationID: 1},
+				session.CorrEvent{State: "connecting"},
 			},
 			expect: []sse.Event{mustMake(t, "gps:corrections", session.CorrEvent{State: "connecting"})},
 		},
@@ -126,10 +126,10 @@ func TestHubPacketRouting(t *testing.T) {
 	h := newSSEHub()
 	regular, _ := h.subscribe(false)
 	packets, _ := h.subscribe(true)
-	h.Emit(session.Event{Name: session.EventPacket, Data: struct{}{}})
-	h.Emit(session.Event{Name: session.EventState, Data: session.StateConnected})
+	h.Emit(session.PacketEvent{})
+	h.Emit(session.StateConnected)
 	expectRegular := []sse.Event{mustMake(t, "gps:state", session.StateConnected)}
-	expectPackets := []sse.Event{mustMake(t, "gps:packet", struct{}{})}
+	expectPackets := []sse.Event{mustMake(t, "gps:packet", session.PacketEvent{})}
 	if got := drain(regular.ch); !reflect.DeepEqual(got, expectRegular) {
 		t.Errorf("regular client got %+v\nwant %+v", got, expectRegular)
 	}
@@ -142,8 +142,8 @@ func TestHubPacketRouting(t *testing.T) {
 // to a new client while a high-rate kind is not.
 func TestHubMsgPriming(t *testing.T) {
 	h := newSSEHub()
-	h.Emit(session.Event{Name: session.EventMsg, Data: session.MsgEvent{Kind: "leapSecond"}})
-	h.Emit(session.Event{Name: session.EventMsg, Data: session.MsgEvent{Kind: "satellites"}})
+	h.Emit(session.MsgEvent{Kind: "leapSecond"})
+	h.Emit(session.MsgEvent{Kind: "satellites"})
 	c, prime := h.subscribe(false)
 	defer h.unsubscribe(c)
 	expect := []sse.Event{mustMake(t, "gps:msg", session.MsgEvent{Kind: "leapSecond"})}
@@ -158,14 +158,14 @@ func TestHubOverflow(t *testing.T) {
 	h := newSSEHub()
 	c, _ := h.subscribe(false)
 	for range clientChanSize {
-		h.Emit(session.Event{Name: session.EventLog, Data: session.LogEvent{Message: "x"}})
+		h.Emit(session.LogEvent{Message: "x"})
 	}
 	select {
 	case <-c.dead:
 		t.Fatal("dead closed before overflow")
 	default:
 	}
-	h.Emit(session.Event{Name: session.EventLog, Data: session.LogEvent{Message: "overflow"}})
+	h.Emit(session.LogEvent{Message: "overflow"})
 	select {
 	case <-c.dead:
 	default:

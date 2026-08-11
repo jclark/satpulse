@@ -722,6 +722,7 @@ func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) (bool,
 			return false, fmt.Errorf("cannot use both --reset and --reload")
 		}
 		if p.reload {
+			vars.configSupport.require(gpsprot.ConfigSupportReload, "--reload")
 			vars.configOpts.Reset = gpsprot.ResetReload
 		} else {
 			vars.configOpts.Reset = gpsprot.ResetCold

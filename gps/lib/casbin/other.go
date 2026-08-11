@@ -1,27 +1,14 @@
 package casbin
 
 const (
-	// CFG message IDs
-	CfgPrtID     MsgID = clsCfg | (0x00 << 8)
-	CfgMsgID     MsgID = clsCfg | (0x01 << 8)
-	CfgRstID     MsgID = clsCfg | (0x02 << 8)
-	CfgTPID      MsgID = clsCfg | (0x03 << 8)
-	CfgRateID    MsgID = clsCfg | (0x04 << 8)
-	CfgCfgID     MsgID = clsCfg | (0x05 << 8)
-	CfgTModeID   MsgID = clsCfg | (0x06 << 8)
-	CfgNavxID    MsgID = clsCfg | (0x07 << 8)
+	// Unimplemented CFG message IDs
 	CfgGroupID   MsgID = clsCfg | (0x08 << 8)
-	CfgNavLimID  MsgID = clsCfg | (0x0A << 8)
 	CfgNavModeID MsgID = clsCfg | (0x0B << 8)
 	CfgNavFltID  MsgID = clsCfg | (0x0C << 8)
 	CfgWnRefID   MsgID = clsCfg | (0x0D << 8)
 	CfgIns2ID    MsgID = clsCfg | (0x0E << 8)
-	CfgNavBandID MsgID = clsCfg | (0x0F << 8)
 	CfgInsID     MsgID = clsCfg | (0x10 << 8)
 	CfgCwiID     MsgID = clsCfg | (0x11 << 8)
-	CfgNmeaID    MsgID = clsCfg | (0x12 << 8)
-	CfgRtcmID    MsgID = clsCfg | (0x14 << 8)
-	CfgTMode2ID  MsgID = clsCfg | (0x16 << 8)
 	CfgSatMaskID MsgID = clsCfg | (0x21 << 8)
 	CfgTgduID    MsgID = clsCfg | (0x22 << 8)
 	CfgSbasID    MsgID = clsCfg | (0x23 << 8)
@@ -61,14 +48,32 @@ const (
 	MsgGPSIonID MsgID = clsMsg | (0x06 << 8)
 	MsgGPSEphID MsgID = clsMsg | (0x07 << 8)
 	MsgGLNEphID MsgID = clsMsg | (0x08 << 8)
-	// NMEA message IDs (for CFG-MSG rate configuration)
-	NmeaGgaID MsgID = clsNmea | (0x00 << 8)
-	NmeaGllID MsgID = clsNmea | (0x01 << 8)
-	NmeaGsaID MsgID = clsNmea | (0x02 << 8)
-	NmeaGsvID MsgID = clsNmea | (0x03 << 8)
-	NmeaRmcID MsgID = clsNmea | (0x04 << 8)
-	NmeaVtgID MsgID = clsNmea | (0x05 << 8)
-	NmeaZdaID MsgID = clsNmea | (0x08 << 8)
+	// NMEA message IDs (for CFG-MSG rate configuration).
+	// ZDA differs between firmware families: 0x08 on V5, 0x06 on V6.
+	NmeaGgaID   MsgID = clsNmea | (0x00 << 8)
+	NmeaGllID   MsgID = clsNmea | (0x01 << 8)
+	NmeaGsaID   MsgID = clsNmea | (0x02 << 8)
+	NmeaGsvID   MsgID = clsNmea | (0x03 << 8)
+	NmeaRmcID   MsgID = clsNmea | (0x04 << 8)
+	NmeaVtgID   MsgID = clsNmea | (0x05 << 8)
+	NmeaZdaID   MsgID = clsNmea | (0x08 << 8)
+	NmeaZdaV6ID MsgID = clsNmea | (0x06 << 8)
+	// Extra output sentences beyond the standard seven, from the NMEA
+	// message overviews (casic1.md 1.4 for V5, zkw2.md 2.4 for V6); a
+	// complete NMEA request disables them. Ids collide across families:
+	// V5 GST shares 0x07 with V6 TXT-ANT, V5 ZDA shares 0x08 with V6 DHV.
+	NmeaGstID    MsgID = clsNmea | (0x07 << 8) // V5
+	NmeaAntID    MsgID = clsNmea | (0x11 << 8) // V5
+	NmeaLpsID    MsgID = clsNmea | (0x12 << 8) // V5
+	NmeaDhvID    MsgID = clsNmea | (0x13 << 8) // V5
+	NmeaUtcID    MsgID = clsNmea | (0x16 << 8) // V5
+	NmeaTxtAntID MsgID = clsNmea | (0x07 << 8) // V6
+	NmeaDhvV6ID  MsgID = clsNmea | (0x08 << 8) // V6
+	NmeaTxtLpsID MsgID = clsNmea | (0x09 << 8) // V6
+	NmeaTxtInsID MsgID = clsNmea | (0x0B << 8) // V6
+	NmeaUtcV6ID  MsgID = clsNmea | (0x0C << 8) // V6
+	NmeaGstV6ID  MsgID = clsNmea | (0x0D << 8) // V6
+	NmeaTxtRfeID MsgID = clsNmea | (0x0E << 8) // V6
 )
 
 func init() {
@@ -78,27 +83,14 @@ func init() {
 	clsMap[clsRxm2] = "RXM2"
 	clsMap[clsIns2] = "INS2"
 	clsMap[clsRtcm2] = "RTCM"
-	// CFG messages
-	idNameMap[CfgPrtID] = "PRT"
-	idNameMap[CfgMsgID] = "MSG"
-	idNameMap[CfgRstID] = "RST"
-	idNameMap[CfgTPID] = "TP"
-	idNameMap[CfgRateID] = "RATE"
-	idNameMap[CfgCfgID] = "CFG"
-	idNameMap[CfgTModeID] = "TMODE"
-	idNameMap[CfgNavxID] = "NAVX"
+	// Unimplemented CFG messages
 	idNameMap[CfgGroupID] = "GROUP"
-	idNameMap[CfgNavLimID] = "NAVLIMIT"
 	idNameMap[CfgNavModeID] = "NAVMODE"
 	idNameMap[CfgNavFltID] = "NAVFLT"
 	idNameMap[CfgWnRefID] = "WNREF"
 	idNameMap[CfgIns2ID] = "INS2"
-	idNameMap[CfgNavBandID] = "NAVBAND"
 	idNameMap[CfgInsID] = "INS"
 	idNameMap[CfgCwiID] = "CWI"
-	idNameMap[CfgNmeaID] = "NMEA"
-	idNameMap[CfgRtcmID] = "RTCM"
-	// CfgTMode2ID registered in cfg.go
 	idNameMap[CfgSatMaskID] = "SATMASK"
 	idNameMap[CfgTgduID] = "TGDU"
 	idNameMap[CfgSbasID] = "SBAS"
@@ -147,4 +139,17 @@ func init() {
 	idNameMap[NmeaRmcID] = "RMC"
 	idNameMap[NmeaVtgID] = "VTG"
 	idNameMap[NmeaZdaID] = "ZDA"
+	idNameMap[NmeaZdaV6ID] = "ZDA6"
+	// Colliding ids keep one name: 0x07 shows GST (V6 TXT-ANT shares
+	// it) and 0x08 shows ZDA (V6 DHV shares it).
+	idNameMap[NmeaGstID] = "GST"
+	idNameMap[NmeaAntID] = "ANT"
+	idNameMap[NmeaLpsID] = "LPS"
+	idNameMap[NmeaDhvID] = "DHV"
+	idNameMap[NmeaUtcID] = "UTC"
+	idNameMap[NmeaTxtLpsID] = "TXTLPS"
+	idNameMap[NmeaTxtInsID] = "TXTINS"
+	idNameMap[NmeaUtcV6ID] = "UTC6"
+	idNameMap[NmeaGstV6ID] = "GST6"
+	idNameMap[NmeaTxtRfeID] = "TXTRFE"
 }

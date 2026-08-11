@@ -326,7 +326,8 @@ func TestConfigSupport(t *testing.T) {
 	base := gpsprot.ConfigSupportRaw |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
-		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed
+		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed |
+		gpsprot.ConfigSupportReload
 	rtcm := gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
 		gpsprot.ConfigSupportRTCMQZSS
 	for _, tc := range []struct {

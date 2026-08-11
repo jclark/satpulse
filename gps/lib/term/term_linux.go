@@ -1,6 +1,7 @@
 package term
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"time"
@@ -42,7 +43,8 @@ func Speed(speed int) AttrSetter {
 		}
 	}
 	return func(a *Attr) error {
-		a.ts.Cflag &^= unix.CBAUD | unix.CBAUDEX
+		// B0 in CIBAUD makes the input rate follow the output rate.
+		a.ts.Cflag &^= unix.CBAUD | unix.CIBAUD
 		a.ts.Cflag |= b
 		a.ts.Ospeed = b
 		a.ts.Ispeed = b
@@ -51,9 +53,9 @@ func Speed(speed int) AttrSetter {
 }
 
 func (attr *Attr) speed() int {
-	b := attr.ts.Ospeed
-	if b == 0 {
-		b = attr.ts.Cflag & unix.CBAUD
+	b := attr.ts.Cflag & unix.CBAUD
+	if b == unix.BOTHER {
+		return int(attr.ts.Ospeed)
 	}
 	speed := bToSpeed(b)
 	if speed <= 0 {
@@ -67,7 +69,7 @@ func (t *Term) Flush() error {
 }
 
 func (t *Term) setAttrNow(attr *unix.Termios) error {
-	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETS, attr), "ioctl(TCSETS)")
+	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETS2, attr), "ioctl(TCSETS2)")
 }
 
 // Drain blocks until all pending output has been transmitted. The nonzero
@@ -88,9 +90,39 @@ func (t *Term) Drain() error {
 }
 
 func (t *Term) getAttr() (tp *unix.Termios, err error) {
-	tp, err = unix.IoctlGetTermios(t.fd, unix.TCGETS)
-	err = t.wrapErr(err, "ioctl(TCGETS)")
+	tp, err = unix.IoctlGetTermios(t.fd, unix.TCGETS2)
+	err = t.wrapErr(err, "ioctl(TCGETS2)")
 	return
+}
+
+var errExclusive = errors.New("terminal is in exclusive mode (TIOCEXCL)")
+
+// checkNotExclusive returns a LockedError if the terminal is already in
+// exclusive mode. It is worth looking only when we hold CAP_SYS_ADMIN: without
+// it, open would already have failed with EBUSY had the flag been set, so a
+// flag seen here was set by another process after our open succeeded, and
+// failing on it would just hand the port to a latecomer.
+func (t *Term) checkNotExclusive() error {
+	if !capSysAdmin() {
+		return nil
+	}
+	v, err := unix.IoctlGetInt(t.fd, unix.TIOCGEXCL)
+	if err != nil {
+		return t.wrapErr(err, "ioctl(TIOCGEXCL)")
+	}
+	if v != 0 {
+		return t.wrapErr(wrapLocked(errExclusive), "open")
+	}
+	return nil
+}
+
+// capSysAdmin reports whether the process has CAP_SYS_ADMIN, which exempts it
+// from the kernel's exclusive-mode check on open.
+func capSysAdmin() bool {
+	hdr := unix.CapUserHeader{Version: unix.LINUX_CAPABILITY_VERSION_3}
+	var data [2]unix.CapUserData
+	err := unix.Capget(&hdr, &data[0])
+	return err == nil && data[0].Effective&(1<<unix.CAP_SYS_ADMIN) != 0
 }
 
 var errFlockNotSupported error
@@ -207,9 +239,9 @@ func (t *Term) DevKind() DevKind {
 		return DevUnknown
 	}
 	// See https://www.kernel.org/doc/html/latest/admin-guide/devices.html
-	switch unix.Major(s.Dev) {
+	switch unix.Major(s.Rdev) {
 	case 4, 5:
-		if unix.Minor(s.Dev) >= 64 { // ttyS0, /dev/ttycua0
+		if unix.Minor(s.Rdev) >= 64 { // ttyS0, /dev/ttycua0
 			return DevUART
 		}
 	case 166, 167: // USB ACM "modem" /dev/ttyACM0
