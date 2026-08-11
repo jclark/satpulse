@@ -37,6 +37,7 @@ _Not yet released_
 
 ### GPS high-level configuration
 
+- High-level configuration now supports Zhongke Microelectronics receivers using CASIC, covering both the V5 (URANUS5) and V6 (URANUS6) firmware families. `satpulsetool gps` and `satpulsed` can now configure receivers such as the ATGM332D and ATGM336H. (#229)
 - `satpulsetool gps` has new `--signal` and `--except-signal` options for controlling individual GNSS signals. `--signal` enables individual signals, in addition to the constellations enabled by `--gnss`; `--except-signal` excludes individual signals from those constellations. `--band` does not affect what signals are enabled by `--signal`. Signals are named by the constellation name followed by the signal name (`GPSL1C`, `QZSSL1S`); the constellation name is not required for Galileo and BeiDou signal names (`E5b`, `B1C`). (#97)
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
 - The `[gps]` table in `satpulse.toml` has a new `fixedPosLLH` key for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#147)
