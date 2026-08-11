@@ -269,6 +269,9 @@ type speedAttempt func(speed int) (trySpeedResult, bool, error)
 
 func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func([]int) bool) (DetectResult, error) {
 	remaining := uniqueSpeedCandidates(candidates)
+	if len(remaining) == 0 {
+		return DetectResult{}, errors.New("no serial speed candidates")
+	}
 	tried := make([]int, 0, len(remaining))
 	deferred := make(map[int]bool, len(remaining))
 	allSilent := true

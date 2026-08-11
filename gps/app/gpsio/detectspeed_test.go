@@ -286,8 +286,8 @@ func TestWalkSpeedCandidates(t *testing.T) {
 	})
 	t.Run("empty", func(t *testing.T) {
 		got, err := walkSpeedCandidates(nil, func(int) (trySpeedResult, bool, error) { return tryDetected, false, nil }, nil)
-		if err != nil || got.Outcome != DetectUnrecognized {
-			t.Fatalf("walkSpeedCandidates() = %+v, %v", got, err)
+		if err == nil || err.Error() != "no serial speed candidates" || got != (DetectResult{}) {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v, want empty result and candidate error", got, err)
 		}
 	})
 	t.Run("stream end stops walk", func(t *testing.T) {
