@@ -8,12 +8,12 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/time/app/daemon"
 	"github.com/spf13/pflag"
-	"golang.org/x/sys/windows/registry"
 	"golang.org/x/sys/windows/svc"
 	"golang.org/x/sys/windows/svc/eventlog"
 	"golang.org/x/sys/windows/svc/mgr"
@@ -32,45 +32,37 @@ const (
 	evExitError
 )
 
-// Registry values under the service's Parameters key recording what
-// --install created, so --uninstall removes only what install owns.
-const (
-	regParamsPath = `SYSTEM\CurrentControlSet\Services\` + serviceName + `\Parameters`
-	regCopiedExe  = "CopiedExe"
-	regCreatedDir = "CreatedDir"
-)
-
 type platformVars struct {
-	install    bool
-	uninstall  bool
+	register   bool
+	unregister bool
 	winSvc     bool
 	logFile    string
-	installDir string
+	copyDir    string
 }
 
 const platformSummary = `
-       [--install [--install-dir dir]|--uninstall|--win-svc] [--log-file path]`
+       [--register [--copy dir]|--unregister|--win-svc] [--log-file path]`
 
 func registerPlatformFlags(flags *pflag.FlagSet, vars *flagVars) {
 	p := &vars.platform
-	flags.BoolVar(&p.install, "install", false, "register satpulsed as a Windows service")
-	flags.BoolVar(&p.uninstall, "uninstall", false, "remove the satpulsed Windows service")
+	flags.BoolVar(&p.register, "register", false, "register satpulsed as a Windows service")
+	flags.BoolVar(&p.unregister, "unregister", false, "unregister the satpulsed Windows service")
 	flags.BoolVar(&p.winSvc, "win-svc", false, "run as a Windows service (for use by the Service Control Manager only)")
 	flags.StringVar(&p.logFile, "log-file", "", "file the daemon log is written to in service mode")
-	flags.StringVar(&p.installDir, "install-dir", "", "directory the executable is copied to by --install")
+	flags.StringVar(&p.copyDir, "copy", "", "with --register, copy the executable to this directory and register the copy")
 }
 
 // platformMain dispatches the Windows service run modes; if none is
 // selected it returns and the caller runs the foreground path.
-// Uninstall comes first and needs no config: the config file may be
-// missing or broken by the time the service is removed.
+// Unregister comes first and needs no config: the config file may be
+// missing or broken by the time the service is unregistered.
 func platformMain(progName string, vars *flagVars) {
 	p := &vars.platform
 	var err error
-	if p.uninstall {
-		err = uninstallService()
-	} else if p.install {
-		err = installService(vars)
+	if p.unregister {
+		err = unregisterService()
+	} else if p.register {
+		err = registerService(vars)
 	} else if p.winSvc {
 		err = runService(vars)
 	} else {
@@ -91,7 +83,7 @@ func runService(vars *flagVars) error {
 	}
 	defer elog.Close()
 	if err := svc.Run(serviceName, &service{vars: vars, elog: elog}); err != nil {
-		return fmt.Errorf("cannot connect to the service control manager (--win-svc is for use by the SCM only; use --install and then 'sc start %s'): %w", serviceName, err)
+		return fmt.Errorf("cannot connect to the service control manager (--win-svc is for use by the SCM only; use --register and then 'sc start %s'): %w", serviceName, err)
 	}
 	return nil
 }
@@ -171,18 +163,20 @@ func (s *service) startup() (*daemon.Config, *slog.Logger, func(), error) {
 	return cfg, lg, func() { f.Close() }, nil
 }
 
-// installService registers satpulsed with the SCM. The registered command
+// registerService registers satpulsed with the SCM. The registered command
 // carries the config and log-file paths explicitly, resolved to absolute
 // paths, because the SCM launches services with a different working
-// directory. With --install-dir the executable is first copied there, so
-// the running service does not lock the development binary.
-func installService(vars *flagVars) error {
+// directory. By default the running executable is registered in place;
+// with --copy it is first copied there and the copy registered, so the
+// running service does not lock the development binary. Registration never
+// needs a valid config: the daemon parses it at service start.
+func registerService(vars *flagVars) error {
 	p := &vars.platform
 	if len(vars.configFiles) == 0 {
-		return fmt.Errorf("--install requires a config file specified with -f")
+		return fmt.Errorf("--register requires a config file specified with -f")
 	}
 	if p.logFile == "" {
-		return fmt.Errorf("--install requires --log-file")
+		return fmt.Errorf("--register requires --log-file")
 	}
 	logPath, err := filepath.Abs(p.logFile)
 	if err != nil {
@@ -203,26 +197,6 @@ func installService(vars *flagVars) error {
 	if err != nil {
 		return err
 	}
-	copiedExe, createdDir := "", ""
-	if p.installDir != "" {
-		dir, err := filepath.Abs(p.installDir)
-		if err != nil {
-			return err
-		}
-		if _, err := os.Stat(dir); os.IsNotExist(err) {
-			if err := os.MkdirAll(dir, 0755); err != nil {
-				return err
-			}
-			createdDir = dir
-		} else if err != nil {
-			return err
-		}
-		copiedExe = filepath.Join(dir, "satpulsed.exe")
-		if err := copyFile(exe, copiedExe); err != nil {
-			return err
-		}
-		exe = copiedExe
-	}
 	m, err := mgr.Connect()
 	if err != nil {
 		return err
@@ -230,7 +204,30 @@ func installService(vars *flagVars) error {
 	defer m.Disconnect()
 	if s, err := m.OpenService(serviceName); err == nil {
 		s.Close()
-		return fmt.Errorf("service %s already exists", serviceName)
+		return fmt.Errorf("service %s is already registered", serviceName)
+	}
+	copied := ""
+	if p.copyDir != "" {
+		dir, err := filepath.Abs(p.copyDir)
+		if err != nil {
+			return err
+		}
+		if err := os.MkdirAll(dir, 0755); err != nil {
+			return err
+		}
+		copied = filepath.Join(dir, "satpulsed.exe")
+		if err := copyFile(exe, copied); err != nil {
+			return err
+		}
+		exe = copied
+	}
+	// On failure after the copy, remove it (and its directory if that
+	// leaves the directory empty) so a failed registration leaves nothing.
+	cleanup := func() {
+		if copied != "" {
+			os.Remove(copied)
+			os.Remove(filepath.Dir(copied))
+		}
 	}
 	args := []string{"--win-svc", "--log-file", logPath}
 	for _, f := range configPaths {
@@ -242,43 +239,20 @@ func installService(vars *flagVars) error {
 		Description: "GPS receiver monitoring and time synchronization daemon",
 	}, args...)
 	if err != nil {
+		cleanup()
 		return err
 	}
 	defer s.Close()
-	// Remove any leftover source from an earlier install so registration
+	// Remove any leftover source from an earlier registration so this
 	// is idempotent.
 	_ = eventlog.Remove(serviceName)
 	if err := eventlog.InstallAsEventCreate(serviceName, eventlog.Error|eventlog.Warning|eventlog.Info); err != nil {
+		s.Delete()
+		cleanup()
 		return fmt.Errorf("registering the event log source: %w", err)
 	}
-	if copiedExe != "" {
-		k, _, err := registry.CreateKey(registry.LOCAL_MACHINE, regParamsPath, registry.SET_VALUE)
-		if err != nil {
-			return err
-		}
-		defer k.Close()
-		if err := k.SetStringValue(regCopiedExe, copiedExe); err != nil {
-			return err
-		}
-		if createdDir != "" {
-			if err := k.SetStringValue(regCreatedDir, createdDir); err != nil {
-				return err
-			}
-		}
-	}
-	fmt.Printf("installed service %s: %s %s\n", serviceName, exe, argsString(args))
+	fmt.Printf("registered service %s: %s %s\n", serviceName, exe, strings.Join(args, " "))
 	return nil
-}
-
-func argsString(args []string) string {
-	s := ""
-	for i, a := range args {
-		if i > 0 {
-			s += " "
-		}
-		s += a
-	}
-	return s
 }
 
 func copyFile(src, dst string) error {
@@ -289,10 +263,11 @@ func copyFile(src, dst string) error {
 	return os.WriteFile(dst, b, 0755)
 }
 
-// uninstallService removes the service, its Event Log source, and any
-// executable copy (and directory) that install created. It needs no
-// config file, so it works even when the config is gone or broken.
-func uninstallService() error {
+// unregisterService removes the service and its Event Log source. It
+// deletes no files: when the registered executable is not the one running,
+// its path is printed so the user can remove it. It needs no config file,
+// so it works even when the config is gone or broken.
+func unregisterService() error {
 	m, err := mgr.Connect()
 	if err != nil {
 		return err
@@ -300,10 +275,13 @@ func uninstallService() error {
 	defer m.Disconnect()
 	s, err := m.OpenService(serviceName)
 	if err != nil {
-		return fmt.Errorf("service %s is not installed", serviceName)
+		return fmt.Errorf("service %s is not registered", serviceName)
 	}
 	defer s.Close()
-	copiedExe, createdDir := readInstallParams()
+	regExe := ""
+	if c, err := s.Config(); err == nil {
+		regExe = exePathFromCommand(c.BinaryPathName)
+	}
 	if err := stopService(s); err != nil {
 		return err
 	}
@@ -311,33 +289,30 @@ func uninstallService() error {
 		return err
 	}
 	_ = eventlog.Remove(serviceName)
-	if copiedExe != "" {
-		if err := os.Remove(copiedExe); err != nil && !os.IsNotExist(err) {
-			return err
-		}
+	fmt.Printf("unregistered service %s\n", serviceName)
+	if self, err := os.Executable(); err == nil && regExe != "" &&
+		!strings.EqualFold(filepath.Clean(regExe), filepath.Clean(self)) {
+		fmt.Printf("the registered executable is left in place: %s\n", regExe)
 	}
-	if createdDir != "" {
-		// Remove fails on a non-empty directory, which is what we want: a
-		// config or log the user has put there survives.
-		_ = os.Remove(createdDir)
-	}
-	fmt.Printf("removed service %s\n", serviceName)
 	return nil
 }
 
-func readInstallParams() (copiedExe, createdDir string) {
-	k, err := registry.OpenKey(registry.LOCAL_MACHINE, regParamsPath, registry.QUERY_VALUE)
-	if err != nil {
-		return "", ""
+// exePathFromCommand extracts the executable path from a registered
+// service command line, which quotes the path when it contains spaces.
+func exePathFromCommand(s string) string {
+	if rest, ok := strings.CutPrefix(s, `"`); ok {
+		if i := strings.Index(rest, `"`); i >= 0 {
+			return rest[:i]
+		}
+		return ""
 	}
-	defer k.Close()
-	copiedExe, _, _ = k.GetStringValue(regCopiedExe)
-	createdDir, _, _ = k.GetStringValue(regCreatedDir)
-	return copiedExe, createdDir
+	if i := strings.Index(s, " "); i >= 0 {
+		return s[:i]
+	}
+	return s
 }
 
-// stopService stops a running service and waits for it to reach Stopped,
-// because a running service locks its executable.
+// stopService stops a running service and waits for it to reach Stopped.
 func stopService(s *mgr.Service) error {
 	st, err := s.Query()
 	if err != nil {
