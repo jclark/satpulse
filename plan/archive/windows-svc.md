@@ -25,7 +25,7 @@ logging.
   Windows gets.
 - `satpulsed.exe` already builds and runs in the foreground on Windows
   (stdout logging, signal-based shutdown). What remains is SCM
-  integration: a service run mode, install/uninstall, a file/Event Log
+  integration: a service run mode, register/unregister, a file/Event Log
   logging path, and the daemon refactor that lets the SCM drive shutdown.
 
 ## Step 1: refactor daemon to a context + config + logger entry point
@@ -76,21 +76,21 @@ The service flags and their handling live in a Windows-tagged file
 counterpart provides no-op registration and dispatch so the tree builds
 everywhere.
 
-- `registerPlatformFlags(*pflag.FlagSet, *flagVars)` adds `--install`,
-  `--uninstall`, `--win-svc`, `--log-file`, and `--install-dir` on Windows
+- `registerPlatformFlags(*pflag.FlagSet, *flagVars)` adds `--register`,
+  `--unregister`, `--win-svc`, `--log-file`, and `--copy` on Windows
   only, so they never appear in the Unix help text. `--log-file` sets
   where the daemon's slog output is written in service mode (see step 3);
-  `--install-dir` is used with `--install` (see step 4).
+  `--copy` is used with `--register` (see step 4).
 - The mandatory-config check (a config path via `-f` or the env var)
   currently lives inside the parser (`flags.go:54`). Moving parsing up
-  lets each mode decide for itself, which matters because **`--uninstall`
+  lets each mode decide for itself, which matters because **`--unregister`
   must work with no config at all** -- the config file may have been
-  deleted or broken by the time the service is removed.
+  deleted or broken by the time the service is unregistered.
 - Dispatch order on Windows, immediately after flag parsing and **before**
   any config is required or loaded:
-  1. `--uninstall` -> unregister the service and clean up (step 4), then
-     exit. Requires neither `-f` nor a readable config.
-  2. `--install` -> requires `-f` and `--log-file`; register the service
+  1. `--unregister` -> unregister the service and its Event Log source
+     (step 4), then exit. Requires neither `-f` nor a readable config.
+  2. `--register` -> requires `-f` and `--log-file`; register the service
      (step 4), then exit. It may stat the config path to fail fast, but
      does not need a fully valid config.
   3. `--win-svc` -> open the Event Log source, then call `svc.Run`
@@ -102,7 +102,7 @@ everywhere.
   4. otherwise -> foreground, identical to the Unix path (config
      required as today).
 
-`--win-svc` is not auto-detected; it is explicit. `--install` bakes it
+`--win-svc` is not auto-detected; it is explicit. `--register` bakes it
 into the registered command (see step 4), so the SCM always launches with
 it, and there is no need for `svc.IsWindowsService()` heuristics. If a
 user runs `satpulsed --win-svc` by hand, `svc.Run` fails to connect to
@@ -202,51 +202,56 @@ stop or fail to start" signal, in the place a Windows admin looks.
 Because it does not depend on the file sink, a failed start is
 diagnosable from Event Viewer even when `--log-file` itself is
 misconfigured. The event source is registered and removed as part of
-install/uninstall (step 4).
+register/unregister (step 4).
 
-## Step 4: install and uninstall
+## Step 4: register and unregister
 
 Use `golang.org/x/sys/windows/svc/mgr` (already available via the
-existing `golang.org/x/sys` dependency):
+existing `golang.org/x/sys` dependency).
 
-- `--install` requires both `-f` and `--log-file`. A service launches
+`--register` and `--unregister` manage only the SCM registration and the
+Event Log source; they never delete files. Unregistering must work when
+run from the registered executable itself, and Windows cannot delete a
+running image, so uninstall-time file removal either fails half-done or
+needs deferred-deletion machinery. Separating the concerns removes the
+problem structurally: the tool performs the safe convenience (copying a
+file into place) and leaves the destructive operation (deleting files)
+to the user. This is also why the flags are named register/unregister
+rather than install/uninstall: an uninstall raises the expectation of
+file cleanup, an unregister does not.
+
+- `--register` requires both `-f` and `--log-file`. A service launches
   non-interactively, so the config and log-file locations must be carried
   explicitly in the registered command -- there is no console fallback,
   and relying on a `satpulse.toml` env var is fragile under the SCM.
-- All three paths are resolved to **absolute** paths before being baked
+- All paths are resolved to **absolute** paths before being baked
   in, because a service runs with a different working directory (the SCM
-  default is `C:\Windows\System32`), not wherever `--install` was run.
-- By default `--install` registers the running executable in place
-  (`os.Executable()`). If `--install-dir <dir>` is given, the executable
-  is first copied to `<dir>\satpulsed.exe` and that copy is registered
-  instead. This matters on Windows because a running service holds its
-  image file open: registering the build-output binary would make the
-  next `go install` / rebuild fail trying to overwrite the locked file.
-  Copying to a stable location (e.g. `C:\Program Files\SatPulse`) decouples
-  the service image from the development binary.
-- Install then: `mgr.Connect`, `m.CreateService(name, exe,
-  mgr.Config{StartType: mgr.StartAutomatic, ...}, "--win-svc", "-f",
-  configPath, "--log-file", logPath)`, where `exe` is the in-place or
-  copied executable path. The registered command is therefore
-  `C:\...\satpulsed.exe --win-svc -f C:\...\satpulse.toml --log-file
-  C:\...\satpulsed.log`. Also register the Event Log source with
-  `eventlog.InstallAsEventCreate(name, eventlog.Error|eventlog.Warning|
-  eventlog.Info)`.
-- So that `--uninstall` can clean up a copied binary -- but never the
-  user's in-place development binary -- install records what it owns under
-  the service's registry parameters (`...\Services\satpulsed\Parameters`):
-  the copied executable path, and whether install created the directory.
-  An in-place install records nothing to remove.
-- `--uninstall`:
-  1. Open the service and read the ownership info recorded at install.
-  2. Stop the service if running and wait for `Stopped`, because the
-     running executable is locked and cannot be deleted otherwise.
-  3. `DeleteService` and `eventlog.Remove(name)`.
-  4. If install recorded a copied executable, delete it; if install also
-     created the directory, remove the directory too. A pre-existing
-     directory (and anything else in it, such as a config the user placed
-     there) is left alone.
-- Install needs only the config *path*, not a fully valid config: the
+  default is `C:\Windows\System32`), not wherever `--register` was run.
+- By default `--register` registers the running executable in place
+  (`os.Executable()`). This suits an unpacked release zip: the binary
+  already lives where it should, and an upgrade is stop service, replace
+  files, start service. If `--copy <dir>` is given, the executable is
+  first copied to `<dir>\satpulsed.exe` (creating the directory if
+  needed) and the copy is registered instead. This suits the development
+  workflow: a running service holds its image file open, so registering
+  the build-output binary would make the next rebuild fail trying to
+  overwrite the locked file.
+- Register connects to the SCM and checks that the service does not
+  already exist **before** copying, and removes the copy if a later step
+  fails, so a failed registration leaves nothing behind. Then:
+  `m.CreateService(name, exe, mgr.Config{StartType: mgr.StartAutomatic,
+  ...}, "--win-svc", "--log-file", logPath, "-f", configPath)`, where
+  `exe` is the in-place or copied executable path. The registered
+  command is therefore `C:\...\satpulsed.exe --win-svc --log-file
+  C:\...\satpulsed.log -f C:\...\satpulse.toml`. Also register the Event
+  Log source with `eventlog.InstallAsEventCreate(name,
+  eventlog.Error|eventlog.Warning|eventlog.Info)`.
+- `--unregister` stops the service if running and waits for `Stopped`,
+  then `DeleteService` and `eventlog.Remove(name)`. It deletes no files;
+  when the registered executable (read from the service config before
+  deletion) is not the one running, its path is printed so the user
+  knows what to remove by hand.
+- Register needs only the config *path*, not a fully valid config: the
   daemon parses it at service start, inside `Execute` (step 2). A cheap
   `stat` of the path catches an obvious typo without duplicating
   validation.
@@ -261,16 +266,16 @@ existing `golang.org/x/sys` dependency):
 - `build-windows.yml` stays green with the daemon refactor and the new
   Windows-tagged files.
 - On a Windows host with a receiver on a `COM` port: `satpulsed
-  --install -f <config> --log-file <path>`, `sc start satpulsed`, confirm
+  --register -f <config> --log-file <path>`, `sc start satpulsed`, confirm
   the service reaches Running and writes the log file, scrape `/metrics`,
   open the web dashboard, exercise an Ntrip mountpoint, then `sc stop
   satpulsed` and confirm a clean Stopped with a "stopped" (not error)
-  Event Log entry and zero exit, then `satpulsed --uninstall` and confirm
-  the service, the Event Log source, and any copied binary/directory are
-  gone.
+  Event Log entry and zero exit, then `satpulsed --unregister` and confirm
+  the service and the Event Log source are gone and that the path of a
+  `--copy` executable is printed rather than the file deleted.
 - Negative checks: a deliberately bad `-f` under the service reports
   `evStartFailed` in the Event Log and a `Stopped` status (not a hang);
-  `--uninstall` succeeds even with the config file deleted; a hand-run
+  `--unregister` succeeds even with the config file deleted; a hand-run
   `satpulsed --win-svc` prints the SCM-only message rather than hanging.
 
 ## Release notes
@@ -291,8 +296,8 @@ part of the already-completed Windows compile port, not here.)
 - `time/app/daemon/flags.go` -- moved into `cmd/satpulsed`.
 - `cmd/satpulsed/satpulsed.go` -- parsing, logger, foreground dispatch.
 - `cmd/satpulsed/svc_windows.go` --
-  `--install`/`--uninstall`/`--win-svc`/`--log-file`/`--install-dir`, the
-  `svc.Run` handler, `mgr`-based install/uninstall (with optional
+  `--register`/`--unregister`/`--win-svc`/`--log-file`/`--copy`, the
+  `svc.Run` handler, `mgr`-based register/unregister (with optional
   executable copy and absolute-path resolution), and the `eventlog`
   service-lifecycle/terminal-error events.
 - `cmd/satpulsed/svc_other.go` -- `//go:build !windows` no-op
