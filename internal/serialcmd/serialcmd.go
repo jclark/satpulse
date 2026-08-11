@@ -91,6 +91,10 @@ func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc 
 	}
 	if fs.NArg() == 1 {
 		cfg.port = fs.Arg(0)
+		if cfg.port == "" {
+			err = fmt.Errorf("serial port must not be empty")
+			return
+		}
 	}
 	if cfg.jsonl && cfg.detect {
 		err = fmt.Errorf("--jsonl cannot be combined with --detect-speed")

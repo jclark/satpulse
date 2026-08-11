@@ -34,6 +34,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "jsonl detection conflict", args: []string{"--jsonl", "--detect-speed"}, wantErr: true},
 		{name: "packet log without detection", args: []string{"--packet-log", "capture.jsonl", "/dev/ttyS0"}, wantErr: true},
 		{name: "packet log without port", args: []string{"-s", "--packet-log", "capture.jsonl"}, wantErr: true},
+		{name: "empty port", args: []string{"--detect-speed", ""}, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, help, _, err := parseFlags("serial", tc.args)
