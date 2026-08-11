@@ -2,64 +2,75 @@
 package serialenum
 
 import (
-	"fmt"
-	"runtime"
-
-	"go.bug.st/serial/enumerator"
+	"strconv"
+	"strings"
 )
+
+// USBID identifies a USB product.
+type USBID struct {
+	VID uint16 `json:"vid"`
+	PID uint16 `json:"pid"`
+}
 
 // Port describes a serial port for display in a dropdown or CLI listing.
 type Port struct {
-	Device  string `json:"device"`  // device path passed to Connect
-	Display string `json:"display"` // human-readable label for the dropdown
+	Device  string `json:"device"`           // canonical device node to open
+	Display string `json:"display"`          // human-readable label
+	USB     USBID  `json:"usb,omitzero"`     // USB vendor and product IDs
+	Serial  string `json:"serial,omitempty"` // USB serial number, empty if the device publishes none
 }
 
-// List enumerates serial ports available on the system.
-// On macOS, non-USB ports (Bluetooth, debug-console) are filtered out.
-func List() ([]Port, error) {
-	ports, err := enumerator.GetDetailedPortsList()
-	if err != nil {
-		return nil, fmt.Errorf("enumerating serial ports: %w", err)
-	}
-	var result []Port
-	for _, p := range ports {
-		if runtime.GOOS == "darwin" && !p.IsUSB {
-			continue
-		}
-		result = append(result, Port{
-			Device:  p.Name,
-			Display: display(p),
-		})
-	}
-	return result, nil
-}
-
-// display builds a human-readable label from port details.
-func display(p *enumerator.PortDetails) string {
-	tag := ubloxTag(p.VID, p.PID)
-	if p.Product != "" {
+// enumeratorDisplay preserves the display formatting used with go.bug.st's
+// platform-dependent Product field.
+func enumeratorDisplay(name, product string, vid, pid uint16) string {
+	tag := ubloxTag(vid, pid)
+	if product != "" {
 		if tag != "" {
-			return p.Product + " - " + tag
+			return product + " - " + tag
 		}
-		return p.Product
+		return product
 	}
 	if tag != "" {
-		return p.Name + " (" + tag + ")"
+		return name + " (" + tag + ")"
 	}
-	return p.Name
+	return name
 }
 
 // ubloxTag returns a u-blox generation tag from USB VID/PID, or empty string.
-func ubloxTag(vid, pid string) string {
-	if vid != "1546" {
+func ubloxTag(vid, pid uint16) string {
+	if vid != 0x1546 {
 		return ""
 	}
-	var pidVal uint16
-	if _, err := fmt.Sscanf(pid, "%x", &pidVal); err != nil {
-		return "u-blox"
-	}
-	if pidVal >= 0x01A4 && pidVal <= 0x01AF {
-		return fmt.Sprintf("u-blox gen %d", pidVal-0x01A0)
+	if pid >= 0x01A4 && pid <= 0x01AF {
+		return "u-blox gen " + strconv.Itoa(int(pid-0x01A0))
 	}
 	return "u-blox"
+}
+
+func parseUSBID(s string) (uint16, error) {
+	if s = strings.TrimSpace(s); s == "" {
+		return 0, nil
+	}
+	n, err := strconv.ParseUint(s, 16, 16)
+	if err != nil {
+		return 0, err
+	}
+	return uint16(n), nil
+}
+
+// parseEnumeratorUSBID converts the optional ID strings supplied by
+// go.bug.st. Incomplete or malformed metadata does not prevent enumeration.
+func parseEnumeratorUSBID(vid, pid string) USBID {
+	if strings.TrimSpace(vid) == "" || strings.TrimSpace(pid) == "" {
+		return USBID{}
+	}
+	vidVal, err := parseUSBID(vid)
+	if err != nil {
+		return USBID{}
+	}
+	pidVal, err := parseUSBID(pid)
+	if err != nil {
+		return USBID{}
+	}
+	return USBID{VID: vidVal, PID: pidVal}
 }

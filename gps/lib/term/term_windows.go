@@ -88,6 +88,9 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 		0,
 	)
 	if err != nil {
+		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+			err = wrapLocked(err)
+		}
 		return t.wrapErr(err, "open")
 	}
 	t.handle = h
@@ -192,6 +195,11 @@ func (t *Term) Read(buf []byte) (int, error) {
 		return int(n), t.wrapErr(err, "read")
 	}
 	if n == 0 {
+		// Serial errors indicate line activity, so this interval cannot be
+		// treated as an inter-packet timeout.
+		if serr := t.readError(); serr != nil {
+			return 0, serr
+		}
 		return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
 	}
 	if serr := t.readError(); serr != nil {
@@ -376,6 +384,9 @@ func OpenFallback(path string, _ time.Duration) (*os.File, *File, DevKind, error
 		0,
 	)
 	if err != nil {
+		if errors.Is(err, windows.ERROR_SHARING_VIOLATION) {
+			err = wrapLocked(err)
+		}
 		return nil, nil, DevUnknown, &os.PathError{Op: "open", Path: path, Err: err}
 	}
 	return os.NewFile(uintptr(h), path), nil, DevFIFO, nil
@@ -386,7 +397,7 @@ func RawMode(a *Attr) error {
 	a.dcb.Parity = windows.NOPARITY
 	a.dcb.StopBits = windows.ONESTOPBIT
 	a.dcb.Flags |= dcbBinary
-	a.dcb.Flags &^= dcbParity | dcbErrorChar | dcbNull | dcbAbortOnError
+	a.dcb.Flags &^= dcbErrorChar | dcbNull | dcbAbortOnError
 	return nil
 }
 
@@ -394,6 +405,14 @@ func RawMode(a *Attr) error {
 // fDsrSensitivity ensures incoming bytes are not dropped based on DSR.
 func Local(a *Attr) error {
 	a.dcb.Flags &^= dcbDsrSensitivity
+	return nil
+}
+
+// NoParity configures the terminal for no parity and disables input parity
+// checking.
+func NoParity(a *Attr) error {
+	a.dcb.Parity = windows.NOPARITY
+	a.dcb.Flags &^= dcbParity
 	return nil
 }
 

@@ -207,7 +207,7 @@ from these decisions.
 - Man pages: satpulsetool(1) gps flags, satpulsewb(1), and
   satpulse.toml(5). NEWS.md entry with the issue number, in the
   same change as the implementation.
-- No new packages; docs/internals.md is unaffected (gpsio gains a
+- No new packages; docs/internals/packages.md is unaffected (gpsio gains a
   function).
 - Delivery: ordinary PRs off master. Natural split: PR 1 gpsio
   dialing + satpulsetool `--tcp` + smoke tests; PR 2 satpulsed

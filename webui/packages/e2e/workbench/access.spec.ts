@@ -142,7 +142,7 @@ test('a wrong token at page load fails pre-mount validation and shows the stale-
 // wb:authlost fires only when the SSE EventSource closes terminally
 // (http-transport.ts openStream), which needs the server to 401 the stream,
 // which needs the token to change -- and the token changes only on a
-// satpulsewb restart. The workbenchFixedToken fixture (-L <port> -t) restarts
+// satpulsewb restart. The workbenchFixedToken fixture (-L <port> --token) restarts
 // on the same port with a fresh token, so the page can still reach the
 // server; its reconnecting EventSource is then 401ed and the notice replaces
 // the app (main.tsx documents this as deliberate).

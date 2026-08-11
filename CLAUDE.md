@@ -2,9 +2,9 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-For detailed documentation of the package structure, dependencies, and layering, see @docs/internals.md.
+For detailed documentation of the package structure, dependencies, and layering, see @docs/internals/packages.md.
 
-Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals.md.
+Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals/packages.md.
 
 ## Interaction
 
@@ -111,6 +111,13 @@ Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
 (daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
 hardware). Build first with `make`, then run `make smoketest`. See
 @smoketest/CLAUDE.md.
+
+Race detection: `GOFLAGS=-race make` builds with the race detector (and
+`GOFLAGS=-race make test` runs the Go tests under it). Then
+`GORACE=halt_on_error=1 make smoketest` runs the smoke tests against those
+binaries, killing the daemon at the first race; without `halt_on_error` a race
+is only reported in the daemon log, which the smoke tests do not check. This
+works for `make` but not `allarch`: the detector does not support 32-bit arm.
 
 System testing on real hardware is doing using ansible in `systest/` directory.
 

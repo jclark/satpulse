@@ -170,6 +170,7 @@ var vendorMap = func() map[string]Vendor {
 	for i, name := range vendorNames {
 		m[strings.ToLower(name)] = Vendor(i + 1)
 	}
+	m["casic"] = VendorZhongke
 	m["comnav"] = VendorSinoGNSS
 	m["taidou"] = VendorTechtotop
 	m["ublox"] = VendorUblox
@@ -318,6 +319,8 @@ func CreateConfigProtocol(vendor Vendor) gpsprot.ConfigProtocol {
 		return ubx.NewConfigProtocol()
 	case VendorUnicore:
 		return unc.NewConfigProtocol()
+	case VendorZhongke:
+		return casic.NewConfigProtocol()
 	case VendorQuectel:
 		return quectel.NewConfigProtocol()
 	default:

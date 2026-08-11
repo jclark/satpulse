@@ -31,7 +31,7 @@ func TestReplayQTM(t *testing.T) {
 
 // qtmPacketsEqual compares Quectel PQTM packets, which are plain NMEA
 // sentences, so an exact byte comparison suffices.
-func qtmPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
+func qtmPacketsEqual(t *testing.T, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
 	if actualStr == expectedStr {
