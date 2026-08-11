@@ -8,14 +8,18 @@ import (
 	"io"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
 
+// Term allows its cached attributes to be read from any goroutine concurrently
+// with Change. Calls to Change must be serialized by the caller.
 type Term struct {
 	fd      int
 	path    string
+	attrMu  sync.RWMutex
 	attr    Attr
 	tsSaved unix.Termios
 	iCount  *serialICounter
@@ -38,13 +42,15 @@ func Open(path string, opts ...AttrSetter) (*Term, error) {
 
 func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	t.path = path
-	// XXX should open non-blocking and then change to blocking with fcntl
-	// (in case CLOCAL is not set)
 	// O_CLOEXEC is here, because we are using flock to lock.
 	// Without O_CLOEXEC, the lock would be inherited by child processes, which is probably not what is wanted.
 	// See e.g. https://github.com/Pulse-Eight/libcec/issues/477
-	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
+	// O_NONBLOCK prevents open from waiting for carrier when CLOCAL is not set.
+	fd, err := unix.Open(path, unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
 	if err != nil {
+		if errors.Is(err, unix.EBUSY) {
+			err = wrapLocked(err)
+		}
 		err = t.wrapErr(err, "open")
 		return
 	}
@@ -54,6 +60,11 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 			unix.Close(fd)
 		}
 	}()
+	// Carrier is only waited for in open, so blocking mode can be restored immediately.
+	if err = unix.SetNonblock(fd, false); err != nil {
+		err = t.wrapErr(err, "fcntl(F_SETFL)")
+		return
+	}
 	// We could make this optional, but non-exclusive use of the serial port seems like a bad idea.
 	err = lock(fd, path)
 	if err != nil {
@@ -69,6 +80,16 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 		}
 		return
 	}
+	// getAttr has established that this is a tty, so the exclusive-mode ioctls
+	// cannot fail with ENOTTY.
+	if err = t.setExclusive(); err != nil {
+		return
+	}
+	defer func() {
+		if err != nil {
+			t.clearExclusive()
+		}
+	}()
 	attr := Attr{*tsp}
 	t.tsSaved = *tsp
 	for _, opt := range opts {
@@ -79,14 +100,14 @@ func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
 	}
 	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
-	t.attr = attr
+	t.storeAttr(attr)
 	_ = t.readError()
 	return
 }
 
 // Change changes the attributes of the terminal after output has drained.
 func (t *Term) Change(opts ...AttrSetter) error {
-	attr := t.attr
+	attr := t.loadAttr()
 	for _, opt := range opts {
 		err := opt(&attr)
 		if err != nil {
@@ -99,20 +120,56 @@ func (t *Term) Change(opts ...AttrSetter) error {
 	if err := t.setAttrNow(&attr.ts); err != nil {
 		return err
 	}
-	t.attr = attr
+	t.storeAttr(attr)
 	return nil
 }
 
 func (t *Term) Speed() int {
-	return t.attr.speed()
+	attr := t.loadAttr()
+	return attr.speed()
+}
+
+func (t *Term) loadAttr() Attr {
+	t.attrMu.RLock()
+	defer t.attrMu.RUnlock()
+	return t.attr
+}
+
+func (t *Term) storeAttr(attr Attr) {
+	t.attrMu.Lock()
+	defer t.attrMu.Unlock()
+	t.attr = attr
 }
 
 func lock(fd int, path string) error {
 	err := unix.Flock(fd, unix.LOCK_EX|unix.LOCK_NB)
+	if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
+		return fmt.Errorf("%s: %w", path, wrapLocked(err))
+	}
 	if err != nil {
-		return fmt.Errorf("%s: could not lock device (%w); probably being used by another process", path, err)
+		return fmt.Errorf("%s: could not lock device: %w", path, err)
 	}
 	return nil
+}
+
+// setExclusive puts the terminal into exclusive mode, making opens by processes
+// without CAP_SYS_ADMIN fail with EBUSY. flock remains the primary lock; this is
+// for interoperating with programs such as gpsd that use TIOCEXCL instead, and it
+// also stops an unprivileged opener reprogramming the line as a side effect of
+// probing it.
+func (t *Term) setExclusive() error {
+	if err := t.checkNotExclusive(); err != nil {
+		return err
+	}
+	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCEXCL, 0), "ioctl(TIOCEXCL)")
+}
+
+// clearExclusive takes the terminal out of exclusive mode. The flag belongs to
+// the tty rather than to our file descriptor, so closing without clearing it
+// leaves the port unopenable for as long as some other process holds the tty
+// open.
+func (t *Term) clearExclusive() error {
+	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TIOCNXCL, 0), "ioctl(TIOCNXCL)")
 }
 
 func RawMode(a *Attr) error {
@@ -131,12 +188,21 @@ func Local(a *Attr) error {
 	return nil
 }
 
+// NoParity configures the terminal for no parity and disables input parity
+// checking.
+func NoParity(a *Attr) error {
+	a.ts.Iflag &^= unix.INPCK
+	a.ts.Cflag &^= unix.PARENB
+	return nil
+}
+
 // TransmitTime returns the time it takes to send a byte using the settings in Term.
 func (t *Term) TransmitTime(nBytes int) time.Duration {
 	if nBytes <= 0 {
 		return 0
 	}
-	return t.attr.byteTransmitTime() * time.Duration(nBytes)
+	attr := t.loadAttr()
+	return attr.byteTransmitTime() * time.Duration(nBytes)
 }
 
 // byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
@@ -277,8 +343,13 @@ func (t *Term) Read(buf []byte) (n int, err error) {
 			}
 			return
 		}
-		if !t.attr.readCanTimeout() || time.Since(start) >= earlyZeroRead {
-			// VTIME expired with no data available.
+		attr := t.loadAttr()
+		if !attr.readCanTimeout() || time.Since(start) >= earlyZeroRead {
+			// Serial errors indicate line activity, so this interval cannot be
+			// treated as an inter-packet timeout.
+			if serr := t.readError(); serr != nil {
+				return 0, serr
+			}
 			return 0, &os.PathError{Op: "read", Path: t.path, Err: os.ErrDeadlineExceeded}
 		}
 	}
@@ -330,9 +401,13 @@ func (t *Term) Restore() error {
 }
 
 func (t *Term) Close() error {
+	err := t.clearExclusive()
 	fd := t.fd
 	t.fd = -1
-	return t.wrapErr(unix.Close(fd), "close")
+	if cerr := t.wrapErr(unix.Close(fd), "close"); err == nil {
+		err = cerr
+	}
+	return err
 }
 
 func (t *Term) Path() string {

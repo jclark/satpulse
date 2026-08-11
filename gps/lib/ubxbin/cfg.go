@@ -7,6 +7,7 @@ import (
 const (
 	CfgCfgID    MsgID = clsCfg | (0x09 << 8)
 	CfgGNSSID   MsgID = clsCfg | (0x3E << 8)
+	CfgInfID    MsgID = clsCfg | (0x02 << 8)
 	CfgMsgID    MsgID = clsCfg | (0x01 << 8)
 	CfgNav5ID   MsgID = clsCfg | (0x24 << 8)
 	CfgPrtID    MsgID = clsCfg | (0x00 << 8)
@@ -92,6 +93,57 @@ type CfgMsg struct {
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
+
+// UBX-CFG-INF Information message configuration.
+// The payload is entirely repeated blocks, one per protocol, so there is
+// no fixed part. Messages output by the receiver contain a single block.
+
+type CfgInf struct {
+	Blocks []CfgInfBlock `json:"blocks"`
+}
+
+var _ VaryingMsg = (*CfgInf)(nil)
+
+func (m *CfgInf) ID() MsgID { return CfgInfID }
+
+func (m *CfgInf) InitVaryingPart(payloadLen int) (err error) {
+	len, err := sliceLen(m, payloadLen, 0, 10)
+	if err == nil {
+		m.Blocks = make([]CfgInfBlock, len)
+	}
+	return
+}
+
+func (m *CfgInf) FixedPart() any {
+	return nil
+}
+
+func (m *CfgInf) VaryingPart() any {
+	return &m.Blocks
+}
+
+type CfgInfBlock struct {
+	ProtocolID CfgInfProtocolID  `json:"protocolId"`
+	_          [3]byte
+	InfMsgMask [NPort]CfgInfMask `json:"infMsgMask"`
+}
+
+type CfgInfProtocolID byte
+
+const (
+	CfgInfProtoUBX CfgInfProtocolID = iota
+	CfgInfProtoNMEA
+)
+
+type CfgInfMask byte
+
+const (
+	CfgInfError CfgInfMask = 1 << iota
+	CfgInfWarning
+	CfgInfNotice
+	CfgInfTest
+	CfgInfDebug
+)
 
 // UBX-CFG-NAV5 Navigation engine settings
 
@@ -658,6 +710,8 @@ func PollPayloadLen(mid MsgID) int {
 	switch mid {
 	case CfgPrtID:
 		return 1 // port ID
+	case CfgInfID:
+		return 1 // protocol ID
 	case CfgMsgID:
 		return 2 // class + ID
 	case CfgTp5ID:
@@ -687,6 +741,7 @@ func PollCfgMsg(mid MsgID) []byte {
 func init() {
 	regMsg[CfgCfg]("CFG")
 	regMsg[CfgGNSS]("GNSS")
+	regMsg[CfgInf]("INF")
 	regMsg[CfgMsg]("MSG")
 	regMsg[CfgNav5]("NAV5")
 	regMsg[CfgPrt]("PRT")

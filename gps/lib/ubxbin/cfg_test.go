@@ -55,3 +55,28 @@ func TestCfgValget(t *testing.T) {
 func EqualCfgValget(p1, p2 *CfgValget) bool {
 	return p1.CfgValgetFixed == p2.CfgValgetFixed && slices.Equal(p1.CfgData, p2.CfgData)
 }
+
+func TestCfgInf(t *testing.T) {
+	notice := CfgInfError | CfgInfWarning | CfgInfNotice
+	m := CfgInf{[]CfgInfBlock{
+		{ProtocolID: CfgInfProtoUBX, InfMsgMask: [NPort]CfgInfMask{CfgInfError}},
+		{ProtocolID: CfgInfProtoNMEA, InfMsgMask: [NPort]CfgInfMask{notice, notice, 0, notice, notice, 0}},
+	}}
+	p2 := testMsgType1(t, m)
+	if !slices.Equal(m.Blocks, p2.(*CfgInf).Blocks) {
+		t.Fatalf("msg cfg-inf not roundtripped %v => %v", &m, p2)
+	}
+	// NMEA defaults as reported by a LEA-M8T running TIM 1.10.
+	packet, err := PackMsg(CfgInfID, []byte{1, 0, 0, 0, 0x07, 0x07, 0x00, 0x07, 0x07, 0x00})
+	if err != nil {
+		t.Fatalf("PackMsg: %v", err)
+	}
+	msg, err := ParseMsg(string(packet))
+	if err != nil {
+		t.Fatalf("failed to parse CFG-INF: %v", err)
+	}
+	want := []CfgInfBlock{{ProtocolID: CfgInfProtoNMEA, InfMsgMask: [NPort]CfgInfMask{notice, notice, 0, notice, notice, 0}}}
+	if got := msg.(*CfgInf).Blocks; !slices.Equal(got, want) {
+		t.Errorf("CFG-INF blocks: got %v, want %v", got, want)
+	}
+}

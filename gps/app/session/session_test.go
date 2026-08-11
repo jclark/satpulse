@@ -163,7 +163,7 @@ type reentrantSink struct {
 
 func (rs *reentrantSink) Emit(ev Event) {
 	rs.fakeSink.Emit(ev)
-	if ev.Name == EventState {
+	if ev.EventName() == EventState {
 		rs.once.Do(rs.s.Disconnect)
 	}
 }
@@ -184,7 +184,7 @@ func (w *blockingWriter) Write(b []byte) (int, error) {
 }
 
 func (gs *gatedSink) Emit(ev Event) {
-	if ev.Name == EventState && gs.gating.Load() {
+	if ev.EventName() == EventState && gs.gating.Load() {
 		<-gs.gate
 	}
 	gs.fakeSink.Emit(ev)
@@ -214,8 +214,9 @@ func (fs *fakeSink) states() []ConnState {
 	defer fs.mu.Unlock()
 	var sts []ConnState
 	for _, ev := range fs.events {
-		if ev.Name == EventState {
-			sts = append(sts, ev.Data.(ConnState))
+		switch ev := ev.(type) {
+		case ConnState:
+			sts = append(sts, ev)
 		}
 	}
 	return sts
@@ -226,7 +227,7 @@ func (fs *fakeSink) count(name EventName) int {
 	defer fs.mu.Unlock()
 	n := 0
 	for _, ev := range fs.events {
-		if ev.Name == name {
+		if ev.EventName() == name {
 			n++
 		}
 	}
