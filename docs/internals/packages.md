@@ -168,6 +168,8 @@ These packages provide the public API for time synchronization. They are in the 
 
 `time/sockrefclock` implements the chrony refclock protocol. It uses `gps/ptime`.
 
+`time/timeprov` sends refclock samples on Windows to the Windows Time service (w32time) through the pipe-timeprov bridge, a w32time time provider DLL fed over a named pipe. It is the Windows counterpart of `time/sockrefclock` and implements the same sample interface. It uses `time/lib/ntime` and `time/sockrefclock`.
+
 `time/lib/ntpshm` implements the ntpd/NTPsec SHM refclock writer. It uses `gps/ptime`.
 
 `time/clocksim` provides discrete-time simulation of PTP hardware clocks and GNSS PPS signals. It includes simulator functions for oscillators (modeling frequency errors like white noise, flicker noise, random walk, drift) and for GPS/PPS timing errors (jitter, sawtooth, sinusoids, colored noise).
