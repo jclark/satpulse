@@ -313,37 +313,46 @@ two, then validated packets at the actual speed.
 ## satpulsetool serial
 
 A new subcommand combining port enumeration (#394) with speed
-detection. It has three modes: enumeration (no arguments),
-single-device detection (a device argument), and scan (`--scan`).
+detection. Description versus detection and one port versus all
+discovered ports are independent choices: `--detect-speed` selects
+detection, and an optional `port` operand selects one port in either
+mode.
 
-### Enumeration
+### Description
 
-`satpulsetool serial` with no arguments lists the enumerated
-serial ports. As in `satpulsetool sdp`, printing goes through a
-JSON-tagged struct (the sdpcmd Printer pattern), so `-j`/`--jsonl`
-comes for free. The fields are `Device`, `Display`, and a composite
-`USB` value containing numeric `VID`/`PID`, matching `serialenum.Port`
-from the #394 plan. `Device` is the canonical `/dev/<kernel name>`
-path; top-level aliases are shown only within `Display` and are not
-separate output fields. Enumeration reads only sysfs and `/dev`
-directory entries and never opens a device, so this mode needs no
-dialout membership.
+Without `--detect-speed`, the command describes discovered serial
+ports without opening them, so it needs no dialout membership. With
+no operand it describes every discovered port. A `port` operand
+selects one discovered port by its canonical device path or an alias,
+first as written and then with symlinks resolved; a selector that
+matches nothing exits 2.
 
-### Single-device detection
+Human-readable output uses `serialenum.Port.Display`, followed by the
+quoted USB serial number when present. `-j`/`--jsonl` instead writes
+the `serialenum.Port` value: `device` and `display`, a composite `usb`
+value containing numeric `vid`/`pid`, and optional `serial` and
+`aliases` fields. JSONL composes with a port selector but not with
+`--detect-speed`.
+
+### Detection
 
 ```
-satpulsetool serial [--packet-log path] <device>
+satpulsetool serial --detect-speed [--packet-log path] [port]
 ```
 
-The device is opened directly by path (it need not appear in the
-enumeration) at its current speed; the command starts the standard
-gpsio reader goroutine and runs `DetectSpeed` with
-`DefaultSpeedList()`, a per-try window of 1.25 s, and a
-`stopSilent` that stops after five tried speeds (both detection
-modes use these). On success the detected speed is
-printed to stdout as a single number and the exit code is 0, so
-scripts can compose it, e.g.
-`satpulsetool gps -s $(satpulsetool serial /dev/ttyS0) ...`.
+With `--detect-speed`, the command starts the standard gpsio reader
+goroutine and runs `DetectSpeed` with `DefaultSpeedList()`, a per-try
+window of 1.25 s, and a `stopSilent` that stops after five tried
+speeds.
+
+With a `port`, exactly that path is opened at its current speed; it
+need not appear in enumeration, so a symlink or a port that discovery
+misses can still be detected. On success the speed is printed as a
+single number and the exit code is 0, so scripts can compose it, e.g.
+`satpulsetool gps -s $(satpulsetool serial -s /dev/ttyS0) ...`.
+`--packet-log` requires this single-port detection form. It captures
+wrong-speed garbage for tuning and diagnosis, and speed changes
+appear through the existing `logWrite` path.
 
 Failures print a description to stderr. The cases, with exit
 codes:
@@ -365,34 +374,32 @@ codes:
 - 1: other system errors (changing or flushing the serial port, ...).
 - 2: silent (`DetectSilent`): nothing received.
 
-### Scan
-
-`satpulsetool serial --scan` (short `-s`) runs single-device
-detection on every enumerated port in parallel. A port whose
-holder locks it reports as locked (flock always;
-TIOCEXCL for non-root scans); a holder that takes no lock is not
-detectable, and scan will open and probe its port. Combining
-`--scan` with a device argument is a usage error.
+Without a `port`, detection runs on every enumerated port in parallel.
+A port whose holder locks it reports as locked (flock always;
+TIOCEXCL for non-root detection); a holder that takes no lock is not
+detectable, and detection opens and probes the port.
 
 Each port where detection succeeds contributes one stdout line:
 the device name, a space, the detected speed. The name is the
-port's canonical `Device` from enumeration. Each failure
-contributes one stderr line, `<device>: <description>`, with the
-same case distinctions as above. Each port gets exactly one
-output or error line, printed as soon as its detection finishes,
-so the output order is completion order.
+port's canonical `Device` from enumeration. Each failure normally
+contributes one stderr line, `<device>: <description>`, with the same
+case distinctions as above. Lines are printed as each detection
+finishes, so the output order is completion order. After an
+interrupt, per-port failures are suppressed rather than printing one
+interruption line for every outstanding probe.
 
 ### Exit codes
 
-One rule covers all modes. The possible outcomes for a port are
-ordered from best to worst: detected, silent, error. The exit
-code is the best actual outcome over a non-empty set of ports:
-0 for detected, 2 for silent, and 1 for error. If no ports are
-found, enumeration or scan exits 2 explicitly. Single-device
-detection is the one-port case: 0 detected, 2 silent, 1 anything
-else. For enumeration, which does not probe, a listed port counts
-as detected. Usage errors exit 2; operational command-level failures
-exit 1.
+Description succeeds with exit 0 when it reports at least one port.
+No discovered ports, or a selector that matches none, exits 2.
+
+For detection, the possible outcomes for a port are ordered from
+best to worst: detected, silent, error. All-port detection returns
+the best actual outcome over a non-empty set of ports: 0 for
+detected, 2 for silent, and 1 for error. If no ports are found it
+exits 2 explicitly. Single-port detection is the one-port case: 0
+detected, 2 silent, 1 anything else. Usage errors exit 2;
+operational command-level failures exit 1.
 
 ### Common
 
@@ -416,12 +423,6 @@ and stale-packet count. The received bytes are also recoverable
 offline from the packet log, but read errors are not logged, so
 framing-error evidence comes from these `-v` diagnostics, not from
 captures.
-
-`--packet-log` has the same semantics as the gps command's flag and
-applies only to the single-device form. The captured wrong-speed
-garbage is the raw material for tuning the classifier constants,
-and speed changes appear in the log via the existing `logWrite` on
-the change path.
 
 Implementation is a new package `internal/serialcmd`, registered in
 `cmd/satpulsetool/commands.go` alongside the existing subcommands.
