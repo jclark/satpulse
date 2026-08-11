@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/scan"
 	"golang.org/x/sys/unix"
 )
@@ -30,7 +31,15 @@ func openTestPTY(t *testing.T, speed int) (*os.File, *SerialConn) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	conn, _, err := OpenSerial(fmt.Sprintf("/dev/pts/%d", n), speed)
+	device := fmt.Sprintf("/dev/pts/%d", n)
+	setup, err := term.Open(device, term.Speed(speed))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := setup.Close(); err != nil {
+		t.Fatal(err)
+	}
+	conn, _, err := OpenSerial(device, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -100,6 +109,7 @@ func TestDetectSpeedPTY(t *testing.T) {
 // speed unspecified: cleanup is the caller's Close, which restores the port.
 func TestDetectSpeedPTYSilent(t *testing.T) {
 	_, conn := openTestPTY(t, 9600)
+	device := conn.LocalAddr()
 	got, err := DetectSpeed(
 		context.Background(),
 		slog.New(slog.NewTextHandler(io.Discard, nil)),
@@ -114,6 +124,16 @@ func TestDetectSpeedPTYSilent(t *testing.T) {
 		t.Errorf("DetectSpeed() = %+v, %v, want silent", got, err)
 	}
 	if err := conn.Close(); err != nil {
+		t.Fatal(err)
+	}
+	reopened, speed, err := OpenSerial(device, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if speed != 9600 {
+		t.Errorf("restored speed = %d, want 9600", speed)
+	}
+	if err := reopened.Close(); err != nil {
 		t.Fatal(err)
 	}
 }
