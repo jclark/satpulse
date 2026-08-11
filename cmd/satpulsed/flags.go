@@ -15,6 +15,7 @@ type flagVars struct {
 	wait         bool
 	configFiles  []string
 	serialDevice string
+	platform     platformVars
 }
 
 const summary = `[-h|--help] [-V|--version] [-v|--verbose] [-w|--wait] [-s|--systemd-log]
@@ -38,8 +39,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, string, error) {
 	flags.BoolVarP(&showVersion, "version", "V", false, "show version information")
 	flags.StringSliceVarP(&vars.configFiles, "config-file", "f", nil, "configuration file")
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device to configure")
+	registerPlatformFlags(flags, &vars)
 	usage := func() string {
-		return fmt.Sprintf("Usage: %s %s\nOptions:\n%s", cmdName, summary, flags.FlagUsages())
+		return fmt.Sprintf("Usage: %s %s%s\nOptions:\n%s", cmdName, summary, platformSummary, flags.FlagUsages())
 	}
 	err := flags.Parse(args)
 	if err != nil {

@@ -80,3 +80,29 @@ Build using the `unix-build.sh` script, which puts the binaries under `out/`.
 ### Windows
 
 Build using the `win-build.ps1` PowerShell script, which puts the binaries under `out\`.
+
+satpulsed can run as a Windows service.
+From an elevated PowerShell:
+
+```
+.\satpulsed.exe --install -f C:\satpulse\satpulse.toml --log-file C:\satpulse\satpulsed.log --install-dir 'C:\Program Files\SatPulse'
+```
+
+This registers a `satpulsed` service that starts automatically at boot,
+reading the given configuration file and writing the daemon log to the `--log-file` path.
+`--install-dir` copies the executable to that directory and registers the copy,
+so that the running service does not lock the binary you build;
+without it, the executable you ran is registered in place.
+Start and stop the service with `sc start satpulsed` and `sc stop satpulsed`.
+Service starts, stops, and any terminal error are recorded in the Windows Event Log under the source `satpulsed`.
+
+Remove the service with:
+
+```
+.\satpulsed.exe --uninstall
+```
+
+This stops the service if it is running, unregisters it,
+and deletes the executable copy made by `--install-dir`.
+It works without the configuration file,
+so a broken or deleted configuration does not prevent removal.

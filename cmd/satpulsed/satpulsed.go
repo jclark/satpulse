@@ -22,6 +22,9 @@ func main() {
 		fmt.Fprint(os.Stderr, msg)
 		os.Exit(exitCode)
 	}
+	// On Windows this may run a service mode (install, uninstall, or the
+	// SCM-driven service itself) and exit instead of returning.
+	platformMain(progName, vars)
 	runForeground(progName, vars)
 }
 
