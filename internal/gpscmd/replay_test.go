@@ -27,7 +27,8 @@ var update = flag.Bool("update", false, "update golden test data files")
 // packetCmpFunc compares actual and expected packets for a specific protocol.
 // Returns (equal, updatable): equal means packets match;
 // updatable means the mismatch is safe to auto-update in golden files.
-type packetCmpFunc func(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool)
+// Each comparator identifies messages in its own vendor's protocol.
+type packetCmpFunc func(t *testing.T, actual []byte, expected gpsio.PacketLogEntry) (bool, bool)
 
 func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 	path := filepath.Join("testdata", name+".jsonl")
@@ -380,12 +381,7 @@ func (r *replayer) run() {
 			}
 
 			expected := r.test.outPackets[r.outIdx]
-			// Extract message ID from packet for proper comparison
-			msgID := ""
-			if msg, err := ubxbin.ParseMsg(string(action.Packet)); err == nil {
-				msgID = msg.ID().String()
-			}
-			eq, updatable := r.packetCmp(r.t, msgID, action.Packet, expected)
+			eq, updatable := r.packetCmp(r.t, action.Packet, expected)
 			if *update {
 				if keys := cfgValgetRequestKeys(action.Packet); len(keys) != 0 {
 					r.pendingValget = append(r.pendingValget, valgetResponsePatch{keys: keys})

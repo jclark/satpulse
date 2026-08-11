@@ -28,7 +28,7 @@ func TestReplaySeptentrio(t *testing.T) {
 	}
 }
 
-func septentrioPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
+func septentrioPacketsEqual(t *testing.T, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
 
@@ -36,6 +36,6 @@ func septentrioPacketsEqual(t *testing.T, msgID string, actual []byte, expected 
 		return true, false
 	}
 
-	t.Errorf("%s: packets differ: actual %q, expected %q", msgID, actualStr, expectedStr)
+	t.Errorf("packets differ: actual %q, expected %q", actualStr, expectedStr)
 	return false, false
 }

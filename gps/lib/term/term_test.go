@@ -47,6 +47,37 @@ func TestSpeedToBBad(t *testing.T) {
 	}
 }
 
+func TestNoParity(t *testing.T) {
+	attr := Attr{
+		ts: unix.Termios{
+			Iflag: unix.INPCK | unix.IGNBRK,
+			Cflag: unix.PARENB | unix.CLOCAL,
+		},
+	}
+	if err := NoParity(&attr); err != nil {
+		t.Fatalf("NoParity: %v", err)
+	}
+	if attr.ts.Iflag&unix.INPCK != 0 {
+		t.Error("NoParity left INPCK enabled")
+	}
+	if attr.ts.Cflag&unix.PARENB != 0 {
+		t.Error("NoParity left PARENB enabled")
+	}
+	if attr.ts.Iflag&unix.IGNBRK == 0 || attr.ts.Cflag&unix.CLOCAL == 0 {
+		t.Error("NoParity changed unrelated flags")
+	}
+}
+
+func TestRawModeLeavesParityChecking(t *testing.T) {
+	attr := Attr{ts: unix.Termios{Iflag: unix.INPCK}}
+	if err := RawMode(&attr); err != nil {
+		t.Fatalf("RawMode: %v", err)
+	}
+	if attr.ts.Iflag&unix.INPCK == 0 {
+		t.Error("RawMode disabled input parity checking")
+	}
+}
+
 func TestByteTransmitTime(t *testing.T) {
 	// Set up Termios settings for 9600 baud 8N1
 	var attr Attr

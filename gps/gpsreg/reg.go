@@ -320,6 +320,8 @@ func CreateConfigProtocol(vendor Vendor) gpsprot.ConfigProtocol {
 		return ubx.NewConfigProtocol()
 	case VendorUnicore:
 		return unc.NewConfigProtocol()
+	case VendorZhongke:
+		return casic.NewConfigProtocol()
 	case VendorSeptentrio:
 		return septentrio.NewConfigProtocol()
 	default:

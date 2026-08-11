@@ -46,6 +46,7 @@ const (
 	ConfigSupportRTCMMSM7
 	ConfigSupportRTCMBaseID
 	ConfigSupportRTCMQZSS
+	ConfigSupportReload
 	ConfigSupportPort
 	ConfigSupportLast = ConfigSupportPort
 	// ConfigSupportFull is every configuration flag set - the support of a
@@ -75,6 +76,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportRTCMMSM7, "rtcmMSM7"},
 	{ConfigSupportRTCMBaseID, "rtcmBaseID"},
 	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
+	{ConfigSupportReload, "reload"},
 	{ConfigSupportPort, "port"},
 }
 

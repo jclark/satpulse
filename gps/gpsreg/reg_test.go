@@ -196,6 +196,7 @@ func TestCreateConfigProtocols(t *testing.T) {
 		{"empty list is the default probe set", nil, 2},
 		{"u-blox", []Vendor{VendorUblox}, 1},
 		{"unicore", []Vendor{VendorUnicore}, 1},
+		{"zhongke", []Vendor{VendorZhongke}, 1},
 		{"both defaults", []Vendor{VendorUblox, VendorUnicore}, 2},
 		{"septentrio", []Vendor{VendorSeptentrio}, 1},
 		{"vendor without protocol", []Vendor{VendorAllystar}, 0},

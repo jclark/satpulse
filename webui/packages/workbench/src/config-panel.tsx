@@ -9,9 +9,10 @@ import {PVTGroup, pvtWireValue} from './pvt-group';
 import {SatsGroup, satsWireValue} from './sats-group';
 import {RawGroup, rawWireValue} from './raw-group';
 import {
-    NMEAMsgRMC,
-    PVTMsgPos, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
+    NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV,
+    PVTMsgPos, PVTMsgTime, PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgSurvey, PVTMsgQuality, PVTMsgEpoch,
     SatsMsgSat, SatsMsgSignal,
+    RawMsgObs,
     SurveyAgain, SaveNone, SaveMinimal, SaveAll, ResetNone, ResetReload, ResetCold, ResetFactory,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
@@ -50,8 +51,8 @@ interface Props {
 
 // Config-support item names (gpsprot.ConfigSupportFlags JSON values). Kept as a
 // string set: the frontend keys on names, not bit positions, and ignores
-// unknown names, so gating for pending-branch flags (reload, surveyDur) lights
-// up as each backend merges.
+// unknown names, so gating for pending-branch flags (surveyDur) lights up as
+// each backend merges.
 const SUP = {
     signal: 'signal',
     speed: 'speed',
@@ -66,6 +67,15 @@ const SUP = {
     rtcmMSM7: 'rtcmMSM7',
     reload: 'reload',
 } as const;
+
+// Each message group's selection starts from what satpulsed can use, so
+// ticking the group's Change checkbox enables a sensible set as-is and later
+// user edits are preserved. NMEA is the decoded sentences minus ZDA and VTG,
+// which add nothing satpulsed wants over RMC.
+const nmeaDefaultFlags: ReadonlySet<NMEASelectableMsgFlag> = new Set([NMEAMsgRMC, NMEAMsgGGA, NMEAMsgGSA, NMEAMsgGSV]);
+const pvtDefaultFlags: ReadonlySet<PVTMsgFlag> = new Set([PVTMsgTime, PVTMsgPos, PVTMsgQuality, PVTMsgEpoch, PVTMsgOff]);
+const satsDefaultFlags: ReadonlySet<SatsMsgFlag> = new Set([SatsMsgSat, SatsMsgSignal]);
+const rawDefaultFlags: ReadonlySet<RawMsgFlag> = new Set([RawMsgObs]);
 
 // Convert a signalsEnabled map {GPS: ["L1","L5"]} to Set<string> {"GPS:L1","GPS:L5"}
 export function signalMapToSet(m: Record<string, string[]> | undefined): Set<string> {
@@ -162,18 +172,18 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     // Message state
     const [nmeaChange, setNmeaChange] = useState(false);
     const [nmeaDisable, setNmeaDisable] = useState(false);
-    const [nmeaFlags, setNmeaFlags] = useState<ReadonlySet<NMEASelectableMsgFlag>>(new Set());
+    const [nmeaFlags, setNmeaFlags] = useState<ReadonlySet<NMEASelectableMsgFlag>>(nmeaDefaultFlags);
     const [rtcmChange, setRtcmChange] = useState(false);
     const [rtcmDisable, setRtcmDisable] = useState(false);
-    const [rtcmMSM, setRtcmMSM] = useState<'none' | 'msm4' | 'msm7'>('none');
+    const [rtcmMSM, setRtcmMSM] = useState<'none' | 'msm4' | 'msm7'>('msm4');
     const [rtcmFallback, setRtcmFallback] = useState(true);
-    const [rtcmARP, setRtcmARP] = useState(false);
+    const [rtcmARP, setRtcmARP] = useState(true);
     const [pvtChange, setPvtChange] = useState(false);
-    const [pvtFlags, setPvtFlags] = useState<ReadonlySet<PVTMsgFlag>>(new Set());
+    const [pvtFlags, setPvtFlags] = useState<ReadonlySet<PVTMsgFlag>>(pvtDefaultFlags);
     const [satsChange, setSatsChange] = useState(false);
-    const [satsFlags, setSatsFlags] = useState<ReadonlySet<SatsMsgFlag>>(new Set());
+    const [satsFlags, setSatsFlags] = useState<ReadonlySet<SatsMsgFlag>>(satsDefaultFlags);
     const [rawChange, setRawChange] = useState(false);
-    const [rawFlags, setRawFlags] = useState<ReadonlySet<RawMsgFlag>>(new Set());
+    const [rawFlags, setRawFlags] = useState<ReadonlySet<RawMsgFlag>>(rawDefaultFlags);
 
     // Serial speed state.
     // baudRateApplicable: null = unknown (pre-readback or readback didn't include baudRate),
@@ -296,18 +306,18 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
         setMinElevTouched(false);
         setNmeaChange(false);
         setNmeaDisable(false);
-        setNmeaFlags(new Set());
+        setNmeaFlags(nmeaDefaultFlags);
         setRtcmChange(false);
         setRtcmDisable(false);
-        setRtcmMSM('none');
+        setRtcmMSM('msm4');
         setRtcmFallback(true);
-        setRtcmARP(false);
+        setRtcmARP(true);
         setPvtChange(false);
-        setPvtFlags(new Set());
+        setPvtFlags(pvtDefaultFlags);
         setSatsChange(false);
-        setSatsFlags(new Set());
+        setSatsFlags(satsDefaultFlags);
         setRawChange(false);
-        setRawFlags(new Set());
+        setRawFlags(rawDefaultFlags);
         setSpeedTouched(false);
         setSaveType(SaveNone);
         setResetType(ResetNone);
@@ -530,6 +540,12 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
     const msm4Supported = has(SUP.rtcmMSM4);
     const msm7Supported = has(SUP.rtcmMSM7);
     const rtcmSupported = msm4Supported || msm7Supported;
+    const reloadSupported = has(SUP.reload);
+    // The MSM default prefers MSM4; when identification reports only MSM7,
+    // move the selection there. Keying on the boolean keeps this from firing
+    // on renders: it flips only on identification or disconnect, before the
+    // user has touched the group.
+    useEffect(() => { setRtcmMSM(msm4Supported ? 'msm4' : 'msm7'); }, [msm4Supported]);
 
     const surveyDisabled = !connected || !surveySupported || timeMode !== 'survey';
     // The survey accuracy, duration, and progress fields disable with the
@@ -739,11 +755,21 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                                 setSatsChange(true); setSatsFlags(new Set());
                                 if (rawSupported) { setRawChange(true); setRawFlags(new Set()); }
                             }}>Minimum</Button>
+                            {/* NTP and PTP mirror the message sets satpulsed
+                                configures for NTP sync (time over serial) and
+                                PHC sync (hardware time pulse), plus position
+                                for monitoring. The satellites speed threshold
+                                matches the daemon's minSpeedSatellitesOutput. */}
+                            <Button disabled={!connected} onClick={() => {
+                                setNmeaChange(true); setNmeaDisable(true);
+                                setPvtChange(true); setPvtFlags(new Set([PVTMsgTime, PVTMsgLeapSecond, PVTMsgOff, PVTMsgQuality, PVTMsgEpoch, PVTMsgPos]));
+                                if (speed >= 38400) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
+                            }}>NTP</Button>
                             <Button disabled={!connected} onClick={() => {
                                 setNmeaChange(true); setNmeaDisable(true);
                                 setPvtChange(true); setPvtFlags(new Set([PVTMsgTimePulse, PVTMsgTimePulseAfter, PVTMsgTAI, PVTMsgLeapSecond, PVTMsgOff, PVTMsgQuality, PVTMsgEpoch, PVTMsgPos]));
-                                if (speed >= 19200) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
-                            }}>Daemon</Button>
+                                if (speed >= 38400) { setSatsChange(true); setSatsFlags(new Set([SatsMsgSat, SatsMsgSignal])); }
+                            }}>PTP</Button>
                         </div>
                         <NMEAGroup
                             change={nmeaChange}
@@ -829,22 +855,17 @@ export function ConfigPanel({connState, readOnly, visible, configProps, signalCa
                                 ))}
                             </div>
                         </ConfigSubGroup>
-                        {/* The Reload reset gates on the `reload` flag, contributed
-                            by a pending backend branch (casic-config). No backend on
-                            master emits it, so gating on its absence would grey the
-                            radio on every receiver that supports reload; it is left
-                            ungated until that branch lands (then `reloadSupported`). */}
                         <ConfigSubGroup title="Reset">
                             <div class="flex flex-wrap gap-x-4 gap-y-1">
                                 {([
-                                    [ResetNone, 'None'],
-                                    [ResetReload, 'Reload'],
-                                    [ResetCold, 'Cold start'],
-                                    [ResetFactory, 'Factory reset'],
-                                ] as [ResetType, string][]).map(([v, label]) => (
-                                    <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected)}`}>
+                                    [ResetNone, 'None', true],
+                                    [ResetReload, 'Reload', reloadSupported],
+                                    [ResetCold, 'Cold start', true],
+                                    [ResetFactory, 'Factory reset', true],
+                                ] as [ResetType, string, boolean][]).map(([v, label, supported]) => (
+                                    <label key={v} class={`flex items-center gap-1.5 ${labeledControlText(!connected || !supported)}`}>
                                         <input type="radio" name="resetType" class="accent-accent" value={v} checked={resetType === v}
-                                            disabled={!connected} onChange={() => setResetType(v)} />
+                                            disabled={!connected || !supported} onChange={() => setResetType(v)} />
                                         {label}
                                     </label>
                                 ))}
