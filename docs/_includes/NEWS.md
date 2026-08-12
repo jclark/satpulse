@@ -34,6 +34,7 @@ _Not yet released_
 ### NTP support
 
 - SatPulse now supports the NTP SHM protocol in addition to the chrony refclock SOCK protocol for sending time information to an NTP server. `satpulse.toml` has a new `[ntp.shm]` table for configuring this. (#300)
+- On Windows, `satpulse.toml` has a new `[ntp.timeprov]` table, which makes `satpulsed` send timing samples to the Windows Time service (w32time) through the pipe-timeprov time provider over a named pipe. (#405)
 
 ### GPS high-level configuration
 

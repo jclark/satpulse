@@ -183,7 +183,8 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 ## `ntp` table
 
 The `ntp` table controls how SatPulse sends samples to an NTP daemon.
-It supports two protocols: the refclock SOCK protocol defined by chrony, and the SHM protocol defined by NTP.
+It supports three protocols: the refclock SOCK protocol defined by chrony, the SHM protocol defined by NTP,
+and, on Windows only, the pipe-timeprov protocol of the Windows Time service (w32time).
 
 If the `[phc]` table is not present, then the samples will be based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
@@ -216,6 +217,22 @@ Example:
 ```
 [ntp]
 shm.segment = 2
+```
+
+The following keys are used with the pipe-timeprov protocol, which sends samples over a named pipe
+to the pipe-timeprov time provider loaded by the Windows Time service.
+They are supported only on Windows, and the presence of the `timeprov` table enables the protocol.
+The `sock` and `timeprov` tables must not be configured together.
+
+* `timeprov.pipe` - a string giving the named pipe path used to communicate with the pipe-timeprov time provider;
+  the default is `\\.\pipe\pipetimeprov`
+* `timeprov.dispersion` - a number giving the measurement error in seconds reported with each sample; the default is 0.001
+
+Example:
+
+```
+[ntp]
+timeprov.pipe = '\\.\pipe\pipetimeprov'
 ```
 
 ## `log` table
