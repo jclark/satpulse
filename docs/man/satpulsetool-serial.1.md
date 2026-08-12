@@ -7,7 +7,7 @@ satpulsetool-serial - discover and analyze serial ports
 **satpulsetool** [*global options*] **serial** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-j**\|**\-\-jsonl**] [**\-s**\|**\-\-detect\-speed**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-detect\-pps** *cts*\|*dcd*\|*dsr*\|*ri*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-speed** *baud*] [**\-t**\|**\-\-timeout** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-poll**] [**\-\-speed** *baud*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [*port*]
 
 # DESCRIPTION
@@ -35,6 +35,10 @@ The *port* argument is required.
 This option is mutually exclusive with **\-\-detect\-speed** and **\-\-packet\-log**.
 On platforms where edge detection is implemented by polling, edges are reported while polling adapts to the port.
 Early timestamps can therefore have greater uncertainty.
+
+**\-\-poll**
+: Force polling for PPS edge detection even when the platform can wait for modem-control changes.
+Applies only with **\-\-detect\-pps**.
 
 **\-\-speed** *baud*
 : Set the serial-port speed while detecting PPS so that receiver traffic flows during the measurement.

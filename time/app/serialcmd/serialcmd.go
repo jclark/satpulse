@@ -26,7 +26,7 @@ import (
 )
 
 const (
-	summary           = `[-h|--help] [-j|--jsonl] [-s|--detect-speed] [-p|--detect-pps pin] [--speed baud] [-t|--timeout seconds] [--packet-log path] [port]`
+	summary           = `[-h|--help] [-j|--jsonl] [-s|--detect-speed] [-p|--detect-pps pin] [--poll] [--speed baud] [-t|--timeout seconds] [--packet-log path] [port]`
 	tryDuration       = 1250 * time.Millisecond
 	silentTryLimit    = 5
 	defaultPPSTimeout = 10 * time.Second
@@ -47,6 +47,7 @@ type flags struct {
 	detect    bool
 	detectPPS bool
 	ppsPin    gpsio.ModemControlPin
+	poll      bool
 	speed     int
 	timeout   time.Duration
 	packetLog string
@@ -143,6 +144,7 @@ func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc 
 	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output in JSON Lines format instead of human-readable text")
 	fs.BoolVarP(&cfg.detect, "detect-speed", "s", false, "detect receiver speeds instead of describing ports")
 	fs.StringVarP(&ppsPin, "detect-pps", "p", "", "detect PPS edges on a modem-control pin (cts, dcd, dsr, or ri)")
+	fs.BoolVar(&cfg.poll, "poll", false, "force polling when detecting PPS edges")
 	fs.IntVar(&cfg.speed, "speed", 0, "set the baud rate while detecting PPS (0 leaves it unchanged)")
 	fs.Float64VarP(&timeoutSeconds, "timeout", "t", defaultPPSTimeout.Seconds(), "seconds to detect PPS edges (0 for unlimited)")
 	fs.StringVar(&cfg.packetLog, "packet-log", "", "write received packets and speed changes to a JSONL file")
@@ -186,6 +188,10 @@ func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc 
 			return
 		}
 	} else {
+		if fs.Lookup("poll").Changed {
+			err = fmt.Errorf("--poll requires --detect-pps")
+			return
+		}
 		if fs.Lookup("speed").Changed {
 			err = fmt.Errorf("--speed requires --detect-pps")
 			return
@@ -240,7 +246,7 @@ func detectPPS(parent context.Context, lg *slog.Logger, cfg flags) error {
 	}
 
 	drained := drainInput(conn)
-	count, measurementErr := monitorPPS(parent, lg, conn, cfg.ppsPin, cfg.timeout, os.Stdout, cfg.jsonl)
+	count, measurementErr := monitorPPS(parent, lg, conn, cfg.ppsPin, cfg.timeout, cfg.poll, os.Stdout, cfg.jsonl)
 	conn.Stop()
 	<-drained
 	closeErr := conn.Close()
@@ -265,7 +271,7 @@ type ppsConn interface {
 	Stop()
 }
 
-func monitorPPS(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsio.ModemControlPin, timeout time.Duration, output io.Writer, jsonl bool) (int, error) {
+func monitorPPS(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsio.ModemControlPin, timeout time.Duration, forcePoll bool, output io.Writer, jsonl bool) (int, error) {
 	ctx, cancel := context.WithCancel(parent)
 	if timeout > 0 {
 		ctx, cancel = context.WithTimeout(parent, timeout)
@@ -281,7 +287,14 @@ func monitorPPS(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsio
 		stats = nil
 	}
 	go func() {
-		err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Pin: pin}, observations, stats)
+		var err error
+		wiring := serialpps.Wiring{Pin: pin}
+		if forcePoll {
+			lg.Debug("serial PPS polling backend forced")
+			err = serialpps.Poll(ctx, conn, wiring, observations, stats, lg)
+		} else {
+			err = serialpps.Detect(ctx, lg, conn, wiring, observations, stats)
+		}
 		stats.Log(lg)
 		errCh <- err
 	}()

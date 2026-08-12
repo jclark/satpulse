@@ -39,6 +39,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "detect PPS on DSR", args: []string{"--detect-pps", "dsr", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemDSR, timeout: defaultPPSTimeout, port: "/dev/ttyS0"}},
 		{name: "detect PPS on RI with settings", args: []string{"-p", "ri", "--speed", "38400", "--timeout", "0", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemRI, speed: 38400, port: "/dev/ttyS0"}},
 		{name: "detect PPS as JSONL", args: []string{"-j", "-p", "cts", "/dev/ttyS0"}, want: flags{jsonl: true, detectPPS: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout, port: "/dev/ttyS0"}},
+		{name: "detect PPS by polling", args: []string{"-p", "cts", "--poll", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemCTS, poll: true, timeout: defaultPPSTimeout, port: "/dev/ttyS0"}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "too many ports", args: []string{"one", "two"}, wantErr: true},
 		{name: "packet log without detection", args: []string{"--packet-log", "capture.jsonl", "/dev/ttyS0"}, wantErr: true},
@@ -51,6 +52,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "PPS conflicts with packet log", args: []string{"-p", "cts", "--packet-log", "capture.jsonl", "/dev/ttyS0"}, wantErr: true},
 		{name: "speed requires PPS", args: []string{"--speed", "38400", "/dev/ttyS0"}, wantErr: true},
 		{name: "timeout requires PPS", args: []string{"--timeout", "20", "/dev/ttyS0"}, wantErr: true},
+		{name: "poll requires PPS", args: []string{"--poll", "/dev/ttyS0"}, wantErr: true},
 		{name: "negative PPS speed", args: []string{"-p", "cts", "--speed", "-1", "/dev/ttyS0"}, wantErr: true},
 		{name: "negative PPS timeout", args: []string{"-p", "cts", "--timeout", "-1", "/dev/ttyS0"}, wantErr: true},
 		{name: "minimum PPS timeout", args: []string{"-p", "cts", "--timeout", "1e-9", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemCTS, timeout: time.Nanosecond, port: "/dev/ttyS0"}},
@@ -227,6 +229,7 @@ type monitorWaitConn struct {
 	next     chan gpsio.ModemControlPinState
 	stopped  chan struct{}
 	stopOnce sync.Once
+	waits    int
 }
 
 func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, error) {
@@ -236,6 +239,7 @@ func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, er
 func (c *monitorWaitConn) CanWaitModemControlPinChange() bool { return true }
 
 func (c *monitorWaitConn) WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error) {
+	c.waits++
 	select {
 	case c.state = <-c.next:
 		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
@@ -279,7 +283,7 @@ func TestMonitorPPSWaitBackend(t *testing.T) {
 		err   error
 	}, 1)
 	go func() {
-		count, err := monitorPPS(ctx, lg, conn, gpsio.ModemCTS, 0, output, false)
+		count, err := monitorPPS(ctx, lg, conn, gpsio.ModemCTS, 0, false, output, false)
 		result <- struct {
 			count int
 			err   error
@@ -304,6 +308,25 @@ func TestMonitorPPSWaitBackend(t *testing.T) {
 	}
 	if strings.Contains(logs.String(), "serial PPS polling statistics") {
 		t.Errorf("wait run logged polling statistics: %q", logs.String())
+	}
+}
+
+func TestMonitorPPSForcedPollingSkipsWaitBackend(t *testing.T) {
+	conn := &monitorWaitConn{
+		next:    make(chan gpsio.ModemControlPinState),
+		stopped: make(chan struct{}),
+	}
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	count, err := monitorPPS(context.Background(), lg, conn, gpsio.ModemCTS, time.Millisecond, true, io.Discard, false)
+	if err != nil || count != 0 {
+		t.Fatalf("monitorPPS = %d, %v; want 0, nil", count, err)
+	}
+	if conn.waits != 0 {
+		t.Errorf("wait backend called %d times, want 0", conn.waits)
+	}
+	if !strings.Contains(logs.String(), "serial PPS polling statistics") {
+		t.Errorf("forced polling run did not log polling statistics: %q", logs.String())
 	}
 }
 
