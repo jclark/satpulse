@@ -17,6 +17,9 @@ The *command* must be one of the following.
 **gps**
 : Configure and control the GPS receiver.
 
+**serial**
+: Describe serial ports and detect receiver speeds.
+
 **sdp**
 : Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
 
@@ -72,4 +75,4 @@ Show help for satpulsetool gps command:
 
 # SEE ALSO
 
-**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-pack(1)**, **satpulsetool-scan(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**, **satpulsetool-convobs(1)**
+**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-serial(1)**, **satpulsetool-pack(1)**, **satpulsetool-scan(1)**, **satpulsetool-sdp(1)**, **satpulsetool-syncsim(1)**, **satpulsetool-convobs(1)**
