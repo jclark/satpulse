@@ -44,6 +44,9 @@ func (h *settleCapture) Handle(_ context.Context, r slog.Record) error {
 type testChangeWaiter struct {
 	state gpsio.ModemControlPinState
 	next  chan gpsio.ModemControlPinState
+	// entered, when non-nil, reports that a wait is under way, so that a
+	// test can cancel while the wait is blocked rather than before it.
+	entered chan struct{}
 }
 
 func (w *testChangeWaiter) ModemControlPinState() (gpsio.ModemControlPinState, error) {
@@ -53,6 +56,9 @@ func (w *testChangeWaiter) ModemControlPinState() (gpsio.ModemControlPinState, e
 func (w *testChangeWaiter) CanWaitModemControlPinChange() bool { return true }
 
 func (w *testChangeWaiter) WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error) {
+	if w.entered != nil {
+		w.entered <- struct{}{}
+	}
 	w.state = <-w.next
 	// Distinct readings, so a backend crossing the two roles is caught.
 	mono = time.Now()
@@ -89,6 +95,33 @@ func TestWait(t *testing.T) {
 	w.next <- asserted
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Wait error = %v, want context.Canceled", err)
+	}
+}
+
+// TestWaitDiscardsCancelledWakeup checks that a cancelled wait publishes
+// nothing. Its wakeup is not an edge, and the state read after it can still
+// look like a leading edge. A send racing the cancelled context wins only
+// half the time, so the case is repeated.
+func TestWaitDiscardsCancelledWakeup(t *testing.T) {
+	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
+	for range 30 {
+		w := &testChangeWaiter{state: asserted, next: make(chan gpsio.ModemControlPinState, 1),
+			entered: make(chan struct{}, 1)}
+		observations := make(chan Observation, 1)
+		ctx, cancel := context.WithCancel(context.Background())
+		errCh := make(chan error, 1)
+		go func() { errCh <- Wait(ctx, w, Wiring{Pin: gpsio.ModemCTS}, observations) }()
+		<-w.entered
+		cancel()
+		// Deasserting makes the state read after the cancelled wait look
+		// like a leading edge, which the wakeup time must not become.
+		w.next <- 0
+		if err := <-errCh; !errors.Is(err, context.Canceled) {
+			t.Fatalf("Wait error = %v, want context.Canceled", err)
+		}
+		if n := len(observations); n != 0 {
+			t.Fatalf("Wait emitted %d observations after cancellation, want none", n)
+		}
 	}
 }
 

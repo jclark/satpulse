@@ -119,12 +119,13 @@ func TestWaitModemControlPinChangeUnsupported(t *testing.T) {
 
 // TestCancelModemControlPinWait checks that cancellation is sticky and is
 // observed before the ioctl: on a pty a non-cancelled wait fails with
-// ErrUnsupported, so a nil error proves the ioctl was never entered.
+// ErrUnsupported, so a nil error proves the ioctl was never entered. No pin
+// change was observed, so no time is reported.
 func TestCancelModemControlPinWait(t *testing.T) {
 	w := openTestWaiter(t)
 	w.CancelModemControlPinWait()
-	if wall, mono, err := w.WaitModemControlPinChange(ModemCTS); err != nil || wall.IsZero() || mono.IsZero() {
-		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v, %v; want timestamps", wall, mono, err)
+	if wall, mono, err := w.WaitModemControlPinChange(ModemCTS); err != nil || !wall.IsZero() || !mono.IsZero() {
+		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v, %v; want zero times", wall, mono, err)
 	}
 }
 

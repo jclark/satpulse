@@ -347,6 +347,12 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, observations chan<- Obs
 		if err != nil {
 			return err
 		}
+		// A cancelled wait reports no time, and its wakeup is not an edge.
+		// Cancellation normally follows ctx, but a stopped port ends the
+		// run cleanly either way.
+		if wall.IsZero() || mono.IsZero() || ctx.Err() != nil {
+			return ctx.Err()
+		}
 		cur, err := r.ModemControlPinState()
 		if err != nil {
 			return err

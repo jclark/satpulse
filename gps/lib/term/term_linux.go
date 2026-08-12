@@ -252,10 +252,11 @@ type modemWaitState struct {
 }
 
 // WaitModemControlPinChange blocks in TIOCMIWAIT until pin may have changed
-// state, returning the time the ioctl returned; time.Now is the best clock
-// here, so one reading serves as both wall and mono. A Close preceded by
-// CancelModemControlPinWait (the order SerialConn.Stop ensures) is safe at
-// any point relative to a wait call: cancel serializes with the dup below.
+// state, returning the time the ioctl returned on both clocks, or no times if
+// the wait was cancelled. time.Now is the best clock here, so one reading
+// serves as both wall and mono. A Close preceded by CancelModemControlPinWait
+// (the order SerialConn.Stop ensures) is safe at any point relative to a wait
+// call: cancel serializes with the dup below.
 //
 // The ioctl cannot be interrupted: TIOCMIWAIT has no timeout, closing the
 // descriptor does not wake it, and a directed signal never surfaces as EINTR
@@ -275,8 +276,7 @@ func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono ti
 	w.mu.Lock()
 	if w.cancelled {
 		w.mu.Unlock()
-		now := time.Now()
-		return now, now, nil
+		return time.Time{}, time.Time{}, nil
 	}
 	if w.cancelCh == nil {
 		w.cancelCh = make(chan struct{})
@@ -304,8 +304,7 @@ func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono ti
 		}
 		return r.at, r.at, nil
 	case <-cancelCh:
-		now := time.Now()
-		return now, now, nil
+		return time.Time{}, time.Time{}, nil
 	}
 }
 

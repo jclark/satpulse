@@ -107,7 +107,8 @@ type ModemControlPinWaiter interface {
 	// the best clock available they are the same reading. The readings
 	// are taken on the waiting thread as soon as the wait ends, before
 	// any other call. The caller must read the state to reject spurious
-	// wakeups and changes to other lines.
+	// wakeups and changes to other lines. A cancelled wait succeeds but
+	// reports no times, having observed no change.
 	WaitModemControlPinChange(line ModemControlPin) (wall, mono time.Time, err error)
 	// CancelModemControlPinWait makes a pending wait return promptly
 	// and all subsequent waits return immediately. It is used to make
