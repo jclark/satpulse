@@ -38,6 +38,7 @@ _Not yet released_
 
 ### GPS high-level configuration
 
+- High-level configuration now supports Zhongke Microelectronics receivers using CASIC, covering both the V5 (URANUS5) and V6 (URANUS6) firmware families. `satpulsetool gps` and `satpulsed` can now configure receivers such as the ATGM332D and ATGM336H. (#229)
 - `satpulsetool gps` has new `--signal` and `--except-signal` options for controlling individual GNSS signals. `--signal` enables individual signals, in addition to the constellations enabled by `--gnss`; `--except-signal` excludes individual signals from those constellations. `--band` does not affect what signals are enabled by `--signal`. Signals are named by the constellation name followed by the signal name (`GPSL1C`, `QZSSL1S`); the constellation name is not required for Galileo and BeiDou signal names (`E5b`, `B1C`). (#97)
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
 - The `[gps]` table in `satpulse.toml` has a new `fixedPosLLH` key for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#147)
@@ -57,6 +58,7 @@ _Not yet released_
 
 ### Other satpulsetool improvements
 
+- `satpulsetool` has a new `serial` command, which describes serial ports without opening them, and with `--detect-speed` detects the speed of a connected GNSS receiver from its output, on a selected port or on all discovered ports in parallel. Descriptions support JSON Lines output; detection can record wrong-speed input in a packet log. (#326, #394)
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
 - `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)
