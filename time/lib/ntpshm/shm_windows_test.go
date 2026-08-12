@@ -1,45 +1,30 @@
-//go:build linux || darwin
-
 package ntpshm
 
 import (
-	"errors"
 	"testing"
 	"time"
 
 	"github.com/jclark/satpulse/gps/ptime"
-	"golang.org/x/sys/unix"
 )
 
-func TestAttachExisting(t *testing.T) {
-	const segment = 254
-	if id, err := shmID(segment); err == nil {
-		t.Skipf("NTP SHM test segment %d already exists as shmid %d", segment, id)
-	} else if !errors.Is(err, unix.ENOENT) {
-		t.Fatalf("checking existing segment: %v", err)
-	}
-	var w1, w2 *Writer
-	t.Cleanup(func() {
-		if w2 != nil {
-			_ = w2.Close()
-		}
-		if w1 != nil {
-			_ = w1.Close()
-		}
-		if err := removeSHM(segment); err != nil {
-			t.Errorf("removing SHM test segment %d: %v", segment, err)
-		}
-	})
-	var a1, a2 Attach
-	var err error
-	w1, a1, err = New(segment)
+// TestAttachRoundTrip creates two mappings on the same name and reads a
+// sample written through one via the other. Segment 1 keeps the name in
+// the Local\ namespace, which is per logon session, so an unprivileged
+// test cannot clash with an ntpd service and needs no create-global
+// privilege; the mapping is refcounted, so closing both writers destroys
+// it and no cleanup beyond Close is needed.
+func TestAttachRoundTrip(t *testing.T) {
+	const segment = 1
+	w1, a1, err := New(segment)
 	if err != nil {
 		t.Fatalf("New first writer: %v", err)
 	}
-	w2, a2, err = New(segment)
+	defer w1.Close()
+	w2, a2, err := New(segment)
 	if err != nil {
 		t.Fatalf("New second writer: %v", err)
 	}
+	defer w2.Close()
 	if a1.Key != shmKey(segment) || a2.Key != a1.Key {
 		t.Fatalf("attach keys = %#x/%#x, want %#x", a1.Key, a2.Key, shmKey(segment))
 	}
@@ -56,20 +41,4 @@ func TestAttachExisting(t *testing.T) {
 	if w2.w.t.Leap != 2 || w2.w.t.Precision != -17 || w2.w.t.Valid != 1 {
 		t.Fatalf("second attachment metadata = leap %d precision %d valid %d, want 2 -17 1", w2.w.t.Leap, w2.w.t.Precision, w2.w.t.Valid)
 	}
-}
-
-func shmID(segment uint8) (int, error) {
-	return unix.SysvShmGet(int(shmKey(segment)), expectedSize, 0)
-}
-
-func removeSHM(segment uint8) error {
-	id, err := shmID(segment)
-	if errors.Is(err, unix.ENOENT) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	_, err = unix.SysvShmCtl(id, unix.IPC_RMID, nil)
-	return err
 }
