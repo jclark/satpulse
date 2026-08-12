@@ -280,7 +280,7 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 	}
 }
 
-func TestDispatcherSerialPPSEdgeWritesSample(t *testing.T) {
+func TestDispatcherSerialPPSObservationWritesSettledSample(t *testing.T) {
 	shm := &fakeSHM{precision: -9}
 	observer := &ntpSampleObserver{}
 	g := serialpps.NewGenerator(serialpps.DefaultConfig())
@@ -294,7 +294,11 @@ func TestDispatcherSerialPPSEdgeWritesSample(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.serialPPSEdge(serialpps.Edge{Wall: edge, Mono: edge})
+	d.serialPPSObservation(serialpps.Observation{Edge: serialpps.Edge{Wall: edge, Mono: edge}})
+	if len(shm.writes) != 0 {
+		t.Fatalf("unsettled observation produced %d SHM writes, want none", len(shm.writes))
+	}
+	d.serialPPSObservation(serialpps.Observation{Edge: serialpps.Edge{Wall: edge, Mono: edge}, Settled: true})
 
 	if len(shm.writes) != 1 {
 		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))

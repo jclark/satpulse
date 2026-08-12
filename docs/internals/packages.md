@@ -32,8 +32,6 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
-`cmd/pollpps` provides main for pollpps, implemented by `time/app/pollppscmd`.
-
 ### gps/
 
 These packages provide the public API for GPS processing. They are in the domain layer.
@@ -186,9 +184,7 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
-`time/app/serialcmd` implements the `serial` subcommand of satpulsetool.
-
-`time/app/pollppscmd` implements pollpps, an internal tool that runs the `time/internal/serialpps` polling backend against a serial port's CTS pin and prints the edges it detects, or times the modem status read that paces the polling. It is provisional scaffolding: equivalent functionality is expected to become a satpulsetool subcommand once its shape is decided.
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `time/internal/serialpps`.
 
 ### time/internal/
 
