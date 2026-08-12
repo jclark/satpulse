@@ -198,23 +198,26 @@ func TestPrintSpeedInfo(t *testing.T) {
 }
 
 func TestPrintPPSObservation(t *testing.T) {
-	observation := serialpps.Observation{
-		Edge: serialpps.Edge{
-			Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
-		},
-		Uncertainty: 16 * time.Microsecond,
+	edge := serialpps.Edge{
+		Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
 	}
 	for _, tc := range []struct {
-		name  string
-		jsonl bool
-		want  string
+		name        string
+		observation serialpps.Observation
+		jsonl       bool
+		want        string
 	}{
-		{name: "human", want: "14:23:05.123456\n"},
-		{name: "JSONL", jsonl: true, want: "{\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settled\":false}\n"},
+		{name: "human", observation: serialpps.Observation{Edge: edge}, want: "14:23:05.123456\n"},
+		{name: "wait JSONL", observation: serialpps.Observation{Edge: edge, Settled: true}, jsonl: true,
+			want: "{\"t\":\"2026-08-12T14:23:05.123456Z\"}\n"},
+		{name: "settling poll JSONL", observation: serialpps.Observation{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
+			want: "{\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settling\":true}\n"},
+		{name: "settled poll JSONL", observation: serialpps.Observation{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
+			want: "{\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer
-			if err := printPPSObservation(&output, observation, tc.jsonl); err != nil {
+			if err := printPPSObservation(&output, tc.observation, tc.jsonl); err != nil {
 				t.Fatal(err)
 			}
 			if got := output.String(); got != tc.want {

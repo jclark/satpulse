@@ -78,8 +78,8 @@ type speedInfo struct {
 
 type ppsEvent struct {
 	T           string  `json:"t"`
-	Uncertainty float64 `json:"uncertainty"`
-	Settled     bool    `json:"settled"`
+	Uncertainty float64 `json:"uncertainty,omitzero"`
+	Settling    bool    `json:"settling,omitzero"`
 }
 
 func (info *speedInfo) Print(f *os.File) error {
@@ -334,7 +334,7 @@ func printPPSObservation(output io.Writer, observation serialpps.Observation, js
 	event := ppsEvent{
 		T:           t.Format("2006-01-02T15:04:05.000000Z"),
 		Uncertainty: observation.Uncertainty.Seconds(),
-		Settled:     observation.Settled,
+		Settling:    !observation.Settled,
 	}
 	return json.NewEncoder(output).Encode(&event)
 }

@@ -57,10 +57,8 @@ for a USB port a `usb` object with numeric `vid` and `pid` fields,
 for a port with a USB serial number a `serial` string,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
-With **\-\-detect\-pps**, each edge object has `t`, `uncertainty`, and `settled` fields.
-The `t` string is an RFC 3339 UTC timestamp with microsecond precision.
-The `uncertainty` number is half the interval between the observations on either side of the transition, in seconds.
-The `settled` boolean is true after polling has adapted to the port.
+With **\-\-detect\-pps**, each edge object has an RFC 3339 UTC timestamp `t`,
+an optional polling `uncertainty` in seconds, and an optional `settling` boolean.
 
 **\-\-packet\-log** *path*
 : Log to *path* a description of the packets received while detecting, including those received at the wrong speed.
