@@ -45,8 +45,8 @@ concern.
 
 ## Public interface
 
-Define `Term` in a build-independent file as the common, required terminal
-surface:
+Define `Term` in the existing build-independent `types.go` as the common,
+required terminal surface:
 
 ```go
 type Term interface {
@@ -72,12 +72,11 @@ example because `ModemStatus` is deliberately absent from `Term`. Functions,
 fields, and variables that explicitly name `*term.Term` change to `term.Term`;
 a pointer to an interface is never used.
 
-The build-tagged `openTerm` function also returns `(Term, error)`, not a
-concrete pointer. This is required to preserve nil-on-error semantics. A
-wrapper must not directly return the multi-value result of a constructor whose
-first result is `*unixTerm` or `*windowsTerm`: converting a nil concrete
-pointer to `Term` would produce a non-nil interface. Every failure path returns
-a literal `nil` interface.
+The platform-specific `Open` functions also return `(Term, error)`, not a
+concrete pointer. Each allocates its concrete implementation, calls its private
+`init` method, and explicitly returns `nil, err` when initialization fails.
+This preserves nil-on-error semantics: converting a nil `*unixTerm` or
+`*windowsTerm` directly to `Term` would produce a non-nil interface.
 
 `Attr` and `AttrSetter` remain platform-specific opaque configuration
 machinery. The refactoring does not attempt to give Unix `Termios` and Windows
@@ -127,10 +126,11 @@ Both have compile-time assertions that they implement `Term`. Their methods
 retain the current public method names because those methods satisfy the
 interface; their implementation-only helpers remain private.
 
-The constructors allocate and initialize the appropriate concrete type and
-return it as `Term`. The current exported `Init` method becomes an unexported
-constructor helper. There is no meaningful zero value for an interface-backed
-terminal, and the repository has no caller of `Init` other than `Open`.
+The platform-specific `Open` functions allocate and initialize the appropriate
+concrete type and return it as `Term`. The current exported `Init` method
+becomes the private `init` constructor helper. There is no meaningful zero
+value for an interface-backed terminal, and the repository has no caller of
+`Init` other than `Open`.
 
 ### Unix platform state
 
@@ -156,23 +156,26 @@ Platform-specific `Flush`, `Drain`, attribute ioctls, exclusivity checks, baud
 handling, and `DevKind` classification remain in their current build-tagged
 files with receivers changed to the appropriate private concrete type.
 
-### Open selection
+### Platform construction
 
-Separate public construction from native implementation construction:
+Each platform implements the public constructor directly. For example, the
+Unix implementation is:
 
 ```go
 func Open(path string, opts ...AttrSetter) (Term, error) {
-	return openTerm(path, opts)
+	t := new(unixTerm)
+	if err := t.init(path, opts...); err != nil {
+		return nil, err
+	}
+	return t, nil
 }
 ```
 
-`openTerm` has the same `(Term, error)` signature, is selected by platform
-build tags, and initially constructs exactly the native terminal used today.
-Keeping selection at the interface boundary allows a platform to select
-another genuine `Term` implementation later without turning `unixTerm` into a
-union of unrelated backends. A concrete initialization error is converted to
-`return nil, err` before returning through the interface, avoiding a typed-nil
-result.
+The Windows implementation follows the same pattern with `windowsTerm`.
+Platform file selection provides the appropriate `Open`; there is no separate
+build-independent wrapper or `openTerm` layer. A concrete initialization error
+is converted to `return nil, err` before returning through the interface,
+avoiding a typed-nil result.
 
 Opening errors retain their current behavior, including `ErrNotATTY`, device
 locking errors, and restoration/cleanup after partial initialization.
@@ -215,23 +218,23 @@ Speed changes, transmit-time calculations, flush, drain, and restoration then
 operate on any full terminal implementation. FIFO and non-termios fallbacks
 continue to return `nil` from this assertion and retain their current behavior.
 
-Update comments that currently equate "terminal" or "TTY" with
-`*term.Term`; the distinction is capability-based after this change.
+Update comment references from `*term.Term` to `term.Term` where required by
+the type change; otherwise retain the existing terminology.
 
 ## Source organization
 
-- Put the public `Term` interface and public `Open` entry point in a new
-  build-independent file. Only capability interfaces with portable contracts
-  belong there.
-- Keep `term.go` under its existing `!windows` build tag. It retains `Attr`,
-  `AttrSetter`, the attribute setters and speed helpers, the Unix modem
-  constants and `ModemStatusReader`, `File`, `openFallback`, and the existing
-  Unix implementation code. Rename the concrete type and all its receivers to
-  `unixTerm`, rename `Init` to an unexported initialization helper, and replace
-  its exported `Open` with the build-tagged `openTerm` returning `Term`.
+- Put the public `Term` interface in the existing build-independent `types.go`
+  alongside the other build-independent public types. Keep platform-specific
+  capability interfaces in their build-tagged files.
+- Rename `term.go` to `term_unix.go` and keep its existing `!windows` build
+  tag. It retains `Attr`, `AttrSetter`, the attribute setters and speed helpers,
+  the Unix modem constants and `ModemStatusReader`, `File`, `openFallback`, and
+  the existing Unix implementation code. Rename the concrete type and all its
+  receivers to `unixTerm`, rename `Init` to the private `init` helper, and
+  change its exported `Open` to return `Term`.
 - Rename the concrete type and receivers in `term_windows.go` to
-  `windowsTerm`; retain the Windows `Attr` machinery there and replace its
-  exported `Open` with the Windows `openTerm` returning `Term`.
+  `windowsTerm`; retain the Windows `Attr` machinery there, rename `Init` to
+  the private `init` helper, and change its exported `Open` to return `Term`.
 - Update the Linux, BSD, Darwin, and FreeBSD receiver declarations and tests
   to use the private Unix type.
 - Keep fallback file types separate from the full terminal implementations.
@@ -246,7 +249,7 @@ This is intentionally a source-level API change for callers that explicitly
 use `*term.Term`, construct `term.Term{}`, or call `Init`. In-tree use is
 limited to `gpsio`, `pollpps`, package methods, an internal Darwin test, and
 `term_linux_test.go`. All are updated in the same commit. The Linux test calls
-`openTerm`, asserts that the returned `Term` is a `*unixTerm`, and uses that
+`Open`, asserts that the returned `Term` is a `*unixTerm`, and uses that
 concrete value for its package-internal file-descriptor checks.
 
 The return-type change also affects callers that infer the result but then use

@@ -32,6 +32,12 @@ func main() {
 		t.Restore()
 		t.Close()
 	}()
+	statusReader, ok := t.(term.ModemStatusReader)
+	if !ok {
+		_ = t.Restore()
+		_ = t.Close()
+		log.Fatalf("%s: terminal does not support modem-status reading", device)
+	}
 
 	fmt.Printf("Monitoring PPS on CTS line of %s\n", device)
 
@@ -48,7 +54,7 @@ func main() {
 	for {
 		select {
 		case <-ticker.C:
-			status, err := t.ModemStatus()
+			status, err := statusReader.ModemStatus()
 			if err != nil {
 				log.Printf("Error reading modem status: %v", err)
 				continue
