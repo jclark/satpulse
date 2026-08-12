@@ -186,6 +186,8 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool.
+
 `time/app/pollppscmd` implements pollpps, an internal tool that runs the `time/internal/serialpps` polling backend against a serial port's CTS pin and prints the edges it detects, or times the modem status read that paces the polling. It is provisional scaffolding: equivalent functionality is expected to become a satpulsetool subcommand once its shape is decided.
 
 ### time/internal/
@@ -263,8 +265,6 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 `internal/packcmd` implements `pack` subcommand of satpulsetool. It reads a JSONL packet log and writes selected packets as a raw byte stream, optionally preserving inter-packet timing.
 
 `internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
-
-`internal/serialcmd` implements the `serial` subcommand of satpulsetool.
 
 `internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware.
 
