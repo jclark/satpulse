@@ -46,6 +46,49 @@ type flags struct {
 	port      string
 }
 
+type printer interface {
+	Print(*os.File) error
+}
+
+type portInfo serialenum.Port
+
+func (info *portInfo) Print(f *os.File) error {
+	if info.Serial == "" {
+		_, err := fmt.Fprintln(f, info.Display)
+		return err
+	}
+	_, err := fmt.Fprintf(f, "%s serial=%q\n", info.Display, info.Serial)
+	return err
+}
+
+type speedInfo struct {
+	Device string `json:"device"`
+	Speed  int    `json:"speed"`
+
+	printDevice bool
+}
+
+func (info *speedInfo) Print(f *os.File) error {
+	if !info.printDevice {
+		_, err := fmt.Fprintln(f, info.Speed)
+		return err
+	}
+	_, err := fmt.Fprintf(f, "%s %d\n", info.Device, info.Speed)
+	return err
+}
+
+func printInfo(f *os.File, info printer, jsonl bool) error {
+	if !jsonl {
+		return info.Print(f)
+	}
+	b, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("encoding serial output: %w", err)
+	}
+	_, err = fmt.Fprintln(f, string(b))
+	return err
+}
+
 // Cmd executes the serial subcommand.
 func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
 	cfg, help, usageFunc, err := parseFlags(cmdName, args)
@@ -69,15 +112,15 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		if code := result.exitCode(); code != 0 {
 			return "", commandError{msg: result.description(), code: code}
 		}
-		_, err = fmt.Fprintln(os.Stdout, result.detection.Speed)
-		return "", err
+		info := speedInfo{Device: result.device, Speed: result.detection.Speed}
+		return "", printInfo(os.Stdout, &info, cfg.jsonl)
 	}
-	return "", scanPorts(ctx, lg)
+	return "", scanPorts(ctx, lg, cfg.jsonl)
 }
 
 func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc func(string) string, err error) {
 	fs := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
-	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output one JSON object per serial port instead of a display label")
+	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output in JSON Lines format instead of human-readable text")
 	fs.BoolVarP(&cfg.detect, "detect-speed", "s", false, "detect receiver speeds instead of describing ports")
 	fs.StringVar(&cfg.packetLog, "packet-log", "", "write received packets and speed changes to a JSONL file")
 	fs.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
@@ -96,23 +139,21 @@ func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc 
 			return
 		}
 	}
-	if cfg.jsonl && cfg.detect {
-		err = fmt.Errorf("--jsonl cannot be combined with --detect-speed")
-	} else if cfg.packetLog != "" && (!cfg.detect || cfg.port == "") {
+	if cfg.packetLog != "" && (!cfg.detect || cfg.port == "") {
 		err = fmt.Errorf("--packet-log requires --detect-speed and a port")
 	}
 	return
 }
 
-func enumerate(w io.Writer, jsonl bool, selector string) error {
+func enumerate(f *os.File, jsonl bool, selector string) error {
 	ports, err := serialenum.List()
 	if err != nil {
 		return err
 	}
-	return printPortInfo(w, ports, jsonl, selector)
+	return printPortInfo(f, ports, jsonl, selector)
 }
 
-func printPortInfo(w io.Writer, ports []serialenum.Port, jsonl bool, selector string) error {
+func printPortInfo(f *os.File, ports []serialenum.Port, jsonl bool, selector string) error {
 	if selector != "" {
 		port, ok := selectPort(ports, selector)
 		if !ok {
@@ -122,7 +163,7 @@ func printPortInfo(w io.Writer, ports []serialenum.Port, jsonl bool, selector st
 	} else if len(ports) == 0 {
 		return commandError{msg: "no serial ports found", code: 2}
 	}
-	return printPorts(w, ports, jsonl)
+	return printPorts(f, ports, jsonl)
 }
 
 // selectPort finds the discovered port that selector names, matching device
@@ -147,25 +188,10 @@ func matchPort(ports []serialenum.Port, path string) (serialenum.Port, bool) {
 	return serialenum.Port{}, false
 }
 
-func printPorts(w io.Writer, ports []serialenum.Port, jsonl bool) error {
+func printPorts(f *os.File, ports []serialenum.Port, jsonl bool) error {
 	for _, port := range ports {
-		if jsonl {
-			b, err := json.Marshal(port)
-			if err != nil {
-				return fmt.Errorf("encoding serial port: %w", err)
-			}
-			if _, err := fmt.Fprintln(w, string(b)); err != nil {
-				return err
-			}
-			continue
-		}
-		var err error
-		if port.Serial == "" {
-			_, err = fmt.Fprintln(w, port.Display)
-		} else {
-			_, err = fmt.Fprintf(w, "%s serial=%q\n", port.Display, port.Serial)
-		}
-		if err != nil {
+		info := portInfo(port)
+		if err := printInfo(f, &info, jsonl); err != nil {
 			return err
 		}
 	}
@@ -272,7 +298,7 @@ func closeDevice(lg *slog.Logger, conn *gpsio.SerialConn, result *probeResult) {
 	lg.Debug("closing the serial device failed after an unsuccessful probe", "device", result.device, "error", closeErr)
 }
 
-func scanPorts(ctx context.Context, lg *slog.Logger) error {
+func scanPorts(ctx context.Context, lg *slog.Logger, jsonl bool) error {
 	ports, err := serialenum.List()
 	if err != nil {
 		return err
@@ -280,12 +306,12 @@ func scanPorts(ctx context.Context, lg *slog.Logger) error {
 	if len(ports) == 0 {
 		return commandError{msg: "no serial ports found", code: 2}
 	}
-	return scanPortList(ctx, lg, ports, probeDevice, os.Stdout, os.Stderr)
+	return scanPortList(ctx, lg, ports, probeDevice, os.Stdout, os.Stderr, jsonl)
 }
 
 type probeFunc func(context.Context, *slog.Logger, string, string) probeResult
 
-func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port, probe probeFunc, stdout, stderr io.Writer) error {
+func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port, probe probeFunc, stdout *os.File, stderr io.Writer, jsonl bool) error {
 	resultCh := make(chan probeResult, len(ports))
 	var wg sync.WaitGroup
 	for _, port := range ports {
@@ -305,7 +331,8 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 		code := result.exitCode()
 		if code == 0 {
 			bestCode = 0
-			if _, err := fmt.Fprintf(stdout, "%s %d\n", result.device, result.detection.Speed); err != nil && outputErr == nil {
+			info := speedInfo{Device: result.device, Speed: result.detection.Speed, printDevice: true}
+			if err := printInfo(stdout, &info, jsonl); err != nil && outputErr == nil {
 				outputErr = err
 			}
 			continue

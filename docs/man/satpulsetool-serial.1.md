@@ -24,15 +24,14 @@ If the *port* argument is supplied, it describes only the specified port.
 : Detect the speed of a connected GPS receiver from the data being emitted by the receiver.
 If the *port* argument is supplied, it detects the speed of only that port and prints its speed on standard output.
 Otherwise, it detects the speed of all discovered ports in parallel and prints a line for each port.
-Cannot be combined with **\-\-jsonl**.
 
 **\-j**, **\-\-jsonl**
-: Write one JSON object per described port instead of a display label.
-The object has `device` and `display` strings,
+: Write output in JSON Lines format.
+A port description object has `device` and `display` strings,
 for a USB port a `usb` object with numeric `vid` and `pid` fields,
 for a port with a USB serial number a `serial` string,
 and, for a port with aliases, an `aliases` array of paths.
-Cannot be combined with **\-\-detect\-speed**.
+A detected speed object has a `device` string and a numeric `speed`.
 
 **\-\-packet\-log** *path*
 : Log to *path* a description of the packets received while detecting, including those received at the wrong speed.

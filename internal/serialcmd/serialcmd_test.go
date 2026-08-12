@@ -28,10 +28,11 @@ func TestParseFlags(t *testing.T) {
 		{name: "describe selected", args: []string{"/dev/ttyS0"}, want: flags{port: "/dev/ttyS0"}},
 		{name: "jsonl selected", args: []string{"-j", "/dev/ttyS0"}, want: flags{jsonl: true, port: "/dev/ttyS0"}},
 		{name: "detect all", args: []string{"-s"}, want: flags{detect: true}},
+		{name: "detect all JSONL", args: []string{"-j", "-s"}, want: flags{jsonl: true, detect: true}},
 		{name: "detect selected", args: []string{"--detect-speed", "--packet-log", "capture.jsonl", "/dev/ttyS0"}, want: flags{detect: true, packetLog: "capture.jsonl", port: "/dev/ttyS0"}},
+		{name: "detect selected JSONL", args: []string{"-j", "-s", "--packet-log", "capture.jsonl", "/dev/ttyS0"}, want: flags{jsonl: true, detect: true, packetLog: "capture.jsonl", port: "/dev/ttyS0"}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "too many ports", args: []string{"one", "two"}, wantErr: true},
-		{name: "jsonl detection conflict", args: []string{"--jsonl", "--detect-speed"}, wantErr: true},
 		{name: "packet log without detection", args: []string{"--packet-log", "capture.jsonl", "/dev/ttyS0"}, wantErr: true},
 		{name: "packet log without port", args: []string{"-s", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "empty port", args: []string{"--detect-speed", ""}, wantErr: true},
@@ -54,7 +55,6 @@ func TestParseFlags(t *testing.T) {
 func TestCmdUsageError(t *testing.T) {
 	for _, args := range [][]string{
 		{"--bogus"},
-		{"--jsonl", "--detect-speed"},
 	} {
 		usage, err := Cmd(io.Discard, slog.LevelInfo, "satpulsetool", "serial", args)
 		if err == nil {
@@ -96,11 +96,11 @@ func TestPrintPorts(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			if err := printPorts(&buf, ports, tc.jsonl); err != nil {
+			f := outputFile(t)
+			if err := printPorts(f, ports, tc.jsonl); err != nil {
 				t.Fatal(err)
 			}
-			if got := buf.String(); got != tc.want {
+			if got := outputString(t, f); got != tc.want {
 				t.Errorf("output:\n%s\nwant:\n%s", got, tc.want)
 			}
 		})
@@ -124,8 +124,8 @@ func TestPrintPortInfo(t *testing.T) {
 		{name: "unmatched", selector: "/dev/ttyUSB0", wantCode: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			var buf bytes.Buffer
-			err := printPortInfo(&buf, ports, false, tc.selector)
+			f := outputFile(t)
+			err := printPortInfo(f, ports, false, tc.selector)
 			if tc.wantCode != 0 {
 				var cmdErr commandError
 				if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != tc.wantCode {
@@ -136,7 +136,7 @@ func TestPrintPortInfo(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if got := buf.String(); got != tc.want {
+			if got := outputString(t, f); got != tc.want {
 				t.Errorf("output = %q, want %q", got, tc.want)
 			}
 		})
@@ -144,10 +144,32 @@ func TestPrintPortInfo(t *testing.T) {
 }
 
 func TestPrintPortInfoNoPorts(t *testing.T) {
-	err := printPortInfo(io.Discard, nil, false, "")
+	err := printPortInfo(outputFile(t), nil, false, "")
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 2 {
 		t.Fatalf("printPortInfo() error = %#v, want exit code 2", err)
+	}
+}
+
+func TestPrintSpeedInfo(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		jsonl bool
+		want  string
+	}{
+		{name: "human", want: "38400\n"},
+		{name: "JSONL", jsonl: true, want: "{\"device\":\"/dev/ttyUSB0\",\"speed\":38400}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := outputFile(t)
+			info := speedInfo{Device: "/dev/ttyUSB0", Speed: 38400}
+			if err := printInfo(f, &info, tc.jsonl); err != nil {
+				t.Fatal(err)
+			}
+			if got := outputString(t, f); got != tc.want {
+				t.Errorf("output = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -229,12 +251,13 @@ func TestScanPortList(t *testing.T) {
 			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}
 		}
 	}
-	var stdout, stderr, logBuf bytes.Buffer
+	stdout := outputFile(t)
+	var stderr, logBuf bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
-	if err := scanPortList(context.Background(), lg, ports, probe, &stdout, &stderr); err != nil {
+	if err := scanPortList(context.Background(), lg, ports, probe, stdout, &stderr, false); err != nil {
 		t.Fatalf("scanPortList() error = %v, want nil because one device was detected", err)
 	}
-	if got := stdout.String(); got != "detected 38400\n" {
+	if got := outputString(t, stdout); got != "detected 38400\n" {
 		t.Errorf("stdout = %q", got)
 	}
 	for _, want := range []string{
@@ -252,6 +275,21 @@ func TestScanPortList(t *testing.T) {
 	}
 }
 
+func TestScanPortListJSONL(t *testing.T) {
+	ports := []serialenum.Port{{Device: "/dev/ttyUSB0"}}
+	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
+		return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 115200}}
+	}
+	stdout := outputFile(t)
+	if err := scanPortList(context.Background(), slog.Default(), ports, probe, stdout, io.Discard, true); err != nil {
+		t.Fatal(err)
+	}
+	want := "{\"device\":\"/dev/ttyUSB0\",\"speed\":115200}\n"
+	if got := outputString(t, stdout); got != want {
+		t.Errorf("stdout = %q, want %q", got, want)
+	}
+}
+
 func TestScanPortListBestFailure(t *testing.T) {
 	ports := []serialenum.Port{{Device: "silent"}, {Device: "error"}}
 	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
@@ -260,7 +298,7 @@ func TestScanPortListBestFailure(t *testing.T) {
 		}
 		return probeResult{device: device, failure: "failed"}
 	}
-	err := scanPortList(context.Background(), slog.Default(), ports, probe, io.Discard, io.Discard)
+	err := scanPortList(context.Background(), slog.Default(), ports, probe, outputFile(t), io.Discard, false)
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 2 || !cmdErr.Quiet() {
 		t.Fatalf("scanPortList() error = %#v, want quiet exit code 2", err)
@@ -278,7 +316,7 @@ func TestScanPortListInterruptedOverridesDetection(t *testing.T) {
 		return probeResult{device: device, failure: "interrupted"}
 	}
 	var stderr bytes.Buffer
-	err := scanPortList(ctx, slog.Default(), ports, probe, io.Discard, &stderr)
+	err := scanPortList(ctx, slog.Default(), ports, probe, outputFile(t), &stderr, false)
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 1 || !cmdErr.Quiet() {
 		t.Fatalf("scanPortList() error = %#v, want quiet exit code 1", err)
@@ -288,18 +326,40 @@ func TestScanPortListInterruptedOverridesDetection(t *testing.T) {
 	}
 }
 
-type errorWriter struct{}
-
-func (errorWriter) Write([]byte) (int, error) { return 0, errors.New("write failed") }
-
 func TestScanPortListOutputError(t *testing.T) {
 	ports := []serialenum.Port{{Device: "detected"}}
 	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
 		return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
 	}
-	err := scanPortList(context.Background(), slog.Default(), ports, probe, errorWriter{}, io.Discard)
+	stdout := outputFile(t)
+	if err := stdout.Close(); err != nil {
+		t.Fatal(err)
+	}
+	err := scanPortList(context.Background(), slog.Default(), ports, probe, stdout, io.Discard, false)
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 1 || cmdErr.Quiet() {
 		t.Fatalf("scanPortList() error = %#v, want non-quiet exit code 1", err)
 	}
+}
+
+func outputFile(t *testing.T) *os.File {
+	t.Helper()
+	f, err := os.CreateTemp(t.TempDir(), "output")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { f.Close() })
+	return f
+}
+
+func outputString(t *testing.T, f *os.File) string {
+	t.Helper()
+	if _, err := f.Seek(0, io.SeekStart); err != nil {
+		t.Fatal(err)
+	}
+	b, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }
