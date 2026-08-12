@@ -326,13 +326,20 @@ func printPPSObservation(output io.Writer, observation serialpps.Observation, js
 	return json.NewEncoder(output).Encode(&event)
 }
 
+// drainInput consumes the receiver's output until the port is stopped. The
+// wait backend depends on it: a USB serial driver reports modem-control pin
+// changes only as it delivers received data, so an unread port throttles the
+// driver and the wait stops waking. Only an invalid connection may end the
+// drain: a *term.Error reports a condition on the wire and is always
+// temporary, and opening the port often counts one overrun.
 func drainInput(conn *gpsio.SerialConn) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		buf := make([]byte, 4096)
+		var termErr *term.Error
 		for {
-			if _, err := conn.Read(buf); errors.Is(err, os.ErrDeadlineExceeded) {
+			if _, err := conn.Read(buf); errors.Is(err, os.ErrDeadlineExceeded) || errors.As(err, &termErr) {
 				continue
 			} else if err != nil {
 				return
