@@ -193,7 +193,7 @@ const (
 	serialPPSFirstEdgeTimeout = 30 * time.Second
 )
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Observation, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
 	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
@@ -224,9 +224,8 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 		firstTsDeadline = time.After(time.Second * 2)
 	}
 	if serialPPSCh != nil {
-		// Settling deliberately suppresses edges until the polling window has
-		// stopped shrinking, which takes on the order of ten pulses. Allow
-		// comfortably more before warning.
+		// Adaptive polling can take several seconds to acquire a narrow pulse.
+		// Allow comfortably more before warning.
 		firstSerialPPSDeadline = time.After(serialPPSFirstEdgeTimeout)
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
@@ -271,10 +270,12 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 				}
 				d.timestamp(e)
 			}
-		case edge, ok := <-serialPPSCh:
+		case observation, ok := <-serialPPSCh:
 			if ok {
-				firstSerialPPSDeadline = nil
-				d.serialPPSEdge(edge)
+				if observation.Settled {
+					firstSerialPPSDeadline = nil
+				}
+				d.serialPPSObservation(observation)
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
 				serialPPSCh = nil
@@ -307,6 +308,12 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Edge
 			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)
 		}
+	}
+}
+
+func (d *Dispatcher) serialPPSObservation(observation serialpps.Observation) {
+	if observation.Settled {
+		d.serialPPSEdge(observation.Edge)
 	}
 }
 

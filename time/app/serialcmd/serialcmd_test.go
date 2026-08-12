@@ -8,11 +8,14 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 )
 
 func TestParseFlags(t *testing.T) {
@@ -31,11 +34,30 @@ func TestParseFlags(t *testing.T) {
 		{name: "detect all JSONL", args: []string{"-j", "-s"}, want: flags{jsonl: true, detect: true}},
 		{name: "detect selected", args: []string{"--detect-speed", "--packet-log", "capture.jsonl", "/dev/ttyS0"}, want: flags{detect: true, packetLog: "capture.jsonl", port: "/dev/ttyS0"}},
 		{name: "detect selected JSONL", args: []string{"-j", "-s", "--packet-log", "capture.jsonl", "/dev/ttyS0"}, want: flags{jsonl: true, detect: true, packetLog: "capture.jsonl", port: "/dev/ttyS0"}},
+		{name: "detect PPS on CTS", args: []string{"-p", "cts", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout, port: "/dev/ttyS0"}},
+		{name: "detect PPS on DCD", args: []string{"--detect-pps", "dcd", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemDCD, timeout: defaultPPSTimeout, port: "/dev/ttyS0"}},
+		{name: "detect PPS on DSR", args: []string{"--detect-pps", "dsr", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemDSR, timeout: defaultPPSTimeout, port: "/dev/ttyS0"}},
+		{name: "detect PPS on RI with settings", args: []string{"-p", "ri", "--speed", "38400", "--timeout", "0", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemRI, speed: 38400, port: "/dev/ttyS0"}},
+		{name: "detect PPS as JSONL", args: []string{"-j", "-p", "cts", "/dev/ttyS0"}, want: flags{jsonl: true, detectPPS: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout, port: "/dev/ttyS0"}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "too many ports", args: []string{"one", "two"}, wantErr: true},
 		{name: "packet log without detection", args: []string{"--packet-log", "capture.jsonl", "/dev/ttyS0"}, wantErr: true},
 		{name: "packet log without port", args: []string{"-s", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "empty port", args: []string{"--detect-speed", ""}, wantErr: true},
+		{name: "PPS value required", args: []string{"--detect-pps"}, wantErr: true},
+		{name: "PPS pin invalid", args: []string{"--detect-pps", "rts", "/dev/ttyS0"}, wantErr: true},
+		{name: "PPS port required", args: []string{"--detect-pps", "cts"}, wantErr: true},
+		{name: "PPS conflicts with speed detection", args: []string{"-p", "cts", "-s", "/dev/ttyS0"}, wantErr: true},
+		{name: "PPS conflicts with packet log", args: []string{"-p", "cts", "--packet-log", "capture.jsonl", "/dev/ttyS0"}, wantErr: true},
+		{name: "speed requires PPS", args: []string{"--speed", "38400", "/dev/ttyS0"}, wantErr: true},
+		{name: "timeout requires PPS", args: []string{"--timeout", "20", "/dev/ttyS0"}, wantErr: true},
+		{name: "negative PPS speed", args: []string{"-p", "cts", "--speed", "-1", "/dev/ttyS0"}, wantErr: true},
+		{name: "negative PPS timeout", args: []string{"-p", "cts", "--timeout", "-1", "/dev/ttyS0"}, wantErr: true},
+		{name: "minimum PPS timeout", args: []string{"-p", "cts", "--timeout", "1e-9", "/dev/ttyS0"}, want: flags{detectPPS: true, ppsPin: gpsio.ModemCTS, timeout: time.Nanosecond, port: "/dev/ttyS0"}},
+		{name: "sub-nanosecond PPS timeout", args: []string{"-p", "cts", "--timeout", "1e-10", "/dev/ttyS0"}, wantErr: true},
+		{name: "NaN PPS timeout", args: []string{"-p", "cts", "--timeout", "NaN", "/dev/ttyS0"}, wantErr: true},
+		{name: "infinite PPS timeout", args: []string{"-p", "cts", "--timeout", "+Inf", "/dev/ttyS0"}, wantErr: true},
+		{name: "overflowing PPS timeout", args: []string{"-p", "cts", "--timeout", "1e20", "/dev/ttyS0"}, wantErr: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, help, _, err := parseFlags("serial", tc.args)
@@ -170,6 +192,118 @@ func TestPrintSpeedInfo(t *testing.T) {
 				t.Errorf("output = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestPrintPPSObservation(t *testing.T) {
+	observation := serialpps.Observation{
+		Edge: serialpps.Edge{
+			Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
+		},
+		Uncertainty: 16 * time.Microsecond,
+	}
+	for _, tc := range []struct {
+		name  string
+		jsonl bool
+		want  string
+	}{
+		{name: "human", want: "14:23:05.123456\n"},
+		{name: "JSONL", jsonl: true, want: "{\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settled\":false}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			if err := printPPSObservation(&output, observation, tc.jsonl); err != nil {
+				t.Fatal(err)
+			}
+			if got := output.String(); got != tc.want {
+				t.Errorf("output = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+type monitorWaitConn struct {
+	state    gpsio.ModemControlPinState
+	next     chan gpsio.ModemControlPinState
+	stopped  chan struct{}
+	stopOnce sync.Once
+}
+
+func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+	return c.state, nil
+}
+
+func (c *monitorWaitConn) CanWaitModemControlPinChange() bool { return true }
+
+func (c *monitorWaitConn) WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error) {
+	select {
+	case c.state = <-c.next:
+		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
+		return t, t, nil
+	case <-c.stopped:
+		t := time.Now()
+		return t, t, nil
+	}
+}
+
+func (c *monitorWaitConn) Stop() {
+	c.stopOnce.Do(func() { close(c.stopped) })
+}
+
+type notifyingWriter struct {
+	bytes.Buffer
+	wrote chan struct{}
+	once  sync.Once
+}
+
+func (w *notifyingWriter) Write(p []byte) (int, error) {
+	n, err := w.Buffer.Write(p)
+	w.once.Do(func() { close(w.wrote) })
+	return n, err
+}
+
+func TestMonitorPPSWaitBackend(t *testing.T) {
+	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
+	conn := &monitorWaitConn{
+		state:   asserted,
+		next:    make(chan gpsio.ModemControlPinState, 1),
+		stopped: make(chan struct{}),
+	}
+	conn.next <- 0
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	output := &notifyingWriter{wrote: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan struct {
+		count int
+		err   error
+	}, 1)
+	go func() {
+		count, err := monitorPPS(ctx, lg, conn, gpsio.ModemCTS, 0, output, false)
+		result <- struct {
+			count int
+			err   error
+		}{count, err}
+	}()
+	select {
+	case <-output.wrote:
+	case <-time.After(time.Second):
+		t.Fatal("monitorPPS did not print the wait observation")
+	}
+	cancel()
+	select {
+	case got := <-result:
+		if got.count != 1 || got.err != nil {
+			t.Fatalf("monitorPPS = %d, %v; want 1, nil", got.count, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("monitorPPS did not stop the wait backend after cancellation")
+	}
+	if got := output.String(); got != "14:23:05.123456\n" {
+		t.Errorf("output = %q, want one wait timestamp", got)
+	}
+	if strings.Contains(logs.String(), "serial PPS polling statistics") {
+		t.Errorf("wait run logged polling statistics: %q", logs.String())
 	}
 }
 

@@ -32,8 +32,6 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
-`cmd/pollpps` provides main for pollpps, implemented by `time/app/pollppscmd`.
-
 ### gps/
 
 These packages provide the public API for GPS processing. They are in the domain layer.
@@ -186,7 +184,7 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
-`time/app/pollppscmd` implements pollpps, an internal tool that runs `time/internal/serialpps` edge detection against a serial port's CTS pin and prints the edges it detects, or times the modem status read that paces the polling backend. It is provisional scaffolding: equivalent functionality is expected to become a satpulsetool subcommand once its shape is decided.
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `time/internal/serialpps`.
 
 ### time/internal/
 
@@ -263,8 +261,6 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 `internal/packcmd` implements `pack` subcommand of satpulsetool. It reads a JSONL packet log and writes selected packets as a raw byte stream, optionally preserving inter-packet timing.
 
 `internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
-
-`internal/serialcmd` implements the `serial` subcommand of satpulsetool.
 
 `internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware.
 

@@ -43,16 +43,29 @@ const (
 	maxMessageAge = 3 * time.Second
 )
 
-// Edge is a detected leading edge: the polling-bracket midpoint or the wait
-// primitive's wakeup, depending on the selected backend. Wall and Mono are
-// readings of that one instant on two clocks: Wall is the most precise
-// available system-time reading and is what published samples carry; Mono
-// is an ordinary time.Now reading, the only one valid for elapsed-time
-// arithmetic against other time.Now values such as message read times.
-// Where time.Now is the best clock available they are the same reading.
+// Edge is the detected time of a leading edge. Wall and Mono are readings of
+// that one instant on the two clocks used here: Wall is the most precise
+// available system-time reading and is what published samples carry; Mono is
+// an ordinary time.Now reading, the only one valid for elapsed-time arithmetic
+// against other time.Now values such as message read times. Polling locates the
+// edge at the midpoint of the modem-state observations straddling it; a wait
+// backend uses the wait primitive's paired wakeup readings. Where time.Now is
+// the best clock available both fields contain the same reading.
 type Edge struct {
 	Wall time.Time
 	Mono time.Time
+}
+
+// Observation is a leading edge together with the quality of its detection.
+// For polling, Edge is the midpoint of the modem-state observations bracketing
+// the transition, Uncertainty is half the elapsed time between them, and
+// Settled reports whether the loop has adapted far enough that scheduled sleeps
+// no longer control its normal resolution. A wait observation carries the
+// wait timestamp directly, has no polling-bracket uncertainty, and is settled.
+type Observation struct {
+	Edge
+	Uncertainty time.Duration
+	Settled     bool
 }
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
@@ -77,34 +90,73 @@ type Wiring struct {
 	Pin gpsio.ModemControlPin
 }
 
-type reading struct {
-	state  gpsio.ModemControlPinState
-	at     time.Time
-	atMono time.Time // mono-clock reading of the same observation
-	start  time.Time
-	sched  time.Time // when this poll was scheduled to run
-	slept  bool      // whether the schedule was still in the future
+// clockReading keeps adjacent readings of the clocks used by serial PPS
+// together. wall locates an edge in system time; mono relates it to receiver
+// message read times. A platform can choose the better pair for measuring
+// short elapsed intervals in elapsedSince.
+type clockReading struct {
+	wall time.Time
+	mono time.Time
 }
 
-// Detect sends detected leading edges of the pulse described by w to edges,
-// blocking on the wait primitive when r provides it and polling adaptively
-// otherwise. A tty driver without the wait shows up only as the first wait
-// failing with errors.ErrUnsupported; Detect then falls back to polling.
-func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, edges chan<- Edge) error {
+func (r clockReading) midpoint(other clockReading) clockReading {
+	return clockReading{
+		wall: midpoint(r.wall, other.wall),
+		mono: midpoint(r.mono, other.mono),
+	}
+}
+
+func (r clockReading) edge() Edge {
+	return Edge{Wall: r.wall, Mono: r.mono}
+}
+
+type reading struct {
+	state gpsio.ModemControlPinState
+	poll  poll
+	start time.Time
+	sched time.Time // when this poll was scheduled to run
+	slept bool      // whether the schedule was still in the future
+}
+
+// poll retains both clock readings around one modem-state query. Its methods
+// choose the platform-appropriate clock for elapsed-time measurements.
+type poll struct {
+	start clockReading
+	end   clockReading
+}
+
+func (p poll) observationTime() clockReading {
+	return p.start.midpoint(p.end)
+}
+
+func (p poll) duration() time.Duration {
+	return p.end.elapsedSince(p.start)
+}
+
+func (p poll) gapAfter(prev poll) time.Duration {
+	return p.start.elapsedSince(prev.end)
+}
+
+// Detect sends observations of the pulse described by w, blocking on the
+// wait primitive when r provides it and polling adaptively otherwise. A tty
+// driver without the wait shows up only as the first wait failing with
+// errors.ErrUnsupported; Detect then falls back to polling. If stats is
+// non-nil, it records timings only when the polling backend is selected.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats) error {
 	if cw, ok := r.(ChangeWaiter); ok && cw.CanWaitModemControlPinChange() {
 		lg.Debug("serial PPS wait backend selected")
-		err := Wait(ctx, cw, w, edges)
+		err := Wait(ctx, cw, w, observations)
 		if !errors.Is(err, errors.ErrUnsupported) {
 			return err
 		}
 		lg.Info("serial driver cannot wait for modem control pin changes; polling instead")
 	}
 	lg.Debug("serial PPS polling backend selected")
-	return Poll(ctx, r, w, edges, lg)
+	return Poll(ctx, r, w, observations, stats, lg)
 }
 
-// Poll adaptively polls for the pulse described by w and sends detected
-// leading edges to edges. Each period it polls a window centered on the
+// Poll adaptively polls for the pulse described by w and sends every detected
+// leading edge to observations. Each period it polls a window centered on the
 // predicted next edge time. A caught edge is located by its bracket: the
 // pair of consecutive polls with one poll on each side of the transition.
 // The bracket's width -- the time between those two polls -- is how
@@ -124,32 +176,33 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, edges
 // when a window opens is polled through, not declared a miss: the search
 // resumes on its far side.
 //
-// Edges are sent only once the settled latch is set. The loop observes that
-// the polling schedule no longer controls resolution from its pacing rather
-// than inferring it from bracket measurements, which sleep overshoot
+// The Settled field is set once the settled latch is set. The loop observes
+// that the polling schedule no longer controls resolution from its pacing
+// rather than inferring it from bracket measurements, which sleep overshoot
 // contaminates while the loop is sleep-paced. A catch settles immediately
 // when the spacing target sits at minPollSpacing, which halving no longer
 // changes. Otherwise two consecutive caught windows must be polled without
 // a single sleep firing; since each catch halves the window, the second
 // confirms at a smaller spacing that the queries pace the loop. A
 // sleep-paced catch or a miss clears the confirmation, so a transient run
-// of slow queries cannot open the publishing gate. The latch clears only on
-// the cold restart, i.e. on signal loss. Before the latch, caught edges are
-// too coarse to publish; after it every caught edge is sent, however coarse:
-// a stretched sample is characteristic of what the system delivers, and
-// outliers are the NTP daemon's filtering's job. Every caught edge and
-// every window size change is logged to lg at debug level.
-func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *slog.Logger) error {
+// of slow queries cannot settle the detector. The latch clears only on
+// the cold restart, i.e. on signal loss. Every caught edge is sent; consumers
+// that require settled edges must filter on Settled. Every caught edge and
+// every window size change is logged to lg at debug level. If stats is
+// non-nil, Poll records timing and outcome statistics in it.
+func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats, lg *slog.Logger) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	stats.begin()
 
 	first, err := readState(ctx, r, time.Time{})
 	if err != nil {
 		return err
 	}
-	predicted := first.at.Add(maxPollWindow / 2)
+	stats.addPoll(first.poll, nil)
+	predicted := first.poll.observationTime().wall.Add(maxPollWindow / 2)
 	window := maxPollWindow
-	settled := false  // publishing gate: polling schedule no longer binds
+	settled := false  // polling schedule no longer binds
 	tracking := false // halving is over; the window moves additively
 	catches, misses := 0, 0
 	queryPacedCatches := 0
@@ -161,6 +214,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 		if err != nil {
 			return err
 		}
+		stats.addPoll(cur.poll, nil)
 		polls := 1
 		// The windows advance in lockstep with the pulses, so treating an
 		// in-progress pulse at the open as a miss would reopen at the same
@@ -168,11 +222,13 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 		// slept accumulates over the window's scheduled polls (the wait for
 		// the window open is excluded: it always sleeps).
 		slept := false
-		for inPulse(cur.state, w) && cur.at.Before(deadline) {
+		for inPulse(cur.state, w) && cur.poll.observationTime().wall.Before(deadline) {
+			prev := cur
 			cur, err = readState(ctx, r, cur.start.Add(spacing))
 			if err != nil {
 				return err
 			}
+			stats.addPoll(cur.poll, &prev.poll)
 			polls++
 			slept = slept || cur.slept
 		}
@@ -185,11 +241,12 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 			if err != nil {
 				return err
 			}
+			stats.addPoll(cur.poll, &prev.poll)
 			polls++
 			slept = slept || cur.slept
 			edge, missed = classifyReading(prev, cur, w, deadline)
 			if !edge.Wall.IsZero() {
-				bracketWidth = cur.at.Sub(prev.at)
+				bracketWidth = cur.poll.observationTime().elapsedSince(prev.poll.observationTime())
 			}
 			prev = cur
 		}
@@ -216,6 +273,17 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 					lg.Debug("serial PPS settled", "window", window, "bracket", bracketWidth)
 				}
 			}
+			observation := Observation{
+				Edge:        edge,
+				Uncertainty: halfDurationCeil(bracketWidth),
+				Settled:     settled,
+			}
+			stats.addWindow(true, settled)
+			select {
+			case observations <- observation:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 			if !tracking {
 				if halved := max(window/2, 2*bracketWidth); halved != window {
 					window = halved
@@ -229,15 +297,9 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 				lg.Debug("serial PPS poll window shrank", "window", window)
 			}
 			prevBracketWidth = bracketWidth
-			if settled {
-				select {
-				case edges <- edge:
-				case <-ctx.Done():
-					return ctx.Err()
-				}
-			}
 			continue
 		}
+		stats.addWindow(false, false)
 		predicted = predicted.Add(pulsePeriod)
 		queryPacedCatches = 0
 		if window == maxPollWindow {
@@ -265,11 +327,12 @@ func Poll(ctx context.Context, r StateReader, w Wiring, edges chan<- Edge, lg *s
 	}
 }
 
-// Wait sends leading edges of the pulse described by w detected with
-// modem-control change notifications. The wait primitive itself timestamps
-// the wakeup, before the state read, because that read can require a USB
-// round trip.
-func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) error {
+// Wait sends observations of leading edges detected with modem-control change
+// notifications. The wait primitive itself timestamps the wakeup, before the
+// state read, because that read can require a USB round trip. Its paired
+// readings are used directly rather than treating the state read as a polling
+// bracket.
+func Wait(ctx context.Context, r ChangeWaiter, w Wiring, observations chan<- Observation) error {
 	prev, err := r.ModemControlPinState()
 	if err != nil {
 		return err
@@ -289,8 +352,12 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) erro
 			return err
 		}
 		if !inPulse(prev, w) && inPulse(cur, w) {
+			observation := Observation{
+				Edge:    Edge{Wall: wall, Mono: mono},
+				Settled: true,
+			}
 			select {
-			case edges <- Edge{Wall: wall, Mono: mono}:
+			case observations <- observation:
 			case <-ctx.Done():
 				return ctx.Err()
 			}
@@ -299,18 +366,22 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, edges chan<- Edge) erro
 	}
 }
 
+func halfDurationCeil(d time.Duration) time.Duration {
+	return d/2 + d%2
+}
+
 // classifyReading gives a detected transition precedence over the deadline.
 // The deadline says when to stop looking, not whether a measured edge is
 // valid. A bracket spanning a full period or more may contain several
 // leading edges, so its midpoint identifies none of them: it is a miss.
 func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (Edge, bool) {
 	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
-		if cur.at.Sub(prev.at) >= pulsePeriod {
+		if cur.poll.observationTime().elapsedSince(prev.poll.observationTime()) >= pulsePeriod {
 			return Edge{}, true
 		}
-		return Edge{Wall: midpoint(prev.at, cur.at), Mono: midpoint(prev.atMono, cur.atMono)}, false
+		return prev.poll.observationTime().midpoint(cur.poll.observationTime()).edge(), false
 	}
-	return Edge{}, !cur.at.Before(deadline)
+	return Edge{}, !cur.poll.observationTime().wall.Before(deadline)
 }
 
 // inPulse reports whether the state was observed during a pulse. The pulse's
@@ -325,23 +396,23 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 	if err != nil {
 		return reading{}, err
 	}
-	start, startMono := now()
+	start := now()
 	state, err := r.ModemControlPinState()
-	end, endMono := now()
+	end := now()
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, at: midpoint(start, end), atMono: midpoint(startMono, endMono),
-		start: start, sched: notBefore, slept: slept}, nil
+	return reading{state: state, poll: poll{start: start, end: end}, start: start.wall,
+		sched: notBefore, slept: slept}, nil
 }
 
 // now reads the clocks behind Edge: wall locates edges and paces the loop,
 // mono serves elapsed-time arithmetic against other time.Now values. Here
 // they are one time.Now reading; a platform whose precise wall-clock read
 // carries no monotonic reading separates them.
-func now() (wall, mono time.Time) {
+func now() clockReading {
 	t := time.Now()
-	return t, t
+	return clockReading{wall: t, mono: t}
 }
 
 // waitUntil reports whether it actually had to wait: false means the
@@ -369,23 +440,6 @@ func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 
 func midpoint(a, b time.Time) time.Time {
 	return a.Add(b.Sub(a) / 2)
-}
-
-// TimeStateReads measures n back-to-back state queries with no sleeps, so
-// the distribution of call durations is the poll pacing floor. The caller
-// arranges the conditions to measure under, e.g. draining incoming serial
-// data as the daemon does.
-func TimeStateReads(r StateReader, n int) ([]time.Duration, error) {
-	ds := make([]time.Duration, n)
-	for i := range ds {
-		start, _ := now()
-		if _, err := r.ModemControlPinState(); err != nil {
-			return nil, err
-		}
-		end, _ := now()
-		ds[i] = end.Sub(start)
-	}
-	return ds, nil
 }
 
 // Sample is a serial-PPS refclock sample.
