@@ -258,6 +258,8 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
 
+`internal/serialcmd` implements the `serial` subcommand of satpulsetool.
+
 `internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware.
 
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.

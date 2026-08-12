@@ -16,6 +16,13 @@ type exitCoder interface {
 	ExitCode() int
 }
 
+// quietError marks an error whose detail has already been printed by the
+// subcommand (for example one result line per device in a parallel scan).
+type quietError interface {
+	error
+	Quiet() bool
+}
+
 func main() {
 	var verboseLevel int
 	var help bool
@@ -63,7 +70,10 @@ func main() {
 	if ok {
 		usage, err := exec(logWriter, logLevel, progName, cmdName, cmdArgs)
 		if err != nil {
-			cmd.ErrPrintlnWithDetail(progName, err)
+			var qe quietError
+			if !errors.As(err, &qe) || !qe.Quiet() {
+				cmd.ErrPrintlnWithDetail(progName, err)
+			}
 			// Check if error specifies its own exit code
 			var ec exitCoder
 			if errors.As(err, &ec) {
@@ -93,6 +103,7 @@ var descriptions = []struct {
 	name, desc string
 }{
 	{"gps", "configure a GPS device"},
+	{"serial", "list serial ports and detect their speeds"},
 	{"sdp", "control software-defined pins on PTP hardware clocks"},
 	{"syncsim", "run clock synchronization simulation"},
 	{"ubxsim", "run u-blox receiver simulation"},

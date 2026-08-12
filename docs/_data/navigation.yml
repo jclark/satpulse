@@ -82,6 +82,8 @@ docs:
         url: "/man/satpulsetool.1.html"
       - title: "satpulsetool-gps(1)"
         url: "/man/satpulsetool-gps.1.html"
+      - title: "satpulsetool-serial(1)"
+        url: "/man/satpulsetool-serial.1.html"
       - title: "satpulsetool-pack(1)"
         url: "/man/satpulsetool-pack.1.html"
       - title: "satpulsetool-scan(1)"
