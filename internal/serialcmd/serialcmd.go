@@ -26,25 +26,6 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [-a|--all | -d|--serial-device path] [-i|--info]
-              [--packet-log path] [-s|--device-speed bps] [-t|--timeout seconds]
-              [-j|--jsonl]`
-
-const (
-	tryDuration    = 1250 * time.Millisecond
-	silentTryLimit = 5
-)
-
-type commandError struct {
-	msg   string
-	code  int
-	quiet bool
-}
-
-func (e commandError) Error() string { return e.msg }
-func (e commandError) ExitCode() int { return e.code }
-func (e commandError) Quiet() bool   { return e.quiet }
-
 type flagVars struct {
 	all            bool
 	device         string
@@ -56,34 +37,21 @@ type flagVars struct {
 	jsonl          bool
 }
 
-type serialOperation uint8
-
-const (
-	serialDetect serialOperation = iota
-	serialCapture
-)
-
-type printer interface {
-	Print(*os.File) error
+type commandError struct {
+	msg   string
+	code  int
+	quiet bool
 }
 
-type portInfo serialenum.Port
+type captureResult struct {
+	packets int
+	failure string
+}
 
-func (info *portInfo) Print(f *os.File) error {
-	var b strings.Builder
-	fmt.Fprintf(&b, "device=%s", info.Device)
-	if info.USB != (serialenum.USBID{}) {
-		fmt.Fprintf(&b, " vid=%04x pid=%04x", info.USB.VID, info.USB.PID)
-	}
-	if info.Serial != "" {
-		fmt.Fprintf(&b, " serial=%q", info.Serial)
-	}
-	for _, alias := range info.Aliases {
-		fmt.Fprintf(&b, " alias=%s", alias)
-	}
-	fmt.Fprintf(&b, " display=%q", info.Display)
-	_, err := fmt.Fprintln(f, b.String())
-	return err
+type detectResult struct {
+	device    string
+	detection gpsio.DetectResult
+	failure   string
 }
 
 type speedInfo struct {
@@ -91,27 +59,6 @@ type speedInfo struct {
 	Speed  int    `json:"speed"`
 
 	printDevice bool
-}
-
-func (info *speedInfo) Print(f *os.File) error {
-	if !info.printDevice {
-		_, err := fmt.Fprintln(f, info.Speed)
-		return err
-	}
-	_, err := fmt.Fprintf(f, "%s %d\n", info.Device, info.Speed)
-	return err
-}
-
-func printInfo(f *os.File, info printer, jsonl bool) error {
-	if !jsonl {
-		return info.Print(f)
-	}
-	b, err := json.Marshal(info)
-	if err != nil {
-		return fmt.Errorf("encoding serial output: %w", err)
-	}
-	_, err = fmt.Fprintln(f, string(b))
-	return err
 }
 
 // Cmd executes the serial subcommand.
@@ -149,6 +96,10 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	info := speedInfo{Device: result.device, Speed: result.detection.Speed}
 	return "", printInfo(os.Stdout, &info, v.jsonl)
 }
+
+const summary = `[-h|--help] [-a|--all | -d|--serial-device path] [-i|--info]
+              [--packet-log path] [-s|--device-speed bps] [-t|--timeout seconds]
+              [-j|--jsonl]`
 
 func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc func(string) string, err error) {
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
@@ -276,6 +227,8 @@ func matchPort(ports []serialenum.Port, path string) (serialenum.Port, bool) {
 	return serialenum.Port{}, false
 }
 
+type portInfo serialenum.Port
+
 func printPorts(f *os.File, ports []serialenum.Port, jsonl bool) error {
 	for _, port := range ports {
 		info := portInfo(port)
@@ -286,111 +239,117 @@ func printPorts(f *os.File, ports []serialenum.Port, jsonl bool) error {
 	return nil
 }
 
-type detectResult struct {
-	device    string
-	detection gpsio.DetectResult
-	failure   string
+func (info *portInfo) Print(f *os.File) error {
+	var b strings.Builder
+	fmt.Fprintf(&b, "device=%s", info.Device)
+	if info.USB != (serialenum.USBID{}) {
+		fmt.Fprintf(&b, " vid=%04x pid=%04x", info.USB.VID, info.USB.PID)
+	}
+	if info.Serial != "" {
+		fmt.Fprintf(&b, " serial=%q", info.Serial)
+	}
+	for _, alias := range info.Aliases {
+		fmt.Fprintf(&b, " alias=%s", alias)
+	}
+	fmt.Fprintf(&b, " display=%q", info.Display)
+	_, err := fmt.Fprintln(f, b.String())
+	return err
 }
 
-func (r detectResult) exitCode() int {
-	if r.failure != "" {
-		return 1
+func (info *speedInfo) Print(f *os.File) error {
+	if !info.printDevice {
+		_, err := fmt.Fprintln(f, info.Speed)
+		return err
 	}
-	switch r.detection.Outcome {
-	case gpsio.DetectFound:
-		return 0
-	case gpsio.DetectSilent:
-		return 2
-	}
-	return 1
+	_, err := fmt.Fprintf(f, "%s %d\n", info.Device, info.Speed)
+	return err
 }
 
-// description explains an unsuccessful detection: either why detection could not
-// run, or what the device did instead of producing a speed.
-func (r detectResult) description() string {
-	if r.failure != "" {
-		return r.failure
-	}
-	if r.detection.Outcome == gpsio.DetectSilent {
-		return "no output received from the device"
-	}
-	return "output was received, but no known GNSS protocol was validated at a candidate speed"
+type printer interface {
+	Print(*os.File) error
 }
 
-func detectDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result detectResult) {
-	result.device = device
-	conn, _, err := gpsio.OpenSerial(device, 0)
+func printInfo(f *os.File, info printer, jsonl bool) error {
+	if !jsonl {
+		return info.Print(f)
+	}
+	b, err := json.Marshal(info)
 	if err != nil {
-		result.failure = serialDetect.describeError(err)
-		return
+		return fmt.Errorf("encoding serial output: %w", err)
 	}
+	_, err = fmt.Fprintln(f, string(b))
+	return err
+}
 
-	formats := gpsreg.CreatePacketFormats(nil)
+func scanPorts(ctx context.Context, lg *slog.Logger, jsonl bool) error {
+	ports, err := serialenum.List()
+	if err != nil {
+		return err
+	}
+	if len(ports) == 0 {
+		return commandError{msg: "no serial ports found", code: 2}
+	}
+	return scanPortList(ctx, lg, ports, detectDevice, os.Stdout, os.Stderr, jsonl)
+}
+
+type detectFunc func(context.Context, *slog.Logger, string, string) detectResult
+
+func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port, detect detectFunc, stdout *os.File, stderr io.Writer, jsonl bool) error {
+	resultCh := make(chan detectResult, len(ports))
 	var wg sync.WaitGroup
-	pktLog, logFile, err := gpsio.LogPackets(lg, &wg, packetLogPath, false, formats)
-	if err != nil {
-		result.failure = "opening packet log: " + err.Error()
-		closeDevice(lg, conn, device, &result.failure)
-		return
+	for _, port := range ports {
+		device := port.Device
+		wg.Go(func() {
+			resultCh <- detect(ctx, lg.With("device", device), device, "")
+		})
 	}
-	if pktLog != nil {
-		conn.SetPacketLog(pktLog)
-	}
+	go func() {
+		wg.Wait()
+		close(resultCh)
+	}()
 
-	// Detection owns signal cancellation: DetectSpeed honors ctx itself. The
-	// scan worker gets a context of its own so that Ctrl-C cannot close the
-	// packet channel under the window DetectSpeed is still consuming.
-	scanCtx, cancelScan := context.WithCancel(context.Background())
-	packetCh := make(chan scan.Packet, 1)
-	wg.Go(func() { gpsio.Scan(scanCtx, lg, conn, packetCh, pktLog, formats) })
-
-	result.detection, err = gpsio.DetectSpeed(
-		ctx,
-		lg,
-		packetCh,
-		conn,
-		gpsreg.CreatePacketProcessors(nil),
-		gpsio.DefaultSpeedList(),
-		tryDuration,
-		func(tried []int) bool { return len(tried) >= silentTryLimit },
-	)
-	if err != nil {
-		result.failure = serialDetect.describeError(err)
+	bestCode := 1
+	var outputErr error
+	for result := range resultCh {
+		code := result.exitCode()
+		if code == 0 {
+			bestCode = 0
+			info := speedInfo{Device: result.device, Speed: result.detection.Speed, printDevice: true}
+			if err := printInfo(stdout, &info, jsonl); err != nil && outputErr == nil {
+				outputErr = err
+			}
+			continue
+		}
+		if code == 2 && bestCode != 0 {
+			bestCode = 2
+		}
+		// An interrupt fails every detection still running, so describing each one
+		// would bury the interrupt in noise.
+		if ctx.Err() != nil {
+			continue
+		}
+		if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
+			outputErr = err
+		}
 	}
-
-	conn.Stop()
-	cancelScan()
-	for range packetCh {
+	if outputErr != nil {
+		return commandError{msg: fmt.Sprintf("writing serial scan output: %v", outputErr), code: 1}
 	}
-	wg.Wait()
-	if logFile != nil {
-		logFile.Close(lg)
+	if ctx.Err() != nil {
+		return commandError{msg: "serial scan interrupted", code: 1, quiet: true}
 	}
-	closeDevice(lg, conn, device, &result.failure)
-	return
+	if bestCode == 0 {
+		return nil
+	}
+	return commandError{msg: "serial scan did not detect a device", code: bestCode, quiet: true}
 }
 
-type captureResult struct {
-	packets int
-	failure string
-}
+type serialOperation uint8
 
-func (r captureResult) exitCode() int {
-	if r.failure != "" {
-		return 1
-	}
-	if r.packets == 0 {
-		return 2
-	}
-	return 0
-}
-
-func (r captureResult) description() string {
-	if r.failure != "" {
-		return r.failure
-	}
-	return "no output received from the device"
-}
+const (
+	serialDetect serialOperation = iota
+	serialCapture
+)
 
 func captureDevice(ctx context.Context, lg *slog.Logger, device string, speed int, packetLogPath string, timeout time.Duration) (result captureResult) {
 	conn, _, err := gpsio.OpenSerial(device, speed)
@@ -464,6 +423,106 @@ func capturePackets(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.P
 	}
 }
 
+func (r captureResult) exitCode() int {
+	if r.failure != "" {
+		return 1
+	}
+	if r.packets == 0 {
+		return 2
+	}
+	return 0
+}
+
+func (r captureResult) description() string {
+	if r.failure != "" {
+		return r.failure
+	}
+	return "no output received from the device"
+}
+
+const (
+	tryDuration    = 1250 * time.Millisecond
+	silentTryLimit = 5
+)
+
+func detectDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result detectResult) {
+	result.device = device
+	conn, _, err := gpsio.OpenSerial(device, 0)
+	if err != nil {
+		result.failure = serialDetect.describeError(err)
+		return
+	}
+
+	formats := gpsreg.CreatePacketFormats(nil)
+	var wg sync.WaitGroup
+	pktLog, logFile, err := gpsio.LogPackets(lg, &wg, packetLogPath, false, formats)
+	if err != nil {
+		result.failure = "opening packet log: " + err.Error()
+		closeDevice(lg, conn, device, &result.failure)
+		return
+	}
+	if pktLog != nil {
+		conn.SetPacketLog(pktLog)
+	}
+
+	// Detection owns signal cancellation: DetectSpeed honors ctx itself. The
+	// scan worker gets a context of its own so that Ctrl-C cannot close the
+	// packet channel under the window DetectSpeed is still consuming.
+	scanCtx, cancelScan := context.WithCancel(context.Background())
+	packetCh := make(chan scan.Packet, 1)
+	wg.Go(func() { gpsio.Scan(scanCtx, lg, conn, packetCh, pktLog, formats) })
+
+	result.detection, err = gpsio.DetectSpeed(
+		ctx,
+		lg,
+		packetCh,
+		conn,
+		gpsreg.CreatePacketProcessors(nil),
+		gpsio.DefaultSpeedList(),
+		tryDuration,
+		func(tried []int) bool { return len(tried) >= silentTryLimit },
+	)
+	if err != nil {
+		result.failure = serialDetect.describeError(err)
+	}
+
+	conn.Stop()
+	cancelScan()
+	for range packetCh {
+	}
+	wg.Wait()
+	if logFile != nil {
+		logFile.Close(lg)
+	}
+	closeDevice(lg, conn, device, &result.failure)
+	return
+}
+
+func (r detectResult) exitCode() int {
+	if r.failure != "" {
+		return 1
+	}
+	switch r.detection.Outcome {
+	case gpsio.DetectFound:
+		return 0
+	case gpsio.DetectSilent:
+		return 2
+	}
+	return 1
+}
+
+// description explains an unsuccessful detection: either why detection could not
+// run, or what the device did instead of producing a speed.
+func (r detectResult) description() string {
+	if r.failure != "" {
+		return r.failure
+	}
+	if r.detection.Outcome == gpsio.DetectSilent {
+		return "no output received from the device"
+	}
+	return "output was received, but no known GNSS protocol was validated at a candidate speed"
+}
+
 // closeDevice closes conn, keeping the close error only when the read
 // operation itself produced none. An existing failure is more relevant.
 func closeDevice(lg *slog.Logger, conn *gpsio.SerialConn, device string, failure *string) {
@@ -476,69 +535,6 @@ func closeDevice(lg *slog.Logger, conn *gpsio.SerialConn, device string, failure
 		return
 	}
 	lg.Debug("closing the serial device failed after an unsuccessful read", "device", device, "error", closeErr)
-}
-
-func scanPorts(ctx context.Context, lg *slog.Logger, jsonl bool) error {
-	ports, err := serialenum.List()
-	if err != nil {
-		return err
-	}
-	if len(ports) == 0 {
-		return commandError{msg: "no serial ports found", code: 2}
-	}
-	return scanPortList(ctx, lg, ports, detectDevice, os.Stdout, os.Stderr, jsonl)
-}
-
-type detectFunc func(context.Context, *slog.Logger, string, string) detectResult
-
-func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port, detect detectFunc, stdout *os.File, stderr io.Writer, jsonl bool) error {
-	resultCh := make(chan detectResult, len(ports))
-	var wg sync.WaitGroup
-	for _, port := range ports {
-		device := port.Device
-		wg.Go(func() {
-			resultCh <- detect(ctx, lg.With("device", device), device, "")
-		})
-	}
-	go func() {
-		wg.Wait()
-		close(resultCh)
-	}()
-
-	bestCode := 1
-	var outputErr error
-	for result := range resultCh {
-		code := result.exitCode()
-		if code == 0 {
-			bestCode = 0
-			info := speedInfo{Device: result.device, Speed: result.detection.Speed, printDevice: true}
-			if err := printInfo(stdout, &info, jsonl); err != nil && outputErr == nil {
-				outputErr = err
-			}
-			continue
-		}
-		if code == 2 && bestCode != 0 {
-			bestCode = 2
-		}
-		// An interrupt fails every detection still running, so describing each one
-		// would bury the interrupt in noise.
-		if ctx.Err() != nil {
-			continue
-		}
-		if _, err := fmt.Fprintf(stderr, "%s: %s\n", result.device, result.description()); err != nil && outputErr == nil {
-			outputErr = err
-		}
-	}
-	if outputErr != nil {
-		return commandError{msg: fmt.Sprintf("writing serial scan output: %v", outputErr), code: 1}
-	}
-	if ctx.Err() != nil {
-		return commandError{msg: "serial scan interrupted", code: 1, quiet: true}
-	}
-	if bestCode == 0 {
-		return nil
-	}
-	return commandError{msg: "serial scan did not detect a device", code: bestCode, quiet: true}
 }
 
 func (op serialOperation) describeError(err error) string {
@@ -560,3 +556,7 @@ func isLocked(err error) bool {
 	var locked term.LockedError
 	return errors.As(err, &locked) && locked.Locked()
 }
+
+func (e commandError) Error() string { return e.msg }
+func (e commandError) ExitCode() int { return e.code }
+func (e commandError) Quiet() bool   { return e.quiet }
