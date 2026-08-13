@@ -148,6 +148,9 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		case timeoutSec >= float64(math.MaxInt64)/float64(time.Second):
 			err = fmt.Errorf("--timeout is too large")
 			return
+		case timeoutSec > 0 && ptime.Seconds(timeoutSec) == 0:
+			err = fmt.Errorf("--timeout is too small")
+			return
 		}
 	}
 	if packetLogSet && v.packetLog == "" {

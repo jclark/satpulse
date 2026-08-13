@@ -53,6 +53,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "NaN timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "NaN"}, wantErr: true},
 		{name: "infinite timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "+Inf"}, wantErr: true},
 		{name: "overflowing timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1e20"}, wantErr: true},
+		{name: "underflowing timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1e-10"}, wantErr: true},
 		{name: "empty device", args: []string{"--serial-device", ""}, wantErr: true},
 		{name: "empty packet log", args: []string{"--serial-device", "/dev/ttyS0", "--packet-log", ""}, wantErr: true},
 	} {
