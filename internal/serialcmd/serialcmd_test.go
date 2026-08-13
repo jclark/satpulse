@@ -21,20 +21,20 @@ func TestParseFlags(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		args     []string
-		want     flags
+		want     flagVars
 		wantErr  bool
 		wantHelp bool
 	}{
-		{name: "default info all", want: flags{info: true, all: true}},
-		{name: "jsonl info all", args: []string{"-j"}, want: flags{jsonl: true, info: true, all: true}},
-		{name: "explicit info all", args: []string{"-i"}, want: flags{info: true, all: true}},
-		{name: "info selected", args: []string{"-i", "-d", "/dev/ttyS0"}, want: flags{info: true, device: "/dev/ttyS0"}},
-		{name: "detect all", args: []string{"-a"}, want: flags{all: true}},
-		{name: "detect selected", args: []string{"-d", "/dev/ttyS0"}, want: flags{device: "/dev/ttyS0"}},
-		{name: "detect with packet log", args: []string{"-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flags{device: "/dev/ttyS0", packetLog: "capture.jsonl"}},
-		{name: "capture at speed", args: []string{"-j", "-s", "38400", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flags{jsonl: true, device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl"}},
-		{name: "timed capture", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1.25"}, want: flags{device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl", timeout: 1250 * time.Millisecond}},
-		{name: "capture at current speed", args: []string{"-s", "0", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flags{device: "/dev/ttyS0", deviceSpeedSet: true, packetLog: "capture.jsonl"}},
+		{name: "default info all", want: flagVars{info: true, all: true}},
+		{name: "jsonl info all", args: []string{"-j"}, want: flagVars{jsonl: true, info: true, all: true}},
+		{name: "explicit info all", args: []string{"-i"}, want: flagVars{info: true, all: true}},
+		{name: "info selected", args: []string{"-i", "-d", "/dev/ttyS0"}, want: flagVars{info: true, device: "/dev/ttyS0"}},
+		{name: "detect all", args: []string{"-a"}, want: flagVars{all: true}},
+		{name: "detect selected", args: []string{"-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0"}},
+		{name: "detect with packet log", args: []string{"-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{device: "/dev/ttyS0", packetLog: "capture.jsonl"}},
+		{name: "capture at speed", args: []string{"-j", "-s", "38400", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{jsonl: true, device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl"}},
+		{name: "timed capture", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1.25"}, want: flagVars{device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl", timeout: 1250 * time.Millisecond}},
+		{name: "capture at current speed", args: []string{"-s", "0", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{device: "/dev/ttyS0", deviceSpeedSet: true, packetLog: "capture.jsonl"}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "positional port", args: []string{"/dev/ttyS0"}, wantErr: true},
 		{name: "all and device", args: []string{"-a", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -208,17 +208,17 @@ func TestPrintSpeedInfo(t *testing.T) {
 	}
 }
 
-func TestProbeResultExitCode(t *testing.T) {
+func TestDetectResultExitCode(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		result probeResult
+		result detectResult
 		want   int
 	}{
-		{"found", probeResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}, 0},
-		{"silent", probeResult{}, 2},
-		{"unrecognized", probeResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}, 1},
-		{"error", probeResult{failure: "speed detection requires a serial device"}, 1},
-		{"error outranks silence", probeResult{failure: "close failed"}, 1},
+		{"found", detectResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}, 0},
+		{"silent", detectResult{}, 2},
+		{"unrecognized", detectResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}, 1},
+		{"error", detectResult{failure: "speed detection requires a serial device"}, 1},
+		{"error outranks silence", detectResult{failure: "close failed"}, 1},
 	} {
 		if got := tc.result.exitCode(); got != tc.want {
 			t.Errorf("%s: exitCode() = %d, want %d", tc.name, got, tc.want)
@@ -226,18 +226,18 @@ func TestProbeResultExitCode(t *testing.T) {
 	}
 }
 
-func TestProbeResultDescription(t *testing.T) {
+func TestDetectResultDescription(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
-		result probeResult
+		result detectResult
 		want   string
 	}{
-		{"silent", probeResult{}, "no output received from the device"},
-		{"unrecognized", probeResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}},
+		{"silent", detectResult{}, "no output received from the device"},
+		{"unrecognized", detectResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}},
 			"output was received, but no known GNSS protocol was validated at a candidate speed"},
-		{"described error", probeResult{failure: "speed detection requires a serial device"},
+		{"described error", detectResult{failure: "speed detection requires a serial device"},
 			"speed detection requires a serial device"},
-		{"packet log permission", probeResult{failure: "opening packet log: permission denied"},
+		{"packet log permission", detectResult{failure: "opening packet log: permission denied"},
 			"opening packet log: permission denied"},
 	} {
 		if got := tc.result.description(); got != tc.want {
@@ -311,24 +311,24 @@ func (testLockedError) Locked() bool  { return true }
 
 func TestScanPortList(t *testing.T) {
 	ports := []serialenum.Port{{Device: "detected"}, {Device: "silent"}, {Device: "error"}}
-	probe := func(_ context.Context, lg *slog.Logger, device, packetLog string) probeResult {
+	detect := func(_ context.Context, lg *slog.Logger, device, packetLog string) detectResult {
 		if packetLog != "" {
 			t.Errorf("scan packet log = %q, want empty", packetLog)
 		}
-		lg.Info("probing")
+		lg.Info("detecting")
 		switch device {
 		case "detected":
-			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
+			return detectResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
 		case "silent":
-			return probeResult{device: device}
+			return detectResult{device: device}
 		default:
-			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}
+			return detectResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}}
 		}
 	}
 	stdout := outputFile(t)
 	var stderr, logBuf bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
-	if err := scanPortList(context.Background(), lg, ports, probe, stdout, &stderr, false); err != nil {
+	if err := scanPortList(context.Background(), lg, ports, detect, stdout, &stderr, false); err != nil {
 		t.Fatalf("scanPortList() error = %v, want nil because one device was detected", err)
 	}
 	if got := outputString(t, stdout); got != "detected 38400\n" {
@@ -351,11 +351,11 @@ func TestScanPortList(t *testing.T) {
 
 func TestScanPortListJSONL(t *testing.T) {
 	ports := []serialenum.Port{{Device: "/dev/ttyUSB0"}}
-	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
-		return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 115200}}
+	detect := func(_ context.Context, _ *slog.Logger, device, _ string) detectResult {
+		return detectResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 115200}}
 	}
 	stdout := outputFile(t)
-	if err := scanPortList(context.Background(), slog.Default(), ports, probe, stdout, io.Discard, true); err != nil {
+	if err := scanPortList(context.Background(), slog.Default(), ports, detect, stdout, io.Discard, true); err != nil {
 		t.Fatal(err)
 	}
 	want := "{\"device\":\"/dev/ttyUSB0\",\"speed\":115200}\n"
@@ -366,13 +366,13 @@ func TestScanPortListJSONL(t *testing.T) {
 
 func TestScanPortListBestFailure(t *testing.T) {
 	ports := []serialenum.Port{{Device: "silent"}, {Device: "error"}}
-	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
+	detect := func(_ context.Context, _ *slog.Logger, device, _ string) detectResult {
 		if device == "silent" {
-			return probeResult{device: device}
+			return detectResult{device: device}
 		}
-		return probeResult{device: device, failure: "failed"}
+		return detectResult{device: device, failure: "failed"}
 	}
-	err := scanPortList(context.Background(), slog.Default(), ports, probe, outputFile(t), io.Discard, false)
+	err := scanPortList(context.Background(), slog.Default(), ports, detect, outputFile(t), io.Discard, false)
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 2 || !cmdErr.Quiet() {
 		t.Fatalf("scanPortList() error = %#v, want quiet exit code 2", err)
@@ -383,14 +383,14 @@ func TestScanPortListInterruptedOverridesDetection(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	ports := []serialenum.Port{{Device: "detected"}, {Device: "cancelled"}}
-	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
+	detect := func(_ context.Context, _ *slog.Logger, device, _ string) detectResult {
 		if device == "detected" {
-			return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 115200}}
+			return detectResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 115200}}
 		}
-		return probeResult{device: device, failure: "interrupted"}
+		return detectResult{device: device, failure: "interrupted"}
 	}
 	var stderr bytes.Buffer
-	err := scanPortList(ctx, slog.Default(), ports, probe, outputFile(t), &stderr, false)
+	err := scanPortList(ctx, slog.Default(), ports, detect, outputFile(t), &stderr, false)
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 1 || !cmdErr.Quiet() {
 		t.Fatalf("scanPortList() error = %#v, want quiet exit code 1", err)
@@ -402,14 +402,14 @@ func TestScanPortListInterruptedOverridesDetection(t *testing.T) {
 
 func TestScanPortListOutputError(t *testing.T) {
 	ports := []serialenum.Port{{Device: "detected"}}
-	probe := func(_ context.Context, _ *slog.Logger, device, _ string) probeResult {
-		return probeResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
+	detect := func(_ context.Context, _ *slog.Logger, device, _ string) detectResult {
+		return detectResult{device: device, detection: gpsio.DetectResult{Outcome: gpsio.DetectFound, Speed: 38400}}
 	}
 	stdout := outputFile(t)
 	if err := stdout.Close(); err != nil {
 		t.Fatal(err)
 	}
-	err := scanPortList(context.Background(), slog.Default(), ports, probe, stdout, io.Discard, false)
+	err := scanPortList(context.Background(), slog.Default(), ports, detect, stdout, io.Discard, false)
 	var cmdErr commandError
 	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 1 || cmdErr.Quiet() {
 		t.Fatalf("scanPortList() error = %#v, want non-quiet exit code 1", err)

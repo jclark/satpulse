@@ -26,9 +26,11 @@ import (
 	"github.com/spf13/pflag"
 )
 
+const summary = `[-h|--help] [-a|--all | -d|--serial-device path] [-i|--info]
+              [--packet-log path] [-s|--device-speed bps] [-t|--timeout seconds]
+              [-j|--jsonl]`
+
 const (
-	summary = `[-h|--help] [-j|--jsonl] [-i|--info] [-a|--all | -d|--serial-device path]
-              [-s|--device-speed bps] [-t|--timeout seconds] [--packet-log path]`
 	tryDuration    = 1250 * time.Millisecond
 	silentTryLimit = 5
 )
@@ -43,15 +45,15 @@ func (e commandError) Error() string { return e.msg }
 func (e commandError) ExitCode() int { return e.code }
 func (e commandError) Quiet() bool   { return e.quiet }
 
-type flags struct {
-	jsonl          bool
-	info           bool
+type flagVars struct {
 	all            bool
 	device         string
+	info           bool
+	packetLog      string
 	deviceSpeed    int
 	deviceSpeedSet bool
-	packetLog      string
 	timeout        time.Duration
+	jsonl          bool
 }
 
 type serialOperation uint8
@@ -114,7 +116,7 @@ func printInfo(f *os.File, info printer, jsonl bool) error {
 
 // Cmd executes the serial subcommand.
 func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
-	cfg, help, usageFunc, err := parseFlags(cmdName, args)
+	v, help, usageFunc, err := parseFlags(cmdName, args)
 	if err != nil {
 		return usageFunc(progName), err
 	}
@@ -122,22 +124,22 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return usageFunc(progName), nil
 	}
 	lg := cmd.NewDefaultLogger(logWriter, logLevel)
-	if cfg.info {
-		return "", enumerate(os.Stdout, cfg.jsonl, cfg.device)
+	if v.info {
+		return "", enumerate(os.Stdout, v.jsonl, v.device)
 	}
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
-	if cfg.all {
-		return "", scanPorts(ctx, lg, cfg.jsonl)
+	if v.all {
+		return "", scanPorts(ctx, lg, v.jsonl)
 	}
-	if cfg.deviceSpeedSet {
-		result := captureDevice(ctx, lg, cfg.device, cfg.deviceSpeed, cfg.packetLog, cfg.timeout)
+	if v.deviceSpeedSet {
+		result := captureDevice(ctx, lg, v.device, v.deviceSpeed, v.packetLog, v.timeout)
 		if code := result.exitCode(); code != 0 {
 			return "", commandError{msg: result.description(), code: code}
 		}
 		return "", nil
 	}
-	result := probeDevice(ctx, lg, cfg.device, cfg.packetLog)
+	result := detectDevice(ctx, lg, v.device, v.packetLog)
 	if ctx.Err() != nil {
 		return "", commandError{msg: "interrupted", code: 1}
 	}
@@ -145,41 +147,42 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return "", commandError{msg: result.description(), code: code}
 	}
 	info := speedInfo{Device: result.device, Speed: result.detection.Speed}
-	return "", printInfo(os.Stdout, &info, cfg.jsonl)
+	return "", printInfo(os.Stdout, &info, v.jsonl)
 }
 
-func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc func(string) string, err error) {
-	fs := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
+func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc func(string) string, err error) {
+	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
+	flags.SortFlags = false
 	var timeoutSec float64
-	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output in JSON Lines format instead of human-readable text")
-	fs.BoolVarP(&cfg.info, "info", "i", false, "describe target ports without opening them")
-	fs.BoolVarP(&cfg.all, "all", "a", false, "select all discovered serial ports")
-	fs.StringVarP(&cfg.device, "serial-device", "d", "", "select the serial device at `path`")
-	fs.IntVarP(&cfg.deviceSpeed, "device-speed", "s", 0, "set the serial device speed in `bps` (0 keeps the current speed)")
-	fs.Float64VarP(&timeoutSec, "timeout", "t", 0, "capture packets for `seconds` (0 = until interrupted)")
-	fs.StringVar(&cfg.packetLog, "packet-log", "", "write received packets and speed changes to a JSONL file")
-	fs.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
-	usageFunc = cmd.UsageFunc(cmdName, summary, fs)
-	if err = fs.Parse(args); err != nil || help {
+	flags.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
+	flags.BoolVarP(&v.all, "all", "a", false, "operate on all discovered serial ports")
+	flags.StringVarP(&v.device, "serial-device", "d", "", "operate on the serial port at `path`")
+	flags.BoolVarP(&v.info, "info", "i", false, "show information about serial ports without opening them")
+	flags.StringVar(&v.packetLog, "packet-log", "", "write received packets to a JSON Lines log at `path`")
+	flags.IntVarP(&v.deviceSpeed, "device-speed", "s", 0, "set the serial port speed to `bps` (0 uses the current speed)")
+	flags.Float64VarP(&timeoutSec, "timeout", "t", 0, "stop capturing packets after `seconds` (0 = until interrupted)")
+	flags.BoolVarP(&v.jsonl, "jsonl", "j", false, "write output in JSON Lines format")
+	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
+	if err = flags.Parse(args); err != nil || help {
 		return
 	}
-	if fs.NArg() != 0 {
+	if flags.NArg() != 0 {
 		err = fmt.Errorf("serial command does not accept positional arguments")
 		return
 	}
-	deviceSet := fs.Lookup("serial-device").Changed
-	cfg.deviceSpeedSet = fs.Lookup("device-speed").Changed
-	timeoutSet := fs.Lookup("timeout").Changed
-	packetLogSet := fs.Lookup("packet-log").Changed
-	if deviceSet && cfg.device == "" {
+	deviceSet := flags.Lookup("serial-device").Changed
+	v.deviceSpeedSet = flags.Lookup("device-speed").Changed
+	timeoutSet := flags.Lookup("timeout").Changed
+	packetLogSet := flags.Lookup("packet-log").Changed
+	if deviceSet && v.device == "" {
 		err = fmt.Errorf("--serial-device must not be empty")
 		return
 	}
-	if cfg.all && deviceSet {
+	if v.all && deviceSet {
 		err = fmt.Errorf("--all cannot be combined with --serial-device")
 		return
 	}
-	if cfg.deviceSpeedSet && cfg.deviceSpeed < 0 {
+	if v.deviceSpeedSet && v.deviceSpeed < 0 {
 		err = fmt.Errorf("--device-speed must not be negative")
 		return
 	}
@@ -196,23 +199,23 @@ func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc 
 			return
 		}
 	}
-	if packetLogSet && cfg.packetLog == "" {
+	if packetLogSet && v.packetLog == "" {
 		err = fmt.Errorf("--packet-log must not be empty")
 		return
 	}
-	if cfg.info && (cfg.deviceSpeedSet || timeoutSet || packetLogSet) {
+	if v.info && (v.deviceSpeedSet || timeoutSet || packetLogSet) {
 		err = fmt.Errorf("--info cannot be combined with --device-speed, --timeout, or --packet-log")
 		return
 	}
-	if timeoutSet && (!cfg.deviceSpeedSet || !packetLogSet) {
+	if timeoutSet && (!v.deviceSpeedSet || !packetLogSet) {
 		err = fmt.Errorf("--timeout requires --device-speed and --packet-log")
 		return
 	}
-	if cfg.deviceSpeedSet && !deviceSet {
+	if v.deviceSpeedSet && !deviceSet {
 		err = fmt.Errorf("--device-speed requires --serial-device")
 		return
 	}
-	if cfg.deviceSpeedSet && !packetLogSet {
+	if v.deviceSpeedSet && !packetLogSet {
 		err = fmt.Errorf("--device-speed requires --packet-log")
 		return
 	}
@@ -221,11 +224,11 @@ func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc 
 		return
 	}
 	if timeoutSet {
-		cfg.timeout = ptime.Seconds(timeoutSec)
+		v.timeout = ptime.Seconds(timeoutSec)
 	}
-	if !deviceSet && !cfg.all {
-		cfg.info = true
-		cfg.all = true
+	if !deviceSet && !v.all {
+		v.info = true
+		v.all = true
 	}
 	return
 }
@@ -283,13 +286,13 @@ func printPorts(f *os.File, ports []serialenum.Port, jsonl bool) error {
 	return nil
 }
 
-type probeResult struct {
+type detectResult struct {
 	device    string
 	detection gpsio.DetectResult
 	failure   string
 }
 
-func (r probeResult) exitCode() int {
+func (r detectResult) exitCode() int {
 	if r.failure != "" {
 		return 1
 	}
@@ -302,9 +305,9 @@ func (r probeResult) exitCode() int {
 	return 1
 }
 
-// description explains an unsuccessful probe: either why detection could not
+// description explains an unsuccessful detection: either why detection could not
 // run, or what the device did instead of producing a speed.
-func (r probeResult) description() string {
+func (r detectResult) description() string {
 	if r.failure != "" {
 		return r.failure
 	}
@@ -314,7 +317,7 @@ func (r probeResult) description() string {
 	return "output was received, but no known GNSS protocol was validated at a candidate speed"
 }
 
-func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result probeResult) {
+func detectDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result detectResult) {
 	result.device = device
 	conn, _, err := gpsio.OpenSerial(device, 0)
 	if err != nil {
@@ -483,18 +486,18 @@ func scanPorts(ctx context.Context, lg *slog.Logger, jsonl bool) error {
 	if len(ports) == 0 {
 		return commandError{msg: "no serial ports found", code: 2}
 	}
-	return scanPortList(ctx, lg, ports, probeDevice, os.Stdout, os.Stderr, jsonl)
+	return scanPortList(ctx, lg, ports, detectDevice, os.Stdout, os.Stderr, jsonl)
 }
 
-type probeFunc func(context.Context, *slog.Logger, string, string) probeResult
+type detectFunc func(context.Context, *slog.Logger, string, string) detectResult
 
-func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port, probe probeFunc, stdout *os.File, stderr io.Writer, jsonl bool) error {
-	resultCh := make(chan probeResult, len(ports))
+func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port, detect detectFunc, stdout *os.File, stderr io.Writer, jsonl bool) error {
+	resultCh := make(chan detectResult, len(ports))
 	var wg sync.WaitGroup
 	for _, port := range ports {
 		device := port.Device
 		wg.Go(func() {
-			resultCh <- probe(ctx, lg.With("device", device), device, "")
+			resultCh <- detect(ctx, lg.With("device", device), device, "")
 		})
 	}
 	go func() {
@@ -517,7 +520,7 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 		if code == 2 && bestCode != 0 {
 			bestCode = 2
 		}
-		// An interrupt fails every probe still running, so describing each one
+		// An interrupt fails every detection still running, so describing each one
 		// would bury the interrupt in noise.
 		if ctx.Err() != nil {
 			continue

@@ -33,10 +33,10 @@ func TestSelectPortSymlink(t *testing.T) {
 	}
 }
 
-// TestProbeDevicePTY covers the probe lifecycle that the detection tests below
+// TestDetectDevicePTY covers the detection lifecycle that the tests below
 // the command layer do not reach: the scan worker, the packet log's two
 // SemiClose paths, the drain of the packet channel, and the close.
-func TestProbeDevicePTY(t *testing.T) {
+func TestDetectDevicePTY(t *testing.T) {
 	master, device := openTestPTY(t)
 	logPath := filepath.Join(t.TempDir(), "capture.jsonl")
 	writeCtx, cancelWrite := context.WithCancel(context.Background())
@@ -55,15 +55,15 @@ func TestProbeDevicePTY(t *testing.T) {
 			}
 		}
 	})
-	result := probeDevice(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), device, logPath)
+	result := detectDevice(context.Background(), slog.New(slog.NewTextHandler(io.Discard, nil)), device, logPath)
 	cancelWrite()
 	wg.Wait()
 
 	if result.failure != "" {
-		t.Fatalf("probeDevice() failure = %q", result.failure)
+		t.Fatalf("detectDevice() failure = %q", result.failure)
 	}
 	if result.detection.Outcome != gpsio.DetectFound || result.detection.Speed == 0 {
-		t.Fatalf("probeDevice() detection = %+v, want a detected speed", result.detection)
+		t.Fatalf("detectDevice() detection = %+v, want a detected speed", result.detection)
 	}
 	if result.device != device {
 		t.Errorf("device = %q, want %q", result.device, device)
