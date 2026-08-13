@@ -18,7 +18,7 @@ The *command* must be one of the following.
 : Configure and control the GPS receiver.
 
 **serial**
-: Describe serial ports and detect receiver speeds.
+: Examine serial ports.
 
 **sdp**
 : Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
