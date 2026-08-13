@@ -57,7 +57,7 @@ _Not yet released_
 
 ### Other satpulsetool improvements
 
-- `satpulsetool` has a new `serial` command, which describes serial ports without opening them, and with `--detect-speed` detects the speed of a connected GNSS receiver from its output, on a selected port or on all discovered ports in parallel. Descriptions support JSON Lines output; detection can record wrong-speed input in a packet log. (#326, #394)
+- `satpulsetool` has a new `serial` command, which examines serial ports: it can discover the available serial ports, show information about a port without opening it, detect the speed of a connected GPS receiver, and log received packets. (#326, #394, #408)
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
 - `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)

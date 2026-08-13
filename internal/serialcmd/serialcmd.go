@@ -8,9 +8,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -19,12 +21,14 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/spf13/pflag"
 )
 
 const (
-	summary        = `[-h|--help] [-j|--jsonl] [-s|--detect-speed] [--packet-log path] [port]`
+	summary = `[-h|--help] [-j|--jsonl] [-i|--info] [-a|--all | -d|--serial-device path]
+              [-s|--device-speed bps] [-t|--timeout seconds] [--packet-log path]`
 	tryDuration    = 1250 * time.Millisecond
 	silentTryLimit = 5
 )
@@ -40,11 +44,22 @@ func (e commandError) ExitCode() int { return e.code }
 func (e commandError) Quiet() bool   { return e.quiet }
 
 type flags struct {
-	jsonl     bool
-	detect    bool
-	packetLog string
-	port      string
+	jsonl          bool
+	info           bool
+	all            bool
+	device         string
+	deviceSpeed    int
+	deviceSpeedSet bool
+	packetLog      string
+	timeout        time.Duration
 }
+
+type serialOperation uint8
+
+const (
+	serialDetect serialOperation = iota
+	serialCapture
+)
 
 type printer interface {
 	Print(*os.File) error
@@ -53,11 +68,19 @@ type printer interface {
 type portInfo serialenum.Port
 
 func (info *portInfo) Print(f *os.File) error {
-	if info.Serial == "" {
-		_, err := fmt.Fprintln(f, info.Display)
-		return err
+	var b strings.Builder
+	fmt.Fprintf(&b, "device=%s", info.Device)
+	if info.USB != (serialenum.USBID{}) {
+		fmt.Fprintf(&b, " vid=%04x pid=%04x", info.USB.VID, info.USB.PID)
 	}
-	_, err := fmt.Fprintf(f, "%s serial=%q\n", info.Display, info.Serial)
+	if info.Serial != "" {
+		fmt.Fprintf(&b, " serial=%q", info.Serial)
+	}
+	for _, alias := range info.Aliases {
+		fmt.Fprintf(&b, " alias=%s", alias)
+	}
+	fmt.Fprintf(&b, " display=%q", info.Display)
+	_, err := fmt.Fprintln(f, b.String())
 	return err
 }
 
@@ -99,48 +122,110 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return usageFunc(progName), nil
 	}
 	lg := cmd.NewDefaultLogger(logWriter, logLevel)
-	if !cfg.detect {
-		return "", enumerate(os.Stdout, cfg.jsonl, cfg.port)
+	if cfg.info {
+		return "", enumerate(os.Stdout, cfg.jsonl, cfg.device)
 	}
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
-	if cfg.port != "" {
-		result := probeDevice(ctx, lg, cfg.port, cfg.packetLog)
-		if ctx.Err() != nil {
-			return "", commandError{msg: "interrupted", code: 1}
-		}
+	if cfg.all {
+		return "", scanPorts(ctx, lg, cfg.jsonl)
+	}
+	if cfg.deviceSpeedSet {
+		result := captureDevice(ctx, lg, cfg.device, cfg.deviceSpeed, cfg.packetLog, cfg.timeout)
 		if code := result.exitCode(); code != 0 {
 			return "", commandError{msg: result.description(), code: code}
 		}
-		info := speedInfo{Device: result.device, Speed: result.detection.Speed}
-		return "", printInfo(os.Stdout, &info, cfg.jsonl)
+		return "", nil
 	}
-	return "", scanPorts(ctx, lg, cfg.jsonl)
+	result := probeDevice(ctx, lg, cfg.device, cfg.packetLog)
+	if ctx.Err() != nil {
+		return "", commandError{msg: "interrupted", code: 1}
+	}
+	if code := result.exitCode(); code != 0 {
+		return "", commandError{msg: result.description(), code: code}
+	}
+	info := speedInfo{Device: result.device, Speed: result.detection.Speed}
+	return "", printInfo(os.Stdout, &info, cfg.jsonl)
 }
 
 func parseFlags(cmdName string, args []string) (cfg flags, help bool, usageFunc func(string) string, err error) {
 	fs := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
+	var timeoutSec float64
 	fs.BoolVarP(&cfg.jsonl, "jsonl", "j", false, "output in JSON Lines format instead of human-readable text")
-	fs.BoolVarP(&cfg.detect, "detect-speed", "s", false, "detect receiver speeds instead of describing ports")
+	fs.BoolVarP(&cfg.info, "info", "i", false, "describe target ports without opening them")
+	fs.BoolVarP(&cfg.all, "all", "a", false, "select all discovered serial ports")
+	fs.StringVarP(&cfg.device, "serial-device", "d", "", "select the serial device at `path`")
+	fs.IntVarP(&cfg.deviceSpeed, "device-speed", "s", 0, "set the serial device speed in `bps` (0 keeps the current speed)")
+	fs.Float64VarP(&timeoutSec, "timeout", "t", 0, "capture packets for `seconds` (0 = until interrupted)")
 	fs.StringVar(&cfg.packetLog, "packet-log", "", "write received packets and speed changes to a JSONL file")
 	fs.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
 	usageFunc = cmd.UsageFunc(cmdName, summary, fs)
 	if err = fs.Parse(args); err != nil || help {
 		return
 	}
-	if fs.NArg() > 1 {
-		err = fmt.Errorf("expected at most one serial port argument")
+	if fs.NArg() != 0 {
+		err = fmt.Errorf("serial command does not accept positional arguments")
 		return
 	}
-	if fs.NArg() == 1 {
-		cfg.port = fs.Arg(0)
-		if cfg.port == "" {
-			err = fmt.Errorf("serial port must not be empty")
+	deviceSet := fs.Lookup("serial-device").Changed
+	cfg.deviceSpeedSet = fs.Lookup("device-speed").Changed
+	timeoutSet := fs.Lookup("timeout").Changed
+	packetLogSet := fs.Lookup("packet-log").Changed
+	if deviceSet && cfg.device == "" {
+		err = fmt.Errorf("--serial-device must not be empty")
+		return
+	}
+	if cfg.all && deviceSet {
+		err = fmt.Errorf("--all cannot be combined with --serial-device")
+		return
+	}
+	if cfg.deviceSpeedSet && cfg.deviceSpeed < 0 {
+		err = fmt.Errorf("--device-speed must not be negative")
+		return
+	}
+	if timeoutSet {
+		switch {
+		case math.IsNaN(timeoutSec) || math.IsInf(timeoutSec, 0):
+			err = fmt.Errorf("--timeout must be finite")
+			return
+		case timeoutSec < 0:
+			err = fmt.Errorf("--timeout must not be negative")
+			return
+		case timeoutSec >= float64(math.MaxInt64)/float64(time.Second):
+			err = fmt.Errorf("--timeout is too large")
 			return
 		}
 	}
-	if cfg.packetLog != "" && (!cfg.detect || cfg.port == "") {
-		err = fmt.Errorf("--packet-log requires --detect-speed and a port")
+	if packetLogSet && cfg.packetLog == "" {
+		err = fmt.Errorf("--packet-log must not be empty")
+		return
+	}
+	if cfg.info && (cfg.deviceSpeedSet || timeoutSet || packetLogSet) {
+		err = fmt.Errorf("--info cannot be combined with --device-speed, --timeout, or --packet-log")
+		return
+	}
+	if timeoutSet && (!cfg.deviceSpeedSet || !packetLogSet) {
+		err = fmt.Errorf("--timeout requires --device-speed and --packet-log")
+		return
+	}
+	if cfg.deviceSpeedSet && !deviceSet {
+		err = fmt.Errorf("--device-speed requires --serial-device")
+		return
+	}
+	if cfg.deviceSpeedSet && !packetLogSet {
+		err = fmt.Errorf("--device-speed requires --packet-log")
+		return
+	}
+	if packetLogSet && !deviceSet {
+		err = fmt.Errorf("--packet-log requires --serial-device")
+		return
+	}
+	if timeoutSet {
+		cfg.timeout = ptime.Seconds(timeoutSec)
+	}
+	if !deviceSet && !cfg.all {
+		cfg.info = true
+		cfg.all = true
 	}
 	return
 }
@@ -233,7 +318,7 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	result.device = device
 	conn, _, err := gpsio.OpenSerial(device, 0)
 	if err != nil {
-		result.failure = describeSerialError(err)
+		result.failure = serialDetect.describeError(err)
 		return
 	}
 
@@ -242,7 +327,7 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	pktLog, logFile, err := gpsio.LogPackets(lg, &wg, packetLogPath, false, formats)
 	if err != nil {
 		result.failure = "opening packet log: " + err.Error()
-		closeDevice(lg, conn, &result)
+		closeDevice(lg, conn, device, &result.failure)
 		return
 	}
 	if pktLog != nil {
@@ -267,7 +352,7 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 		func(tried []int) bool { return len(tried) >= silentTryLimit },
 	)
 	if err != nil {
-		result.failure = describeSerialError(err)
+		result.failure = serialDetect.describeError(err)
 	}
 
 	conn.Stop()
@@ -278,24 +363,116 @@ func probeDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath str
 	if logFile != nil {
 		logFile.Close(lg)
 	}
-	closeDevice(lg, conn, &result)
+	closeDevice(lg, conn, device, &result.failure)
 	return
 }
 
-// closeDevice closes conn, keeping the close error only when the probe
-// itself produced none. A probe that already failed has a more relevant
-// failure to report, and each port gets exactly one output line, so the two
-// cannot be combined.
-func closeDevice(lg *slog.Logger, conn *gpsio.SerialConn, result *probeResult) {
+type captureResult struct {
+	packets int
+	failure string
+}
+
+func (r captureResult) exitCode() int {
+	if r.failure != "" {
+		return 1
+	}
+	if r.packets == 0 {
+		return 2
+	}
+	return 0
+}
+
+func (r captureResult) description() string {
+	if r.failure != "" {
+		return r.failure
+	}
+	return "no output received from the device"
+}
+
+func captureDevice(ctx context.Context, lg *slog.Logger, device string, speed int, packetLogPath string, timeout time.Duration) (result captureResult) {
+	conn, _, err := gpsio.OpenSerial(device, speed)
+	if err != nil {
+		result.failure = serialCapture.describeError(err)
+		return
+	}
+
+	formats := gpsreg.CreatePacketFormats(nil)
+	var wg sync.WaitGroup
+	pktLog, logFile, err := gpsio.LogPackets(lg, &wg, packetLogPath, false, formats)
+	if err != nil {
+		result.failure = "opening packet log: " + err.Error()
+		closeDevice(lg, conn, device, &result.failure)
+		return
+	}
+	if pktLog != nil {
+		conn.SetPacketLog(pktLog)
+	}
+
+	scanCtx, cancelScan := context.WithCancel(context.Background())
+	packetCh := make(chan scan.Packet, 1)
+	wg.Go(func() { gpsio.Scan(scanCtx, lg, conn, packetCh, pktLog, formats) })
+	result.packets, err = capturePackets(ctx, lg, packetCh, timeout)
+	if err != nil {
+		result.failure = err.Error()
+	}
+
+	conn.Stop()
+	cancelScan()
+	for pkt := range packetCh {
+		if len(pkt.Data) != 0 {
+			result.packets++
+		}
+	}
+	wg.Wait()
+	if logFile != nil {
+		logFile.Close(lg)
+	}
+	closeDevice(lg, conn, device, &result.failure)
+	return
+}
+
+func capturePackets(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, timeout time.Duration) (int, error) {
+	var timerC <-chan time.Time
+	if timeout == 0 {
+		lg.Info("capturing packets until interrupted")
+	} else {
+		lg.Debug("capturing packets", "duration", timeout)
+		timer := time.NewTimer(timeout)
+		defer timer.Stop()
+		timerC = timer.C
+	}
+	count := 0
+	for {
+		select {
+		case <-ctx.Done():
+			lg.Debug("capture interrupted")
+			return count, nil
+		case <-timerC:
+			lg.Debug("capture complete")
+			return count, nil
+		case pkt, ok := <-packetCh:
+			if !ok {
+				return count, errors.New("serial input ended unexpectedly")
+			}
+			if len(pkt.Data) != 0 {
+				count++
+			}
+		}
+	}
+}
+
+// closeDevice closes conn, keeping the close error only when the read
+// operation itself produced none. An existing failure is more relevant.
+func closeDevice(lg *slog.Logger, conn *gpsio.SerialConn, device string, failure *string) {
 	closeErr := conn.Close()
 	if closeErr == nil {
 		return
 	}
-	if result.failure == "" {
-		result.failure = closeErr.Error()
+	if *failure == "" {
+		*failure = closeErr.Error()
 		return
 	}
-	lg.Debug("closing the serial device failed after an unsuccessful probe", "device", result.device, "error", closeErr)
+	lg.Debug("closing the serial device failed after an unsuccessful read", "device", device, "error", closeErr)
 }
 
 func scanPorts(ctx context.Context, lg *slog.Logger, jsonl bool) error {
@@ -361,7 +538,7 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 	return commandError{msg: "serial scan did not detect a device", code: bestCode, quiet: true}
 }
 
-func describeSerialError(err error) string {
+func (op serialOperation) describeError(err error) string {
 	switch {
 	case errors.Is(err, context.Canceled):
 		return "interrupted"
@@ -369,7 +546,7 @@ func describeSerialError(err error) string {
 		return "permission denied; add this user to the serial-port access group (usually dialout)"
 	case isLocked(err):
 		return "device is locked by another process"
-	case errors.Is(err, term.ErrNotATTY):
+	case op == serialDetect && errors.Is(err, term.ErrNotATTY):
 		return "speed detection requires a serial device"
 	default:
 		return err.Error()
