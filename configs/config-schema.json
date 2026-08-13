@@ -55,6 +55,45 @@
         },
         "speed": {
           "type": "integer"
+        },
+        "pps": {
+          "type": "object",
+          "properties": {
+            "pin": {
+              "type": "string",
+              "enum": ["cts", "dcd", "dsr", "ri"]
+            }
+          },
+          "required": ["pin"]
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "object",
+          "properties": {
+            "pps": {
+              "type": "object",
+              "properties": {
+                "delayUncertainty": {
+                  "description": "Uncertainty in measured pulse-to-message delay (s)",
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0.005
+                },
+                "maxDelay": {
+                  "description": "Maximum post-pulse message delay (s)",
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0.8
+                }
+              }
+            }
+          }
         }
       }
     },

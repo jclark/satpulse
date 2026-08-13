@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/median"
@@ -106,6 +107,7 @@ type Dispatcher struct {
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
+	serialPPS             *serialpps.Generator
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
@@ -125,6 +127,7 @@ func NewDispatcher(
 	controller *phcsync.Controller,
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
+	serialPPS *serialpps.Generator,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
@@ -170,9 +173,12 @@ func NewDispatcher(
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
-	// In serial timing mode (no PHC, but refclock configured), feed
-	// NTP samples directly from time messages.
-	if controller == nil && (rc != nil || shm != nil) {
+	if serialPPS != nil {
+		d.serialPPS = serialPPS
+		timeMsgBuffer.SetMsgUTCTimer(serialPPS)
+	} else if controller == nil && (rc != nil || shm != nil) {
+		// In serial timing mode (no PHC, but refclock configured), feed
+		// NTP samples directly from time messages.
 		timeMsgBuffer.SetMsgUTCTimer(&d)
 	}
 	err := d.lf.Open(eventLogPath, true)
@@ -182,9 +188,12 @@ func NewDispatcher(
 	return &d, nil
 }
 
-const tickPeriod = time.Second / 4
+const (
+	tickPeriod                = time.Second / 4
+	serialPPSFirstEdgeTimeout = 30 * time.Second
+)
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, serialPPSCh <-chan serialpps.Observation, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
 	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
@@ -204,6 +213,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
+	var firstSerialPPSDeadline <-chan time.Time
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -212,6 +222,11 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	if tsCh != nil {
 		// give a warning if we haven't received a timestamp by the time this fires
 		firstTsDeadline = time.After(time.Second * 2)
+	}
+	if serialPPSCh != nil {
+		// Adaptive polling can take several seconds to acquire a narrow pulse.
+		// Allow comfortably more before warning.
+		firstSerialPPSDeadline = time.After(serialPPSFirstEdgeTimeout)
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
@@ -223,7 +238,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	staleEra := ts.StaleEra
 	nSkipped := 0
 
-	for tsCh != nil || pktCh != nil || pullPktCh != nil {
+	for tsCh != nil || serialPPSCh != nil || pktCh != nil || pullPktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if !ok {
@@ -255,6 +270,17 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 				}
 				d.timestamp(e)
 			}
+		case observation, ok := <-serialPPSCh:
+			if ok {
+				if observation.Settled {
+					firstSerialPPSDeadline = nil
+				}
+				d.serialPPSObservation(observation)
+			} else {
+				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
+				serialPPSCh = nil
+				firstSerialPPSDeadline = nil
+			}
 
 		case pkt, ok := <-pktCh:
 			if ok {
@@ -275,11 +301,31 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
+		case <-firstSerialPPSDeadline:
+			lg.Warn("no serial PPS edges are being received; check pps.pin in the [serial] table, PPS wiring, and receiver pulse width")
+			firstSerialPPSDeadline = nil
 		case <-sig:
 			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)
 		}
 	}
+}
+
+func (d *Dispatcher) serialPPSObservation(observation serialpps.Observation) {
+	if observation.Settled {
+		d.serialPPSEdge(observation.Edge)
+	}
+}
+
+func (d *Dispatcher) serialPPSEdge(edge serialpps.Edge) {
+	if d.serialPPS == nil {
+		panic("serial PPS edge channel wired without a Generator")
+	}
+	sample, ok := d.serialPPS.Edge(edge)
+	if !ok {
+		return
+	}
+	d.MsgUTCTime(sample.Reference, sample.System, sample.Leap)
 }
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {

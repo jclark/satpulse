@@ -16,6 +16,7 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 )
@@ -166,7 +167,7 @@ func TestDispatcherRunEmitsPulledRTCMCorReport(t *testing.T) {
 	}
 	close(pullPktCh)
 
-	d.Run(nil, pktCh, pullPktCh)
+	d.Run(nil, nil, pktCh, pullPktCh)
 
 	if len(observer.msgs) != 1 {
 		t.Fatalf("observer got %d CorReport messages, want 1", len(observer.msgs))
@@ -276,6 +277,42 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 		}
 	default:
 		t.Fatalf("refclock sample was not sent")
+	}
+}
+
+func TestDispatcherSerialPPSObservationWritesSettledSample(t *testing.T) {
+	shm := &fakeSHM{precision: -9}
+	observer := &ntpSampleObserver{}
+	g := serialpps.NewGenerator(serialpps.DefaultConfig())
+	d := &Dispatcher{
+		serialPPS: g,
+		shm:       shm,
+		obs:       observer,
+		lg:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+	msgUTC := time.Unix(1_000, 0).UTC()
+	msgRead := time.Unix(900, 125_000_000)
+	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
+	edge := time.Unix(900, 1_000_000)
+	d.serialPPSObservation(serialpps.Observation{Edge: serialpps.Edge{Wall: edge, Mono: edge}})
+	if len(shm.writes) != 0 {
+		t.Fatalf("unsettled observation produced %d SHM writes, want none", len(shm.writes))
+	}
+	d.serialPPSObservation(serialpps.Observation{Edge: serialpps.Edge{Wall: edge, Mono: edge}, Settled: true})
+
+	if len(shm.writes) != 1 {
+		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
+	}
+	w := shm.writes[0]
+	wantRef := time.Unix(1_000, 0).UTC()
+	if !w.clock.Equal(wantRef) || !w.receive.Equal(edge) || w.leap != ptime.LeapSecondPositive {
+		t.Fatalf("SHM write = %+v, want clock %v receive %v leap positive", w, wantRef, edge)
+	}
+	if observer.count != 1 || !observer.sys.Equal(edge) || observer.leap != ptime.LeapSecondPositive || observer.phc != 0 {
+		t.Fatalf("observer sample = count %d sys %v leap %v phc %v", observer.count, observer.sys, observer.leap, observer.phc)
+	}
+	if want := wantRef.Sub(edge).Seconds(); observer.offset != want {
+		t.Fatalf("observer offset = %v, want %v", observer.offset, want)
 	}
 }
 

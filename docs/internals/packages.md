@@ -184,11 +184,15 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `time/internal/serialpps`.
+
 ### time/internal/
 
 These packages are the main building blocks for satpulsed; they are in the application layer and are not importable outside `time/`.
 
 `time/internal/ts` implements a goroutine that reads external timestamps from the PTP hardware clock and sends those to a channel. These external timestamps are the time pulses emitted by the GPS receiver.
+
+`time/internal/serialpps` detects PPS edges on serial modem-control input lines and combines their system timestamps with recent receiver UTC messages to generate refclock samples.
 
 `time/internal/gpsevent` provides the main event handling loop after GPS configuration is done. It receives GPS packets from `gps/app/gpsio` and then uses the appropriate protocol implementation to construct protocol-independent messages that it passes to `time/internal/phcsync`. It also receives timestamps from `time/internal/ts` and passes them to `time/internal/phcsync`.
 
@@ -257,8 +261,6 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 `internal/packcmd` implements `pack` subcommand of satpulsetool. It reads a JSONL packet log and writes selected packets as a raw byte stream, optionally preserving inter-packet timing.
 
 `internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
-
-`internal/serialcmd` implements the `serial` subcommand of satpulsetool.
 
 `internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware.
 

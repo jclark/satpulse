@@ -58,6 +58,7 @@ type Term interface {
 	Speed() int
 	TransmitTime(int) time.Duration
 	DevKind() DevKind
+	ModemControlLineState() (ModemControlLineState, error)
 	Flush() error
 	Drain() error
 	Restore() error
@@ -67,10 +68,9 @@ type Term interface {
 `Open` returns `(Term, error)` rather than `(*Term, error)`. Calls that infer
 the result type and use only the required `Term` methods continue to work
 unchanged. An inferred result that calls a concrete-only or optional method
-must add the corresponding capability assertion; `pollpps` is the in-tree
-example because `ModemStatus` is deliberately absent from `Term`. Functions,
-fields, and variables that explicitly name `*term.Term` change to `term.Term`;
-a pointer to an interface is never used.
+must add the corresponding capability assertion. Functions, fields, and
+variables that explicitly name `*term.Term` change to `term.Term`; a pointer
+to an interface is never used.
 
 The platform-specific `Open` functions also return `(Term, error)`, not a
 concrete pointer. Each allocates its concrete implementation, calls its private
@@ -89,26 +89,12 @@ belong in `Term` with a boolean availability method and an unsupported stub.
 They are represented by separate interfaces and discovered with type
 assertions.
 
-The existing Unix-only raw modem status operation becomes such a capability:
+Reading the modem control input lines is not such a capability: the
+`ModemControlLineState` encoding is portable and both implementations fill it
+from their native call, so it is a `Term` method and `pollpps` uses it
+directly.
 
-```go
-type ModemStatusReader interface {
-	ModemStatus() (int, error)
-}
-```
-
-`ModemStatusReader` remains in the non-Windows source alongside the existing
-`MODEM_CTS`, `MODEM_DCD`, `MODEM_DSR`, and `MODEM_RI` constants. Its result is
-explicitly a Unix `TIOCM_*`-encoded mask, not a portable modem-state encoding.
-Any non-termios implementation that chooses to implement this transitional
-capability must translate its native flags into those bits.
-
-The non-Windows `pollpps` diagnostic asserts `ModemStatusReader` before using
-it. If the assertion fails, it exits with a clear unsupported-capability error
-before starting the monitoring loop. Windows does not need to implement an
-artificial `ModemStatus` method.
-
-The same rule applies to later serial-PPS work: blocking modem-control change
+The rule applies to later serial-PPS work instead: blocking modem-control change
 notification will be a separate interface implemented only by backends that
 provide it. It will not add `CanWaitModemControlLineChange` to `Term`.
 
@@ -228,9 +214,9 @@ the type change; otherwise retain the existing terminology.
   capability interfaces in their build-tagged files.
 - Rename `term.go` to `term_unix.go` and keep its existing `!windows` build
   tag. It retains `Attr`, `AttrSetter`, the attribute setters and speed helpers,
-  the Unix modem constants and `ModemStatusReader`, `File`, `openFallback`, and
-  the existing Unix implementation code. Rename the concrete type and all its
-  receivers to `unixTerm`, rename `Init` to the private `init` helper, and
+  `File`, `openFallback`, and the existing Unix implementation code. Rename the
+  concrete type and all its receivers to `unixTerm`, rename `Init` to the
+  private `init` helper, and
   change its exported `Open` to return `Term`.
 - Rename the concrete type and receivers in `term_windows.go` to
   `windowsTerm`; retain the Windows `Attr` machinery there, rename `Init` to

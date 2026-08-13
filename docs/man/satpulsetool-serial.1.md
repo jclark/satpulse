@@ -7,6 +7,7 @@ satpulsetool-serial - examine serial ports
 **satpulsetool** [*global options*] **serial** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-a**\|**\-\-all**] [**\-d**\|**\-\-serial\-device** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-info**] [**\-j**\|**\-\-jsonl**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** *cts*\|*dcd*\|*dsr*\|*ri*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
@@ -15,6 +16,7 @@ satpulsetool-serial - examine serial ports
 The **satpulsetool** **serial** command can perform the following operations related to serial ports:
 
 * detect the speed of a connected GPS receiver by trying to read data from the serial port at different speeds;
+* detect pulse-per-second (PPS) edges on a modem-control pin;
 * discover the available serial ports;
 * show information about a serial port without opening it (this is useful mainly with USB serial ports);
 * log packets received from a serial port.
@@ -38,6 +40,10 @@ Otherwise, the default operation is to discover the available serial ports and s
 **\-i**, **\-\-info**
 : Show information about serial ports without opening or reading from them.
 
+**\-p**, **\-\-pps\-pin** *cts*\|*dcd*\|*dsr*\|*ri*
+: Detect PPS edges on the specified modem-control pin.
+This causes speed detection not to be performed.
+
 **\-\-packet\-log** *path*
 : Write a log of packets received to *path*.
 The log is in JSON lines format.
@@ -47,12 +53,13 @@ Requires **\-d**.
 : Set the speed of the serial port.
 This causes speed detection not to be performed.
 A speed of 0 uses the current speed of the serial port.
-Requires **\-d** and **\-\-packet\-log**.
+Requires **\-d**, and **\-p** or **\-\-packet\-log**.
 
 **\-t**, **\-\-timeout** *seconds*
-: Stop capturing packets after *seconds*.
-The default is 0, meaning capture until interrupted.
-Requires **\-d**, **\-s** and **\-\-packet\-log**.
+: Stop detecting PPS edges or capturing packets after *seconds*.
+A value of 0 means run until interrupted.
+The default is 10 with **\-p**, and 0 otherwise.
+Requires **\-p**, or **\-s** and **\-\-packet\-log**.
 
 **\-j**, **\-\-jsonl**
 : Write output in JSON Lines format.
@@ -61,6 +68,7 @@ for a USB port a `usb` object with numeric `vid` and `pid` fields,
 for a port with a USB serial number a `serial` string,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
+With **\-p**, an edge object has a `device` string, a `t` string giving the edge time as an RFC 3339 UTC timestamp, an `uncertainty` number in seconds, and a `settled` boolean that is true once the uncertainty has stabilized.
 
 # EXIT STATUS
 
@@ -71,7 +79,7 @@ A detected speed object has a `device` string and a numeric `speed`.
 : Error
 
 **2**
-: No data found: no serial ports found, the **\-d** *path* matched no discovered port, no output received from the device, or no packets captured
+: No data found: no serial ports found, the **\-d** *path* matched no discovered port, no output received from the device, no packets captured, or no PPS edges detected
 
 # EXAMPLES
 
@@ -106,6 +114,14 @@ Capture packets for 30 seconds at 38400 bits per second:
 Capture packets at the port's current speed until interrupted:
 
     satpulsetool serial -d /dev/ttyUSB0 -s 0 --packet-log capture.jsonl
+
+Watch for PPS pulses on the CTS pin of every serial port:
+
+    satpulsetool serial -p cts -a
+
+Monitor PPS edges on the CTS pin for 30 seconds at 38400 bits per second, logging received packets:
+
+    satpulsetool serial -p cts -s 38400 -t 30 -d /dev/ttyUSB0 --packet-log capture.jsonl
 
 Show receiver information at the detected speed:
 

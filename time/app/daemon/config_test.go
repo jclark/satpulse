@@ -151,6 +151,97 @@ ntrip.nmeaSend = true`
 	}
 }
 
+func TestSerialPPSConfig(t *testing.T) {
+	tests := []struct {
+		pin string
+		ok  bool
+	}{
+		{pin: "cts", ok: true},
+		{pin: "dcd", ok: true},
+		{pin: "dsr", ok: true},
+		{pin: "ri", ok: true},
+		{pin: ""},
+		{pin: "CTS"},
+		{pin: "rts"},
+	}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range tests {
+		t.Run(tc.pin, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader("[serial.pps]\npin = \"" + tc.pin + "\""))
+			if err != nil {
+				t.Fatalf("readConfig: %v", err)
+			}
+			if cfg.Serial.PPS == nil || cfg.Serial.PPS.Pin != tc.pin {
+				t.Fatalf("serial PPS config = %+v", cfg.Serial.PPS)
+			}
+			err = cfg.Validate(lg)
+			if (err == nil) != tc.ok {
+				t.Fatalf("Validate error = %v, want success %v", err, tc.ok)
+			}
+		})
+	}
+}
+
+func TestSerialPPSConfigRejectsPHC(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+pin = "cts"
+
+[phc]
+interface = "eth0"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface in the [phc] table") {
+		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
+	}
+}
+
+func TestSerialPPSSampleConfig(t *testing.T) {
+	cfg := defaultConfig()
+	if got := cfg.Sample.Serial.PPS.DelayUncertainty; got != 0.005 {
+		t.Errorf("default delayUncertainty = %v, want 0.005", got)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.8 {
+		t.Errorf("default maxDelay = %v, want 0.8", got)
+	}
+
+	cfg, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+delayUncertainty = 0.01
+maxDelay = 0.7
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Sample.Serial.PPS.DelayUncertainty; got != 0.01 {
+		t.Errorf("configured delayUncertainty = %v, want 0.01", got)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.7 {
+		t.Errorf("configured maxDelay = %v, want 0.7", got)
+	}
+	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+}
+
+func TestSerialPPSSampleConfigRejectsWideInterval(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+delayUncertainty = 0.2
+maxDelay = 0.8
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "delayUncertainty + maxDelay") {
+		t.Fatalf("Validate error = %v, want interval-width error", err)
+	}
+}
+
 func TestPTPConfig(t *testing.T) {
 	cfgStr := `[ptp]
 	ptp4l.udsAddress = "/tmp/ptp4l"
@@ -199,6 +290,12 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)
 	}
+	cfg.Serial.PPS = &SerialPPSConfig{Pin: "cts"}
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != serialPPSSHMPrecision {
+		t.Fatalf("serial-PPS SHM fixed precision = %v, want %d", got, serialPPSSHMPrecision)
+	}
+	cfg.Serial.PPS = nil
 	cfg, err := readConfig(strings.NewReader(`[ntp]
 shm.segment = 2
 shm.precision = -23`))
@@ -213,6 +310,11 @@ shm.precision = -23`))
 	got = cfg.shmFixedPrecision()
 	if got == nil || *got != -23 {
 		t.Fatalf("configured PHC-mode SHM fixed precision = %v, want -23", got)
+	}
+	cfg.NTP.SHM.Precision = nil
+	got = cfg.shmFixedPrecision()
+	if got != nil {
+		t.Fatalf("default PHC precision = %v, want nil", *got)
 	}
 }
 

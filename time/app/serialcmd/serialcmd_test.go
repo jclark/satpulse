@@ -15,6 +15,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/scan"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 )
 
 func TestParseFlags(t *testing.T) {
@@ -35,21 +36,34 @@ func TestParseFlags(t *testing.T) {
 		{name: "capture at speed", args: []string{"-j", "-s", "38400", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{jsonl: true, device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl"}},
 		{name: "timed capture", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1.25"}, want: flagVars{device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl", timeout: 1250 * time.Millisecond}},
 		{name: "capture at current speed", args: []string{"-s", "0", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{device: "/dev/ttyS0", deviceSpeedSet: true, packetLog: "capture.jsonl"}},
+		{name: "pps on cts", args: []string{"-p", "cts", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
+		{name: "pps all ports", args: []string{"--pps-pin", "dcd", "-a"}, want: flagVars{all: true, ppsSet: true, ppsPin: gpsio.ModemDCD, timeout: defaultPPSTimeout}},
+		{name: "pps at speed", args: []string{"-p", "ri", "-s", "38400", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemRI, deviceSpeed: 38400, deviceSpeedSet: true, timeout: defaultPPSTimeout}},
+		{name: "pps with packet log and timeout", args: []string{"-p", "dsr", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl", "-t", "30"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDSR, packetLog: "capture.jsonl", timeout: 30 * time.Second}},
+		{name: "pps until interrupted", args: []string{"-p", "cts", "-t", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS}},
+		{name: "pps JSONL", args: []string{"-j", "-p", "cts", "-a"}, want: flagVars{jsonl: true, all: true, ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "positional port", args: []string{"/dev/ttyS0"}, wantErr: true},
 		{name: "all and device", args: []string{"-a", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "info and speed", args: []string{"-i", "-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "info and packet log", args: []string{"-i", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "info and timeout", args: []string{"-i", "-d", "/dev/ttyS0", "-t", "1"}, wantErr: true},
+		{name: "info and pps", args: []string{"-i", "-p", "cts", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "pps without target", args: []string{"-p", "cts"}, wantErr: true},
+		{name: "pps invalid pin", args: []string{"-p", "rts", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "pps value required", args: []string{"--pps-pin", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "pps speed without device", args: []string{"-a", "-p", "cts", "-s", "38400"}, wantErr: true},
+		{name: "pps packet log with all", args: []string{"-a", "-p", "cts", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "speed without device", args: []string{"-s", "38400", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "speed with all", args: []string{"-a", "-s", "38400", "--packet-log", "capture.jsonl"}, wantErr: true},
-		{name: "speed without capture", args: []string{"-d", "/dev/ttyS0", "-s", "38400"}, wantErr: true},
+		{name: "speed without purpose", args: []string{"-d", "/dev/ttyS0", "-s", "38400"}, wantErr: true},
 		{name: "negative speed", args: []string{"-d", "/dev/ttyS0", "-s", "-1", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "non-numeric speed", args: []string{"-d", "/dev/ttyS0", "-s", "auto", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "packet log without device", args: []string{"-a", "--packet-log", "capture.jsonl"}, wantErr: true},
-		{name: "timeout without capture", args: []string{"-d", "/dev/ttyS0", "-t", "1"}, wantErr: true},
+		{name: "timeout without purpose", args: []string{"-d", "/dev/ttyS0", "-t", "1"}, wantErr: true},
 		{name: "timeout with detection", args: []string{"-d", "/dev/ttyS0", "--packet-log", "capture.jsonl", "-t", "1"}, wantErr: true},
 		{name: "negative timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "-1"}, wantErr: true},
+		{name: "negative pps timeout", args: []string{"-p", "cts", "-d", "/dev/ttyS0", "-t", "-1"}, wantErr: true},
 		{name: "NaN timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "NaN"}, wantErr: true},
 		{name: "infinite timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "+Inf"}, wantErr: true},
 		{name: "overflowing timeout", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1e20"}, wantErr: true},
@@ -91,7 +105,7 @@ func TestCmdUsageError(t *testing.T) {
 }
 
 func TestParseFlagsTimeoutDependencies(t *testing.T) {
-	const want = "--timeout requires --device-speed and --packet-log"
+	const want = "--timeout requires --pps-pin, or --device-speed and --packet-log"
 	for _, args := range [][]string{
 		{"-d", "/dev/ttyS0", "-t", "1"},
 		{"-d", "/dev/ttyS0", "-s", "38400", "-t", "1"},
@@ -209,6 +223,137 @@ func TestPrintSpeedInfo(t *testing.T) {
 	}
 }
 
+func TestEdgePrinter(t *testing.T) {
+	observation := serialpps.Observation{
+		Edge: serialpps.Edge{
+			Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
+		},
+		Uncertainty: 16 * time.Microsecond,
+	}
+	for _, tc := range []struct {
+		name       string
+		jsonl      bool
+		withDevice bool
+		want       string
+	}{
+		{name: "human", want: "14:23:05.123456\n"},
+		{name: "human with device", withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
+		{name: "JSONL", jsonl: true, want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settled\":false}\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var output bytes.Buffer
+			pr := &edgePrinter{out: &output, jsonl: tc.jsonl, withDevice: tc.withDevice}
+			if err := pr.print("/dev/ttyS0", observation); err != nil {
+				t.Fatal(err)
+			}
+			if got := output.String(); got != tc.want {
+				t.Errorf("output = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestPPSResult(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		result   ppsResult
+		wantCode int
+		wantDesc string
+	}{
+		{name: "edges", result: ppsResult{edges: 3}},
+		{name: "no edges", wantCode: 2, wantDesc: "no PPS edges detected"},
+		{name: "failure", result: ppsResult{failure: "device is locked"}, wantCode: 1, wantDesc: "device is locked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.result.exitCode(); got != tc.wantCode {
+				t.Errorf("exitCode() = %d, want %d", got, tc.wantCode)
+			}
+			if tc.wantCode != 0 {
+				if got := tc.result.description(); got != tc.wantDesc {
+					t.Errorf("description() = %q, want %q", got, tc.wantDesc)
+				}
+			}
+		})
+	}
+}
+
+func TestMonitorPortList(t *testing.T) {
+	ports := []serialenum.Port{{Device: "pulsing"}, {Device: "quiet"}, {Device: "error"}}
+	monitor := func(_ context.Context, lg *slog.Logger, device string) ppsResult {
+		lg.Info("monitoring")
+		switch device {
+		case "pulsing":
+			return ppsResult{device: device, edges: 5}
+		case "quiet":
+			return ppsResult{device: device}
+		default:
+			return ppsResult{device: device, failure: "device is locked by another process"}
+		}
+	}
+	var stderr, logBuf bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logBuf, nil))
+	if err := monitorPortList(context.Background(), lg, ports, monitor, &stderr); err != nil {
+		t.Fatalf("monitorPortList() error = %v, want nil because one port pulsed", err)
+	}
+	for _, want := range []string{
+		"quiet: no PPS edges detected\n",
+		"error: device is locked by another process\n",
+	} {
+		if !strings.Contains(stderr.String(), want) {
+			t.Errorf("stderr %q does not contain %q", stderr.String(), want)
+		}
+	}
+	for _, port := range ports {
+		if want := "device=" + port.Device; !strings.Contains(logBuf.String(), want) {
+			t.Errorf("log %q does not contain %q", logBuf.String(), want)
+		}
+	}
+}
+
+func TestMonitorPortListNoPulses(t *testing.T) {
+	ports := []serialenum.Port{{Device: "quiet"}, {Device: "error"}}
+	monitor := func(_ context.Context, _ *slog.Logger, device string) ppsResult {
+		if device == "quiet" {
+			return ppsResult{device: device}
+		}
+		return ppsResult{device: device, failure: "failed"}
+	}
+	err := monitorPortList(context.Background(), slog.Default(), ports, monitor, io.Discard)
+	var cmdErr commandError
+	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 2 || !cmdErr.Quiet() {
+		t.Fatalf("monitorPortList() error = %#v, want quiet exit code 2", err)
+	}
+}
+
+func TestMonitorPortListOutputFailure(t *testing.T) {
+	parent, stop := context.WithTimeout(context.Background(), time.Second)
+	defer stop()
+	ctx, cancel := context.WithCancelCause(parent)
+	defer cancel(nil)
+	reader, writer := io.Pipe()
+	reader.CloseWithError(errors.New("broken pipe"))
+	defer writer.Close()
+	pr := &edgePrinter{out: writer, cancel: cancel}
+	ports := []serialenum.Port{{Device: "writer"}, {Device: "waiting"}}
+	monitor := func(ctx context.Context, _ *slog.Logger, device string) ppsResult {
+		if device == "writer" {
+			err := pr.print(device, serialpps.Observation{})
+			return ppsResult{device: device, failure: err.Error()}
+		}
+		<-ctx.Done()
+		return ppsResult{device: device}
+	}
+	var stderr bytes.Buffer
+	err := monitorPortList(ctx, slog.Default(), ports, monitor, &stderr)
+	var cmdErr commandError
+	if !errors.As(err, &cmdErr) || cmdErr.ExitCode() != 1 || cmdErr.Error() != "writing PPS timestamp: broken pipe" {
+		t.Fatalf("monitorPortList() error = %#v, want output failure with exit code 1", err)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("stderr = %q, want no per-port errors", stderr.String())
+	}
+}
+
 func TestDetectResultExitCode(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
@@ -294,6 +439,7 @@ func TestSerialOperationDescribeError(t *testing.T) {
 		{serialCapture, fmtWrap(os.ErrPermission), "permission denied; add this user to the serial-port access group (usually dialout)"},
 		{serialCapture, fmtWrap(testLockedError{}), "device is locked by another process"},
 		{serialDetect, term.ErrNotATTY, "speed detection requires a serial device"},
+		{serialPPS, term.ErrNotATTY, "PPS detection requires a serial device"},
 		{serialCapture, term.ErrNotATTY, "not a serial device"},
 		{serialCapture, errors.New("gone"), "gone"},
 	} {

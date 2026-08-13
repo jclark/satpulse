@@ -11,12 +11,14 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
@@ -28,6 +30,7 @@ const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
+	Sample     SampleConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
@@ -53,6 +56,19 @@ type UserConfig struct {
 type SerialConfig struct {
 	Device string
 	Speed  *int
+	PPS    *SerialPPSConfig `toml:"pps"`
+}
+
+type SerialPPSConfig struct {
+	Pin string `toml:"pin"`
+}
+
+type SampleConfig struct {
+	Serial SerialSampleConfig `toml:"serial"`
+}
+
+type SerialSampleConfig struct {
+	PPS serialpps.Config `toml:"pps"`
 }
 
 type PHCConfig struct {
@@ -96,7 +112,10 @@ type NTPSHMConfig struct {
 	Precision *int8  `toml:"precision"`
 }
 
-const serialSHMPrecision int8 = -1
+const (
+	serialSHMPrecision    int8 = -1
+	serialPPSSHMPrecision int8 = -11
+)
 
 type LogConfig struct {
 	Interval int    `toml:"interval"`
@@ -157,6 +176,7 @@ func readConfig(r io.Reader) (*Config, error) {
 func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
+	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
@@ -201,6 +221,17 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 // It is separate from LoadConfig because the config contains logging settings.
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
+	if cfg.Serial.PPS != nil {
+		if _, err := cfg.Serial.PPS.modemControlPin(); err != nil {
+			return &configError{err: err}
+		}
+		if cfg.PHC.Interface != "" {
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
+		}
+	}
+	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
+		return &configError{err: err}
+	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
@@ -215,6 +246,21 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	return nil
+}
+
+func (cfg SerialPPSConfig) modemControlPin() (gpsio.ModemControlPin, error) {
+	switch cfg.Pin {
+	case "cts":
+		return gpsio.ModemCTS, nil
+	case "dcd":
+		return gpsio.ModemDCD, nil
+	case "dsr":
+		return gpsio.ModemDSR, nil
+	case "ri":
+		return gpsio.ModemRI, nil
+	default:
+		return 0, fmt.Errorf("pps.pin %q in the [serial] table: must be one of cts, dcd, dsr, ri", cfg.Pin)
+	}
 }
 
 // userSet checks the top-level [[user]] table for empty or duplicate
@@ -289,6 +335,10 @@ func (cfg *NTPConfig) NewSHMWriter(lg *slog.Logger) (*ntpshm.Writer, error) {
 func (cfg *Config) shmFixedPrecision() *int8 {
 	if cfg.NTP.SHM != nil && cfg.NTP.SHM.Precision != nil {
 		return cfg.NTP.SHM.Precision
+	}
+	if cfg.Serial.PPS != nil {
+		p := serialPPSSHMPrecision
+		return &p
 	}
 	if cfg.PHC.Interface == "" {
 		p := serialSHMPrecision

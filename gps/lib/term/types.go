@@ -18,6 +18,7 @@ type Term interface {
 	Speed() int
 	TransmitTime(int) time.Duration
 	DevKind() DevKind
+	ModemControlPinState() (ModemControlPinState, error)
 	Flush() error
 	Drain() error
 	Restore() error
@@ -60,6 +61,38 @@ const (
 	DevBT
 	DevFIFO
 )
+
+// ModemControlPin identifies a modem control pin that is an input to the
+// host.
+type ModemControlPin int
+
+const (
+	ModemCTS ModemControlPin = iota
+	ModemDCD
+	ModemDSR
+	ModemRI
+)
+
+// ModemControlPinState is the set of asserted modem control input pins.
+// Its representation is independent of the platform's native modem-status
+// bits.
+type ModemControlPinState int
+
+// Asserted reports whether l is asserted in s.
+func (s ModemControlPinState) Asserted(l ModemControlPin) bool {
+	if l < ModemCTS || l > ModemRI {
+		return false
+	}
+	return s&(1<<l) != 0
+}
+
+func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
+	var state ModemControlPinState
+	for _, pin := range asserted {
+		state |= 1 << pin
+	}
+	return state
+}
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)
 // detected by Term.Read.
