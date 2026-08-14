@@ -101,8 +101,8 @@ func TestCommWaitError(t *testing.T) {
 func TestPinWatchCancel(t *testing.T) {
 	w := &pinWatch{handle: windows.InvalidHandle, pin: ModemCTS}
 	w.Cancel()
-	if c, missed, err := w.Wait(); !errors.Is(err, ErrCancelled) || c != (PinChange{}) || missed != 0 {
-		t.Fatalf("PinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
+	if c, missed, err := w.Wait(); !errors.Is(err, ErrCancelled) || c != (ModemControlPinChange{}) || missed != 0 {
+		t.Fatalf("ModemControlPinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
 	}
 }
 

@@ -321,14 +321,14 @@ type pinWatch struct {
 	cancelled atomic.Bool
 	inWait    atomic.Bool
 	// mu guards handle against a Cancel racing Close. Wait is excluded from
-	// Close by the PinWatch contract, but Cancel is not: gpsio cancels a
+	// Close by the ModemControlPinWatch contract, but Cancel is not: gpsio cancels a
 	// watch from Stop while the wait goroutine that owns it may be closing
 	// it, and a syscall on a handle value already reused would reach an
 	// unrelated object.
 	mu sync.Mutex
 }
 
-// NewPinWatch creates a watch on a duplicate of the terminal's handle, so it
+// NewModemControlPinWatch creates a watch on a duplicate of the terminal's handle, so it
 // remains usable after the terminal is closed. The duplicate names the same
 // file object, which is what the driver sees, so the event mask installed
 // here is the one the watch's WaitCommEvent waits on and the one Cancel
@@ -336,7 +336,7 @@ type pinWatch struct {
 // event history: installing it before every wait would open a window in which
 // a transition between two waits is lost, whereas with the mask left alone a
 // transition arriving while no wait is armed completes the next wait at once.
-func (t *windowsTerm) NewPinWatch(pin ModemControlPin) (PinWatch, error) {
+func (t *windowsTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
 	mask, err := commEventMask(pin)
 	if err != nil {
 		return nil, err
@@ -359,11 +359,11 @@ func (t *windowsTerm) NewPinWatch(pin ModemControlPin) (PinWatch, error) {
 // gives after the wakeup. A wait armed after Cancel fails with
 // ERROR_INVALID_PARAMETER because no wait events are set, so the sticky flag
 // is checked again before the error is classified.
-func (w *pinWatch) Wait() (PinChange, int, error) {
+func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
 	if w.cancelled.Load() {
-		return PinChange{}, 0, ErrCancelled
+		return ModemControlPinChange{}, 0, ErrCancelled
 	}
 	var events, n uint32
 	var wall, mono time.Time
@@ -371,16 +371,16 @@ func (w *pinWatch) Wait() (PinChange, int, error) {
 		return windows.WaitCommEvent(w.handle, &events, o)
 	}, &n, &wall, &mono)
 	if w.cancelled.Load() {
-		return PinChange{}, 0, ErrCancelled
+		return ModemControlPinChange{}, 0, ErrCancelled
 	}
 	if err != nil {
-		return PinChange{}, 0, w.wrapErr(commWaitError(err), "WaitCommEvent")
+		return ModemControlPinChange{}, 0, w.wrapErr(commWaitError(err), "WaitCommEvent")
 	}
 	state, err := readModemControlPinState(w.handle)
 	if err != nil {
-		return PinChange{}, 0, w.wrapErr(err, "GetCommModemStatus")
+		return ModemControlPinChange{}, 0, w.wrapErr(err, "GetCommModemStatus")
 	}
-	return PinChange{Wall: wall, Mono: mono, Asserted: state.Asserted(w.pin)}, 0, nil
+	return ModemControlPinChange{Wall: wall, Mono: mono, Asserted: state.Asserted(w.pin)}, 0, nil
 }
 
 // Cancel latches the watch closed and clears the event mask, which the serial
@@ -401,7 +401,7 @@ func (w *pinWatch) Cancel() {
 
 func (w *pinWatch) Close() error {
 	if w.inWait.Load() {
-		panic("term: PinWatch.Close during Wait")
+		panic("term: ModemControlPinWatch.Close during Wait")
 	}
 	w.mu.Lock()
 	h := w.handle
