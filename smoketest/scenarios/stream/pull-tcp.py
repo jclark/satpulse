@@ -17,7 +17,12 @@ from scenarios import stream
 CAPTURE_WRITES = True
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"
 PULL_SOURCE_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon-msm4-115200.jsonl"
-FACTOR = 10
+# check_pulled_rtcm demands exact delivery, so a stalled pty drain loses a stale
+# packet to the daemon's same-type prune once it stalls longer than 1/FACTOR
+# seconds (see stream/pull-ntrip). This scenario starts as stream/push-udp is
+# ending, so 8 is as far as it can go without lengthening the suite; that is a
+# 125 ms window, still short of the ~200 ms a macOS runner stalls for.
+FACTOR = 8
 
 
 def run(ctx: common.SmokeContext) -> None:

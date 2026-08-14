@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -49,19 +50,12 @@ var baudRates = []int{
 	230400, 460800, 921600,
 }
 
-type modemWaitState struct {
-	mu        sync.Mutex
-	cancelled bool
-	mask      uint32
-}
-
 type windowsTerm struct {
 	handle        windows.Handle
 	path          string
 	attr          Attr
 	dcbSaved      windows.DCB
 	timeoutsSaved windows.CommTimeouts
-	miwait        modemWaitState
 }
 
 var _ Term = (*windowsTerm)(nil)
@@ -202,7 +196,7 @@ func (t *windowsTerm) Read(buf []byte) (int, error) {
 		return 0, nil
 	}
 	var n uint32
-	err := t.overlapped(func(o *windows.Overlapped) error {
+	err := overlapped(t.handle, func(o *windows.Overlapped) error {
 		return windows.ReadFile(t.handle, buf, &n, o)
 	}, &n, nil, nil)
 	if err != nil {
@@ -226,7 +220,7 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 	total := 0
 	for len(buf) > 0 {
 		var n uint32
-		err := t.overlapped(func(o *windows.Overlapped) error {
+		err := overlapped(t.handle, func(o *windows.Overlapped) error {
 			return windows.WriteFile(t.handle, buf, &n, o)
 		}, &n, nil, nil)
 		if err != nil {
@@ -238,7 +232,10 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-func (t *windowsTerm) overlapped(op func(*windows.Overlapped) error, n *uint32, wall, mono *time.Time) error {
+// overlapped runs one operation on an overlapped handle to completion. When
+// wall is non-nil the clocks are read the instant the operation completes,
+// before anything else the caller might do.
+func overlapped(h windows.Handle, op func(*windows.Overlapped) error, n *uint32, wall, mono *time.Time) error {
 	event, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
 		return err
@@ -247,7 +244,7 @@ func (t *windowsTerm) overlapped(op func(*windows.Overlapped) error, n *uint32, 
 	o := windows.Overlapped{HEvent: event}
 	err = op(&o)
 	if errors.Is(err, windows.ERROR_IO_PENDING) {
-		err = windows.GetOverlappedResult(t.handle, &o, n, true)
+		err = windows.GetOverlappedResult(h, &o, n, true)
 	}
 	if wall != nil {
 		*wall = preciseNow()
@@ -286,9 +283,17 @@ const (
 
 // ModemControlPinState returns the asserted modem control input pins.
 func (t *windowsTerm) ModemControlPinState() (ModemControlPinState, error) {
-	var status uint32
-	if err := windows.GetCommModemStatus(t.handle, &status); err != nil {
+	state, err := readModemControlPinState(t.handle)
+	if err != nil {
 		return 0, t.wrapErr(err, "GetCommModemStatus")
+	}
+	return state, nil
+}
+
+func readModemControlPinState(h windows.Handle) (ModemControlPinState, error) {
+	var status uint32
+	if err := windows.GetCommModemStatus(h, &status); err != nil {
+		return 0, err
 	}
 	var state ModemControlPinState
 	if status&msCTSOn != 0 {
@@ -306,66 +311,109 @@ func (t *windowsTerm) ModemControlPinState() (ModemControlPinState, error) {
 	return state, nil
 }
 
-var _ ModemControlPinWaiter = (*windowsTerm)(nil)
+var _ ModemControlPinWatcher = (*windowsTerm)(nil)
 
-// WaitModemControlPinChange blocks in WaitCommEvent until pin may have
-// changed state, returning the time the wait returned as a precise wall
-// reading and an adjacent time.Now reading. The event mask is set only when
-// it changes: SetCommMask resets the event history, so setting it before
-// every wait could lose a transition between successive waits.
-func (t *windowsTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono time.Time, err error) {
-	mask, err := commEventMask(pin)
-	if err != nil {
-		return time.Time{}, time.Time{}, err
-	}
-	w := &t.miwait
-	w.mu.Lock()
-	if w.cancelled {
-		w.mu.Unlock()
-		now := time.Now()
-		return now, now, nil
-	}
-	if w.mask != mask {
-		err = windows.SetCommMask(t.handle, mask)
-		if err == nil {
-			w.mask = mask
-		}
-	}
-	w.mu.Unlock()
-	if err != nil {
-		return time.Time{}, time.Time{}, t.wrapErr(commWaitError(err), "SetCommMask")
-	}
-	var events uint32
-	var n uint32
-	err = t.overlapped(func(o *windows.Overlapped) error {
-		return windows.WaitCommEvent(t.handle, &events, o)
-	}, &n, &wall, &mono)
-	w.mu.Lock()
-	cancelled := w.cancelled
-	w.mu.Unlock()
-	if cancelled {
-		return wall, mono, nil
-	}
-	if err != nil {
-		return time.Time{}, time.Time{}, t.wrapErr(commWaitError(err), "WaitCommEvent")
-	}
-	return wall, mono, nil
+type pinWatch struct {
+	handle    windows.Handle
+	pin       ModemControlPin
+	path      string
+	cancelled atomic.Bool
+	inWait    atomic.Bool
+	// mu guards handle against a Cancel racing Close. Wait is excluded from
+	// Close by the PinWatch contract, but Cancel is not: gpsio cancels a
+	// watch from Stop while the wait goroutine that owns it may be closing
+	// it, and a syscall on a handle value already reused would reach an
+	// unrelated object.
+	mu sync.Mutex
 }
 
-// CancelModemControlPinWait makes a pending wait return promptly and all
-// future waits on this terminal return immediately. CancelIoEx is needed
-// before changing the event mask because some serial drivers serialize
-// SetCommMask behind a synchronous pending WaitCommEvent.
-func (t *windowsTerm) CancelModemControlPinWait() {
-	w := &t.miwait
-	w.mu.Lock()
-	if !w.cancelled {
-		w.cancelled = true
-		windows.CancelIoEx(t.handle, nil)
-		windows.SetCommMask(t.handle, 0)
-		w.mask = 0
+// NewPinWatch creates a watch on a duplicate of the terminal's handle, so it
+// remains usable after the terminal is closed. The duplicate names the same
+// file object, which is what the driver sees, so the event mask installed
+// here is the one the watch's WaitCommEvent waits on and the one Cancel
+// clears. The mask is installed once, because SetCommMask resets the driver's
+// event history: installing it before every wait would open a window in which
+// a transition between two waits is lost, whereas with the mask left alone a
+// transition arriving while no wait is armed completes the next wait at once.
+func (t *windowsTerm) NewPinWatch(pin ModemControlPin) (PinWatch, error) {
+	mask, err := commEventMask(pin)
+	if err != nil {
+		return nil, err
 	}
+	proc := windows.CurrentProcess()
+	var h windows.Handle
+	if err := windows.DuplicateHandle(proc, t.handle, proc, &h, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
+		return nil, t.wrapErr(err, "DuplicateHandle")
+	}
+	if err := windows.SetCommMask(h, mask); err != nil {
+		windows.CloseHandle(h)
+		return nil, t.wrapErr(commWaitError(err), "SetCommMask")
+	}
+	return &pinWatch{handle: h, pin: pin, path: t.path}, nil
+}
+
+// Wait blocks in WaitCommEvent until the pin's event fires. Windows keeps no
+// transition counter, so this is the degraded mode: nothing is withheld,
+// missed is always zero, and Asserted is the best reading GetCommModemStatus
+// gives after the wakeup. A wait armed after Cancel fails with
+// ERROR_INVALID_PARAMETER because no wait events are set, so the sticky flag
+// is checked again before the error is classified.
+func (w *pinWatch) Wait() (PinChange, int, error) {
+	w.inWait.Store(true)
+	defer w.inWait.Store(false)
+	if w.cancelled.Load() {
+		return PinChange{}, 0, ErrCancelled
+	}
+	var events, n uint32
+	var wall, mono time.Time
+	err := overlapped(w.handle, func(o *windows.Overlapped) error {
+		return windows.WaitCommEvent(w.handle, &events, o)
+	}, &n, &wall, &mono)
+	if w.cancelled.Load() {
+		return PinChange{}, 0, ErrCancelled
+	}
+	if err != nil {
+		return PinChange{}, 0, w.wrapErr(commWaitError(err), "WaitCommEvent")
+	}
+	state, err := readModemControlPinState(w.handle)
+	if err != nil {
+		return PinChange{}, 0, w.wrapErr(err, "GetCommModemStatus")
+	}
+	return PinChange{Wall: wall, Mono: mono, Asserted: state.Asserted(w.pin)}, 0, nil
+}
+
+// Cancel latches the watch closed and clears the event mask, which the serial
+// driver completes a pending wait on immediately, so a cancelled Wait returns
+// without waiting for the pin. Clearing the mask on the overlapped file object
+// is not queued behind the pending wait the way it would be on a synchronous
+// one.
+func (w *pinWatch) Cancel() {
+	if w.cancelled.Swap(true) {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.handle != windows.InvalidHandle {
+		windows.SetCommMask(w.handle, 0)
+	}
+}
+
+func (w *pinWatch) Close() error {
+	if w.inWait.Load() {
+		panic("term: PinWatch.Close during Wait")
+	}
+	w.mu.Lock()
+	h := w.handle
+	w.handle = windows.InvalidHandle
 	w.mu.Unlock()
+	return w.wrapErr(windows.CloseHandle(h), "close")
+}
+
+func (w *pinWatch) wrapErr(err error, op string) error {
+	if err == nil {
+		return nil
+	}
+	return &os.PathError{Op: op, Path: w.path, Err: err}
 }
 
 func commEventMask(pin ModemControlPin) (uint32, error) {

@@ -1,6 +1,7 @@
 package gpsio
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +25,14 @@ import (
 // Stop can be called before Close to prevent further reads and writes.
 // Close will wait for any in-progress reads or writes to complete,
 // before restoring serial settings and closing the underlying file descriptor.
+// At most one WaitModemControlPinChange call may be in progress, and it must
+// have returned before Close is called. Its context cancels it; Stop prevents
+// further waits and cancels the watch, but a call already in progress may not
+// return until the pin next changes or its context fires. After an error
+// return the logical watch is released; a cancelled wait may leave a goroutine
+// parked until the process exits, holding a private descriptor (and the port's
+// flock) that it releases if it eventually wakes. That private descriptor
+// makes the wait safe relative to Close.
 type SerialConn struct {
 	file         ioFile
 	kind         term.DevKind
@@ -33,6 +42,8 @@ type SerialConn struct {
 	writeLock    chan struct{}
 	pktLog       *PacketLog
 	lastWriteLen int // bytes of the most recent write; read by Drain
+	watch        term.PinWatch
+	watchPin     ModemControlPin
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
@@ -130,29 +141,103 @@ func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
 
-// modemWaiter returns the underlying terminal's wait capability, or nil if the
+// modemWatcher returns the underlying terminal's wait capability, or nil if the
 // backend can only be polled.
-func (c *SerialConn) modemWaiter() term.ModemControlPinWaiter {
-	w, _ := c.file.(term.ModemControlPinWaiter)
+func (c *SerialConn) modemWatcher() term.ModemControlPinWatcher {
+	w, _ := c.file.(term.ModemControlPinWatcher)
 	return w
 }
 
 // CanWaitModemControlPinChange reports whether the serial backend can block
 // until a modem control input changes.
 func (c *SerialConn) CanWaitModemControlPinChange() bool {
-	return c.modemWaiter() != nil
+	return c.modemWatcher() != nil
 }
 
-// WaitModemControlPinChange blocks until a modem control input may have
-// changed, returning the time the wakeup was observed as a wall and a mono
-// reading per term.ModemControlPinWaiter. It fails when the backend can
-// only be polled, which CanWaitModemControlPinChange reports in advance.
-func (c *SerialConn) WaitModemControlPinChange(line ModemControlPin) (wall, mono time.Time, err error) {
-	w := c.modemWaiter()
-	if w == nil {
-		return time.Time{}, time.Time{}, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
+// WaitModemControlPinChange blocks until a modem control input changes. It
+// fails when the backend can only be polled, which
+// CanWaitModemControlPinChange reports in advance.
+func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin) (PinChange, int, error) {
+	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		return PinChange{}, 0, net.ErrClosed
 	}
-	return w.WaitModemControlPinChange(line)
+	w := c.watch
+	if w == nil {
+		watcher := c.modemWatcher()
+		if watcher == nil {
+			c.mu.Unlock()
+			return PinChange{}, 0, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
+		}
+		var err error
+		w, err = watcher.NewPinWatch(pin)
+		if err != nil {
+			c.mu.Unlock()
+			return PinChange{}, 0, err
+		}
+		c.watch = w
+		c.watchPin = pin
+	} else if pin != c.watchPin {
+		c.mu.Unlock()
+		panic("gpsio: WaitModemControlPinChange called with a different pin")
+	}
+	c.mu.Unlock()
+
+	type waitResult struct {
+		change PinChange
+		missed int
+		err    error
+	}
+	ch := make(chan waitResult, 1)
+	delivered := make(chan bool, 1)
+	go func() {
+		change, missed, err := w.Wait()
+		cancelled := errors.Is(err, term.ErrCancelled)
+		if cancelled {
+			_ = w.Close()
+			c.dropPinWatch(w)
+		}
+		ch <- waitResult{change: change, missed: missed, err: err}
+		// A completed result can race context cancellation. If the caller
+		// selected the context instead, this wait goroutine still owns the
+		// abandoned watch and closes it.
+		if accepted := <-delivered; !accepted && !cancelled {
+			_ = w.Close()
+		}
+	}()
+
+	select {
+	case r := <-ch:
+		if err := ctx.Err(); err != nil {
+			w.Cancel()
+			c.dropPinWatch(w)
+			delivered <- false
+			return PinChange{}, 0, err
+		}
+		delivered <- true
+		if errors.Is(r.err, term.ErrCancelled) {
+			return PinChange{}, 0, net.ErrClosed
+		}
+		if r.err != nil {
+			_ = w.Close()
+			c.dropPinWatch(w)
+		}
+		return r.change, r.missed, r.err
+	case <-ctx.Done():
+		w.Cancel()
+		c.dropPinWatch(w)
+		delivered <- false
+		return PinChange{}, 0, ctx.Err()
+	}
+}
+
+func (c *SerialConn) dropPinWatch(w term.PinWatch) {
+	c.mu.Lock()
+	if c.watch == w {
+		c.watch = nil
+	}
+	c.mu.Unlock()
 }
 
 func (c *SerialConn) Read(p []byte) (int, error) {
@@ -259,8 +344,8 @@ func (c *SerialConn) Stop() {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	c.stopped = true
-	if w := c.modemWaiter(); w != nil {
-		w.CancelModemControlPinWait()
+	if c.watch != nil {
+		c.watch.Cancel()
 	}
 	if c.pktLog != nil {
 		// We need close promptly so that the logging goroutine can exit.
@@ -299,6 +384,16 @@ func (c *SerialConn) Close() error {
 	<-c.writeLock
 	close(c.writeLock)
 	// no more reads or writes are in progress
+	// A watch left idle by a completed wait would otherwise keep its dup
+	// (and the port's flock) past Close. An abandoned wait has already
+	// dropped the watch, so a non-nil watch here has no user.
+	c.mu.Lock()
+	w := c.watch
+	c.watch = nil
+	c.mu.Unlock()
+	if w != nil {
+		_ = w.Close()
+	}
 	var restoreErr error
 	if t := c.term(); t != nil {
 		restoreErr = t.Restore()

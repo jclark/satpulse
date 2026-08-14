@@ -95,11 +95,14 @@ func TestCommWaitError(t *testing.T) {
 	}
 }
 
-func TestCancelModemControlPinWait(t *testing.T) {
-	w := new(windowsTerm)
-	w.CancelModemControlPinWait()
-	if wall, mono, err := w.WaitModemControlPinChange(ModemCTS); err != nil || wall.IsZero() || mono.IsZero() {
-		t.Fatalf("WaitModemControlPinChange after cancel = %v, %v, %v; want timestamps", wall, mono, err)
+// TestPinWatchCancel checks that cancellation is sticky and is observed
+// before WaitCommEvent: the watch holds an invalid handle, so anything
+// reaching the wait would fail with a handle error instead.
+func TestPinWatchCancel(t *testing.T) {
+	w := &pinWatch{handle: windows.InvalidHandle, pin: ModemCTS}
+	w.Cancel()
+	if c, missed, err := w.Wait(); !errors.Is(err, ErrCancelled) || c != (PinChange{}) || missed != 0 {
+		t.Fatalf("PinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
 	}
 }
 

@@ -28,6 +28,10 @@ type Term interface {
 // Callers can check for it with errors.Is.
 var ErrNotATTY = errors.New("not a serial device")
 
+// ErrCancelled is returned when a pin watch has been cancelled.
+// Callers can check for it with errors.Is.
+var ErrCancelled = errors.New("pin watch cancelled")
+
 // LockedError indicates that a device is already in exclusive use.
 // Callers can check for it with errors.As and then call Locked.
 type LockedError interface {
@@ -94,25 +98,52 @@ func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
 	return state
 }
 
-// ModemControlPinWaiter is implemented by terminals that can block until a
-// modem control input changes, rather than having to poll for it. Callers
-// discover the capability by asserting for this interface.
-type ModemControlPinWaiter interface {
-	// WaitModemControlPinChange blocks until a modem control input may
-	// have changed, returning the time the wakeup was observed on two
-	// clocks: wall is the most precise system-time reading the platform
-	// offers and may carry no monotonic reading, so it must not be used
-	// for elapsed-time arithmetic; mono is an ordinary time.Now reading,
-	// for elapsed time against other time.Now values. Where time.Now is
-	// the best clock available they are the same reading. The readings
-	// are taken on the waiting thread as soon as the wait ends, before
-	// any other call. The caller must read the state to reject spurious
-	// wakeups and changes to other lines.
-	WaitModemControlPinChange(line ModemControlPin) (wall, mono time.Time, err error)
-	// CancelModemControlPinWait makes a pending wait return promptly
-	// and all subsequent waits return immediately. It is used to make
-	// shutdown prompt.
-	CancelModemControlPinWait()
+// PinChange reports one observed transition of a modem control input.
+type PinChange struct {
+	// Wall and Mono are the time the wakeup was observed on two clocks:
+	// Wall is the most precise system-time reading the platform offers and
+	// may carry no monotonic reading, so it must not be used for elapsed-time
+	// arithmetic; Mono is an ordinary time.Now reading, for elapsed time
+	// against other time.Now values. Where time.Now is the best clock
+	// available they are the same reading. The readings are taken on the
+	// waiting thread as soon as the wait ends, before any other call.
+	Wall, Mono time.Time
+	// Asserted is the pin's sense after the transition that ended the wait,
+	// as far as the platform can determine it. Where the platform can tell
+	// that the wakeup covered more than one transition it does not report the
+	// wakeup at all; where it cannot, this is its best reading.
+	Asserted bool
+}
+
+// PinWatch observes transitions of one modem control input. It holds a
+// descriptor of its own, so it stays usable after the Term is closed and an
+// abandoned Wait cannot touch a descriptor number reused after that close.
+// Close must not overlap a Wait: the caller must observe Wait's return,
+// directly or through a happens-before edge such as a channel receive,
+// before calling Close.
+type PinWatch interface {
+	// Wait blocks until the pin changes; on some platforms it cannot be
+	// interrupted, so callers that need cancellation must run it on a
+	// goroutine they can abandon. missed counts transitions that could not
+	// be reported before this one: edges that arrived while no wait was
+	// armed, and edges that made an earlier wakeup ambiguous. It is a lower
+	// bound, not a total, and diagnostic only; classification must not depend
+	// on it.
+	Wait() (c PinChange, missed int, err error)
+	// Cancel prevents any further reports and ends a pending Wait as soon as
+	// the platform allows. Sticky: once it has fired, every Wait, including
+	// one already parked, returns ErrCancelled.
+	Cancel()
+	// Close releases the watch's descriptor. Calling it while a Wait is
+	// pending is a contract violation and panics.
+	Close() error
+}
+
+// ModemControlPinWatcher is implemented by terminals that can block until a
+// modem control input changes. Callers discover the capability by asserting
+// for this interface.
+type ModemControlPinWatcher interface {
+	NewPinWatch(pin ModemControlPin) (PinWatch, error)
 }
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)

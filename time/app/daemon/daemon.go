@@ -210,9 +210,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		// so that no goroutine still issues syscalls against the connection
 		// when it is closed. One exception is safe by construction: a
 		// serial-PPS wait abandoned by cancellation may stay parked in
-		// TIOCMIWAIT past the close, but it holds a private dup of the
-		// descriptor and touches nothing else (see the term package's
-		// CancelModemControlPinWait).
+		// TIOCMIWAIT past the close, but its PinWatch holds a private dup of
+		// the descriptor and touches nothing else. Its gpsio goroutine closes
+		// the watch when the ioctl eventually wakes.
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
@@ -322,17 +322,17 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return err
 		}
 	}
-	var serialPPSCh <-chan serialpps.Edge
+	var serialPPSCh <-chan serialpps.Observation
 	var serialPPSGen *serialpps.Generator
 	if cfg.Serial.PPS != nil {
 		pin, _ := cfg.Serial.PPS.modemControlPin() // checked by Config.Validate
 		serialPPSGen = serialpps.NewGenerator(cfg.Sample.Serial.PPS)
-		ch := make(chan serialpps.Edge, 1)
+		ch := make(chan serialpps.Observation, 1)
 		serialPPSCh = ch
 		wg.Go(func() {
 			defer close(ch)
 			lg.Debug("serial PPS goroutine started", "pin", cfg.Serial.PPS.Pin)
-			if err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Pin: pin}, ch); err != nil && ctx.Err() == nil {
+			if err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Pin: pin}, ch, nil); err != nil && ctx.Err() == nil {
 				lg.Error("serial PPS detection failed", "pin", cfg.Serial.PPS.Pin, "err", err)
 				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Pin, err))
 			}

@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/internal/packcmd"
 	"github.com/jclark/satpulse/internal/replaycmd"
 	"github.com/jclark/satpulse/internal/scancmd"
+	"github.com/jclark/satpulse/time/app/serialcmd"
 )
 
 type cmdFunc func(logWriter io.Writer, logLevel slog.Level, progName string, cmdName string, cmdArgs []string) (usage string, err error)
@@ -27,4 +28,5 @@ var commands = map[string]cmdFunc{
 	"pack":     packcmd.Cmd,
 	"replay":   replaycmd.Cmd,
 	"scan":     scancmd.Cmd,
+	"serial":   serialcmd.Cmd,
 }

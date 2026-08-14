@@ -32,8 +32,6 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
-`cmd/pollpps` provides main for pollpps, implemented by `time/app/pollppscmd`.
-
 ### gps/
 
 These packages provide the public API for GPS processing. They are in the domain layer.
@@ -90,7 +88,7 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/septentrio` implements `gps/gpsprot` abstractions for the Septentrio SBF protocol. It uses `gps/lib/sbfbin` to frame and parse SBF blocks.
 
-`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol. It uses `gps/lib/casbin` to do this.
+`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol, including the configuration protocol for CASIC receivers. It uses `gps/lib/casbin` and `gps/lib/casmsg` to do this.
 
 `gps/internal/unc` implements `gps/gpsprot` abstractions for the Unicore protocol. It uses `gps/lib/uncmsg` to parse Unicore binary and ASCII message formats.
 
@@ -115,6 +113,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/ubxcfgval/cfgschema` contains a YAML schema for configuration data handled by `gps/lib/ubxcfgval`. This is used to generate code in the `gps/lib/ubxcfgval` package.
 
 `gps/lib/casbin` translates binary packets in the CASIC protocol to and from Go structs.
+
+`gps/lib/casmsg` builds CASIC proprietary PCAS NMEA sentences and interprets their GPTXT responses.
 
 `gps/lib/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 
@@ -184,7 +184,7 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
-`time/app/pollppscmd` implements pollpps, an internal tool that runs `time/internal/serialpps` edge detection against a serial port's CTS pin and prints the edges it detects, or times the modem status read that paces the polling backend. It is provisional scaffolding: equivalent functionality is expected to become a satpulsetool subcommand once its shape is decided.
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `time/internal/serialpps`.
 
 ### time/internal/
 

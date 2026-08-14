@@ -4,8 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sync"
-	"syscall"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -241,111 +240,143 @@ func (t *unixTerm) readError() *Error {
 	return &Error{Path: t.path, Flags: flags, Counts: &ec}
 }
 
-var _ ModemControlPinWaiter = (*unixTerm)(nil)
+var _ ModemControlPinWatcher = (*unixTerm)(nil)
 
-// modemWaitState makes CancelModemControlPinWait sticky: once cancelCh is
-// closed, pending waits return promptly and later ones return immediately.
-type modemWaitState struct {
-	mu        sync.Mutex
-	cancelled bool
-	cancelCh  chan struct{} // closed by CancelModemControlPinWait
+type pinWatch struct {
+	fd          int
+	mask        uint
+	pin         ModemControlPin
+	cancelled   atomic.Bool
+	inWait      atomic.Bool
+	baseline    int32
+	haveCounter bool
+	path        string
 }
 
-// WaitModemControlPinChange blocks in TIOCMIWAIT until pin may have changed
-// state, returning the time the ioctl returned; time.Now is the best clock
-// here, so one reading serves as both wall and mono. A Close preceded by
-// CancelModemControlPinWait (the order SerialConn.Stop ensures) is safe at
-// any point relative to a wait call: cancel serializes with the dup below.
-//
-// The ioctl cannot be interrupted: TIOCMIWAIT has no timeout, closing the
-// descriptor does not wake it, and a directed signal never surfaces as EINTR
-// because the Go runtime installs its signal handlers with SA_RESTART, under
-// which the kernel transparently restarts the ioctl. So the ioctl runs on a
-// goroutine that a cancelled wait abandons: it stays parked in the kernel
-// until the next pin change or process exit. It operates only on a private
-// dup of the descriptor, so however late it wakes it cannot touch a
-// descriptor number reused after Close; the dup (and with it the port's
-// flock) is held until it wakes, and process exit releases everything.
-func (t *unixTerm) WaitModemControlPinChange(pin ModemControlPin) (wall, mono time.Time, err error) {
+// NewPinWatch creates a watch with a private descriptor. All watch syscalls
+// use the duplicate, so the watch remains safe if the terminal is later
+// closed.
+func (t *unixTerm) NewPinWatch(pin ModemControlPin) (PinWatch, error) {
 	mask, err := tiocmPinMask(pin)
 	if err != nil {
-		return time.Time{}, time.Time{}, err
+		return nil, err
 	}
-	w := &t.miwait
-	w.mu.Lock()
-	if w.cancelled {
-		w.mu.Unlock()
-		now := time.Now()
-		return now, now, nil
-	}
-	if w.cancelCh == nil {
-		w.cancelCh = make(chan struct{})
-	}
-	cancelCh := w.cancelCh
-	// Hold the lock across the dup: CancelModemControlPinWait also takes
-	// it, and Close paths cancel before closing, so the descriptor cannot
-	// be closed or its number reused between the cancelled check and the
-	// dup.
 	fd, err := unix.FcntlInt(uintptr(t.fd), unix.F_DUPFD_CLOEXEC, 0)
-	w.mu.Unlock()
 	if err != nil {
-		return time.Time{}, time.Time{}, t.wrapErr(err, "fcntl(F_DUPFD_CLOEXEC)")
+		return nil, t.wrapErr(err, "fcntl(F_DUPFD_CLOEXEC)")
 	}
-	ch := make(chan miwaitResult, 1)
-	go miwaitIoctl(fd, mask, ch)
-	select {
-	case r := <-ch:
-		if r.errno == unix.ENOTTY {
-			// The tty driver does not implement TIOCMIWAIT.
-			return time.Time{}, time.Time{}, t.wrapErr(fmt.Errorf("%w: %v", errors.ErrUnsupported, r.errno), "ioctl(TIOCMIWAIT)")
-		}
-		if r.errno != 0 {
-			return time.Time{}, time.Time{}, t.wrapErr(r.errno, "ioctl(TIOCMIWAIT)")
-		}
-		return r.at, r.at, nil
-	case <-cancelCh:
-		now := time.Now()
-		return now, now, nil
+	w := &pinWatch{fd: fd, mask: mask, pin: pin, path: t.path}
+	if count, err := w.readCounter(); err == nil {
+		w.baseline = count
+		w.haveCounter = true
 	}
+	return w, nil
 }
 
-// CancelModemControlPinWait makes a pending wait return promptly and all
-// future waits on this terminal return immediately. The wait's ioctl
-// goroutine is left parked in the kernel; see WaitModemControlPinChange.
-func (t *unixTerm) CancelModemControlPinWait() {
-	w := &t.miwait
-	w.mu.Lock()
-	if !w.cancelled {
-		w.cancelled = true
-		if w.cancelCh == nil {
-			w.cancelCh = make(chan struct{})
-		}
-		close(w.cancelCh)
+// Wait blocks the calling goroutine's OS thread in TIOCMIWAIT. Linux cannot
+// interrupt this ioctl, so cancellation becomes observable only after the pin
+// next changes. time.Now is the best clock here, so one reading serves as both
+// Wall and Mono.
+func (w *pinWatch) Wait() (PinChange, int, error) {
+	w.inWait.Store(true)
+	defer w.inWait.Store(false)
+	if w.cancelled.Load() {
+		return PinChange{}, 0, ErrCancelled
 	}
-	w.mu.Unlock()
-}
-
-type miwaitResult struct {
-	at    time.Time
-	errno syscall.Errno
-}
-
-// miwaitIoctl blocks in TIOCMIWAIT and reports when and how it returned. It
-// may run detached from any caller, arbitrarily long, so every syscall here
-// uses the private descriptor passed in, which it alone closes. EINTR is
-// routine noise from the runtime's signals and is retried. The unix.Syscall
-// wrapper blocks this goroutine's OS thread; the runtime poller cannot be
-// used for an ioctl.
-func miwaitIoctl(fd int, mask uint, ch chan<- miwaitResult) {
+	missed := 0
 	for {
-		_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(fd), unix.TIOCMIWAIT, uintptr(mask))
-		at := time.Now()
+		if w.haveCounter {
+			count, err := w.readCounter()
+			if err != nil {
+				return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCGICOUNT)")
+			}
+			missed += int(count - w.baseline)
+			w.baseline = count
+		}
+
+		// An edge between the counter read above and TIOCMIWAIT's entry
+		// snapshot inflates the post-wait delta. A clean wakeup can therefore
+		// look like two transitions and be withheld; this fails safe and the
+		// next loop iteration re-arms the wait.
+		_, _, errno := unix.Syscall(unix.SYS_IOCTL, uintptr(w.fd), unix.TIOCMIWAIT, uintptr(w.mask))
 		if errno == unix.EINTR {
 			continue
 		}
-		ch <- miwaitResult{at: at, errno: errno}
-		unix.Close(fd)
-		return
+		if errno == unix.ENOTTY {
+			err := fmt.Errorf("%w: %v", errors.ErrUnsupported, errno)
+			return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMIWAIT)")
+		}
+		if errno != 0 {
+			return PinChange{}, missed, w.wrapErr(errno, "ioctl(TIOCMIWAIT)")
+		}
+		at := time.Now()
+		if w.cancelled.Load() {
+			return PinChange{}, missed, ErrCancelled
+		}
+		status, err := ioctlGetModemState(w.fd)
+		if err != nil {
+			return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMGET)")
+		}
+		asserted := uint(status)&w.mask != 0
+		if w.haveCounter {
+			count, err := w.readCounter()
+			if err != nil {
+				return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCGICOUNT)")
+			}
+			delta := int(count - w.baseline)
+			w.baseline = count
+			if delta != 1 {
+				missed += delta
+				continue
+			}
+		}
+		return PinChange{Wall: at, Mono: at, Asserted: asserted}, missed, nil
+	}
+}
+
+func (w *pinWatch) readCounter() (int32, error) {
+	ic, err := ioctlGetSerialICounter(w.fd)
+	if err != nil {
+		return 0, err
+	}
+	switch w.pin {
+	case ModemCTS:
+		return ic.Cts, nil
+	case ModemDCD:
+		return ic.Dcd, nil
+	case ModemDSR:
+		return ic.Dsr, nil
+	case ModemRI:
+		return ic.Rng, nil
+	default:
+		panic("term: invalid pin in PinWatch")
+	}
+}
+
+func (w *pinWatch) Cancel() { w.cancelled.Store(true) }
+
+func (w *pinWatch) Close() error {
+	if w.inWait.Load() {
+		panic("term: PinWatch.Close during Wait")
+	}
+	fd := w.fd
+	w.fd = -1
+	return w.wrapErr(unix.Close(fd), "close")
+}
+
+func (w *pinWatch) wrapErr(err error, op string) error {
+	if err == nil {
+		return nil
+	}
+	return &os.PathError{Op: op, Path: w.path, Err: err}
+}
+
+func ioctlGetModemState(fd int) (int, error) {
+	for {
+		status, err := unix.IoctlGetInt(fd, unix.TIOCMGET)
+		if err != unix.EINTR {
+			return status, err
+		}
 	}
 }
 
