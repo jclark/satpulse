@@ -79,8 +79,9 @@ type Wiring struct {
 
 // clockReading keeps adjacent readings of the clocks used by serial PPS
 // together. wall locates an edge in system time; mono relates it to receiver
-// message read times. A platform can choose the better pair for measuring
-// short elapsed intervals in elapsedSince.
+// message read times and paces the polling loop, which must not be disturbed
+// by a step in the system clock. A platform can choose the better pair for
+// measuring short elapsed intervals in elapsedSince.
 type clockReading struct {
 	wall time.Time
 	mono time.Time
@@ -168,7 +169,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Obse
 		return err
 	}
 	stats.addPoll(first.poll, nil)
-	predicted := first.poll.observationTime().wall.Add(maxPollWindow / 2)
+	predicted := first.poll.observationTime().mono.Add(maxPollWindow / 2)
 	window := maxPollWindow
 	settled := false  // polling schedule no longer binds
 	tracking := false // halving is over; the window moves additively
@@ -190,7 +191,7 @@ func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Obse
 		// slept accumulates over the window's scheduled polls (the wait for
 		// the window open is excluded: it always sleeps).
 		slept := false
-		for inPulse(cur.state, w) && cur.poll.observationTime().wall.Before(deadline) {
+		for inPulse(cur.state, w) && cur.poll.observationTime().mono.Before(deadline) {
 			prev := cur
 			cur, err = readState(ctx, r, cur.start.Add(spacing))
 			if err != nil {
@@ -223,8 +224,8 @@ func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Obse
 			// started: sleep overshoot when the loop is sleep-paced, queue
 			// debt when the queries pace it.
 			lg.Debug("serial PPS caught edge", "window", window, "bracket", bracketWidth,
-				"offset", edge.Wall.Sub(predicted), "late", cur.start.Sub(cur.sched), "polls", polls)
-			predicted = edge.Wall.Add(pulsePeriod)
+				"offset", edge.Mono.Sub(predicted), "late", cur.start.Sub(cur.sched), "polls", polls)
+			predicted = edge.Mono.Add(pulsePeriod)
 			misses = 0
 			if !settled {
 				if spacing == minPollSpacing {
@@ -310,7 +311,7 @@ func classifyReading(prev, cur reading, w Wiring, deadline time.Time) (Edge, boo
 		}
 		return prev.poll.observationTime().midpoint(cur.poll.observationTime()).edge(), false
 	}
-	return Edge{}, !cur.poll.observationTime().wall.Before(deadline)
+	return Edge{}, !cur.poll.observationTime().mono.Before(deadline)
 }
 
 // inPulse reports whether the state was observed during a pulse. The pulse's
@@ -331,12 +332,12 @@ func readState(ctx context.Context, r StateReader, notBefore time.Time) (reading
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, poll: poll{start: start, end: end}, start: start.wall,
+	return reading{state: state, poll: poll{start: start, end: end}, start: start.mono,
 		sched: notBefore, slept: slept}, nil
 }
 
-// now reads the clocks behind Edge: wall locates edges and paces the loop,
-// mono serves elapsed-time arithmetic against other time.Now values. Here
+// now reads the clocks behind Edge: wall locates edges, mono paces the loop
+// and serves elapsed-time arithmetic against other time.Now values. Here
 // they are one time.Now reading; a platform whose precise wall-clock read
 // carries no monotonic reading separates them.
 func now() clockReading {
