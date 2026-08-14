@@ -18,12 +18,12 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
-	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/spf13/pflag"
 )
 

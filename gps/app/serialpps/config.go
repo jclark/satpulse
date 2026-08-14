@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/time/lib/check"
+	"github.com/jclark/satpulse/gps/lib/check"
 )
 
 // Config controls how serial PPS edges are associated with UTC-labelled

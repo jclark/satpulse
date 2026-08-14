@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
@@ -16,7 +17,6 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/refclock"
-	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 )

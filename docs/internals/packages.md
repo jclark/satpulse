@@ -72,6 +72,8 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (serial device or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
 
+`gps/app/serialpps` detects PPS edges on serial modem-control input lines and combines their system timestamps with recent receiver UTC messages to generate refclock samples.
+
 `gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
 
 ### gps/internal/
@@ -105,6 +107,8 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 ### gps/lib/
 
 These packages are reusable libraries for GPS processing. They are in the library layer.
+
+`gps/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
 
 `gps/lib/ubxbin` translates binary packets in the UBX protocol to and from Go structs.
 
@@ -184,15 +188,13 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
-`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `time/internal/serialpps`.
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `gps/app/serialpps`.
 
 ### time/internal/
 
 These packages are the main building blocks for satpulsed; they are in the application layer and are not importable outside `time/`.
 
 `time/internal/ts` implements a goroutine that reads external timestamps from the PTP hardware clock and sends those to a channel. These external timestamps are the time pulses emitted by the GPS receiver.
-
-`time/internal/serialpps` detects PPS edges on serial modem-control input lines and combines their system timestamps with recent receiver UTC messages to generate refclock samples.
 
 `time/internal/gpsevent` provides the main event handling loop after GPS configuration is done. It receives GPS packets from `gps/app/gpsio` and then uses the appropriate protocol implementation to construct protocol-independent messages that it passes to `time/internal/phcsync`. It also receives timestamps from `time/internal/ts` and passes them to `time/internal/phcsync`.
 
@@ -233,8 +235,6 @@ These packages are reusable libraries for time synchronization. They are in the 
 `time/lib/sse` marshals data into the format of HTML SSE (server-sent events).
 
 `time/lib/allan` computes Allan deviations. (This is not used currently.)
-
-`time/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
 
 `time/lib/circbuf` provides a generic circular buffer that maintains a sliding window of recent samples. It supports appending with automatic overflow handling and reverse chronological iteration.
 

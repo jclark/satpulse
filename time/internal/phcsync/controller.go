@@ -7,10 +7,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jclark/satpulse/time/lib/check"
-	"github.com/jclark/satpulse/time/phctime"
+	"github.com/jclark/satpulse/gps/lib/check"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/ptpgm"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 // Clock interface represents a PHC (PTP Hardware Clock) that can be adjusted.
