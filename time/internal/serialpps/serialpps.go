@@ -74,14 +74,12 @@ type StateReader interface {
 }
 
 // ChangeWaiter is a StateReader that may be able to block until a modem
-// control input changes, reporting the time of the wakeup as a wall and a
-// mono reading per term.ModemControlPinWaiter;
-// CanWaitModemControlPinChange reports whether it actually can. Implemented
-// by a TTY-backed gpsio.SerialConn.
+// control input changes. CanWaitModemControlPinChange reports whether it
+// actually can. Implemented by a TTY-backed gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
 	CanWaitModemControlPinChange() bool
-	WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error)
+	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.PinChange, int, error)
 }
 
 // Wiring describes how the PPS pulse is represented on the serial port's
@@ -145,14 +143,14 @@ func (p poll) gapAfter(prev poll) time.Duration {
 func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats) error {
 	if cw, ok := r.(ChangeWaiter); ok && cw.CanWaitModemControlPinChange() {
 		lg.Debug("serial PPS wait backend selected")
-		err := Wait(ctx, cw, w, observations)
+		err := Wait(ctx, lg, cw, w, observations)
 		if !errors.Is(err, errors.ErrUnsupported) {
 			return err
 		}
 		lg.Info("serial driver cannot wait for modem control pin changes; polling instead")
 	}
 	lg.Debug("serial PPS polling backend selected")
-	return Poll(ctx, r, w, observations, stats, lg)
+	return Poll(ctx, lg, r, w, observations, stats)
 }
 
 // Poll adaptively polls for the pulse described by w and sends every detected
@@ -190,7 +188,7 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, obser
 // that require settled edges must filter on Settled. Every caught edge and
 // every window size change is logged to lg at debug level. If stats is
 // non-nil, Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats, lg *slog.Logger) error {
+func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	stats.begin()
@@ -328,38 +326,25 @@ func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Obse
 }
 
 // Wait sends observations of leading edges detected with modem-control change
-// notifications. The wait primitive itself timestamps the wakeup, before the
-// state read, because that read can require a USB round trip. Its paired
-// readings are used directly rather than treating the state read as a polling
-// bracket.
-func Wait(ctx context.Context, r ChangeWaiter, w Wiring, observations chan<- Observation) error {
-	prev, err := r.ModemControlPinState()
-	if err != nil {
-		return err
-	}
+// notifications. The wait primitive timestamps each unambiguous transition
+// and reports the pin sense derived by the backend. The pulse's electrically
+// rising leading edge reaches the host inverted through the TTL driver chain,
+// so the pin reads deasserted during the pulse.
+func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, observations chan<- Observation) error {
 	for {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
-		wall, mono, err := r.WaitModemControlPinChange(w.Pin)
+		change, missed, err := r.WaitModemControlPinChange(ctx, w.Pin)
 		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			return err
 		}
-		// A cancelled wait reports no time, and its wakeup is not an edge.
-		// Cancellation normally follows ctx, but a stopped port ends the
-		// run cleanly either way.
-		if wall.IsZero() || mono.IsZero() || ctx.Err() != nil {
-			return ctx.Err()
+		if missed > 0 {
+			lg.Debug("serial PPS transitions not observed", "atLeast", missed)
 		}
-		cur, err := r.ModemControlPinState()
-		if err != nil {
-			return err
-		}
-		if !inPulse(prev, w) && inPulse(cur, w) {
+		if !change.Asserted {
 			observation := Observation{
-				Edge:    Edge{Wall: wall, Mono: mono},
+				Edge:    Edge{Wall: change.Wall, Mono: change.Mono},
 				Settled: true,
 			}
 			select {
@@ -368,7 +353,6 @@ func Wait(ctx context.Context, r ChangeWaiter, w Wiring, observations chan<- Obs
 				return ctx.Err()
 			}
 		}
-		prev = cur
 	}
 }
 

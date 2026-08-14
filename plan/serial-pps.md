@@ -324,83 +324,79 @@ The polling goroutine locks its OS thread.
 
 Linux `TIOCMIWAIT` blocks until a chosen modem control line changes;
 Windows has the equivalent `SetCommMask`/`WaitCommEvent`. Neither
-reports the transition's direction nor a timestamp, so the wait
-primitive returns timestamps taken immediately on wakeup -- before
-any further calls, since a state read can itself be a
-millisecond-scale USB round trip -- and the backend then reads the
-line state to classify the transition. The wakeup is timestamped on
-two clocks, because its two consumers need different clock
-properties: `wall`, the most precise system-time reading the platform
-offers, becomes the published sample time, and `mono`, an ordinary
-`time.Now` reading, serves the elapsed-time arithmetic that labels
-the edge with a UTC second against the message read times. On Unix
-one `time.Now` reading is both; on Windows `time.Now` is quantized to
-the shared clock page (~0.5 ms measured) while
-`GetSystemTimePreciseAsFileTime` reads to ~100 ns but carries no
-monotonic component, so the two are separate readings taken
-back-to-back, and labelling, whose tolerance is the millisecond-scale
-`delayUncertainty`, absorbs both the coarse quantum and the
-acquisition skew between them. Every wakeup where the line has entered its pulse-asserted
-sense produces a sample, subject only to identifying the second from
-the time messages. Unlike the polling backend, nothing here relies on
-the pulses being 1 s apart.
+reports a timestamp, so the primitive timestamps the wakeup before
+any other call and then reads the line state. A state read can itself
+be a millisecond-scale USB round trip. `Wall`, the most precise
+system-time reading the platform offers, becomes the published sample
+time, while `Mono`, an ordinary `time.Now` reading, serves elapsed-time
+arithmetic against message read times. On Unix one `time.Now` reading
+serves both. On Windows `time.Now` is quantized to the shared clock
+page (~0.5 ms measured), while `GetSystemTimePreciseAsFileTime` reads
+to ~100 ns but carries no monotonic component, so a future backend will
+take the two readings back-to-back.
 
-`term` gains a primitive that only waits; reading the state afterwards
-is the existing method. Since only some terminals can wait, it is a
-capability interface that the PPS source asserts for, not a method of
-`Term`:
+`term` exposes a synchronous primitive. A watch owns a private
+descriptor, remains usable after its `Term` closes, and contains no
+goroutine or logging:
 
 ```go
-type ModemControlPinWaiter interface {
-	WaitModemControlPinChange(pin ModemControlPin) (wall, mono time.Time, err error)
-	CancelModemControlPinWait()
+type PinChange struct {
+	Wall, Mono time.Time
+	Asserted   bool
+}
+
+type PinWatch interface {
+	Wait() (change PinChange, missed int, err error)
+	Cancel()
+	Close() error
+}
+
+type ModemControlPinWatcher interface {
+	NewPinWatch(pin ModemControlPin) (PinWatch, error)
 }
 ```
 
-The cancel exists so that shutdown is prompt: it makes a pending wait
-call return and all subsequent calls return immediately, whether or
-not the backend can interrupt the underlying primitive (see the
-shutdown discussion below).
+`Cancel` is sticky: after it fires, every `Wait` returns
+`ErrCancelled`. It ends a pending wait as promptly as the platform
+allows. `Close` releases the private descriptor and must not overlap
+`Wait`.
 
-The primitive may return without the pin having changed (a spurious
-wakeup, an interrupted syscall, or a cancelled wait); callers detect
-actual transitions by reading the state, which the backend does after
-every wakeup anyway.
+The Linux backend uses `TIOCGICOUNT` to attribute a wakeup. It reads
+the watched pin's counter before arming `TIOCMIWAIT`, timestamps the
+wakeup, reads the pin sense, and reads the counter again. A delta of
+one is an unambiguous transition and produces a `PinChange`; any other
+delta is withheld and carried into `missed` before the wait is
+re-armed. Counter changes that occurred while no wait was armed are
+also included in `missed`. There is an inherent window between the
+pre-arm counter read and the ioctl's entry snapshot: an edge there can
+inflate the delta, occasionally withholding a clean wakeup. This fails
+safe and recovers when the wait is re-armed. If `TIOCGICOUNT` is not
+supported, the backend degrades to its best post-wakeup state reading,
+never withholds a wakeup, and always reports zero missed transitions.
+`missed` is a diagnostic lower bound, not a total, and classification
+never depends on it.
 
-`gpsio.SerialConn` forwards it as usual, and whether the underlying
-terminal satisfies the capability is how the PPS source chooses
-between the wait and polling backends at startup.
-On Linux every tty satisfies the interface but the ioctl itself
-depends on the tty driver, and there is no probe that does not block
-(`TIOCMIWAIT` waits for a change no matter what mask it is given); a
-driver without it fails the first wait immediately with `ENOTTY`,
-which `term` maps to `errors.ErrUnsupported`, and the edge detector
-then falls back to the polling backend.
-Whether FreeBSD has an equivalent ioctl is unresolved (to be settled
-before that platform is claimed; if it has none, FreeBSD uses the
-polling backend).
+`gpsio.SerialConn` owns the concurrency. For each call it runs the
+synchronous `PinWatch.Wait` on a goroutine and selects its result
+against the caller's context. Cancellation calls the watch's sticky
+`Cancel` and returns the context error. On Linux nothing can end
+`TIOCMIWAIT` itself: it has no timeout, closing the descriptor does not
+wake it, and runtime signals are installed with `SA_RESTART`. The
+cancelled goroutine may therefore remain parked until the next pin
+change or process exit. On a late wake it observes `ErrCancelled`,
+closes the watch, and exits. Until then the private dup keeps the
+port's flock held, but it cannot touch a descriptor number reused
+after `SerialConn.Close`; process exit releases it in the no-wakeup
+case. `SerialConn.Stop` also cancels the watch.
 
-Shutdown requires a pending wait call to return promptly: the
-daemon's shutdown path waits for every goroutine to exit before the
-serial port is closed, so a call blocked until process exit would
-hang the daemon whenever the pulse has stopped. On Linux nothing can
-end the ioctl itself: `TIOCMIWAIT` has no timeout, closing the
-descriptor does not wake it, and a directed signal never surfaces as
-`EINTR`, because the Go runtime installs its signal handlers with
-`SA_RESTART`, under which the kernel transparently restarts the
-interrupted ioctl (verified against cdc-acm on kernel 6.12). So the
-call is decoupled from the ioctl: the ioctl runs on its own goroutine
-against a private dup of the descriptor and reports the wakeup and
-its timestamp over a channel; cancel makes the call return while that
-goroutine stays parked in the kernel until the next line change or
-process exit. A late wakeup is confined to the private descriptor --
-the goroutine reports into a buffered channel, closes its dup, and
-exits, issuing nothing against the connection -- so a descriptor
-number reused after close cannot be touched. Until then the dup keeps
-the port's flock held; process exit releases everything. `EINTR` from
-the ioctl is runtime noise and is retried. (On D2XX, cancel signals
-the event's condition variable, so nothing is left parked; on
-Windows, `SetCommMask` aborts a pending `WaitCommEvent`.)
+On Linux every tty satisfies the capability interface, but support
+still depends on its driver. There is no nonblocking probe, so a
+driver without `TIOCMIWAIT` fails the first wait with `ENOTTY`, which
+`term` maps to `errors.ErrUnsupported`; the detector then closes the
+watch and falls back to polling. Whether FreeBSD has an equivalent
+ioctl remains unresolved. A Windows backend can make cancellation
+prompt with `SetCommMask`, but whether that abort crosses a duplicated
+handle is unverified and must be settled when the backend is written.
 
 ### D2XX on macOS (dropped)
 
@@ -453,9 +449,10 @@ Each platform fills the state from its native call (`TIOCMGET`;
 `GetCommModemStatus` on Windows, which reports exactly these four input
 pins). `gpsio.SerialConn` exposes the same interface, re-exporting the
 `term` types, with an error when the connection is not TTY-backed; the
-daemon layer imports only `gpsio`. `WaitModemControlPinChange` (see
-the Wait section) is a further capability interface rather than a
-`Term` method; it arrives with the first wait-capable device backend.
+daemon layer imports only `gpsio`. `ModemControlPinWatcher` (see the
+Wait section) is a further capability interface rather than a `Term`
+method; `gpsio.SerialConn` builds its ctx-based
+`WaitModemControlPinChange` on it.
 
 ## Daemon wiring
 

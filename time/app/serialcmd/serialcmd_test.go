@@ -260,11 +260,9 @@ func TestEdgePrinter(t *testing.T) {
 }
 
 type monitorWaitConn struct {
-	state    gpsio.ModemControlPinState
-	next     chan gpsio.ModemControlPinState
-	stopped  chan struct{}
-	stopOnce sync.Once
-	waits    int
+	state gpsio.ModemControlPinState
+	next  chan gpsio.ModemControlPinState
+	waits int
 }
 
 func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, error) {
@@ -273,20 +271,15 @@ func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, er
 
 func (c *monitorWaitConn) CanWaitModemControlPinChange() bool { return true }
 
-func (c *monitorWaitConn) WaitModemControlPinChange(gpsio.ModemControlPin) (wall, mono time.Time, err error) {
+func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gpsio.ModemControlPin) (gpsio.PinChange, int, error) {
 	c.waits++
 	select {
 	case c.state = <-c.next:
 		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
-		return t, t, nil
-	case <-c.stopped:
-		t := time.Now()
-		return t, t, nil
+		return gpsio.PinChange{Wall: t, Mono: t, Asserted: c.state.Asserted(pin)}, 0, nil
+	case <-ctx.Done():
+		return gpsio.PinChange{}, 0, ctx.Err()
 	}
-}
-
-func (c *monitorWaitConn) Stop() {
-	c.stopOnce.Do(func() { close(c.stopped) })
 }
 
 type notifyingWriter struct {
@@ -304,9 +297,8 @@ func (w *notifyingWriter) Write(p []byte) (int, error) {
 func TestDetectEdgesWaitBackend(t *testing.T) {
 	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
 	conn := &monitorWaitConn{
-		state:   asserted,
-		next:    make(chan gpsio.ModemControlPinState, 1),
-		stopped: make(chan struct{}),
+		state: asserted,
+		next:  make(chan gpsio.ModemControlPinState, 1),
 	}
 	conn.next <- 0
 	var logs bytes.Buffer
@@ -349,8 +341,7 @@ func TestDetectEdgesWaitBackend(t *testing.T) {
 
 func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
 	conn := &monitorWaitConn{
-		next:    make(chan gpsio.ModemControlPinState),
-		stopped: make(chan struct{}),
+		next: make(chan gpsio.ModemControlPinState),
 	}
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))

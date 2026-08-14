@@ -527,14 +527,11 @@ func drainInput(conn *gpsio.SerialConn) <-chan struct{} {
 
 type ppsConn interface {
 	serialpps.StateReader
-	Stop()
 }
 
 func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsio.ModemControlPin, device string, forcePoll bool, pr *edgePrinter) (int, error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
-	stopCancellation := context.AfterFunc(ctx, conn.Stop)
-	defer stopCancellation()
 
 	observations := make(chan serialpps.Observation)
 	errCh := make(chan error, 1)
@@ -547,7 +544,7 @@ func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsi
 		wiring := serialpps.Wiring{Pin: pin}
 		if forcePoll {
 			lg.Debug("serial PPS polling backend forced")
-			err = serialpps.Poll(ctx, conn, wiring, observations, stats, lg)
+			err = serialpps.Poll(ctx, lg, conn, wiring, observations, stats)
 		} else {
 			err = serialpps.Detect(ctx, lg, conn, wiring, observations, stats)
 		}
