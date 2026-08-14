@@ -10,6 +10,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/logfile"
+	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/nmeasyn"
@@ -18,7 +19,6 @@ import (
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/refclock"
-	"github.com/jclark/satpulse/time/internal/serialpps"
 	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/median"

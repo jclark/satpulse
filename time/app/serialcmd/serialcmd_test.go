@@ -13,10 +13,10 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/scan"
-	"github.com/jclark/satpulse/time/internal/serialpps"
 )
 
 func TestParseFlags(t *testing.T) {
