@@ -565,8 +565,12 @@ settling, steady-state poll cost, and miss handling are checked
 deterministically. The source also models the daemon's sleep
 overshoot (jittered and stalled wakeups), pinning the settled
 latch to confirmed query pacing rather than the bracket noise or
-a single slow-query burst. The edge backends are also validated on real
-hardware per the phasing below.
+a single slow-query burst. These do not run on Windows: `now` reads the
+system clock through a syscall no bubble can fake, so the loop would
+predict edges on the real clock while sleeping on the fake one. Rather
+than shape the clock around the tests, the bubble tests are skipped
+there and the loop is covered by the Linux and macOS runs. The edge
+backends are also validated on real hardware per the phasing below.
 
 ## Phasing
 

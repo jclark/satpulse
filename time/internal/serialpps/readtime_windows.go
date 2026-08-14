@@ -13,10 +13,10 @@ import (
 // no monotonic component, so mono stays a time.Now reading for elapsed-time
 // arithmetic against message read times. The skew between the adjacent
 // readings is bounded by the coarse quantum and enters only second
-// labelling, whose tolerance is the millisecond-scale delayUncertainty. It
-// is a variable so the synctest tests can substitute a reading of the
-// bubble's clock, which the precise reading here is outside of.
-var now = func() clockReading {
+// labelling, whose tolerance is the millisecond-scale delayUncertainty.
+// The precise reading is outside any synctest bubble, so the tests that
+// need one do not run here; see runBubble.
+func now() clockReading {
 	var ft windows.Filetime
 	windows.GetSystemTimePreciseAsFileTime(&ft)
 	return clockReading{wall: time.Unix(0, ft.Nanoseconds()), mono: time.Now()}
