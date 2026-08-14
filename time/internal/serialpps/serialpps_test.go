@@ -218,6 +218,13 @@ func TestClassifyReading(t *testing.T) {
 			deadline: 5 * time.Millisecond,
 		},
 		{
+			name:       "no transition reaching deadline",
+			curState:   asserted,
+			curAt:      5 * time.Millisecond,
+			deadline:   5 * time.Millisecond,
+			wantMissed: true,
+		},
+		{
 			name:       "no transition crossing deadline",
 			curState:   asserted,
 			curAt:      6 * time.Millisecond,
@@ -231,8 +238,11 @@ func TestClassifyReading(t *testing.T) {
 			wantMissed: true,
 		},
 	}
-	// The mono readings are skewed from the wall readings so a midpoint
-	// taken from the wrong clock is caught.
+	// The mono readings are skewed from the wall readings so a midpoint or a
+	// deadline comparison taken from the wrong clock is caught. deadline is
+	// on the mono timeline, as Poll's is; the "reaching deadline" case
+	// straddles the two, so comparing it against wall would report a miss
+	// one poll late.
 	const monoSkew = time.Millisecond
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -240,7 +250,7 @@ func TestClassifyReading(t *testing.T) {
 			curAt := clockReading{wall: base.Add(tc.curAt), mono: base.Add(tc.curAt + monoSkew)}
 			prev := reading{state: asserted, poll: poll{start: prevAt, end: prevAt}}
 			cur := reading{state: tc.curState, poll: poll{start: curAt, end: curAt}}
-			edge, missed := classifyReading(prev, cur, Wiring{Pin: gpsio.ModemCTS}, base.Add(tc.deadline))
+			edge, missed := classifyReading(prev, cur, Wiring{Pin: gpsio.ModemCTS}, base.Add(tc.deadline+monoSkew))
 			if missed != tc.wantMissed {
 				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
 			}
