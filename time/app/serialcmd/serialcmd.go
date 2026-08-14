@@ -137,7 +137,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	packetLogSet := flags.Lookup("packet-log").Changed
 	v.ppsSet = flags.Lookup("pps-pin").Changed
 	if v.ppsSet {
-		v.ppsPin, err = parseModemPin(ppsPinName)
+		v.ppsPin, err = parsePin(ppsPinName)
 		if err != nil {
 			return
 		}
@@ -210,7 +210,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	return
 }
 
-func parseModemPin(name string) (gpsio.ModemControlPin, error) {
+func parsePin(name string) (gpsio.ModemControlPin, error) {
 	switch name {
 	case "cts":
 		return gpsio.ModemCTS, nil
