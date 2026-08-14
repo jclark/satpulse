@@ -4,8 +4,8 @@ package serialpps
 
 import "time"
 
-// now reads the clocks behind Edge: wall locates edges and paces the loop,
-// mono serves elapsed-time arithmetic against other time.Now values. Here
+// now reads the clocks behind Edge: wall locates edges, mono paces the loop
+// and serves elapsed-time arithmetic against other time.Now values. Here
 // they are one time.Now reading; a platform whose precise wall-clock read
 // carries no monotonic reading separates them.
 func now() clockReading {
