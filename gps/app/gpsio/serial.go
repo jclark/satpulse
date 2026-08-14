@@ -26,13 +26,15 @@ import (
 // Close will wait for any in-progress reads or writes to complete,
 // before restoring serial settings and closing the underlying file descriptor.
 // At most one WaitModemControlPinChange call may be in progress, and it must
-// have returned before Close is called. Its context cancels it; Stop prevents
-// further waits and cancels the watch, but a call already in progress may not
-// return until the pin next changes or its context fires. After an error
-// return the logical watch is released; a cancelled wait may leave a goroutine
-// parked until the process exits, holding a private descriptor (and the port's
-// flock) that it releases if it eventually wakes. That private descriptor
-// makes the wait safe relative to Close.
+// have returned before Close is called. Its context cancels it, and Stop
+// prevents further waits and cancels the watch; how soon a cancelled wait
+// itself returns is up to the platform, and where the wait primitive cannot
+// be interrupted it may be no sooner than the next pin change. After an error
+// return the logical watch is released. A cancelled wait is abandoned rather
+// than waited for: the goroutine keeps the watch, and with it the watch's own
+// claim on the port, until it wakes and releases it, which on such a platform
+// may not be before the process exits. That separate claim is what makes the
+// wait safe relative to Close.
 type SerialConn struct {
 	file         ioFile
 	kind         term.DevKind
@@ -384,9 +386,9 @@ func (c *SerialConn) Close() error {
 	<-c.writeLock
 	close(c.writeLock)
 	// no more reads or writes are in progress
-	// A watch left idle by a completed wait would otherwise keep its dup
-	// (and the port's flock) past Close. An abandoned wait has already
-	// dropped the watch, so a non-nil watch here has no user.
+	// A watch left idle by a completed wait would otherwise keep its claim
+	// on the port past Close. An abandoned wait has already dropped the
+	// watch, so a non-nil watch here has no user.
 	c.mu.Lock()
 	w := c.watch
 	c.watch = nil

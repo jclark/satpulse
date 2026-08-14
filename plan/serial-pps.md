@@ -335,8 +335,8 @@ page (~0.5 ms measured), while `GetSystemTimePreciseAsFileTime` reads
 to ~100 ns but carries no monotonic component, so a future backend will
 take the two readings back-to-back.
 
-`term` exposes a synchronous primitive. A watch owns a private
-descriptor, remains usable after its `Term` closes, and contains no
+`term` exposes a synchronous primitive. A watch owns its own claim on
+the port, remains usable after its `Term` closes, and contains no
 goroutine or logging:
 
 ```go
@@ -358,8 +358,7 @@ type ModemControlPinWatcher interface {
 
 `Cancel` is sticky: after it fires, every `Wait` returns
 `ErrCancelled`. It ends a pending wait as promptly as the platform
-allows. `Close` releases the private descriptor and must not overlap
-`Wait`.
+allows. `Close` releases that claim and must not overlap `Wait`.
 
 The Linux backend uses `TIOCGICOUNT` to attribute a wakeup. It reads
 the watched pin's counter before arming `TIOCMIWAIT`, timestamps the

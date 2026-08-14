@@ -115,9 +115,13 @@ type ModemControlPinChange struct {
 	Asserted bool
 }
 
-// ModemControlPinWatch observes transitions of one modem control input. It holds a
-// descriptor of its own, so it stays usable after the Term is closed and an
-// abandoned Wait cannot touch a descriptor number reused after that close.
+// ModemControlPinWatch observes transitions of one modem control input. Its
+// validity is independent of the Term it came from: it stays usable after the
+// Term is closed, and everything an abandoned Wait does is confined to the
+// watch, so it can neither disturb the Term nor touch a resource the platform
+// recycles after that close. The watch holds a claim on the port of its own
+// until Close, so a watch left behind by an abandoned Wait must still be
+// closed, and the port can stay unavailable to other openers until it is.
 // Close must not overlap a Wait: the caller must observe Wait's return,
 // directly or through a happens-before edge such as a channel receive,
 // before calling Close.
@@ -134,8 +138,8 @@ type ModemControlPinWatch interface {
 	// the platform allows. Sticky: once it has fired, every Wait, including
 	// one already parked, returns ErrCancelled.
 	Cancel()
-	// Close releases the watch's descriptor. Calling it while a Wait is
-	// pending is a contract violation and panics.
+	// Close releases the watch's claim on the port. Calling it while a Wait
+	// is pending is a contract violation and panics.
 	Close() error
 }
 
