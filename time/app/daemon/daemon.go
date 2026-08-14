@@ -206,9 +206,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		if sseCh != nil {
 			close(sseCh)
 		}
-		// This defer intentionally runs before the serial-port close defer.
-		// In particular, no modem-control ioctl can still be in progress when
-		// the underlying file descriptor is closed.
+		// This defer intentionally runs before the serial-port close defer,
+		// so that no goroutine still issues syscalls against the connection
+		// when it is closed. One exception is safe by construction: a
+		// serial-PPS wait abandoned by cancellation may stay parked in
+		// TIOCMIWAIT past the close, but its ModemControlPinWatch holds a private dup of
+		// the descriptor and touches nothing else. Its gpsio goroutine closes
+		// the watch when the ioctl eventually wakes.
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
@@ -327,12 +331,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		serialPPSCh = ch
 		wg.Go(func() {
 			defer close(ch)
-			lg.Debug("serial PPS polling goroutine started", "pin", cfg.Serial.PPS.Pin)
-			if err := serialpps.Poll(ctx, conn, serialpps.Wiring{Pin: pin}, ch, nil, lg); err != nil && ctx.Err() == nil {
-				lg.Error("serial PPS polling failed", "pin", cfg.Serial.PPS.Pin, "err", err)
-				cancel(fmt.Errorf("serial PPS polling failed on %s: %w", cfg.Serial.PPS.Pin, err))
+			lg.Debug("serial PPS goroutine started", "pin", cfg.Serial.PPS.Pin)
+			if err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Pin: pin}, ch, nil); err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS detection failed", "pin", cfg.Serial.PPS.Pin, "err", err)
+				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Pin, err))
 			}
-			lg.Debug("serial PPS polling goroutine exited", "pin", cfg.Serial.PPS.Pin)
+			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)

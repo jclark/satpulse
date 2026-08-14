@@ -4,6 +4,7 @@ package serialpps
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"time"
@@ -42,24 +43,25 @@ const (
 	maxMessageAge = 3 * time.Second
 )
 
-// Edge is the estimated time of a leading edge, located at the midpoint of the
-// two modem state observations that straddled the transition. Wall and Mono
-// are readings of that one instant on the two clocks now provides: Wall is
-// the most precise available system-time reading and is what published
-// samples carry; Mono is an ordinary time.Now reading, the only one valid
-// for elapsed-time arithmetic against other time.Now values such as message
-// read times. Where time.Now is the best clock available they are the same
-// reading.
+// Edge is the detected time of a leading edge. Wall and Mono are readings of
+// that one instant on the two clocks used here: Wall is the most precise
+// available system-time reading and is what published samples carry; Mono is
+// an ordinary time.Now reading, the only one valid for elapsed-time arithmetic
+// against other time.Now values such as message read times. Polling locates the
+// edge at the midpoint of the modem-state observations straddling it; a wait
+// backend uses the wait primitive's paired wakeup readings. Where time.Now is
+// the best clock available both fields contain the same reading.
 type Edge struct {
 	Wall time.Time
 	Mono time.Time
 }
 
-// Observation is a leading edge detected by polling, together with the
-// quality of that detection. Edge is the midpoint of the two modem-state
-// observations bracketing the transition. Uncertainty is half the elapsed
-// time between them. Settled reports whether the polling loop has adapted
-// far enough that scheduled sleeps no longer control its normal resolution.
+// Observation is a leading edge together with the quality of its detection.
+// For polling, Edge is the midpoint of the modem-state observations bracketing
+// the transition, Uncertainty is half the elapsed time between them, and
+// Settled reports whether the loop has adapted far enough that scheduled sleeps
+// no longer control its normal resolution. A wait observation carries the
+// wait timestamp directly, has no polling-bracket uncertainty, and is settled.
 type Observation struct {
 	Edge
 	Uncertainty time.Duration
@@ -69,6 +71,15 @@ type Observation struct {
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
 type StateReader interface {
 	ModemControlPinState() (gpsio.ModemControlPinState, error)
+}
+
+// ChangeWaiter is a StateReader that may be able to block until a modem
+// control input changes. CanWaitModemControlPinChange reports whether it
+// actually can. Implemented by a TTY-backed gpsio.SerialConn.
+type ChangeWaiter interface {
+	StateReader
+	CanWaitModemControlPinChange() bool
+	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error)
 }
 
 // Wiring describes how the PPS pulse is represented on the serial port's
@@ -125,6 +136,24 @@ func (p poll) gapAfter(prev poll) time.Duration {
 	return p.start.elapsedSince(prev.end)
 }
 
+// Detect sends observations of the pulse described by w, blocking on the
+// wait primitive when r provides it and polling adaptively otherwise. A tty
+// driver without the wait shows up only as the first wait failing with
+// errors.ErrUnsupported; Detect then falls back to polling. If stats is
+// non-nil, it records timings only when the polling backend is selected.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats) error {
+	if cw, ok := r.(ChangeWaiter); ok && cw.CanWaitModemControlPinChange() {
+		lg.Debug("serial PPS wait backend selected")
+		err := Wait(ctx, lg, cw, w, observations)
+		if !errors.Is(err, errors.ErrUnsupported) {
+			return err
+		}
+		lg.Info("serial driver cannot wait for modem control pin changes; polling instead")
+	}
+	lg.Debug("serial PPS polling backend selected")
+	return Poll(ctx, lg, r, w, observations, stats)
+}
+
 // Poll adaptively polls for the pulse described by w and sends every detected
 // leading edge to observations. Each period it polls a window centered on the
 // predicted next edge time. A caught edge is located by its bracket: the
@@ -160,9 +189,10 @@ func (p poll) gapAfter(prev poll) time.Duration {
 // that require settled edges must filter on Settled. Every caught edge and
 // every window size change is logged to lg at debug level. If stats is
 // non-nil, Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats, lg *slog.Logger) error {
+func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	stats.begin()
 
 	first, err := readState(ctx, r, time.Time{})
 	if err != nil {
@@ -292,6 +322,37 @@ func Poll(ctx context.Context, r StateReader, w Wiring, observations chan<- Obse
 			window += 2 * prevBracketWidth
 			catches = 0
 			lg.Debug("serial PPS poll window grew", "window", window, "misses", misses, "polls", polls)
+		}
+	}
+}
+
+// Wait sends observations of leading edges detected with modem-control change
+// notifications. The wait primitive timestamps each unambiguous transition
+// and reports the pin sense derived by the backend. The pulse's electrically
+// rising leading edge reaches the host inverted through the TTL driver chain,
+// so the pin reads deasserted during the pulse.
+func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, observations chan<- Observation) error {
+	for {
+		change, missed, err := r.WaitModemControlPinChange(ctx, w.Pin)
+		if err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return err
+		}
+		if missed > 0 {
+			lg.Debug("serial PPS transitions not observed", "atLeast", missed)
+		}
+		if !change.Asserted {
+			observation := Observation{
+				Edge:    Edge{Wall: change.Wall, Mono: change.Mono},
+				Settled: true,
+			}
+			select {
+			case observations <- observation:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
 		}
 	}
 }

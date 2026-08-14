@@ -9,7 +9,7 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-info**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** *cts*\|*dcd*\|*dsr*\|*ri*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-poll**]
 
 # DESCRIPTION
 
@@ -44,6 +44,11 @@ Otherwise, the default operation is to discover the available serial ports and s
 : Detect PPS edges on the specified modem-control pin.
 This causes speed detection not to be performed.
 
+**\-\-poll**
+: Report each PPS edge using polling.
+With **\-\-jsonl**, each edge includes the `uncertainty` and `settling` fields described under **\-\-jsonl**.
+Requires **\-p**.
+
 **\-\-packet\-log** *path*
 : Write a log of packets received to *path*.
 The log is in JSON lines format.
@@ -68,7 +73,8 @@ for a USB port a `usb` object with numeric `vid` and `pid` fields,
 for a port with a USB serial number a `serial` string,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
-With **\-p**, an edge object has a `device` string, a `t` string giving the edge time as an RFC 3339 UTC timestamp, an `uncertainty` number in seconds, and a `settled` boolean that is true once the uncertainty has stabilized.
+With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
+and optional polling fields `uncertainty` in seconds and `settling`.
 
 # EXIT STATUS
 

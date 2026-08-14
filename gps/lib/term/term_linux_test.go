@@ -107,6 +107,70 @@ func TestExclusiveModeReleased(t *testing.T) {
 	}
 }
 
+// TestModemControlPinWatchUnsupported checks that a tty whose driver
+// lacks TIOCMIWAIT (a pty) reports the wait capability as unsupported, which
+// is what triggers the fallback to the polling backend.
+func TestModemControlPinWatchUnsupported(t *testing.T) {
+	w := openTestWatcher(t)
+	watch, err := w.NewModemControlPinWatch(ModemCTS)
+	if err != nil {
+		t.Fatalf("NewModemControlPinWatch: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := watch.Close(); err != nil {
+			t.Errorf("ModemControlPinWatch.Close: %v", err)
+		}
+	})
+	if _, _, err := watch.Wait(); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("ModemControlPinWatch.Wait error = %v, want errors.ErrUnsupported", err)
+	}
+}
+
+// TestModemControlPinWatchCancel checks that cancellation is sticky and is observed before
+// the ioctl: on a pty a non-cancelled wait fails with ErrUnsupported, so
+// ErrCancelled proves the ioctl was never entered.
+func TestModemControlPinWatchCancel(t *testing.T) {
+	w := openTestWatcher(t)
+	watch, err := w.NewModemControlPinWatch(ModemCTS)
+	if err != nil {
+		t.Fatalf("NewModemControlPinWatch: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := watch.Close(); err != nil {
+			t.Errorf("ModemControlPinWatch.Close: %v", err)
+		}
+	})
+	watch.Cancel()
+	if c, missed, err := watch.Wait(); !errors.Is(err, ErrCancelled) || c != (ModemControlPinChange{}) || missed != 0 {
+		t.Fatalf("ModemControlPinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
+	}
+}
+
+func TestNewModemControlPinWatchInvalidLine(t *testing.T) {
+	w := openTestWatcher(t)
+	if _, err := w.NewModemControlPinWatch(ModemControlPin(99)); err == nil {
+		t.Fatal("NewModemControlPinWatch accepted an invalid line")
+	}
+}
+
+func openTestWatcher(t *testing.T) ModemControlPinWatcher {
+	t.Helper()
+	term, err := Open(newTestPTY(t), RawMode)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := term.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	w, ok := term.(ModemControlPinWatcher)
+	if !ok {
+		t.Fatalf("%T does not implement ModemControlPinWatcher", term)
+	}
+	return w
+}
+
 func newTestPTY(t *testing.T) string {
 	t.Helper()
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)

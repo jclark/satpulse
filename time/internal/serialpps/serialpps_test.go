@@ -41,6 +41,153 @@ func (h *settleCapture) Handle(_ context.Context, r slog.Record) error {
 	return nil
 }
 
+type testChangeWaiter struct {
+	next chan testWaitResult
+	// entered, when non-nil, reports that a wait is under way, so that a
+	// test can cancel while the wait is blocked rather than before it.
+	entered chan struct{}
+}
+
+type testWaitResult struct {
+	change gpsio.ModemControlPinChange
+	missed int
+	err    error
+}
+
+func (w *testChangeWaiter) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+	return 0, nil
+}
+
+func (w *testChangeWaiter) CanWaitModemControlPinChange() bool { return true }
+
+func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
+	if w.entered != nil {
+		w.entered <- struct{}{}
+	}
+	select {
+	case r := <-w.next:
+		return r.change, r.missed, r.err
+	case <-ctx.Done():
+		return gpsio.ModemControlPinChange{}, 0, ctx.Err()
+	}
+}
+
+func TestWait(t *testing.T) {
+	mono := time.Now()
+	wall := mono.Add(time.Millisecond)
+	w := &testChangeWaiter{next: make(chan testWaitResult, 3)}
+	// An asserted transition is not a leading pulse edge and must not be
+	// published. The following deasserted transition is published even when
+	// the backend reports missed transitions.
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall.Add(-time.Second), Mono: mono.Add(-time.Second), Asserted: true}}
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall, Mono: mono}, missed: 2}
+	observations := make(chan Observation, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, observations) }()
+	select {
+	case observation := <-observations:
+		if observation.Wall != wall || observation.Mono != mono {
+			t.Fatalf("Wait edge = %+v, want supplied wakeup times", observation.Edge)
+		}
+		if observation.Uncertainty != 0 {
+			t.Errorf("Wait uncertainty = %v, want no polling-bracket uncertainty", observation.Uncertainty)
+		}
+		if !observation.Settled {
+			t.Error("Wait observation is unsettled")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Wait did not emit the deasserting edge")
+	}
+	if !strings.Contains(logs.String(), "serial PPS transitions not observed") || !strings.Contains(logs.String(), "atLeast=2") {
+		t.Errorf("logs %q do not report the missed transitions", logs.String())
+	}
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Wait error = %v, want context.Canceled", err)
+	}
+}
+
+func TestWaitContextCancellation(t *testing.T) {
+	w := &testChangeWaiter{next: make(chan testWaitResult), entered: make(chan struct{}, 1)}
+	observations := make(chan Observation, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() { errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS}, observations) }()
+	<-w.entered
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Wait error = %v, want context.Canceled", err)
+	}
+	if n := len(observations); n != 0 {
+		t.Fatalf("Wait emitted %d observations after cancellation, want none", n)
+	}
+}
+
+// testFallbackWaiter reports the wait capability but fails every wait with
+// ErrUnsupported, as a tty driver without TIOCMIWAIT does; it cancels the
+// context on the first poll so that the polling fallback returns promptly.
+type testFallbackWaiter struct {
+	canWait bool
+	waits   int
+	cancel  context.CancelFunc
+}
+
+func (w *testFallbackWaiter) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+	w.cancel()
+	return 0, nil
+}
+
+func (w *testFallbackWaiter) CanWaitModemControlPinChange() bool { return w.canWait }
+
+func (w *testFallbackWaiter) WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
+	w.waits++
+	return gpsio.ModemControlPinChange{}, 0, errors.ErrUnsupported
+}
+
+func TestDetectFallsBackToPolling(t *testing.T) {
+	tests := []struct {
+		name        string
+		canWait     bool
+		expectWaits int
+	}{
+		{name: "unsupported wait falls back", canWait: true, expectWaits: 1},
+		{name: "no capability polls directly", canWait: false, expectWaits: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			w := &testFallbackWaiter{canWait: tc.canWait, cancel: cancel}
+			stats := new(PollStats)
+			var logs bytes.Buffer
+			lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+			if !tc.canWait {
+				cancel()
+			}
+			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, make(chan Observation, 1), stats)
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("Detect error = %v, want context.Canceled", err)
+			}
+			if w.waits != tc.expectWaits {
+				t.Errorf("waits = %d, want %d", w.waits, tc.expectWaits)
+			}
+			if !stats.started {
+				t.Error("polling fallback did not start polling statistics")
+			}
+			if !strings.Contains(logs.String(), "serial PPS polling backend selected") {
+				t.Errorf("logs %q do not report the polling backend", logs.String())
+			}
+			fallbackLogged := strings.Contains(logs.String(), "serial driver cannot wait for modem control pin changes; polling instead")
+			if fallbackLogged != tc.canWait {
+				t.Errorf("fallback log present = %v, want %v; logs: %q", fallbackLogged, tc.canWait, logs.String())
+			}
+		})
+	}
+}
+
 func TestClassifyReading(t *testing.T) {
 	base := time.Unix(1_000, 0)
 	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
@@ -411,6 +558,7 @@ func TestPollStatsTimingSamplesAreBounded(t *testing.T) {
 
 func TestPollStatsLog(t *testing.T) {
 	stats := new(PollStats)
+	stats.begin()
 	start := clockReading{wall: time.Unix(1_700_000_000, 0), mono: time.Unix(1_700_000_000, 0)}
 	end := clockReading{wall: start.wall.Add(2 * time.Millisecond), mono: start.mono.Add(2 * time.Millisecond)}
 	stats.addPoll(poll{start: start, end: end}, nil)
@@ -426,6 +574,14 @@ func TestPollStatsLog(t *testing.T) {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("log %q does not contain %q", output.String(), want)
 		}
+	}
+}
+
+func TestPollStatsLogSkipsUnusedStats(t *testing.T) {
+	var output bytes.Buffer
+	new(PollStats).Log(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelInfo})))
+	if output.Len() != 0 {
+		t.Errorf("unused polling statistics logged %q", output.String())
 	}
 }
 
@@ -452,7 +608,7 @@ func TestPoll(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				observations := make(chan Observation)
 				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, testLog) }()
+				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 				var got []Observation
 				sawUnsettled := false
 				for len(got) < 3 {
@@ -502,7 +658,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		observations := make(chan Observation)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, testLog) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
 			pulse = pulseIndex(nextSettled(observations).Wall, f.epoch)
@@ -526,7 +682,7 @@ func TestPollOutageResettles(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		observations := make(chan Observation)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, testLog) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 		var first int
 		for first <= 15 {
 			first = pulseIndex(nextSettled(observations).Wall, f.epoch)
@@ -552,7 +708,7 @@ func TestPollShrinksToFloor(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		observations := make(chan Observation)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, testLog) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 		for pulseIndex(nextSettled(observations).Wall, f.epoch) < 900 {
 		}
 		start := f.calls.Load()
@@ -579,7 +735,7 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		observations := make(chan Observation)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, testLog) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
 			last = pulseIndex(nextSettled(observations).Wall, f.epoch)
@@ -616,7 +772,7 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		observations := make(chan Observation)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, slog.New(capture)) }()
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 		var got []Observation
 		for len(got) < 20 {
 			got = append(got, nextSettled(observations))
@@ -659,7 +815,7 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		observations := make(chan Observation)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, slog.New(capture)) }()
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 		for range 3 {
 			nextSettled(observations)
 		}
@@ -682,7 +838,7 @@ func TestPollNarrowPulse(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		observations := make(chan Observation)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil, testLog) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
 		var got []Observation
 		for len(got) < 3 {
 			got = append(got, nextSettled(observations))
@@ -707,7 +863,7 @@ func (p errPin) ModemControlPinState() (gpsio.ModemControlPinState, error) { ret
 
 func TestPollReaderError(t *testing.T) {
 	e := errors.New("query failed")
-	if err := Poll(context.Background(), errPin{err: e}, Wiring{Pin: gpsio.ModemCTS}, nil, nil, testLog); err != e {
+	if err := Poll(context.Background(), testLog, errPin{err: e}, Wiring{Pin: gpsio.ModemCTS}, nil, nil); err != e {
 		t.Fatalf("Poll error = %v, want %v", err, e)
 	}
 }

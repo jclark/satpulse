@@ -101,6 +101,18 @@ floor and hover at a ~1.8 ms window: 8-10 state queries per pulse
 and offsets within ~150 us, in the daemon, matching the idle-port
 loop.
 
+The Linux wait backend was measured on two full-speed FTDI adapters
+(`ftdi_sio`), on a host synced to a LAN stratum-1 within tens of
+nanoseconds so the absolute sample error is visible: one sample per
+pulse with no gaps, a bias of about -200 us, and per-sample jitter of
+sd ~90 us, the same band as the polling backend on macOS. The bias is
+one-sided because the wait primitive timestamps the wakeup, which is
+strictly after the edge, so the full-speed USB delivery of the
+modem-status change appears wholesale; the polling backend's midpoint
+estimator cancels most of its own latency instead. Around 200 us is
+characteristic of full-speed FTDI adapters on Linux; compensate with
+the chrony refclock `offset` option (`offset 200e-6`).
+
 ## Configuration
 
 One new key in the `[serial]` table enables the physical PPS source:
@@ -165,13 +177,14 @@ messages are still consumed: they identify which second each pulse marks.
 
 ## Sample generation
 
-A detected edge at system time T becomes one refclock sample. Labelling
-uses only the monotonic components of T and the adjusted first-byte
-message timestamp `tRead`: advancing the message UTC by `T - tRead`
-places the edge on the message's UTC timescale without consulting the
-system wall clock. For each nearby integer second the generator infers
-the corresponding post-pulse message delay and accepts the unique label
-satisfying
+A detected edge becomes one refclock sample. Both backends deliver the
+edge as two readings of the same instant, wall and mono (see the Wait
+section for why they can be distinct clocks). Labelling uses the mono
+reading and the adjusted first-byte message timestamp `tRead`:
+advancing the message UTC by `mono - tRead` places the edge on the
+message's UTC timescale without consulting the system wall clock. For
+each nearby integer second the generator infers the corresponding
+post-pulse message delay and accepts the unique label satisfying
 
 ```text
 -delayUncertainty <= inferredDelay < maxDelay
@@ -179,9 +192,10 @@ satisfying
 
 The lower allowance represents measurement uncertainty; the physical
 message is guaranteed to be emitted after its pulse. If no label
-satisfies the interval, the edge produces no sample. The offset is the
-accepted reference time minus T, and the leap indication comes from the
-time messages, as in the existing message-based sampling. If the newest
+satisfies the interval, the edge produces no sample. The sample's
+system time is the edge's wall reading, the offset is the accepted
+reference time minus it, and the leap indication comes from the time
+messages, as in the existing message-based sampling. If the newest
 time message is more than 3 s old, the edge also produces no sample.
 Emission uses the existing refclock path (SOCK and/or SHM); the fixed
 SHM precision reported in this mode is 2^-11 s (~500 us), not the 2^-1 s
@@ -310,48 +324,78 @@ The polling goroutine locks its OS thread.
 
 Linux `TIOCMIWAIT` blocks until a chosen modem control line changes;
 Windows has the equivalent `SetCommMask`/`WaitCommEvent`. Neither
-reports the transition's direction nor a timestamp, so on each wakeup
-the backend takes the timestamp immediately -- before any further
-calls, since a state read can itself be a millisecond-scale USB round
-trip -- and then reads the line state to classify the
-transition. Every wakeup where the line has entered its pulse-asserted
-sense produces a sample, subject only to identifying the second from
-the time messages. Unlike the polling backend, nothing here relies on
-the pulses being 1 s apart.
+reports a timestamp, so the primitive timestamps the wakeup before
+any other call and then reads the line state. A state read can itself
+be a millisecond-scale USB round trip. `Wall`, the most precise
+system-time reading the platform offers, becomes the published sample
+time, while `Mono`, an ordinary `time.Now` reading, serves elapsed-time
+arithmetic against message read times. On Unix one `time.Now` reading
+serves both. On Windows `time.Now` is quantized to the shared clock
+page (~0.5 ms measured), while `GetSystemTimePreciseAsFileTime` reads
+to ~100 ns but carries no monotonic component, so a future backend will
+take the two readings back-to-back.
 
-`term` gains a primitive that only waits; reading the state afterwards
-is the existing method. Since only some terminals can wait, it is a
-capability interface that the PPS source asserts for, not a method of
-`Term`:
+`term` exposes a synchronous primitive. A watch owns its own claim on
+the port, remains usable after its `Term` closes, and contains no
+goroutine or logging:
 
 ```go
-type ModemControlPinWaiter interface {
-	WaitModemControlPinChange(pin ModemControlPin) error
+type ModemControlPinChange struct {
+	Wall, Mono time.Time
+	Asserted   bool
+}
+
+type ModemControlPinWatch interface {
+	Wait() (change ModemControlPinChange, missed int, err error)
+	Cancel()
+	Close() error
+}
+
+type ModemControlPinWatcher interface {
+	NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
 }
 ```
 
-The primitive may return without the pin having changed (a spurious
-wakeup or an interrupted syscall); callers detect actual transitions
-by reading the state, which the backend does after every wakeup
-anyway.
+`Cancel` is sticky: after it fires, every `Wait` returns
+`ErrCancelled`. It ends a pending wait as promptly as the platform
+allows. `Close` releases that claim and must not overlap `Wait`.
 
-`gpsio.SerialConn` forwards it as usual, and whether the underlying
-terminal satisfies the capability is how the PPS source chooses
-between the wait and polling backends at startup.
-Whether FreeBSD has an equivalent ioctl is unresolved (to be settled
-before that platform is claimed; if it has none, FreeBSD uses the
-polling backend).
+The Linux backend uses `TIOCGICOUNT` to attribute a wakeup. It reads
+the watched pin's counter before arming `TIOCMIWAIT`, timestamps the
+wakeup, reads the pin sense, and reads the counter again. A delta of
+one is an unambiguous transition and produces a `ModemControlPinChange`; any other
+delta is withheld and carried into `missed` before the wait is
+re-armed. Counter changes that occurred while no wait was armed are
+also included in `missed`. There is an inherent window between the
+pre-arm counter read and the ioctl's entry snapshot: an edge there can
+inflate the delta, occasionally withholding a clean wakeup. This fails
+safe and recovers when the wait is re-armed. If `TIOCGICOUNT` is not
+supported, the backend degrades to its best post-wakeup state reading,
+never withholds a wakeup, and always reports zero missed transitions.
+`missed` is a diagnostic lower bound, not a total, and classification
+never depends on it.
 
-Shutdown for this backend differs from every other goroutine in the
-daemon and must be called out explicitly at the wiring point: the wait
-cannot be interrupted portably (`TIOCMIWAIT` has no timeout, and
-closing the descriptor is not guaranteed to wake it). While pulses are
-arriving, the goroutine wakes within a second and observes the stop
-flag; if the pulse has stopped, the goroutine may remain blocked in
-the ioctl until process exit. That is accepted and harmless -- it must
-not later be "fixed" as if it were a leak. `EINTR` from the ioctl is
-retried. (On Windows, `SetCommMask` aborts a pending `WaitCommEvent`,
-so an explicit unblock is available there.)
+`gpsio.SerialConn` owns the concurrency. For each call it runs the
+synchronous `ModemControlPinWatch.Wait` on a goroutine and selects its result
+against the caller's context. Cancellation calls the watch's sticky
+`Cancel` and returns the context error. On Linux nothing can end
+`TIOCMIWAIT` itself: it has no timeout, closing the descriptor does not
+wake it, and runtime signals are installed with `SA_RESTART`. The
+cancelled goroutine may therefore remain parked until the next pin
+change or process exit. On a late wake it observes `ErrCancelled`,
+closes the watch, and exits. Until then the private dup keeps the
+port's flock held, but it cannot touch a descriptor number reused
+after `SerialConn.Close`; process exit releases it in the no-wakeup
+case. `SerialConn.Stop` also cancels the watch.
+
+On Linux every tty satisfies the capability interface, but support
+still depends on its driver. There is no nonblocking probe, so a
+driver without `TIOCMIWAIT` fails the first wait with `ENOTTY`, which
+`term` maps to `errors.ErrUnsupported`; the detector then closes the
+watch and falls back to polling. Whether FreeBSD has an equivalent
+ioctl remains unresolved. A Windows backend can make cancellation
+prompt with `SetCommMask`, but whether that abort crosses a duplicated
+handle is unverified and must be settled when the backend is written.
 
 ### D2XX on macOS (dropped)
 
@@ -404,9 +448,10 @@ Each platform fills the state from its native call (`TIOCMGET`;
 `GetCommModemStatus` on Windows, which reports exactly these four input
 pins). `gpsio.SerialConn` exposes the same interface, re-exporting the
 `term` types, with an error when the connection is not TTY-backed; the
-daemon layer imports only `gpsio`. `WaitModemControlPinChange` (see
-the Wait section) is a further capability interface rather than a
-`Term` method; it arrives with the first wait-capable device backend.
+daemon layer imports only `gpsio`. `ModemControlPinWatcher` (see the
+Wait section) is a further capability interface rather than a `Term`
+method; `gpsio.SerialConn` builds its ctx-based
+`WaitModemControlPinChange` on it.
 
 ## Daemon wiring
 
@@ -464,6 +509,7 @@ hardware per the phasing below.
    (done 2026-08-08, with an FT232R and an FT232H).
 2. The wait-consuming edge backend in `serialpps` with the
    `TIOCMIWAIT` and `WaitCommEvent` implementations of the wait
-   primitive for Linux and Windows. (A D2XX-backed macOS provider was
-   built as the originally planned phase 2 and dropped; see "D2XX on
-   macOS" above.)
+   primitive for Linux and Windows; the polling backend remains as
+   the fallback for tty drivers without the ioctl. (A D2XX-backed
+   macOS provider was built as the originally planned phase 2 and
+   dropped; see "D2XX on macOS" above.)

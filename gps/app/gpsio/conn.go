@@ -22,6 +22,9 @@ type SerialError = term.Error
 // ModemControlPin identifies a modem control input pin.
 type ModemControlPin = term.ModemControlPin
 
+// ModemControlPinChange reports one observed transition of a modem control input.
+type ModemControlPinChange = term.ModemControlPinChange
+
 const (
 	// ModemCTS is clear to send.
 	ModemCTS = term.ModemCTS

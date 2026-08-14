@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -42,6 +43,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "pps with packet log and timeout", args: []string{"-p", "dsr", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl", "-t", "30"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDSR, packetLog: "capture.jsonl", timeout: 30 * time.Second}},
 		{name: "pps until interrupted", args: []string{"-p", "cts", "-t", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS}},
 		{name: "pps JSONL", args: []string{"-j", "-p", "cts", "-a"}, want: flagVars{jsonl: true, all: true, ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
+		{name: "pps by polling", args: []string{"-p", "cts", "--poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, poll: true, timeout: defaultPPSTimeout}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "positional port", args: []string{"/dev/ttyS0"}, wantErr: true},
 		{name: "all and device", args: []string{"-a", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -49,6 +51,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "info and packet log", args: []string{"-i", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "info and timeout", args: []string{"-i", "-d", "/dev/ttyS0", "-t", "1"}, wantErr: true},
 		{name: "info and pps", args: []string{"-i", "-p", "cts", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "poll without pps", args: []string{"--poll", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps without target", args: []string{"-p", "cts"}, wantErr: true},
 		{name: "pps invalid pin", args: []string{"-p", "rts", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps value required", args: []string{"--pps-pin", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -224,32 +227,135 @@ func TestPrintSpeedInfo(t *testing.T) {
 }
 
 func TestEdgePrinter(t *testing.T) {
-	observation := serialpps.Observation{
-		Edge: serialpps.Edge{
-			Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
-		},
-		Uncertainty: 16 * time.Microsecond,
+	edge := serialpps.Edge{
+		Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
 	}
 	for _, tc := range []struct {
-		name       string
-		jsonl      bool
-		withDevice bool
-		want       string
+		name        string
+		observation serialpps.Observation
+		jsonl       bool
+		withDevice  bool
+		want        string
 	}{
-		{name: "human", want: "14:23:05.123456\n"},
-		{name: "human with device", withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
-		{name: "JSONL", jsonl: true, want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settled\":false}\n"},
+		{name: "human", observation: serialpps.Observation{Edge: edge}, want: "14:23:05.123456\n"},
+		{name: "human with device", observation: serialpps.Observation{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
+		{name: "wait JSONL", observation: serialpps.Observation{Edge: edge, Settled: true}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\"}\n"},
+		{name: "settling poll JSONL", observation: serialpps.Observation{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settling\":true}\n"},
+		{name: "settled poll JSONL", observation: serialpps.Observation{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer
 			pr := &edgePrinter{out: &output, jsonl: tc.jsonl, withDevice: tc.withDevice}
-			if err := pr.print("/dev/ttyS0", observation); err != nil {
+			if err := pr.print("/dev/ttyS0", tc.observation); err != nil {
 				t.Fatal(err)
 			}
 			if got := output.String(); got != tc.want {
 				t.Errorf("output = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+type monitorWaitConn struct {
+	state gpsio.ModemControlPinState
+	next  chan gpsio.ModemControlPinState
+	waits int
+}
+
+func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+	return c.state, nil
+}
+
+func (c *monitorWaitConn) CanWaitModemControlPinChange() bool { return true }
+
+func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
+	c.waits++
+	select {
+	case c.state = <-c.next:
+		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
+		return gpsio.ModemControlPinChange{Wall: t, Mono: t, Asserted: c.state.Asserted(pin)}, 0, nil
+	case <-ctx.Done():
+		return gpsio.ModemControlPinChange{}, 0, ctx.Err()
+	}
+}
+
+type notifyingWriter struct {
+	bytes.Buffer
+	wrote chan struct{}
+	once  sync.Once
+}
+
+func (w *notifyingWriter) Write(p []byte) (int, error) {
+	n, err := w.Buffer.Write(p)
+	w.once.Do(func() { close(w.wrote) })
+	return n, err
+}
+
+func TestDetectEdgesWaitBackend(t *testing.T) {
+	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
+	conn := &monitorWaitConn{
+		state: asserted,
+		next:  make(chan gpsio.ModemControlPinState, 1),
+	}
+	conn.next <- 0
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	output := &notifyingWriter{wrote: make(chan struct{})}
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan struct {
+		count int
+		err   error
+	}, 1)
+	go func() {
+		pr := &edgePrinter{out: output}
+		count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", false, pr)
+		result <- struct {
+			count int
+			err   error
+		}{count, err}
+	}()
+	select {
+	case <-output.wrote:
+	case <-time.After(time.Second):
+		t.Fatal("detectEdges did not print the wait observation")
+	}
+	cancel()
+	select {
+	case got := <-result:
+		if got.count != 1 || got.err != nil {
+			t.Fatalf("detectEdges = %d, %v; want 1, nil", got.count, got.err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("detectEdges did not stop the wait backend after cancellation")
+	}
+	if got := output.String(); got != "14:23:05.123456\n" {
+		t.Errorf("output = %q, want one wait timestamp", got)
+	}
+	if strings.Contains(logs.String(), "serial PPS polling statistics") {
+		t.Errorf("wait run logged polling statistics: %q", logs.String())
+	}
+}
+
+func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
+	conn := &monitorWaitConn{
+		next: make(chan gpsio.ModemControlPinState),
+	}
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
+	defer cancel()
+	count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", true, &edgePrinter{out: io.Discard})
+	if err != nil || count != 0 {
+		t.Fatalf("detectEdges = %d, %v; want 0, nil", count, err)
+	}
+	if conn.waits != 0 {
+		t.Errorf("wait backend called %d times, want 0", conn.waits)
+	}
+	if !strings.Contains(logs.String(), "serial PPS polling statistics") {
+		t.Errorf("forced polling run did not log polling statistics: %q", logs.String())
 	}
 }
 

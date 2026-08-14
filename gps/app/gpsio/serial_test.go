@@ -1,8 +1,10 @@
 package gpsio
 
 import (
+	"context"
 	"errors"
 	"io"
+	"sync"
 	"testing"
 	"time"
 
@@ -93,6 +95,161 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if !f.closed {
 		t.Error("Close did not close terminal")
 	}
+	if c.CanWaitModemControlPinChange() {
+		t.Error("CanWaitModemControlPinChange() = true for a terminal that cannot wait")
+	}
+}
+
+type fakeWatchResult struct {
+	change term.ModemControlPinChange
+	missed int
+	err    error
+}
+
+type fakePinWatch struct {
+	result      chan fakeWatchResult
+	cancelled   chan struct{}
+	waitStarted chan struct{}
+	closed      chan struct{}
+	cancelOnce  sync.Once
+	startOnce   sync.Once
+	closeOnce   sync.Once
+	mu          sync.Mutex
+	waits       int
+}
+
+var _ term.ModemControlPinWatch = (*fakePinWatch)(nil)
+
+func newFakePinWatch() *fakePinWatch {
+	return &fakePinWatch{
+		result:      make(chan fakeWatchResult, 1),
+		cancelled:   make(chan struct{}),
+		waitStarted: make(chan struct{}),
+		closed:      make(chan struct{}),
+	}
+}
+
+func (w *fakePinWatch) Wait() (term.ModemControlPinChange, int, error) {
+	w.mu.Lock()
+	w.waits++
+	w.mu.Unlock()
+	w.startOnce.Do(func() { close(w.waitStarted) })
+	select {
+	case r := <-w.result:
+		return r.change, r.missed, r.err
+	case <-w.cancelled:
+		return term.ModemControlPinChange{}, 0, term.ErrCancelled
+	}
+}
+
+func (w *fakePinWatch) Cancel() { w.cancelOnce.Do(func() { close(w.cancelled) }) }
+
+func (w *fakePinWatch) Close() error {
+	w.closeOnce.Do(func() { close(w.closed) })
+	return nil
+}
+
+func (w *fakePinWatch) waitCount() int {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.waits
+}
+
+// fakeWaitTerm is a terminal with the optional wait capability.
+type fakeWaitTerm struct {
+	fakeTerm
+	watch *fakePinWatch
+	pin   term.ModemControlPin
+}
+
+var _ term.ModemControlPinWatcher = (*fakeWaitTerm)(nil)
+
+func (f *fakeWaitTerm) NewModemControlPinWatch(pin term.ModemControlPin) (term.ModemControlPinWatch, error) {
+	f.pin = pin
+	return f.watch, nil
+}
+
+func TestSerialConnWaitCapability(t *testing.T) {
+	w := newFakePinWatch()
+	now := time.Now()
+	w.result <- fakeWatchResult{
+		change: term.ModemControlPinChange{Wall: now, Mono: now, Asserted: true},
+		missed: 2,
+	}
+	f := &fakeWaitTerm{watch: w}
+	c := newSerialConn(f, term.DevUSBtoUART)
+
+	if !c.CanWaitModemControlPinChange() {
+		t.Fatal("CanWaitModemControlPinChange() = false, want true")
+	}
+	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemCTS)
+	if err != nil || change.Wall != now || change.Mono != now || !change.Asserted || missed != 2 {
+		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 2, nil", change, missed, err)
+	}
+	if got := w.waitCount(); got != 1 {
+		t.Errorf("waits = %d, want 1", got)
+	}
+	if f.pin != term.ModemCTS {
+		t.Errorf("watched pin = %v, want CTS", f.pin)
+	}
+	c.Stop()
+	select {
+	case <-w.cancelled:
+	default:
+		t.Error("Stop did not cancel the pending wait")
+	}
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	select {
+	case <-w.closed:
+	default:
+		t.Error("Close did not close the idle watch")
+	}
+}
+
+func TestSerialConnWaitUnsupportedClosesWatch(t *testing.T) {
+	w := newFakePinWatch()
+	w.result <- fakeWatchResult{err: errors.ErrUnsupported}
+	c := newSerialConn(&fakeWaitTerm{watch: w}, term.DevUSBtoUART)
+
+	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	}
+	select {
+	case <-w.closed:
+	default:
+		t.Error("unsupported wait did not close the watch")
+	}
+	if c.watch != nil {
+		t.Error("unsupported wait retained the watch")
+	}
+}
+
+func TestSerialConnWaitContextCancellation(t *testing.T) {
+	w := newFakePinWatch()
+	c := newSerialConn(&fakeWaitTerm{watch: w}, term.DevUSBtoUART)
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := c.WaitModemControlPinChange(ctx, ModemCTS)
+		done <- err
+	}()
+	<-w.waitStarted
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("WaitModemControlPinChange error = %v, want context.Canceled", err)
+	}
+	select {
+	case <-w.cancelled:
+	default:
+		t.Error("context cancellation did not cancel the watch")
+	}
+	select {
+	case <-w.closed:
+	case <-time.After(time.Second):
+		t.Error("cancelled wait did not close the watch")
+	}
 }
 
 func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
@@ -107,6 +264,9 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	}
 	if _, err := c.ModemControlPinState(); !errors.Is(err, term.ErrNotATTY) {
 		t.Errorf("ModemControlPinState error = %v, want ErrNotATTY", err)
+	}
+	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)

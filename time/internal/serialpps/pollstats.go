@@ -12,11 +12,18 @@ const pollStatsSampleLimit = 10000
 // PollStats accumulates optional timing and outcome statistics for one run
 // of Poll. It must be read only after Poll returns.
 type PollStats struct {
+	started      bool
 	windows      int
 	edges        int
 	settledEdges int
 	durations    durationSamples
 	gaps         durationSamples
+}
+
+func (s *PollStats) begin() {
+	if s != nil {
+		s.started = true
+	}
 }
 
 type durationSamples struct {
@@ -112,7 +119,7 @@ func (s *durationSamples) summary() durationStats {
 
 // Log writes the accumulated polling statistics at info level.
 func (s *PollStats) Log(lg *slog.Logger) {
-	if s == nil {
+	if s == nil || !s.started {
 		return
 	}
 	summary := s.summary()
