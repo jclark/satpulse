@@ -234,7 +234,8 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 
 // overlapped runs one operation on an overlapped handle to completion. When
 // wall is non-nil the clocks are read the instant the operation completes,
-// before anything else the caller might do.
+// before anything else the caller might do. They are two adjacent reads, not
+// one atomic reading of both clocks.
 func overlapped(h windows.Handle, op func(*windows.Overlapped) error, n *uint32, wall, mono *time.Time) error {
 	event, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
