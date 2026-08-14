@@ -122,12 +122,26 @@ step over 10^6 reads; the two read the same system clock, the coarse
 one lagging by 8-368 us, always within one quantum. `GetCommModemStatus`
 answers in ~1.5 us median (p99 2.9 us, max 15.5 us) -- far too fast for
 a USB round trip, so the VCP driver answers from its cached modem
-status: the polling loop brackets the cache flip, the status-delivery
-cadence appears as edge scatter for the window to learn, and the 50 us
-spacing floor, near-inert on the adapters above, is what paces the
-settled loop and bounds its CPU here. The same 2000 calls timed with
-time.Now report min=0 median=0 p90=0: the earlier `-i` distributions
-on Windows were clock quantization, not measurement. With the wait
+status: the polling loop brackets the cache flip and the status-delivery
+cadence appears as edge scatter for the window to learn. The same 2000
+calls timed with time.Now report min=0 median=0 p90=0: the earlier `-i`
+distributions on Windows were clock quantization, not measurement.
+
+What paces the settled loop here is neither the state read nor the 50 us
+spacing floor, but the timer. Measured on 2026-08-14: the monotonic
+component of `time.Now` has the same ~524 us granularity as its wall
+component, and a timer set for 50 us fires at a median 523.8 us, one set
+for 200 us at 525.9 us, one for 1 ms at 1.527 ms -- all landing on that
+same quantum, because Windows cannot sleep for less than a tick. A state
+read of ~11 us therefore always leaves time on the clock, so every poll
+sleeps, every sleep costs a tick, and the floor is unreachable. The
+achieved bracket is ~524 us and the published uncertainty half of it,
+which is what an FT232H measured: 262, 281, 268 us. Windows polling
+resolution is floored by the OS at half a tick, and only the wait
+backend, which blocks on an event rather than sleeping, escapes it.
+Because every poll sleeps, the settled latch's query-paced confirmation
+cannot fire on Windows either; it settles through the spacing-floor
+branch, which is what that branch is for. With the wait
 backend wired to the two clocks, the same adapter delivered one edge
 per second with no misses and the published timestamps resolved to
 100 ns, scattering a few hundred us per edge (delivery jitter, no
