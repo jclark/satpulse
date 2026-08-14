@@ -8,7 +8,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -603,7 +602,7 @@ func TestPoll(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
 				f := &fakePulse{epoch: time.Now().Add(tc.epochOffset), width: 100 * time.Millisecond, callDur: tc.callDur}
 				ctx, cancel := context.WithCancel(context.Background())
 				observations := make(chan Observation)
@@ -652,7 +651,7 @@ func TestPoll(t *testing.T) {
 }
 
 func TestPollMissedPulseKeepsLatch(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 17}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -676,7 +675,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 }
 
 func TestPollOutageResettles(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 31}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -702,7 +701,7 @@ func TestPollOutageResettles(t *testing.T) {
 // settled window of about pollsPerWindow gaps, so it needs several hundred
 // simulated pulses to reach the floor.
 func TestPollShrinksToFloor(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 2 * time.Millisecond}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -729,7 +728,7 @@ func TestPollShrinksToFloor(t *testing.T) {
 // as equilibrium growth: after the window has grown back, nearly every pulse
 // is caught again.
 func TestPollLearnsDeliveryTail(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 100 * time.Microsecond, lateEvery: 5, late: time.Millisecond}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -764,7 +763,7 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 // edges are located to the query time. The stall is timed to hit the
 // bracket of the pulse-4 catch, mid-halving.
 func TestPollSettlesDespiteSleepJitter(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 100 * time.Microsecond, wakeJitter: 900 * time.Microsecond,
 			stallAfter: 3999 * time.Millisecond, stall: 3 * time.Millisecond}
@@ -802,7 +801,7 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 // queries resume at the next pulse, so settling must continue until the
 // 50 us spacing floor is reached.
 func TestPollConfirmsQueryPacing(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{
 			epoch:       time.Now().Add(350 * time.Millisecond),
 			width:       100 * time.Millisecond,
@@ -832,7 +831,7 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 // cap and then tracked normally, since the settled spacing is below the
 // width.
 func TestPollNarrowPulse(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 5 * time.Millisecond,
 			callDur: 2 * time.Millisecond}
 		ctx, cancel := context.WithCancel(context.Background())

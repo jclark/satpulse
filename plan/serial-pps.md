@@ -113,6 +113,41 @@ estimator cancels most of its own latency instead. Around 200 us is
 characteristic of full-speed FTDI adapters on Linux; compensate with
 the chrony refclock `offset` option (`offset 200e-6`).
 
+The Windows clocks were measured on 2026-08-10 (Windows 11, an FT232R
+on the FTDI VCP driver) before wiring the backend to them. time.Now's
+wall reading advances in ~523 us steps on this machine, 99% of
+consecutive readings being equal, while `GetSystemTimePreciseAsFileTime`
+resolves its 100 ns representation at ~57 ns per read with no backwards
+step over 10^6 reads; the two read the same system clock, the coarse
+one lagging by 8-368 us, always within one quantum. `GetCommModemStatus`
+answers in ~1.5 us median (p99 2.9 us, max 15.5 us) -- far too fast for
+a USB round trip, so the VCP driver answers from its cached modem
+status: the polling loop brackets the cache flip and the status-delivery
+cadence appears as edge scatter for the window to learn. The same 2000
+calls timed with time.Now report min=0 median=0 p90=0: the earlier `-i`
+distributions on Windows were clock quantization, not measurement.
+
+What paces the settled loop here is neither the state read nor the 50 us
+spacing floor, but the timer. Measured on 2026-08-14: the monotonic
+component of `time.Now` has the same ~524 us granularity as its wall
+component, and a timer set for 50 us fires at a median 523.8 us, one set
+for 200 us at 525.9 us, one for 1 ms at 1.527 ms -- all landing on that
+same quantum, because Windows cannot sleep for less than a tick. A state
+read of ~11 us therefore always leaves time on the clock, so every poll
+sleeps, every sleep costs a tick, and the floor is unreachable. The
+achieved bracket is ~524 us and the published uncertainty half of it,
+which is what an FT232H measured: 262, 281, 268 us. Windows polling
+resolution is floored by the OS at half a tick, and only the wait
+backend, which blocks on an event rather than sleeping, escapes it.
+Because every poll sleeps, the settled latch's query-paced confirmation
+cannot fire on Windows either; it settles through the spacing-floor
+branch, which is what that branch is for. With the wait
+backend wired to the two clocks, the same adapter delivered one edge
+per second with no misses and the published timestamps resolved to
+100 ns, scattering a few hundred us per edge (delivery jitter, no
+longer clock quantization); the polling backend's own poll-duration
+statistics on the wired port report a median of 1.1 us.
+
 ## Configuration
 
 One new key in the `[serial]` table enables the physical PPS source:
@@ -332,8 +367,8 @@ time, while `Mono`, an ordinary `time.Now` reading, serves elapsed-time
 arithmetic against message read times. On Unix one `time.Now` reading
 serves both. On Windows `time.Now` is quantized to the shared clock
 page (~0.5 ms measured), while `GetSystemTimePreciseAsFileTime` reads
-to ~100 ns but carries no monotonic component, so a future backend will
-take the two readings back-to-back.
+to ~100 ns but carries no monotonic component, so the Windows backend
+takes the two readings back-to-back.
 
 `term` exposes a synchronous primitive. A watch owns its own claim on
 the port, remains usable after its `Term` closes, and contains no
@@ -393,9 +428,54 @@ still depends on its driver. There is no nonblocking probe, so a
 driver without `TIOCMIWAIT` fails the first wait with `ENOTTY`, which
 `term` maps to `errors.ErrUnsupported`; the detector then closes the
 watch and falls back to polling. Whether FreeBSD has an equivalent
-ioctl remains unresolved. A Windows backend can make cancellation
-prompt with `SetCommMask`, but whether that abort crosses a duplicated
-handle is unverified and must be settled when the backend is written.
+ioctl remains unresolved.
+
+The Windows backend waits in `WaitCommEvent` on the event selected by
+`SetCommMask`. Windows has no transition counter, so it is the
+degraded mode the Linux backend falls into without `TIOCGICOUNT`:
+nothing is withheld, `missed` is always zero, and `Asserted` is the
+best reading `GetCommModemStatus` gives after the wakeup. The mask is
+installed once, by `NewPinWatch`, because `SetCommMask` resets the
+driver's event history: setting it before every wait would create a
+window in which a transition between successive waits could be lost,
+whereas setting it once lets an event arriving while no wait is armed
+complete the next `WaitCommEvent` immediately. A driver that rejects a
+valid pin's event mask as unsupported triggers the polling fallback.
+
+Cancellation is prompt, which is what Linux cannot manage: `Cancel`
+sets the sticky flag and then calls `SetCommMask(0)`, which
+`IOCTL_SERIAL_SET_WAIT_MASK` documents as completing a pending
+wait-on-mask request immediately with a zero event mask. That this
+works across the watch's duplicated handle follows from the object
+model rather than from the serial documentation: a duplicate refers to
+the same object as the original, and a driver receives IRPs bearing a
+file object, never a handle, so the wait mask, the event history and
+the pending wait are one piece of state that either handle reaches.
+The same sharing means the watch's mask is also the main handle's
+mask; that is harmless, since nothing else calls `WaitCommEvent` and
+the mask affects nothing else. `Close` closes the duplicate; the file
+object survives until both handles are closed, so an abandoned wait
+is undisturbed by `SerialConn.Close` and cannot touch a handle value
+reused after it.
+
+The COM handle is opened with `FILE_FLAG_OVERLAPPED`, and `ReadFile`,
+`WriteFile`, and `WaitCommEvent` are all performed as overlapped
+operations, the duplicate inheriting the file object's asynchronous
+mode. This is required for the event wait and the scan reader to
+operate concurrently: with a synchronous handle an FT232R produced only
+the first two CTS edges and the scan reader stopped receiving, whereas
+with overlapped I/O the same daemon run produced 91 consecutive edges
+and 90 serial-PPS samples over 90 seconds. It is also what lets a
+cancelling `SetCommMask` reach the driver while the wait is pending,
+since an asynchronous file object does not serialize requests the way a
+synchronous one does. An earlier implementation cancelled with
+`CancelIoEx` first, because a `SetCommMask` had been seen to queue
+behind the pending wait and deadlock shutdown; that was the file
+object's synchronous mode, not the FTDI driver. Measured on 2026-08-14
+with an FT232H on COM4: a wait armed on `RI`, which never changes,
+stayed pending for the whole 5-second run and the process exited
+0.23 s past its timeout, so `SetCommMask` alone releases the wait and
+`CancelIoEx` is not needed.
 
 ### D2XX on macOS (dropped)
 
@@ -498,8 +578,12 @@ settling, steady-state poll cost, and miss handling are checked
 deterministically. The source also models the daemon's sleep
 overshoot (jittered and stalled wakeups), pinning the settled
 latch to confirmed query pacing rather than the bracket noise or
-a single slow-query burst. The edge backends are also validated on real
-hardware per the phasing below.
+a single slow-query burst. These do not run on Windows: `now` reads the
+system clock through a syscall no bubble can fake, so the loop would
+predict edges on the real clock while sleeping on the fake one. Rather
+than shape the clock around the tests, the bubble tests are skipped
+there and the loop is covered by the Linux and macOS runs. The edge
+backends are also validated on real hardware per the phasing below.
 
 ## Phasing
 
@@ -512,4 +596,13 @@ hardware per the phasing below.
    primitive for Linux and Windows; the polling backend remains as
    the fallback for tty drivers without the ioctl. (A D2XX-backed
    macOS provider was built as the originally planned phase 2 and
-   dropped; see "D2XX on macOS" above.)
+   dropped; see "D2XX on macOS" above.) (done 2026-08-10; the Windows
+   backend was validated with CTS on an FT232R, including cancellation
+   while `WaitCommEvent` was pending and a 90-second continuous daemon
+   run using overlapped serial I/O. That backend was then reworked onto
+   `PinWatch` -- a duplicated handle, a mask installed once by
+   `NewPinWatch`, and `SetCommMask` cancellation in place of
+   `CancelIoEx` -- and revalidated on 2026-08-14 with an FT232H on
+   COM4: 90 edges over 90 seconds with no missed transitions, prompt
+   cancellation of a wait pending on an idle pin, and the polling
+   fallback settling to a 0.26 ms bracket.)
