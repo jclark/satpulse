@@ -45,7 +45,8 @@ Otherwise, the default operation is to discover the available serial ports and s
 This causes speed detection not to be performed.
 
 **\-\-poll**
-: Force polling for PPS edge detection even when the platform can wait for modem-control changes.
+: Report each PPS edge using polling.
+With **\-\-jsonl**, each edge includes the `uncertainty` and `settling` fields described under **\-\-jsonl**.
 Requires **\-p**.
 
 **\-\-packet\-log** *path*
