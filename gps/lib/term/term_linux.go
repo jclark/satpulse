@@ -253,10 +253,10 @@ type pinWatch struct {
 	path        string
 }
 
-// NewPinWatch creates a watch with a private descriptor. All watch syscalls
+// NewModemControlPinWatch creates a watch with a private descriptor. All watch syscalls
 // use the duplicate, so the watch remains safe if the terminal is later
 // closed.
-func (t *unixTerm) NewPinWatch(pin ModemControlPin) (PinWatch, error) {
+func (t *unixTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
 	mask, err := tiocmPinMask(pin)
 	if err != nil {
 		return nil, err
@@ -277,18 +277,18 @@ func (t *unixTerm) NewPinWatch(pin ModemControlPin) (PinWatch, error) {
 // interrupt this ioctl, so cancellation becomes observable only after the pin
 // next changes. time.Now is the best clock here, so one reading serves as both
 // Wall and Mono.
-func (w *pinWatch) Wait() (PinChange, int, error) {
+func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
 	if w.cancelled.Load() {
-		return PinChange{}, 0, ErrCancelled
+		return ModemControlPinChange{}, 0, ErrCancelled
 	}
 	missed := 0
 	for {
 		if w.haveCounter {
 			count, err := w.readCounter()
 			if err != nil {
-				return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCGICOUNT)")
+				return ModemControlPinChange{}, missed, w.wrapErr(err, "ioctl(TIOCGICOUNT)")
 			}
 			missed += int(count - w.baseline)
 			w.baseline = count
@@ -304,24 +304,24 @@ func (w *pinWatch) Wait() (PinChange, int, error) {
 		}
 		if errno == unix.ENOTTY {
 			err := fmt.Errorf("%w: %v", errors.ErrUnsupported, errno)
-			return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMIWAIT)")
+			return ModemControlPinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMIWAIT)")
 		}
 		if errno != 0 {
-			return PinChange{}, missed, w.wrapErr(errno, "ioctl(TIOCMIWAIT)")
+			return ModemControlPinChange{}, missed, w.wrapErr(errno, "ioctl(TIOCMIWAIT)")
 		}
 		at := time.Now()
 		if w.cancelled.Load() {
-			return PinChange{}, missed, ErrCancelled
+			return ModemControlPinChange{}, missed, ErrCancelled
 		}
 		status, err := ioctlGetModemState(w.fd)
 		if err != nil {
-			return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMGET)")
+			return ModemControlPinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMGET)")
 		}
 		asserted := uint(status)&w.mask != 0
 		if w.haveCounter {
 			count, err := w.readCounter()
 			if err != nil {
-				return PinChange{}, missed, w.wrapErr(err, "ioctl(TIOCGICOUNT)")
+				return ModemControlPinChange{}, missed, w.wrapErr(err, "ioctl(TIOCGICOUNT)")
 			}
 			delta := int(count - w.baseline)
 			w.baseline = count
@@ -330,7 +330,7 @@ func (w *pinWatch) Wait() (PinChange, int, error) {
 				continue
 			}
 		}
-		return PinChange{Wall: at, Mono: at, Asserted: asserted}, missed, nil
+		return ModemControlPinChange{Wall: at, Mono: at, Asserted: asserted}, missed, nil
 	}
 }
 
@@ -349,7 +349,7 @@ func (w *pinWatch) readCounter() (int32, error) {
 	case ModemRI:
 		return ic.Rng, nil
 	default:
-		panic("term: invalid pin in PinWatch")
+		panic("term: invalid pin in ModemControlPinWatch")
 	}
 }
 
@@ -357,7 +357,7 @@ func (w *pinWatch) Cancel() { w.cancelled.Store(true) }
 
 func (w *pinWatch) Close() error {
 	if w.inWait.Load() {
-		panic("term: PinWatch.Close during Wait")
+		panic("term: ModemControlPinWatch.Close during Wait")
 	}
 	fd := w.fd
 	w.fd = -1

@@ -375,19 +375,19 @@ the port, remains usable after its `Term` closes, and contains no
 goroutine or logging:
 
 ```go
-type PinChange struct {
+type ModemControlPinChange struct {
 	Wall, Mono time.Time
 	Asserted   bool
 }
 
-type PinWatch interface {
-	Wait() (change PinChange, missed int, err error)
+type ModemControlPinWatch interface {
+	Wait() (change ModemControlPinChange, missed int, err error)
 	Cancel()
 	Close() error
 }
 
 type ModemControlPinWatcher interface {
-	NewPinWatch(pin ModemControlPin) (PinWatch, error)
+	NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
 }
 ```
 
@@ -398,7 +398,7 @@ allows. `Close` releases that claim and must not overlap `Wait`.
 The Linux backend uses `TIOCGICOUNT` to attribute a wakeup. It reads
 the watched pin's counter before arming `TIOCMIWAIT`, timestamps the
 wakeup, reads the pin sense, and reads the counter again. A delta of
-one is an unambiguous transition and produces a `PinChange`; any other
+one is an unambiguous transition and produces a `ModemControlPinChange`; any other
 delta is withheld and carried into `missed` before the wait is
 re-armed. Counter changes that occurred while no wait was armed are
 also included in `missed`. There is an inherent window between the
@@ -411,7 +411,7 @@ never withholds a wakeup, and always reports zero missed transitions.
 never depends on it.
 
 `gpsio.SerialConn` owns the concurrency. For each call it runs the
-synchronous `PinWatch.Wait` on a goroutine and selects its result
+synchronous `ModemControlPinWatch.Wait` on a goroutine and selects its result
 against the caller's context. Cancellation calls the watch's sticky
 `Cancel` and returns the context error. On Linux nothing can end
 `TIOCMIWAIT` itself: it has no timeout, closing the descriptor does not

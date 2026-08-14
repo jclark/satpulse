@@ -98,8 +98,8 @@ func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
 	return state
 }
 
-// PinChange reports one observed transition of a modem control input.
-type PinChange struct {
+// ModemControlPinChange reports one observed transition of a modem control input.
+type ModemControlPinChange struct {
 	// Wall and Mono are the time the wakeup was observed on two clocks:
 	// Wall is the most precise system-time reading the platform offers and
 	// may carry no monotonic reading, so it must not be used for elapsed-time
@@ -115,17 +115,17 @@ type PinChange struct {
 	Asserted bool
 }
 
-// PinWatch observes transitions of one modem control input. Its validity is
-// independent of the Term it came from: it stays usable after the Term is
-// closed, and everything an abandoned Wait does is confined to the watch, so
-// it can neither disturb the Term nor touch a resource the platform recycles
-// after that close. The watch holds a claim on the port of its own until
-// Close, so a watch left behind by an abandoned Wait must still be closed,
-// and the port can stay unavailable to other openers until it is.
+// ModemControlPinWatch observes transitions of one modem control input. Its
+// validity is independent of the Term it came from: it stays usable after the
+// Term is closed, and everything an abandoned Wait does is confined to the
+// watch, so it can neither disturb the Term nor touch a resource the platform
+// recycles after that close. The watch holds a claim on the port of its own
+// until Close, so a watch left behind by an abandoned Wait must still be
+// closed, and the port can stay unavailable to other openers until it is.
 // Close must not overlap a Wait: the caller must observe Wait's return,
 // directly or through a happens-before edge such as a channel receive,
 // before calling Close.
-type PinWatch interface {
+type ModemControlPinWatch interface {
 	// Wait blocks until the pin changes; on some platforms it cannot be
 	// interrupted, so callers that need cancellation must run it on a
 	// goroutine they can abandon. missed counts transitions that could not
@@ -133,7 +133,7 @@ type PinWatch interface {
 	// armed, and edges that made an earlier wakeup ambiguous. It is a lower
 	// bound, not a total, and diagnostic only; classification must not depend
 	// on it.
-	Wait() (c PinChange, missed int, err error)
+	Wait() (c ModemControlPinChange, missed int, err error)
 	// Cancel prevents any further reports and ends a pending Wait as soon as
 	// the platform allows. Sticky: once it has fired, every Wait, including
 	// one already parked, returns ErrCancelled.
@@ -147,7 +147,7 @@ type PinWatch interface {
 // modem control input changes. Callers discover the capability by asserting
 // for this interface.
 type ModemControlPinWatcher interface {
-	NewPinWatch(pin ModemControlPin) (PinWatch, error)
+	NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
 }
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)

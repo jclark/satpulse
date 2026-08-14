@@ -101,7 +101,7 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 }
 
 type fakeWatchResult struct {
-	change term.PinChange
+	change term.ModemControlPinChange
 	missed int
 	err    error
 }
@@ -118,7 +118,7 @@ type fakePinWatch struct {
 	waits       int
 }
 
-var _ term.PinWatch = (*fakePinWatch)(nil)
+var _ term.ModemControlPinWatch = (*fakePinWatch)(nil)
 
 func newFakePinWatch() *fakePinWatch {
 	return &fakePinWatch{
@@ -129,7 +129,7 @@ func newFakePinWatch() *fakePinWatch {
 	}
 }
 
-func (w *fakePinWatch) Wait() (term.PinChange, int, error) {
+func (w *fakePinWatch) Wait() (term.ModemControlPinChange, int, error) {
 	w.mu.Lock()
 	w.waits++
 	w.mu.Unlock()
@@ -138,7 +138,7 @@ func (w *fakePinWatch) Wait() (term.PinChange, int, error) {
 	case r := <-w.result:
 		return r.change, r.missed, r.err
 	case <-w.cancelled:
-		return term.PinChange{}, 0, term.ErrCancelled
+		return term.ModemControlPinChange{}, 0, term.ErrCancelled
 	}
 }
 
@@ -164,7 +164,7 @@ type fakeWaitTerm struct {
 
 var _ term.ModemControlPinWatcher = (*fakeWaitTerm)(nil)
 
-func (f *fakeWaitTerm) NewPinWatch(pin term.ModemControlPin) (term.PinWatch, error) {
+func (f *fakeWaitTerm) NewModemControlPinWatch(pin term.ModemControlPin) (term.ModemControlPinWatch, error) {
 	f.pin = pin
 	return f.watch, nil
 }
@@ -173,7 +173,7 @@ func TestSerialConnWaitCapability(t *testing.T) {
 	w := newFakePinWatch()
 	now := time.Now()
 	w.result <- fakeWatchResult{
-		change: term.PinChange{Wall: now, Mono: now, Asserted: true},
+		change: term.ModemControlPinChange{Wall: now, Mono: now, Asserted: true},
 		missed: 2,
 	}
 	f := &fakeWaitTerm{watch: w}

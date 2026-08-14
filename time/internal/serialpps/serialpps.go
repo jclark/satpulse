@@ -79,7 +79,7 @@ type StateReader interface {
 type ChangeWaiter interface {
 	StateReader
 	CanWaitModemControlPinChange() bool
-	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.PinChange, int, error)
+	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error)
 }
 
 // Wiring describes how the PPS pulse is represented on the serial port's

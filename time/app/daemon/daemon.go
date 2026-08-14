@@ -210,7 +210,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		// so that no goroutine still issues syscalls against the connection
 		// when it is closed. One exception is safe by construction: a
 		// serial-PPS wait abandoned by cancellation may stay parked in
-		// TIOCMIWAIT past the close, but its PinWatch holds a private dup of
+		// TIOCMIWAIT past the close, but its ModemControlPinWatch holds a private dup of
 		// the descriptor and touches nothing else. Its gpsio goroutine closes
 		// the watch when the ioctl eventually wakes.
 		wg.Wait()

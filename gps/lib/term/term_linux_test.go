@@ -107,49 +107,49 @@ func TestExclusiveModeReleased(t *testing.T) {
 	}
 }
 
-// TestPinWatchUnsupported checks that a tty whose driver
+// TestModemControlPinWatchUnsupported checks that a tty whose driver
 // lacks TIOCMIWAIT (a pty) reports the wait capability as unsupported, which
 // is what triggers the fallback to the polling backend.
-func TestPinWatchUnsupported(t *testing.T) {
+func TestModemControlPinWatchUnsupported(t *testing.T) {
 	w := openTestWatcher(t)
-	watch, err := w.NewPinWatch(ModemCTS)
+	watch, err := w.NewModemControlPinWatch(ModemCTS)
 	if err != nil {
-		t.Fatalf("NewPinWatch: %v", err)
+		t.Fatalf("NewModemControlPinWatch: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := watch.Close(); err != nil {
-			t.Errorf("PinWatch.Close: %v", err)
+			t.Errorf("ModemControlPinWatch.Close: %v", err)
 		}
 	})
 	if _, _, err := watch.Wait(); !errors.Is(err, errors.ErrUnsupported) {
-		t.Fatalf("PinWatch.Wait error = %v, want errors.ErrUnsupported", err)
+		t.Fatalf("ModemControlPinWatch.Wait error = %v, want errors.ErrUnsupported", err)
 	}
 }
 
-// TestPinWatchCancel checks that cancellation is sticky and is observed before
+// TestModemControlPinWatchCancel checks that cancellation is sticky and is observed before
 // the ioctl: on a pty a non-cancelled wait fails with ErrUnsupported, so
 // ErrCancelled proves the ioctl was never entered.
-func TestPinWatchCancel(t *testing.T) {
+func TestModemControlPinWatchCancel(t *testing.T) {
 	w := openTestWatcher(t)
-	watch, err := w.NewPinWatch(ModemCTS)
+	watch, err := w.NewModemControlPinWatch(ModemCTS)
 	if err != nil {
-		t.Fatalf("NewPinWatch: %v", err)
+		t.Fatalf("NewModemControlPinWatch: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := watch.Close(); err != nil {
-			t.Errorf("PinWatch.Close: %v", err)
+			t.Errorf("ModemControlPinWatch.Close: %v", err)
 		}
 	})
 	watch.Cancel()
-	if c, missed, err := watch.Wait(); !errors.Is(err, ErrCancelled) || c != (PinChange{}) || missed != 0 {
-		t.Fatalf("PinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
+	if c, missed, err := watch.Wait(); !errors.Is(err, ErrCancelled) || c != (ModemControlPinChange{}) || missed != 0 {
+		t.Fatalf("ModemControlPinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
 	}
 }
 
-func TestNewPinWatchInvalidLine(t *testing.T) {
+func TestNewModemControlPinWatchInvalidLine(t *testing.T) {
 	w := openTestWatcher(t)
-	if _, err := w.NewPinWatch(ModemControlPin(99)); err == nil {
-		t.Fatal("NewPinWatch accepted an invalid line")
+	if _, err := w.NewModemControlPinWatch(ModemControlPin(99)); err == nil {
+		t.Fatal("NewModemControlPinWatch accepted an invalid line")
 	}
 }
 

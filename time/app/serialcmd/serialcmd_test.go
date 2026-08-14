@@ -271,14 +271,14 @@ func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, er
 
 func (c *monitorWaitConn) CanWaitModemControlPinChange() bool { return true }
 
-func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gpsio.ModemControlPin) (gpsio.PinChange, int, error) {
+func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
 	c.waits++
 	select {
 	case c.state = <-c.next:
 		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
-		return gpsio.PinChange{Wall: t, Mono: t, Asserted: c.state.Asserted(pin)}, 0, nil
+		return gpsio.ModemControlPinChange{Wall: t, Mono: t, Asserted: c.state.Asserted(pin)}, 0, nil
 	case <-ctx.Done():
-		return gpsio.PinChange{}, 0, ctx.Err()
+		return gpsio.ModemControlPinChange{}, 0, ctx.Err()
 	}
 }
 

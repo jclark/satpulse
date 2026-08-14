@@ -44,7 +44,7 @@ type SerialConn struct {
 	writeLock    chan struct{}
 	pktLog       *PacketLog
 	lastWriteLen int // bytes of the most recent write; read by Drain
-	watch        term.PinWatch
+	watch        term.ModemControlPinWatch
 	watchPin     ModemControlPin
 }
 
@@ -143,9 +143,9 @@ func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
 
-// modemWatcher returns the underlying terminal's wait capability, or nil if the
+// pinWatcher returns the underlying terminal's wait capability, or nil if the
 // backend can only be polled.
-func (c *SerialConn) modemWatcher() term.ModemControlPinWatcher {
+func (c *SerialConn) pinWatcher() term.ModemControlPinWatcher {
 	w, _ := c.file.(term.ModemControlPinWatcher)
 	return w
 }
@@ -153,30 +153,30 @@ func (c *SerialConn) modemWatcher() term.ModemControlPinWatcher {
 // CanWaitModemControlPinChange reports whether the serial backend can block
 // until a modem control input changes.
 func (c *SerialConn) CanWaitModemControlPinChange() bool {
-	return c.modemWatcher() != nil
+	return c.pinWatcher() != nil
 }
 
 // WaitModemControlPinChange blocks until a modem control input changes. It
 // fails when the backend can only be polled, which
 // CanWaitModemControlPinChange reports in advance.
-func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin) (PinChange, int, error) {
+func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin) (ModemControlPinChange, int, error) {
 	c.mu.Lock()
 	if c.stopped {
 		c.mu.Unlock()
-		return PinChange{}, 0, net.ErrClosed
+		return ModemControlPinChange{}, 0, net.ErrClosed
 	}
 	w := c.watch
 	if w == nil {
-		watcher := c.modemWatcher()
+		watcher := c.pinWatcher()
 		if watcher == nil {
 			c.mu.Unlock()
-			return PinChange{}, 0, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
+			return ModemControlPinChange{}, 0, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
 		}
 		var err error
-		w, err = watcher.NewPinWatch(pin)
+		w, err = watcher.NewModemControlPinWatch(pin)
 		if err != nil {
 			c.mu.Unlock()
-			return PinChange{}, 0, err
+			return ModemControlPinChange{}, 0, err
 		}
 		c.watch = w
 		c.watchPin = pin
@@ -187,7 +187,7 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 	c.mu.Unlock()
 
 	type waitResult struct {
-		change PinChange
+		change ModemControlPinChange
 		missed int
 		err    error
 	}
@@ -215,11 +215,11 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 			w.Cancel()
 			c.dropPinWatch(w)
 			delivered <- false
-			return PinChange{}, 0, err
+			return ModemControlPinChange{}, 0, err
 		}
 		delivered <- true
 		if errors.Is(r.err, term.ErrCancelled) {
-			return PinChange{}, 0, net.ErrClosed
+			return ModemControlPinChange{}, 0, net.ErrClosed
 		}
 		if r.err != nil {
 			_ = w.Close()
@@ -230,11 +230,11 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 		w.Cancel()
 		c.dropPinWatch(w)
 		delivered <- false
-		return PinChange{}, 0, ctx.Err()
+		return ModemControlPinChange{}, 0, ctx.Err()
 	}
 }
 
-func (c *SerialConn) dropPinWatch(w term.PinWatch) {
+func (c *SerialConn) dropPinWatch(w term.ModemControlPinWatch) {
 	c.mu.Lock()
 	if c.watch == w {
 		c.watch = nil
