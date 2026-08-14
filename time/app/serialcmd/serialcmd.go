@@ -506,16 +506,17 @@ func drainPackets(lg *slog.Logger, conn *gpsio.SerialConn, packetLogPath string)
 // drainInput consumes the receiver's output until the port is stopped. The
 // wait backend depends on it: a USB serial driver reports modem-control pin
 // changes only as it delivers received data, so an unread port throttles the
-// driver and the wait stops waking. A *term.Error is a temporary condition on
+// driver and the wait stops waking. A temporary read error is a condition on
 // the wire, and opening the port often counts one overrun.
 func drainInput(conn *gpsio.SerialConn) <-chan struct{} {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		buf := make([]byte, 4096)
-		var termErr *term.Error
 		for {
-			if _, err := conn.Read(buf); errors.Is(err, os.ErrDeadlineExceeded) || errors.As(err, &termErr) {
+			if _, err := conn.Read(buf); errors.Is(err, os.ErrDeadlineExceeded) {
+				continue
+			} else if temp, ok := err.(scan.TemporaryError); ok && temp.Temporary() {
 				continue
 			} else if err != nil {
 				return
