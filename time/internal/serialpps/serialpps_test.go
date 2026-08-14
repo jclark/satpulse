@@ -49,7 +49,7 @@ type testChangeWaiter struct {
 }
 
 type testWaitResult struct {
-	change gpsio.PinChange
+	change gpsio.ModemControlPinChange
 	missed int
 	err    error
 }
@@ -60,7 +60,7 @@ func (w *testChangeWaiter) ModemControlPinState() (gpsio.ModemControlPinState, e
 
 func (w *testChangeWaiter) CanWaitModemControlPinChange() bool { return true }
 
-func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsio.ModemControlPin) (gpsio.PinChange, int, error) {
+func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
 	if w.entered != nil {
 		w.entered <- struct{}{}
 	}
@@ -68,7 +68,7 @@ func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsi
 	case r := <-w.next:
 		return r.change, r.missed, r.err
 	case <-ctx.Done():
-		return gpsio.PinChange{}, 0, ctx.Err()
+		return gpsio.ModemControlPinChange{}, 0, ctx.Err()
 	}
 }
 
@@ -79,8 +79,8 @@ func TestWait(t *testing.T) {
 	// An asserted transition is not a leading pulse edge and must not be
 	// published. The following deasserted transition is published even when
 	// the backend reports missed transitions.
-	w.next <- testWaitResult{change: gpsio.PinChange{Wall: wall.Add(-time.Second), Mono: mono.Add(-time.Second), Asserted: true}}
-	w.next <- testWaitResult{change: gpsio.PinChange{Wall: wall, Mono: mono}, missed: 2}
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall.Add(-time.Second), Mono: mono.Add(-time.Second), Asserted: true}}
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall, Mono: mono}, missed: 2}
 	observations := make(chan Observation, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -142,9 +142,9 @@ func (w *testFallbackWaiter) ModemControlPinState() (gpsio.ModemControlPinState,
 
 func (w *testFallbackWaiter) CanWaitModemControlPinChange() bool { return w.canWait }
 
-func (w *testFallbackWaiter) WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.PinChange, int, error) {
+func (w *testFallbackWaiter) WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
 	w.waits++
-	return gpsio.PinChange{}, 0, errors.ErrUnsupported
+	return gpsio.ModemControlPinChange{}, 0, errors.ErrUnsupported
 }
 
 func TestDetectFallsBackToPolling(t *testing.T) {
