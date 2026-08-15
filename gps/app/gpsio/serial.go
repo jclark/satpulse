@@ -184,21 +184,38 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 		return ModemControlPinChange{}, 0, net.ErrClosed
 	}
 	w := c.watch
-	if w == nil {
-		var err error
-		w, err = c.newPinWatch(pin, method)
-		if err != nil {
-			c.mu.Unlock()
-			return ModemControlPinChange{}, 0, err
-		}
-		c.watch = w
-		c.watchPin = pin
-		c.watchMethod = method
-	} else if pin != c.watchPin || method != c.watchMethod {
+	if w != nil && (pin != c.watchPin || method != c.watchMethod) {
 		c.mu.Unlock()
 		panic("gpsio: WaitModemControlPinChange called with a different pin or method")
 	}
 	c.mu.Unlock()
+	if w == nil {
+		// Creating the watch can be slow: the kernel method attaches a line
+		// discipline, scans sysfs, and waits for udev to open up the new
+		// device. Reads and writes take mu, so it is not held here.
+		fresh, err := c.newPinWatch(pin, method)
+		if err != nil {
+			return ModemControlPinChange{}, 0, err
+		}
+		c.mu.Lock()
+		// A Stop during the creation above cancelled a watch that was not
+		// there yet, so this one is closed rather than installed.
+		if c.stopped {
+			c.mu.Unlock()
+			_ = fresh.Close()
+			return ModemControlPinChange{}, 0, net.ErrClosed
+		}
+		if c.watch == nil {
+			c.watch = fresh
+			c.watchPin = pin
+			c.watchMethod = method
+		}
+		w = c.watch
+		c.mu.Unlock()
+		if w != fresh {
+			_ = fresh.Close()
+		}
+	}
 
 	type waitResult struct {
 		change ModemControlPinChange

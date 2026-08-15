@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -167,6 +168,49 @@ var _ term.ModemControlPinWatcher = (*fakeWaitTerm)(nil)
 func (f *fakeWaitTerm) NewModemControlPinWatch(pin term.ModemControlPin) (term.ModemControlPinWatch, error) {
 	f.pin = pin
 	return f.watch, nil
+}
+
+// slowWaitTerm blocks in the middle of creating a watch, as the kernel method
+// does while it waits for udev to open up a new PPS device.
+type slowWaitTerm struct {
+	fakeTerm
+	watch    *fakePinWatch
+	creating chan struct{}
+	release  chan struct{}
+}
+
+var _ term.ModemControlPinWatcher = (*slowWaitTerm)(nil)
+
+func (f *slowWaitTerm) NewModemControlPinWatch(term.ModemControlPin) (term.ModemControlPinWatch, error) {
+	close(f.creating)
+	<-f.release
+	return f.watch, nil
+}
+
+func TestSerialConnWaitDoesNotBlockReadsWhileCreatingWatch(t *testing.T) {
+	f := &slowWaitTerm{watch: newFakePinWatch(), creating: make(chan struct{}), release: make(chan struct{})}
+	c := newSerialConn(f, term.DevUART)
+	errCh := make(chan error, 1)
+	go func() {
+		_, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait)
+		errCh <- err
+	}()
+	<-f.creating
+	if _, err := c.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("Read during watch creation = %v, want io.EOF from the fake", err)
+	}
+	// The watch is created but not yet installed, so Stop has nothing to
+	// cancel and the connection must close it instead.
+	c.Stop()
+	close(f.release)
+	if err := <-errCh; !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("WaitModemControlPinChange error = %v, want net.ErrClosed", err)
+	}
+	select {
+	case <-f.watch.closed:
+	case <-time.After(time.Second):
+		t.Error("the watch created during Stop was not closed")
+	}
 }
 
 func TestSerialConnWaitCapability(t *testing.T) {
