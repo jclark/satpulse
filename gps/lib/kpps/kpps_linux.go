@@ -4,14 +4,16 @@ package kpps
 
 import (
 	"os"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
 
 // Source is an open kernel PPS source.
 type Source struct {
-	file *os.File
-	raw  syscall.RawConn
+	file   *os.File
+	raw    syscall.RawConn
+	closed atomic.Bool
 }
 
 // Open opens path as a kernel PPS source. It issues PPS_GETCAP to check that
@@ -115,14 +117,22 @@ func (s *Source) control(op string, f func(uintptr) error) error {
 }
 
 // Close closes the PPS source. It interrupts a Fetch waiting for new
-// information.
+// information, which then fails with an error wrapping os.ErrClosed.
 func (s *Source) Close() error {
+	s.closed.Store(true)
 	return s.file.Close()
 }
 
+// wrapErr reports a failure after Close as os.ErrClosed. RawConn.Read and
+// RawConn.Control surface a closed descriptor as the unexported
+// internal/poll.ErrFileClosing, which only os.File's own methods translate,
+// so the flag rather than the error decides that a failure is a cancellation.
 func (s *Source) wrapErr(err error, op string) error {
 	if err == nil {
 		return nil
+	}
+	if s.closed.Load() {
+		err = os.ErrClosed
 	}
 	return &os.PathError{Op: op, Path: s.file.Name(), Err: err}
 }
