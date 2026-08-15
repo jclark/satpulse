@@ -86,7 +86,7 @@ func (w *kernelPPSPinWatch) setup() error {
 	if err != nil {
 		return err
 	}
-	info, err := w.source.Fetch(0)
+	info, err := w.source.Fetch(kpps.Info{}, 0)
 	if err != nil {
 		return err
 	}
@@ -139,9 +139,11 @@ func openKernelPPSRetry(path string) (*kpps.Source, error) {
 	}
 }
 
-// Wait fetches the next kernel PPS event. kpps uses the Go runtime poller, so
-// closing the source in Cancel promptly wakes a pending Fetch. If both edge
-// counters advanced, the newer event is buffered for the next Wait.
+// Wait fetches the next kernel PPS event. The sequence numbers the watch has
+// already accounted for are the baseline Fetch waits past, so an edge that
+// arrived between calls is returned without waiting. kpps uses the Go runtime
+// poller, so closing the source in Cancel promptly wakes a pending Fetch. If
+// both edge counters advanced, the newer event is buffered for the next Wait.
 func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
@@ -152,7 +154,11 @@ func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 		return change, 0, nil
 	}
 	for {
-		info, err := w.source.Fetch(-1)
+		previous := kpps.Info{
+			Assert: kpps.Edge{Sequence: w.seq.lastAssert},
+			Clear:  kpps.Edge{Sequence: w.seq.lastClear},
+		}
+		info, err := w.source.Fetch(previous, -1)
 		if w.cancelled.Load() {
 			return ModemControlPinChange{}, 0, ErrCancelled
 		}

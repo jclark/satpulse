@@ -26,6 +26,10 @@ type ModemControlPin = term.ModemControlPin
 // ModemControlPinChange reports one observed transition of a modem control input.
 type ModemControlPinChange = term.ModemControlPinChange
 
+// ErrUnavailable reports that a PPS detection method exists on the platform
+// but is unavailable for the particular device or driver.
+var ErrUnavailable = term.ErrUnavailable
+
 const (
 	// ModemCTS is clear to send.
 	ModemCTS = term.ModemCTS
@@ -52,6 +56,7 @@ const (
 	PPSMethodKernel
 )
 
+// String returns the method's name, or a placeholder when it has none.
 func (m PPSMethod) String() string {
 	switch m {
 	case PPSMethodPoll:

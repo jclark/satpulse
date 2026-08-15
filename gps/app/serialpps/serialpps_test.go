@@ -129,9 +129,10 @@ func TestWaitContextCancellation(t *testing.T) {
 // the first poll so that a run that reaches the polling fallback returns
 // promptly.
 type testFallbackWaiter struct {
-	err     error
-	methods []gpsio.PPSMethod
-	cancel  context.CancelFunc
+	err             error
+	successfulWaits int
+	methods         []gpsio.PPSMethod
+	cancel          context.CancelFunc
 }
 
 func (w *testFallbackWaiter) ModemControlPinState() (gpsio.ModemControlPinState, error) {
@@ -141,6 +142,10 @@ func (w *testFallbackWaiter) ModemControlPinState() (gpsio.ModemControlPinState,
 
 func (w *testFallbackWaiter) WaitModemControlPinChange(_ context.Context, _ gpsio.ModemControlPin, method gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error) {
 	w.methods = append(w.methods, method)
+	if w.successfulWaits > 0 {
+		w.successfulWaits--
+		return gpsio.ModemControlPinChange{Asserted: true}, 0, nil
+	}
 	return gpsio.ModemControlPinChange{}, 0, w.err
 }
 
@@ -156,17 +161,19 @@ func (p *testPoller) ModemControlPinState() (gpsio.ModemControlPinState, error) 
 
 func TestDetectMethodSelection(t *testing.T) {
 	errUnsup := fmt.Errorf("no capability: %w", errors.ErrUnsupported)
+	errUnavailable := fmt.Errorf("driver cannot wait: %w", gpsio.ErrUnavailable)
 	errDriver := errors.New("inappropriate ioctl for device")
 	tests := []struct {
-		name           string
-		method         gpsio.PPSMethod
-		waitErr        error
-		expectMethods  []gpsio.PPSMethod
-		expectSelected []gpsio.PPSMethod
-		expectErr      error
-		expectPolled   bool
-		expectLog      string
-		expectNoLog    string
+		name            string
+		method          gpsio.PPSMethod
+		waitErr         error
+		successfulWaits int
+		expectMethods   []gpsio.PPSMethod
+		expectSelected  []gpsio.PPSMethod
+		expectErr       error
+		expectPolled    bool
+		expectLog       string
+		expectNoLog     string
 	}{
 		{
 			name: "auto skips unsupported methods quietly", waitErr: errUnsup,
@@ -176,11 +183,18 @@ func TestDetectMethodSelection(t *testing.T) {
 			expectLog: "serial PPS method unavailable", expectNoLog: "level=WARN",
 		},
 		{
-			name: "auto warns on a failed attempt", waitErr: errDriver,
+			name: "auto warns when the method is unavailable", waitErr: errUnavailable,
 			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait},
 			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait, gpsio.PPSMethodPoll},
 			expectErr:      context.Canceled, expectPolled: true,
-			expectLog: "level=WARN msg=\"serial PPS method failed; falling back\"",
+			expectLog: "level=WARN msg=\"serial PPS method unavailable; falling back\"",
+		},
+		{
+			name: "auto returns an ordinary failure after a successful wait", waitErr: errDriver, successfulWaits: 1,
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodKernel},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodKernel},
+			expectErr:      errDriver, expectPolled: false,
+			expectNoLog: "level=WARN",
 		},
 		{
 			name: "forced poll never waits", method: gpsio.PPSMethodPoll,
@@ -199,12 +213,18 @@ func TestDetectMethodSelection(t *testing.T) {
 			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait},
 			expectErr:      errors.ErrUnsupported,
 		},
+		{
+			name: "forced wait returns unavailable", method: gpsio.PPSMethodWait, waitErr: errUnavailable,
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodWait},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait},
+			expectErr:      gpsio.ErrUnavailable,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			w := &testFallbackWaiter{err: tc.waitErr, cancel: cancel}
+			w := &testFallbackWaiter{err: tc.waitErr, successfulWaits: tc.successfulWaits, cancel: cancel}
 			stats := new(PollStats)
 			var logs bytes.Buffer
 			lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))

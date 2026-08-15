@@ -348,7 +348,7 @@ func (t *windowsTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControl
 	}
 	if err := windows.SetCommMask(h, mask); err != nil {
 		windows.CloseHandle(h)
-		return nil, t.wrapErr(err, "SetCommMask")
+		return nil, t.wrapErr(commWaitError(err), "SetCommMask")
 	}
 	return &pinWatch{handle: h, pin: pin, path: t.path}, nil
 }
@@ -358,7 +358,7 @@ func (t *windowsTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControl
 // missed is always zero, and Asserted is the best reading GetCommModemStatus
 // gives after the wakeup. A wait armed after Cancel fails with
 // ERROR_INVALID_PARAMETER because no wait events are set, so the sticky flag
-// is checked again before the error is classified.
+// is checked again before the error is returned.
 func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
@@ -374,11 +374,7 @@ func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 		return ModemControlPinChange{}, 0, ErrCancelled
 	}
 	if err != nil {
-		// Driver errors such as ERROR_INVALID_FUNCTION are deliberately
-		// not errors.ErrUnsupported: the driver, not the device kind,
-		// prevents waiting, and callers warn rather than silently fall
-		// back.
-		return ModemControlPinChange{}, 0, w.wrapErr(err, "WaitCommEvent")
+		return ModemControlPinChange{}, 0, w.wrapErr(commWaitError(err), "WaitCommEvent")
 	}
 	state, err := readModemControlPinState(w.handle)
 	if err != nil {
@@ -433,6 +429,15 @@ func commEventMask(pin ModemControlPin) (uint32, error) {
 		return windows.EV_RING, nil
 	}
 	return 0, fmt.Errorf("invalid modem control pin: %d", pin)
+}
+
+func commWaitError(err error) error {
+	if errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
+		errors.Is(err, windows.ERROR_NOT_SUPPORTED) ||
+		errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	return err
 }
 
 func (t *windowsTerm) Flush() error {

@@ -66,11 +66,11 @@ func (w *waitPinWatch) Wait() (ModemControlPinChange, int, error) {
 		if errno == unix.EINTR {
 			continue
 		}
+		if errno == unix.ENOTTY {
+			err := fmt.Errorf("%w: %w", ErrUnavailable, errno)
+			return ModemControlPinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMIWAIT)")
+		}
 		if errno != 0 {
-			// ENOTTY (driver without the ioctl) is deliberately not
-			// errors.ErrUnsupported: the driver, not the device kind,
-			// prevents waiting, and callers warn rather than silently
-			// fall back.
 			return ModemControlPinChange{}, missed, w.wrapErr(errno, "ioctl(TIOCMIWAIT)")
 		}
 		at := time.Now()

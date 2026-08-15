@@ -32,6 +32,11 @@ var ErrNotATTY = errors.New("not a serial device")
 // Callers can check for it with errors.Is.
 var ErrCancelled = errors.New("pin watch cancelled")
 
+// ErrUnavailable is returned when a pin-watch facility exists on the
+// platform but is unavailable for the particular device or driver.
+// Callers can check for it with errors.Is.
+var ErrUnavailable = errors.New("pin watch unavailable")
+
 // LockedError indicates that a device is already in exclusive use.
 // Callers can check for it with errors.As and then call Locked.
 type LockedError interface {

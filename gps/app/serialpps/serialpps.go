@@ -75,10 +75,11 @@ type StateReader interface {
 }
 
 // ChangeWaiter is a StateReader that may be able to block until a modem
-// control input changes using the wait or kernel method. A backend that cannot
-// support the method at all fails with an error wrapping errors.ErrUnsupported;
-// an attempt that fails on something that could have worked fails with the
-// underlying error. Implemented by gpsio.SerialConn.
+// control input changes using the wait or kernel method. A backend that
+// cannot support the method at all fails with an error wrapping
+// errors.ErrUnsupported; a method that exists but is unavailable for the
+// particular device or driver fails with an error wrapping
+// gpsio.ErrUnavailable. Implemented by gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
 	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin, gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error)
@@ -139,9 +140,10 @@ func (p poll) gapAfter(prev poll) time.Duration {
 }
 
 // Detect sends observations of the pulse described by w. An unspecified
-// method automatically tries kernel, then wait, then poll. An explicitly
-// requested method never falls back. If stats is non-nil, it records timings
-// only when polling is selected.
+// method automatically tries kernel, then wait, then poll, moving on when a
+// method is unsupported or unavailable for the device. Other failures are
+// returned. An explicitly requested method never falls back. If stats is
+// non-nil, it records timings only when polling is selected.
 func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, observations chan<- Observation, stats *PollStats) error {
 	if method != 0 {
 		return detectWithMethod(ctx, lg, r, w, method, observations, stats)
@@ -152,10 +154,13 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 			if ctx.Err() != nil {
 				return err
 			}
-			if errors.Is(err, errors.ErrUnsupported) {
+			switch {
+			case errors.Is(err, errors.ErrUnsupported):
 				lg.Debug("serial PPS method unavailable", "method", candidate, "error", err)
-			} else {
-				lg.Warn("serial PPS method failed; falling back", "method", candidate, "error", err)
+			case errors.Is(err, gpsio.ErrUnavailable):
+				lg.Warn("serial PPS method unavailable; falling back", "method", candidate, "error", err)
+			default:
+				return err
 			}
 		}
 	}

@@ -4,14 +4,7 @@
 // optional facility described by that API.
 package kpps
 
-import (
-	"errors"
-	"time"
-)
-
-// ErrNotSupported is returned when kernel PPS is unavailable on the current
-// platform.
-var ErrNotSupported = errors.New("kernel PPS not supported on this platform")
+import "time"
 
 // Mode is a set of RFC 2783 mode bits. GetCap can return mode bits for which
 // this package does not define a name.
@@ -31,8 +24,9 @@ type Edge struct {
 }
 
 // Info contains the most recently captured assert and clear edges and the
-// mode in effect when they were fetched. Assert and Clear are independent;
-// they do not necessarily belong to the same pulse.
+// mode that was in effect when the source last processed an event. Mode is
+// zero until the first event. Assert and Clear are independent; they do not
+// necessarily belong to the same pulse.
 type Info struct {
 	Assert Edge
 	Clear  Edge
