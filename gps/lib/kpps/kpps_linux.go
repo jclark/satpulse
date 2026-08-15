@@ -59,8 +59,14 @@ func (s *Source) GetCap() (Mode, error) {
 //
 // Waiting uses the Go runtime poller rather than a blocking PPS_FETCH ioctl.
 func (s *Source) Fetch(previous Info, timeout time.Duration) (Info, error) {
+	var info Info
 	if timeout == 0 {
-		return s.fetch()
+		err := s.control("ioctl(PPS_FETCH)", func(fd uintptr) error {
+			var err error
+			info, err = ioctlFetch(fd)
+			return err
+		})
+		return info, err
 	}
 	if timeout > 0 {
 		if err := s.file.SetReadDeadline(time.Now().Add(timeout)); err != nil {
@@ -68,38 +74,18 @@ func (s *Source) Fetch(previous Info, timeout time.Duration) (Info, error) {
 		}
 		defer s.file.SetReadDeadline(time.Time{})
 	}
-	return s.waitFetch(previous)
-}
-
-func (s *Source) fetch() (Info, error) {
-	var info Info
-	err := s.control("ioctl(PPS_FETCH)", func(fd uintptr) error {
-		var err error
-		info, err = ioctlFetch(fd)
-		return err
-	})
-	return info, err
-}
-
-func (s *Source) waitFetch(previous Info) (Info, error) {
-	var info Info
 	err := waitReadable(s.raw, func(fd uintptr) (bool, error) {
 		var err error
-		info, err = ioctlFetch(fd)
-		if err != nil {
+		if info, err = ioctlFetch(fd); err != nil {
 			return true, err
 		}
-		return newerThan(info, previous), nil
+		return info.Assert.Sequence != previous.Assert.Sequence ||
+			info.Clear.Sequence != previous.Clear.Sequence, nil
 	})
 	if err != nil {
 		return Info{}, s.wrapErr(err, "fetch")
 	}
 	return info, nil
-}
-
-func newerThan(info, previous Info) bool {
-	return info.Assert.Sequence != previous.Assert.Sequence ||
-		info.Clear.Sequence != previous.Clear.Sequence
 }
 
 // waitReadable uses RawConn.Read to run op after arming the Go runtime poller.

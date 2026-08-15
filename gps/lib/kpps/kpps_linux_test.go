@@ -111,28 +111,3 @@ func TestWaitReadableDeadline(t *testing.T) {
 		t.Errorf("callbacks = %d, want 1", callbacks)
 	}
 }
-
-func TestNewerThan(t *testing.T) {
-	previous := Info{
-		Assert: Edge{Sequence: 10},
-		Clear:  Edge{Sequence: 20},
-	}
-	tests := []struct {
-		name string
-		info Info
-		want bool
-	}{
-		{name: "same", info: Info{Assert: Edge{Sequence: 10}, Clear: Edge{Sequence: 20}}},
-		{name: "assert", info: Info{Assert: Edge{Sequence: 11}, Clear: Edge{Sequence: 20}}, want: true},
-		{name: "clear", info: Info{Assert: Edge{Sequence: 10}, Clear: Edge{Sequence: 21}}, want: true},
-		{name: "both", info: Info{Assert: Edge{Sequence: 11}, Clear: Edge{Sequence: 21}}, want: true},
-		{name: "assert wrap", info: Info{Assert: Edge{Sequence: 0}, Clear: Edge{Sequence: 20}}, want: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := newerThan(tc.info, previous); got != tc.want {
-				t.Errorf("newerThan = %v, want %v", got, tc.want)
-			}
-		})
-	}
-}
