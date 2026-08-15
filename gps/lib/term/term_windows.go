@@ -358,7 +358,7 @@ func (t *windowsTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControl
 // missed is always zero, and Asserted is the best reading GetCommModemStatus
 // gives after the wakeup. A wait armed after Cancel fails with
 // ERROR_INVALID_PARAMETER because no wait events are set, so the sticky flag
-// is checked again before the error is classified.
+// is checked again before the error is returned.
 func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)

@@ -51,6 +51,7 @@ const (
 	PPSMethodWait
 )
 
+// String returns the method's name, or a placeholder when it has none.
 func (m PPSMethod) String() string {
 	switch m {
 	case PPSMethodPoll:
