@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/time/lib/pmc"
 )
 
@@ -201,6 +202,9 @@ interface = "eth0"
 
 func TestSerialPPSSampleConfig(t *testing.T) {
 	cfg := defaultConfig()
+	if got := cfg.Sample.Serial.PPS.Method; got != 0 {
+		t.Errorf("default method = %v, want automatic selection", got)
+	}
 	if got := cfg.Sample.Serial.PPS.DelayUncertainty; got != 0.005 {
 		t.Errorf("default delayUncertainty = %v, want 0.005", got)
 	}
@@ -210,6 +214,7 @@ func TestSerialPPSSampleConfig(t *testing.T) {
 
 	cfg, err := readConfig(strings.NewReader(`
 [sample.serial.pps]
+method = "wait"
 delayUncertainty = 0.01
 maxDelay = 0.7
 `))
@@ -222,8 +227,21 @@ maxDelay = 0.7
 	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.7 {
 		t.Errorf("configured maxDelay = %v, want 0.7", got)
 	}
+	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodWait {
+		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodWait)
+	}
 	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("Validate: %v", err)
+	}
+}
+
+func TestSerialPPSSampleConfigRejectsInvalidMethod(t *testing.T) {
+	_, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+method = "kernel"
+`))
+	if err == nil {
+		t.Fatal("readConfig succeeded with invalid PPS method")
 	}
 }
 

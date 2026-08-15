@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -57,9 +59,7 @@ func (w *testChangeWaiter) ModemControlPinState() (gpsio.ModemControlPinState, e
 	return 0, nil
 }
 
-func (w *testChangeWaiter) CanWaitModemControlPinChange() bool { return true }
-
-func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
+func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsio.ModemControlPin, _ gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error) {
 	if w.entered != nil {
 		w.entered <- struct{}{}
 	}
@@ -85,7 +85,7 @@ func TestWait(t *testing.T) {
 	errCh := make(chan error, 1)
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, observations) }()
+	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, observations) }()
 	select {
 	case observation := <-observations:
 		if observation.Wall != wall || observation.Mono != mono {
@@ -114,7 +114,7 @@ func TestWaitContextCancellation(t *testing.T) {
 	observations := make(chan Observation, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
-	go func() { errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS}, observations) }()
+	go func() { errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, observations) }()
 	<-w.entered
 	cancel()
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
@@ -125,12 +125,12 @@ func TestWaitContextCancellation(t *testing.T) {
 	}
 }
 
-// testFallbackWaiter reports the wait capability but fails every wait with
-// ErrUnsupported, as a tty driver without TIOCMIWAIT does; it cancels the
-// context on the first poll so that the polling fallback returns promptly.
+// testFallbackWaiter fails every wait with err; it cancels the context on
+// the first poll so that a run that reaches the polling fallback returns
+// promptly.
 type testFallbackWaiter struct {
-	canWait bool
-	waits   int
+	err     error
+	methods []gpsio.PPSMethod
 	cancel  context.CancelFunc
 }
 
@@ -139,51 +139,126 @@ func (w *testFallbackWaiter) ModemControlPinState() (gpsio.ModemControlPinState,
 	return 0, nil
 }
 
-func (w *testFallbackWaiter) CanWaitModemControlPinChange() bool { return w.canWait }
-
-func (w *testFallbackWaiter) WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
-	w.waits++
-	return gpsio.ModemControlPinChange{}, 0, errors.ErrUnsupported
+func (w *testFallbackWaiter) WaitModemControlPinChange(_ context.Context, _ gpsio.ModemControlPin, method gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error) {
+	w.methods = append(w.methods, method)
+	return gpsio.ModemControlPinChange{}, 0, w.err
 }
 
-func TestDetectFallsBackToPolling(t *testing.T) {
+// testPoller is a StateReader without the wait capability.
+type testPoller struct {
+	cancel context.CancelFunc
+}
+
+func (p *testPoller) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+	p.cancel()
+	return 0, nil
+}
+
+func TestDetectMethodSelection(t *testing.T) {
+	errUnsup := fmt.Errorf("no capability: %w", errors.ErrUnsupported)
+	errDriver := errors.New("inappropriate ioctl for device")
 	tests := []struct {
-		name        string
-		canWait     bool
-		expectWaits int
+		name           string
+		method         gpsio.PPSMethod
+		waitErr        error
+		expectMethods  []gpsio.PPSMethod
+		expectSelected []gpsio.PPSMethod
+		expectErr      error
+		expectPolled   bool
+		expectLog      string
+		expectNoLog    string
 	}{
-		{name: "unsupported wait falls back", canWait: true, expectWaits: 1},
-		{name: "no capability polls directly", canWait: false, expectWaits: 0},
+		{
+			name: "auto skips an unsupported method quietly", waitErr: errUnsup,
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodWait},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait, gpsio.PPSMethodPoll},
+			expectErr:      context.Canceled, expectPolled: true,
+			expectLog: "serial PPS method unavailable", expectNoLog: "level=WARN",
+		},
+		{
+			name: "auto warns on a failed attempt", waitErr: errDriver,
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodWait},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait, gpsio.PPSMethodPoll},
+			expectErr:      context.Canceled, expectPolled: true,
+			expectLog: "level=WARN msg=\"serial PPS method failed; falling back\"",
+		},
+		{
+			name: "forced poll never waits", method: gpsio.PPSMethodPoll,
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodPoll},
+			expectErr:      context.Canceled, expectPolled: true,
+		},
+		{
+			name: "forced wait returns unsupported", method: gpsio.PPSMethodWait, waitErr: errUnsup,
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodWait},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait},
+			expectErr:      errors.ErrUnsupported,
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			w := &testFallbackWaiter{canWait: tc.canWait, cancel: cancel}
+			w := &testFallbackWaiter{err: tc.waitErr, cancel: cancel}
 			stats := new(PollStats)
 			var logs bytes.Buffer
 			lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			if !tc.canWait {
-				cancel()
+			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, tc.method, make(chan Observation, 1), stats)
+			if !errors.Is(err, tc.expectErr) {
+				t.Errorf("Detect error = %v, want %v", err, tc.expectErr)
 			}
-			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, make(chan Observation, 1), stats)
-			if !errors.Is(err, context.Canceled) {
-				t.Errorf("Detect error = %v, want context.Canceled", err)
+			if !reflect.DeepEqual(w.methods, tc.expectMethods) {
+				t.Errorf("methods tried = %v, want %v", w.methods, tc.expectMethods)
 			}
-			if w.waits != tc.expectWaits {
-				t.Errorf("waits = %d, want %d", w.waits, tc.expectWaits)
+			if stats.started != tc.expectPolled {
+				t.Errorf("polled = %v, want %v", stats.started, tc.expectPolled)
 			}
-			if !stats.started {
-				t.Error("polling fallback did not start polling statistics")
+			selectionCount := strings.Count(logs.String(), `msg="serial PPS method selected"`)
+			if selectionCount != len(tc.expectSelected) {
+				t.Errorf("method-selection log count = %d, want %d; logs: %q", selectionCount, len(tc.expectSelected), logs.String())
 			}
-			if !strings.Contains(logs.String(), "serial PPS polling backend selected") {
-				t.Errorf("logs %q do not report the polling backend", logs.String())
+			for _, method := range tc.expectSelected {
+				entry := fmt.Sprintf(`msg="serial PPS method selected" method=%s`, method)
+				if strings.Count(logs.String(), entry) != 1 {
+					t.Errorf("logs %q do not report selecting %v exactly once", logs.String(), method)
+				}
 			}
-			fallbackLogged := strings.Contains(logs.String(), "serial driver cannot wait for modem control pin changes; polling instead")
-			if fallbackLogged != tc.canWait {
-				t.Errorf("fallback log present = %v, want %v; logs: %q", fallbackLogged, tc.canWait, logs.String())
+			if tc.expectLog != "" && !strings.Contains(logs.String(), tc.expectLog) {
+				t.Errorf("logs %q do not contain %q", logs.String(), tc.expectLog)
+			}
+			if tc.expectNoLog != "" && strings.Contains(logs.String(), tc.expectNoLog) {
+				t.Errorf("logs %q unexpectedly contain %q", logs.String(), tc.expectNoLog)
 			}
 		})
+	}
+}
+
+func TestDetectWithoutWaiterPolls(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	stats := new(PollStats)
+	var logs bytes.Buffer
+	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
+	err := Detect(ctx, lg, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, 0, make(chan Observation, 1), stats)
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("Detect error = %v, want context.Canceled", err)
+	}
+	if !stats.started {
+		t.Error("Detect did not fall through to polling")
+	}
+	if got := strings.Count(logs.String(), `msg="serial PPS method selected" method=poll`); got != 1 {
+		t.Errorf("poll-selection log count = %d, want 1; logs: %q", got, logs.String())
+	}
+	if strings.Contains(logs.String(), "method=wait") {
+		t.Errorf("logs report selecting unavailable wait method: %q", logs.String())
+	}
+}
+
+func TestDetectForcedWaitWithoutWaiter(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, make(chan Observation, 1), nil)
+	if !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("Detect error = %v, want errors.ErrUnsupported", err)
 	}
 }
 

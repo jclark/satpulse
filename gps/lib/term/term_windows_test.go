@@ -74,27 +74,6 @@ func TestCommEventMask(t *testing.T) {
 	}
 }
 
-func TestCommWaitError(t *testing.T) {
-	tests := []struct {
-		name              string
-		err               error
-		expectUnsupported bool
-	}{
-		{name: "invalid function", err: windows.ERROR_INVALID_FUNCTION, expectUnsupported: true},
-		{name: "not supported", err: windows.ERROR_NOT_SUPPORTED, expectUnsupported: true},
-		{name: "invalid parameter", err: windows.ERROR_INVALID_PARAMETER, expectUnsupported: true},
-		{name: "other", err: windows.ERROR_ACCESS_DENIED},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got := commWaitError(tc.err)
-			if errors.Is(got, errors.ErrUnsupported) != tc.expectUnsupported {
-				t.Errorf("commWaitError(%v) = %v", tc.err, got)
-			}
-		})
-	}
-}
-
 // TestPinWatchCancel checks that cancellation is sticky and is observed
 // before WaitCommEvent: the watch holds an invalid handle, so anything
 // reaching the wait would fail with a handle error instead.

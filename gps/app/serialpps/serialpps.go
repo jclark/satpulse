@@ -5,6 +5,7 @@ package serialpps
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"runtime"
 	"time"
@@ -74,12 +75,13 @@ type StateReader interface {
 }
 
 // ChangeWaiter is a StateReader that may be able to block until a modem
-// control input changes. CanWaitModemControlPinChange reports whether it
-// actually can. Implemented by a TTY-backed gpsio.SerialConn.
+// control input changes using the given detection method. A backend that
+// cannot support the method at all fails with an error wrapping
+// errors.ErrUnsupported; an attempt that fails on something that could have
+// worked fails with the underlying error. Implemented by gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
-	CanWaitModemControlPinChange() bool
-	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error)
+	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin, gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error)
 }
 
 // Wiring describes how the PPS pulse is represented on the serial port's
@@ -136,22 +138,43 @@ func (p poll) gapAfter(prev poll) time.Duration {
 	return p.start.elapsedSince(prev.end)
 }
 
-// Detect sends observations of the pulse described by w, blocking on the
-// wait primitive when r provides it and polling adaptively otherwise. A tty
-// driver without the wait shows up only as the first wait failing with
-// errors.ErrUnsupported; Detect then falls back to polling. If stats is
-// non-nil, it records timings only when the polling backend is selected.
-func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, observations chan<- Observation, stats *PollStats) error {
-	if cw, ok := r.(ChangeWaiter); ok && cw.CanWaitModemControlPinChange() {
-		lg.Debug("serial PPS wait backend selected")
-		err := Wait(ctx, lg, cw, w, observations)
-		if !errors.Is(err, errors.ErrUnsupported) {
+// Detect sends observations of the pulse described by w. An unspecified
+// method automatically tries wait when available, then falls back to poll.
+// An explicitly requested method never falls back. If stats is non-nil, it
+// records timings only when polling is selected.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, observations chan<- Observation, stats *PollStats) error {
+	if method != 0 {
+		return detectWithMethod(ctx, lg, r, w, method, observations, stats)
+	}
+	if _, ok := r.(ChangeWaiter); ok {
+		err := detectWithMethod(ctx, lg, r, w, gpsio.PPSMethodWait, observations, stats)
+		if ctx.Err() != nil {
 			return err
 		}
-		lg.Info("serial driver cannot wait for modem control pin changes; polling instead")
+		if errors.Is(err, errors.ErrUnsupported) {
+			lg.Debug("serial PPS method unavailable", "method", gpsio.PPSMethodWait, "error", err)
+		} else {
+			lg.Warn("serial PPS method failed; falling back", "method", gpsio.PPSMethodWait, "error", err)
+		}
 	}
-	lg.Debug("serial PPS polling backend selected")
-	return Poll(ctx, lg, r, w, observations, stats)
+	return detectWithMethod(ctx, lg, r, w, gpsio.PPSMethodPoll, observations, stats)
+}
+
+func detectWithMethod(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, observations chan<- Observation, stats *PollStats) error {
+	switch method {
+	case gpsio.PPSMethodPoll, gpsio.PPSMethodWait:
+	default:
+		panic("serialpps: invalid PPS method")
+	}
+	lg.Info("serial PPS method selected", "method", method)
+	if method == gpsio.PPSMethodPoll {
+		return Poll(ctx, lg, r, w, observations, stats)
+	}
+	cw, ok := r.(ChangeWaiter)
+	if !ok {
+		return fmt.Errorf("%v PPS method: %w", method, errors.ErrUnsupported)
+	}
+	return Wait(ctx, lg, cw, w, method, observations)
 }
 
 // Poll adaptively polls for the pulse described by w and sends every detected
@@ -327,13 +350,13 @@ func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, observa
 }
 
 // Wait sends observations of leading edges detected with modem-control change
-// notifications. The wait primitive timestamps each unambiguous transition
-// and reports the pin sense derived by the backend. The pulse's electrically
-// rising leading edge reaches the host inverted through the TTL driver chain,
-// so the pin reads deasserted during the pulse.
-func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, observations chan<- Observation) error {
+// notifications, using the selected blocking method. The backend timestamps
+// each unambiguous transition and reports the pin sense it derived. The pulse's
+// electrically rising leading edge reaches the host inverted through the TTL
+// driver chain, so the pin reads deasserted during the pulse.
+func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method gpsio.PPSMethod, observations chan<- Observation) error {
 	for {
-		change, missed, err := r.WaitModemControlPinChange(ctx, w.Pin)
+		change, missed, err := r.WaitModemControlPinChange(ctx, w.Pin, method)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()

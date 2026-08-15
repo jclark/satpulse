@@ -2,6 +2,7 @@ package gpsio
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -38,6 +39,57 @@ const (
 
 // ModemControlPinState is the set of asserted modem control input pins.
 type ModemControlPinState = term.ModemControlPinState
+
+// PPSMethod identifies how serial PPS edges are detected: adaptive polling
+// of the modem control pin state or blocking on the platform's modem-status
+// wait primitive. The zero value is unspecified, which callers interpret as
+// automatic selection.
+type PPSMethod int
+
+const (
+	PPSMethodPoll PPSMethod = iota + 1
+	PPSMethodWait
+)
+
+func (m PPSMethod) String() string {
+	switch m {
+	case PPSMethodPoll:
+		return "poll"
+	case PPSMethodWait:
+		return "wait"
+	}
+	return fmt.Sprintf("PPSMethod(%d)", int(m))
+}
+
+// ParsePPSMethod parses the name of a PPS detection method. Unspecified
+// has no name: it is expressed by omitting the option or key.
+func ParsePPSMethod(s string) (PPSMethod, error) {
+	switch s {
+	case "poll":
+		return PPSMethodPoll, nil
+	case "wait":
+		return PPSMethodWait, nil
+	}
+	return 0, fmt.Errorf("invalid PPS method %q: must be poll or wait", s)
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (m PPSMethod) MarshalText() ([]byte, error) {
+	if m < PPSMethodPoll || m > PPSMethodWait {
+		return nil, fmt.Errorf("PPS method %v has no text form", m)
+	}
+	return []byte(m.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (m *PPSMethod) UnmarshalText(text []byte) error {
+	v, err := ParsePPSMethod(string(text))
+	if err != nil {
+		return err
+	}
+	*m = v
+	return nil
+}
 
 type OutPort interface {
 	io.Writer

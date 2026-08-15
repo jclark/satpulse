@@ -90,6 +90,11 @@
                   "exclusiveMinimum": 0,
                   "exclusiveMaximum": 1,
                   "default": 0.8
+                },
+                "method": {
+                  "description": "PPS edge detection method: poll or wait; omit for automatic selection",
+                  "type": "string",
+                  "enum": ["poll", "wait"]
                 }
               }
             }

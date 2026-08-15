@@ -46,6 +46,7 @@ type SerialConn struct {
 	lastWriteLen int // bytes of the most recent write; read by Drain
 	watch        term.ModemControlPinWatch
 	watchPin     ModemControlPin
+	watchMethod  PPSMethod
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
@@ -143,23 +144,32 @@ func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
 
-// pinWatcher returns the underlying terminal's wait capability, or nil if the
-// backend can only be polled.
-func (c *SerialConn) pinWatcher() term.ModemControlPinWatcher {
-	w, _ := c.file.(term.ModemControlPinWatcher)
-	return w
+// newPinWatch creates the watch that method selects. A backend without the
+// capability at all fails with an error wrapping errors.ErrUnsupported; an
+// attempt that fails on something that could have worked returns the
+// underlying error.
+func (c *SerialConn) newPinWatch(pin ModemControlPin, method PPSMethod) (term.ModemControlPinWatch, error) {
+	switch method {
+	case PPSMethodWait:
+		watcher, ok := c.file.(term.ModemControlPinWatcher)
+		if !ok {
+			return nil, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
+		}
+		return watcher.NewModemControlPinWatch(pin)
+	default:
+		panic("gpsio: invalid PPS method for a pin watch")
+	}
 }
 
-// CanWaitModemControlPinChange reports whether the serial backend can block
-// until a modem control input changes.
-func (c *SerialConn) CanWaitModemControlPinChange() bool {
-	return c.pinWatcher() != nil
-}
-
-// WaitModemControlPinChange blocks until a modem control input changes. It
-// fails when the backend can only be polled, which
-// CanWaitModemControlPinChange reports in advance.
-func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin) (ModemControlPinChange, int, error) {
+// WaitModemControlPinChange blocks until a modem control input changes,
+// watching it with the given detection method (PPSMethodWait; anything else
+// is a contract violation). The watch is created on the first call and kept
+// until an error or cancellation releases it; every call must pass the same
+// pin and method.
+func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin, method PPSMethod) (ModemControlPinChange, int, error) {
+	if method != PPSMethodWait {
+		panic("gpsio: WaitModemControlPinChange requires the wait method")
+	}
 	c.mu.Lock()
 	if c.stopped {
 		c.mu.Unlock()
@@ -167,22 +177,18 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 	}
 	w := c.watch
 	if w == nil {
-		watcher := c.pinWatcher()
-		if watcher == nil {
-			c.mu.Unlock()
-			return ModemControlPinChange{}, 0, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
-		}
 		var err error
-		w, err = watcher.NewModemControlPinWatch(pin)
+		w, err = c.newPinWatch(pin, method)
 		if err != nil {
 			c.mu.Unlock()
 			return ModemControlPinChange{}, 0, err
 		}
 		c.watch = w
 		c.watchPin = pin
-	} else if pin != c.watchPin {
+		c.watchMethod = method
+	} else if pin != c.watchPin || method != c.watchMethod {
 		c.mu.Unlock()
-		panic("gpsio: WaitModemControlPinChange called with a different pin")
+		panic("gpsio: WaitModemControlPinChange called with a different pin or method")
 	}
 	c.mu.Unlock()
 

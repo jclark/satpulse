@@ -6,17 +6,21 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/lib/check"
 )
 
-// Config controls how serial PPS edges are associated with UTC-labelled
-// receiver messages. Durations are expressed in seconds in TOML.
+// Config controls how serial PPS edges are detected and associated with
+// UTC-labelled receiver messages. Durations are expressed in seconds in
+// TOML.
 type Config struct {
 	// DelayUncertainty is the allowed measurement uncertainty when an
 	// inferred post-pulse message delay is slightly negative.
 	DelayUncertainty float64 `toml:"delayUncertainty" check:">=0,<1" comment:"Uncertainty in measured pulse-to-message delay (s)"`
 	// MaxDelay is the maximum accepted inferred post-pulse message delay.
 	MaxDelay float64 `toml:"maxDelay" check:">0,<1" comment:"Maximum post-pulse message delay (s)"`
+	// Method selects how edges are detected; unspecified means automatic.
+	Method gpsio.PPSMethod `toml:"method" comment:"PPS edge detection method: poll or wait; omit for automatic selection"`
 }
 
 // DefaultConfig returns the default serial PPS sampling configuration.
@@ -34,6 +38,9 @@ func (cfg Config) Validate() error {
 	if cfg.DelayUncertainty >= 0 && cfg.DelayUncertainty < 1 && cfg.MaxDelay > 0 && cfg.MaxDelay < 1 &&
 		!(cfg.DelayUncertainty+cfg.MaxDelay < 1) {
 		msgs = append(msgs, fmt.Sprintf("delayUncertainty + maxDelay: must be < 1, got %g", cfg.DelayUncertainty+cfg.MaxDelay))
+	}
+	if cfg.Method < 0 || cfg.Method > gpsio.PPSMethodWait {
+		msgs = append(msgs, fmt.Sprintf("method: invalid value %d", int(cfg.Method)))
 	}
 	switch len(msgs) {
 	case 0:

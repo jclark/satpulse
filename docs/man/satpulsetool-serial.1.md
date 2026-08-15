@@ -7,9 +7,10 @@ satpulsetool-serial - examine serial ports
 **satpulsetool** [*global options*] **serial** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-a**\|**\-\-all**] [**\-d**\|**\-\-serial\-device** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-info**] [**\-j**\|**\-\-jsonl**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** *cts*\|*dcd*\|*dsr*\|*ri*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*] [**\-\-poll**]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
 # DESCRIPTION
 
@@ -40,13 +41,13 @@ Otherwise, the default operation is to discover the available serial ports and s
 **\-i**, **\-\-info**
 : Show information about serial ports without opening or reading from them.
 
-**\-p**, **\-\-pps\-pin** *cts*\|*dcd*\|*dsr*\|*ri*
+**\-p**, **\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**
 : Detect PPS edges on the specified modem-control pin.
 This causes speed detection not to be performed.
 
-**\-\-poll**
-: Report each PPS edge using polling.
-With **\-\-jsonl**, each edge includes the `uncertainty` and `settling` fields described under **\-\-jsonl**.
+**\-m**, **\-\-pps\-method** **poll**\|**wait**
+: Force the method used to detect PPS edges.
+The default is to use the **wait** method if available, and otherwise **poll**.
 Requires **\-p**.
 
 **\-\-packet\-log** *path*
@@ -74,7 +75,7 @@ for a port with a USB serial number a `serial` string,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
 With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
-and optional polling fields `uncertainty` in seconds and `settling`.
+and, when the **poll** method is used, optional fields `uncertainty` in seconds and `settling`.
 
 # EXIT STATUS
 
