@@ -41,12 +41,17 @@ func (s *Source) GetCap() (Mode, error) {
 
 // Fetch returns PPS information from the source. A zero timeout returns the
 // most recently captured information immediately. A positive timeout waits
-// for new information for at most that duration. A negative timeout waits
-// indefinitely.
+// for information newer than previous for at most that duration. A negative
+// timeout waits indefinitely. Only the assert and clear sequences in previous
+// are used to decide whether information is newer.
 //
-// Waiting uses the Go runtime poller rather than a blocking PPS_FETCH ioctl,
-// so it does not require the source to advertise PPS_CANWAIT.
-func (s *Source) Fetch(timeout time.Duration) (Info, error) {
+// A waiting fetch reads the current information before sleeping. Poll
+// readiness is shared by every descriptor for a PPS source, but the sequences
+// are the caller's private baseline, so another reader cannot consume the
+// condition this call is waiting for.
+//
+// Waiting uses the Go runtime poller rather than a blocking PPS_FETCH ioctl.
+func (s *Source) Fetch(previous Info, timeout time.Duration) (Info, error) {
 	if timeout == 0 {
 		return s.fetch()
 	}
@@ -60,7 +65,7 @@ func (s *Source) Fetch(timeout time.Duration) (Info, error) {
 			return Info{}, s.wrapErr(err, "set read deadline")
 		}
 	}
-	return s.waitFetch()
+	return s.waitFetch(previous)
 }
 
 func (s *Source) fetch() (Info, error) {
@@ -73,12 +78,15 @@ func (s *Source) fetch() (Info, error) {
 	return info, err
 }
 
-func (s *Source) waitFetch() (Info, error) {
+func (s *Source) waitFetch(previous Info) (Info, error) {
 	var info Info
-	err := waitReadable(s.file, func(fd uintptr) error {
+	err := waitReadable(s.file, func(fd uintptr) (bool, error) {
 		var err error
 		info, err = ioctlFetch(fd)
-		return err
+		if err != nil {
+			return true, err
+		}
+		return newerThan(info, previous), nil
 	})
 	if err != nil {
 		return Info{}, s.wrapErr(err, "fetch")
@@ -86,23 +94,25 @@ func (s *Source) waitFetch() (Info, error) {
 	return info, nil
 }
 
-// waitReadable uses RawConn.Read to park the goroutine in the Go runtime
-// poller. The first callback returns false to request a readiness wait; after
-// the descriptor becomes readable, the second callback performs op.
-func waitReadable(f *os.File, op func(uintptr) error) error {
+func newerThan(info, previous Info) bool {
+	return info.Assert.Sequence != previous.Assert.Sequence ||
+		info.Clear.Sequence != previous.Clear.Sequence
+}
+
+// waitReadable uses RawConn.Read to run op after arming the Go runtime poller.
+// The initial callback must attempt the operation before deciding to wait;
+// returning false reports that there is nothing newer and parks the goroutine
+// until the descriptor becomes readable. Subsequent callbacks retry op.
+func waitReadable(f *os.File, op func(uintptr) (bool, error)) error {
 	raw, err := f.SyscallConn()
 	if err != nil {
 		return err
 	}
-	first := true
 	var opErr error
 	if err := raw.Read(func(fd uintptr) bool {
-		if first {
-			first = false
-			return false
-		}
-		opErr = op(fd)
-		return true
+		var done bool
+		done, opErr = op(fd)
+		return done || opErr != nil
 	}); err != nil {
 		return err
 	}

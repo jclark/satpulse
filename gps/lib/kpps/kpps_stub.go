@@ -18,7 +18,7 @@ func (*Source) GetCap() (Mode, error) {
 }
 
 // Fetch reports that kernel PPS is not yet supported on this platform.
-func (*Source) Fetch(time.Duration) (Info, error) {
+func (*Source) Fetch(Info, time.Duration) (Info, error) {
 	return Info{}, ErrNotSupported
 }
 
