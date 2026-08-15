@@ -3,7 +3,6 @@
 package kpps
 
 import (
-	"runtime"
 	"time"
 	"unsafe"
 
@@ -13,14 +12,12 @@ import (
 func ioctlGetCap(fd uintptr) (Mode, error) {
 	var mode int32
 	err := ioctlPtr(fd, unix.PPS_GETCAP, unsafe.Pointer(&mode))
-	runtime.KeepAlive(&mode)
 	return Mode(uint32(mode)), err
 }
 
 func ioctlFetch(fd uintptr) (Info, error) {
 	var data unix.PPSFData // A zero timeout makes PPS_FETCH return immediately.
 	err := ioctlPtr(fd, unix.PPS_FETCH, unsafe.Pointer(&data))
-	runtime.KeepAlive(&data)
 	if err != nil {
 		return Info{}, err
 	}
