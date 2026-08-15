@@ -4,23 +4,30 @@ package kpps
 
 import (
 	"os"
+	"syscall"
 	"time"
 )
 
 // Source is an open kernel PPS source.
 type Source struct {
 	file *os.File
-	path string
+	raw  syscall.RawConn
 }
 
-// Open opens path as a kernel PPS source. The returned Source owns the file
-// descriptor and must be closed by the caller.
+// Open opens path as a kernel PPS source. It issues PPS_GETCAP to check that
+// path is a PPS device, discarding the capabilities it reports. The returned
+// Source owns the file descriptor and must be closed by the caller.
 func Open(path string) (*Source, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
-	s := &Source{file: f, path: path}
+	raw, err := f.SyscallConn()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	s := &Source{file: f, raw: raw}
 	if _, err := s.GetCap(); err != nil {
 		_ = f.Close()
 		return nil, err
@@ -60,10 +67,6 @@ func (s *Source) Fetch(previous Info, timeout time.Duration) (Info, error) {
 			return Info{}, s.wrapErr(err, "set read deadline")
 		}
 		defer s.file.SetReadDeadline(time.Time{})
-	} else {
-		if err := s.file.SetReadDeadline(time.Time{}); err != nil {
-			return Info{}, s.wrapErr(err, "set read deadline")
-		}
 	}
 	return s.waitFetch(previous)
 }
@@ -80,7 +83,7 @@ func (s *Source) fetch() (Info, error) {
 
 func (s *Source) waitFetch(previous Info) (Info, error) {
 	var info Info
-	err := waitReadable(s.file, func(fd uintptr) (bool, error) {
+	err := waitReadable(s.raw, func(fd uintptr) (bool, error) {
 		var err error
 		info, err = ioctlFetch(fd)
 		if err != nil {
@@ -103,11 +106,7 @@ func newerThan(info, previous Info) bool {
 // The initial callback must attempt the operation before deciding to wait;
 // returning false reports that there is nothing newer and parks the goroutine
 // until the descriptor becomes readable. Subsequent callbacks retry op.
-func waitReadable(f *os.File, op func(uintptr) (bool, error)) error {
-	raw, err := f.SyscallConn()
-	if err != nil {
-		return err
-	}
+func waitReadable(raw syscall.RawConn, op func(uintptr) (bool, error)) error {
 	var opErr error
 	if err := raw.Read(func(fd uintptr) bool {
 		var done bool
@@ -120,12 +119,8 @@ func waitReadable(f *os.File, op func(uintptr) (bool, error)) error {
 }
 
 func (s *Source) control(op string, f func(uintptr) error) error {
-	raw, err := s.file.SyscallConn()
-	if err != nil {
-		return s.wrapErr(err, op)
-	}
 	var callErr error
-	if err := raw.Control(func(fd uintptr) {
+	if err := s.raw.Control(func(fd uintptr) {
 		callErr = f(fd)
 	}); err != nil {
 		return s.wrapErr(err, op)
@@ -143,5 +138,5 @@ func (s *Source) wrapErr(err error, op string) error {
 	if err == nil {
 		return nil
 	}
-	return &os.PathError{Op: op, Path: s.path, Err: err}
+	return &os.PathError{Op: op, Path: s.file.Name(), Err: err}
 }

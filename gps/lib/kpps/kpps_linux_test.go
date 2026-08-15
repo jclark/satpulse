@@ -5,11 +5,21 @@ package kpps
 import (
 	"errors"
 	"os"
+	"syscall"
 	"testing"
 	"time"
 
 	"golang.org/x/sys/unix"
 )
+
+func rawConn(t *testing.T, f *os.File) syscall.RawConn {
+	t.Helper()
+	raw, err := f.SyscallConn()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw
+}
 
 func TestWaitReadable(t *testing.T) {
 	r, w, err := os.Pipe()
@@ -28,7 +38,7 @@ func TestWaitReadable(t *testing.T) {
 	}()
 	var got byte
 	callbacks := 0
-	err = waitReadable(r, func(fd uintptr) (bool, error) {
+	err = waitReadable(rawConn(t, r), func(fd uintptr) (bool, error) {
 		callbacks++
 		if callbacks == 1 {
 			close(firstCallback)
@@ -65,7 +75,7 @@ func TestWaitReadableOperationCompletesBeforeReadiness(t *testing.T) {
 		t.Fatal(err)
 	}
 	called := false
-	err = waitReadable(r, func(uintptr) (bool, error) {
+	err = waitReadable(rawConn(t, r), func(uintptr) (bool, error) {
 		called = true
 		return true, nil
 	})
@@ -90,7 +100,7 @@ func TestWaitReadableDeadline(t *testing.T) {
 		t.Fatal(err)
 	}
 	callbacks := 0
-	err = waitReadable(r, func(uintptr) (bool, error) {
+	err = waitReadable(rawConn(t, r), func(uintptr) (bool, error) {
 		callbacks++
 		return false, nil
 	})
