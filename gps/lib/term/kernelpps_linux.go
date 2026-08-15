@@ -64,18 +64,25 @@ func (w *kernelPPSPinWatch) setup() error {
 		return w.wrapErr(err, "ioctl(TIOCGETD)")
 	}
 	w.savedLdisc = ldisc
+	// A kernel built without N_PPS, a TTY with no source of its own, and a
+	// /dev/ppsN we may not open are all systems where this method cannot run
+	// but another can, so they are unavailable rather than unsupported: the
+	// caller warns and falls back instead of failing the run.
 	if err := unix.IoctlSetPointerInt(w.fd, unix.TIOCSETD, nPPS); err != nil {
+		if errors.Is(err, unix.EINVAL) {
+			err = fmt.Errorf("%w: no N_PPS line discipline: %w", ErrUnavailable, err)
+		}
 		return w.wrapErr(err, "ioctl(TIOCSETD)")
 	}
 	w.ldiscSet = true
 
 	path, err := kpps.DevicePathForTTY(w.fd)
 	if err != nil {
-		return w.wrapErr(err, "find kernel PPS device")
+		return fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	w.source, err = openKernelPPSRetry(path)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrUnavailable, err)
 	}
 	info, err := w.source.Fetch(kpps.Info{}, 0)
 	if err != nil {

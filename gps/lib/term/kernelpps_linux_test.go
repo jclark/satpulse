@@ -28,6 +28,35 @@ func TestNewKernelModemControlPinWatchWrongPin(t *testing.T) {
 	}
 }
 
+// A pty has no kernel PPS source to find: the source the line discipline
+// registers records the TTY's name, giving /dev/ptsN, which is not the
+// /dev/pts/N the descriptor resolves to. A kernel without N_PPS fails the
+// attach instead. Both are unavailable rather than unsupported, so the caller
+// warns and falls back rather than failing the run.
+func TestNewKernelModemControlPinWatchUnavailable(t *testing.T) {
+	term, err := Open(newTestPTY(t), RawMode)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := term.Close(); err != nil {
+			t.Errorf("Close: %v", err)
+		}
+	})
+	watcher, ok := term.(KernelModemControlPinWatcher)
+	if !ok {
+		t.Fatalf("%T does not implement KernelModemControlPinWatcher", term)
+	}
+	w, err := watcher.NewKernelModemControlPinWatch(ModemDCD)
+	if err == nil {
+		_ = w.Close()
+		t.Fatal("NewKernelModemControlPinWatch succeeded on a pty")
+	}
+	if !errors.Is(err, ErrUnavailable) || errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("error = %v, want ErrUnavailable without errors.ErrUnsupported", err)
+	}
+}
+
 func TestKernelPPSSeqUpdate(t *testing.T) {
 	mono := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
 	change := func(sec int64, nsec int, asserted bool) ModemControlPinChange {
