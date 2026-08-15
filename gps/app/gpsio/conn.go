@@ -41,14 +41,15 @@ const (
 type ModemControlPinState = term.ModemControlPinState
 
 // PPSMethod identifies how serial PPS edges are detected: adaptive polling
-// of the modem control pin state or blocking on the platform's modem-status
-// wait primitive. The zero value is unspecified, which callers interpret as
-// automatic selection.
+// of the modem control pin state, blocking on the platform's modem-status
+// wait primitive, or kernel PPS. The zero value is unspecified, which callers
+// interpret as automatic selection.
 type PPSMethod int
 
 const (
 	PPSMethodPoll PPSMethod = iota + 1
 	PPSMethodWait
+	PPSMethodKernel
 )
 
 func (m PPSMethod) String() string {
@@ -57,6 +58,8 @@ func (m PPSMethod) String() string {
 		return "poll"
 	case PPSMethodWait:
 		return "wait"
+	case PPSMethodKernel:
+		return "kernel"
 	}
 	return fmt.Sprintf("PPSMethod(%d)", int(m))
 }
@@ -69,13 +72,15 @@ func ParsePPSMethod(s string) (PPSMethod, error) {
 		return PPSMethodPoll, nil
 	case "wait":
 		return PPSMethodWait, nil
+	case "kernel":
+		return PPSMethodKernel, nil
 	}
-	return 0, fmt.Errorf("invalid PPS method %q: must be poll or wait", s)
+	return 0, fmt.Errorf("invalid PPS method %q: must be poll, wait, or kernel", s)
 }
 
 // MarshalText implements encoding.TextMarshaler.
 func (m PPSMethod) MarshalText() ([]byte, error) {
-	if m < PPSMethodPoll || m > PPSMethodWait {
+	if m < PPSMethodPoll || m > PPSMethodKernel {
 		return nil, fmt.Errorf("PPS method %v has no text form", m)
 	}
 	return []byte(m.String()), nil

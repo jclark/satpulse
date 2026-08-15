@@ -107,6 +107,9 @@ type ModemControlPinChange struct {
 	// against other time.Now values. Where time.Now is the best clock
 	// available they are the same reading. The readings are taken on the
 	// waiting thread as soon as the wait ends, before any other call.
+	// A backend that timestamps the edge itself may instead deliver Wall
+	// and Mono as readings of two slightly different instants: the edge,
+	// and its delivery to the waiter.
 	Wall, Mono time.Time
 	// Asserted is the pin's sense after the transition that ended the wait,
 	// as far as the platform can determine it. Where the platform can tell
@@ -148,6 +151,16 @@ type ModemControlPinWatch interface {
 // for this interface.
 type ModemControlPinWatcher interface {
 	NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
+}
+
+// KernelModemControlPinWatcher is implemented by terminals that can watch a
+// modem control input with edge timestamps taken by the OS kernel. Callers
+// discover the capability by asserting for this interface.
+type KernelModemControlPinWatcher interface {
+	// NewKernelModemControlPinWatch creates a kernel-timestamped watch. It
+	// fails with an error wrapping errors.ErrUnsupported when the selected
+	// pin can never be watched this way.
+	NewKernelModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
 }
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)

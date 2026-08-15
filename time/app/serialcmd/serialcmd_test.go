@@ -45,6 +45,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "pps JSONL", args: []string{"-j", "-p", "cts", "-a"}, want: flagVars{jsonl: true, all: true, ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
 		{name: "pps by polling", args: []string{"-p", "cts", "-m", "poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodPoll, timeout: defaultPPSTimeout}},
 		{name: "pps by waiting", args: []string{"-p", "cts", "--pps-method", "wait", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodWait, timeout: defaultPPSTimeout}},
+		{name: "pps with kernel timestamps", args: []string{"-p", "dcd", "--pps-method", "kernel", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDCD, ppsMethod: gpsio.PPSMethodKernel, timeout: defaultPPSTimeout}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "positional port", args: []string{"/dev/ttyS0"}, wantErr: true},
 		{name: "all and device", args: []string{"-a", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -53,7 +54,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "info and timeout", args: []string{"-i", "-d", "/dev/ttyS0", "-t", "1"}, wantErr: true},
 		{name: "info and pps", args: []string{"-i", "-p", "cts", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "method without pps", args: []string{"-m", "poll", "-d", "/dev/ttyS0"}, wantErr: true},
-		{name: "invalid method", args: []string{"-p", "cts", "-m", "kernel", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "invalid method", args: []string{"-p", "cts", "-m", "sideband", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps without target", args: []string{"-p", "cts"}, wantErr: true},
 		{name: "pps invalid pin", args: []string{"-p", "rts", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps value required", args: []string{"--pps-pin", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -296,7 +297,7 @@ func (w *notifyingWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
-func TestDetectEdgesWaitBackend(t *testing.T) {
+func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
 	conn := &monitorWaitConn{
 		state: asserted,
@@ -322,7 +323,7 @@ func TestDetectEdgesWaitBackend(t *testing.T) {
 	select {
 	case <-output.wrote:
 	case <-time.After(time.Second):
-		t.Fatal("detectEdges did not print the wait observation")
+		t.Fatal("detectEdges did not print the kernel observation")
 	}
 	cancel()
 	select {
@@ -331,16 +332,16 @@ func TestDetectEdgesWaitBackend(t *testing.T) {
 			t.Fatalf("detectEdges = %d, %v; want 1, nil", got.count, got.err)
 		}
 	case <-time.After(time.Second):
-		t.Fatal("detectEdges did not stop the wait backend after cancellation")
+		t.Fatal("detectEdges did not stop the kernel method after cancellation")
 	}
 	if got := output.String(); got != "14:23:05.123456\n" {
-		t.Errorf("output = %q, want one wait timestamp", got)
+		t.Errorf("output = %q, want one kernel timestamp", got)
 	}
 	if strings.Contains(logs.String(), "serial PPS polling statistics") {
-		t.Errorf("wait run logged polling statistics: %q", logs.String())
+		t.Errorf("kernel run logged polling statistics: %q", logs.String())
 	}
-	if conn.method != gpsio.PPSMethodWait {
-		t.Errorf("wait method = %v, want wait", conn.method)
+	if conn.method != gpsio.PPSMethodKernel {
+		t.Errorf("selected method = %v, want kernel", conn.method)
 	}
 }
 

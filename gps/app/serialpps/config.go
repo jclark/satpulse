@@ -20,7 +20,7 @@ type Config struct {
 	// MaxDelay is the maximum accepted inferred post-pulse message delay.
 	MaxDelay float64 `toml:"maxDelay" check:">0,<1" comment:"Maximum post-pulse message delay (s)"`
 	// Method selects how edges are detected; unspecified means automatic.
-	Method gpsio.PPSMethod `toml:"method" comment:"PPS edge detection method: poll or wait; omit for automatic selection"`
+	Method gpsio.PPSMethod `toml:"method" comment:"PPS edge detection method: poll, wait, or kernel; omit for automatic selection"`
 }
 
 // DefaultConfig returns the default serial PPS sampling configuration.
@@ -39,7 +39,7 @@ func (cfg Config) Validate() error {
 		!(cfg.DelayUncertainty+cfg.MaxDelay < 1) {
 		msgs = append(msgs, fmt.Sprintf("delayUncertainty + maxDelay: must be < 1, got %g", cfg.DelayUncertainty+cfg.MaxDelay))
 	}
-	if cfg.Method < 0 || cfg.Method > gpsio.PPSMethodWait {
+	if cfg.Method < 0 || cfg.Method > gpsio.PPSMethodKernel {
 		msgs = append(msgs, fmt.Sprintf("method: invalid value %d", int(cfg.Method)))
 	}
 	switch len(msgs) {

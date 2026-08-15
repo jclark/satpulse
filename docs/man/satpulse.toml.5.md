@@ -105,9 +105,11 @@ It can have the following keys:
   the inferred delay may be this far below zero; the default is 0.005
 * `maxDelay` - the maximum accepted inferred delay from the pulse to its post-pulse message, in seconds;
   the default is 0.8
-* `method` - a string giving the method used to detect PPS edges;
-  one of `"poll"` or `"wait"`;
-  the default is to use `"wait"` if available, and otherwise `"poll"`
+* `method` - controls how the operating system is used to detect modem status changes that mark pulse edges:
+  `"kernel"` means the kernel timestamps the time of a status change;
+  `"wait"` means the kernel notifies the application of a status change;
+  `"poll"` means the application continually asks for the current status;
+  when omitted, the best available method is used
 
 The sum of `delayUncertainty` and `maxDelay` must be less than 1.
 

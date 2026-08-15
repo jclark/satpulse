@@ -275,3 +275,48 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 		t.Error("Close did not close fallback file")
 	}
 }
+
+// fakeKernelTerm is a terminal that also offers the kernel PPS capability.
+type fakeKernelTerm struct {
+	fakeWaitTerm
+	kernelPin term.ModemControlPin
+}
+
+var _ term.KernelModemControlPinWatcher = (*fakeKernelTerm)(nil)
+
+func (f *fakeKernelTerm) NewKernelModemControlPinWatch(pin term.ModemControlPin) (term.ModemControlPinWatch, error) {
+	f.kernelPin = pin
+	return f.watch, nil
+}
+
+func TestSerialConnKernelMethod(t *testing.T) {
+	w := newFakePinWatch()
+	now := time.Now()
+	w.result <- fakeWatchResult{
+		change: term.ModemControlPinChange{Wall: now, Mono: now, Asserted: false},
+		missed: 1,
+	}
+	f := &fakeKernelTerm{fakeWaitTerm: fakeWaitTerm{watch: w}}
+	c := newSerialConn(f, term.DevUART)
+	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel)
+	if err != nil || change.Wall != now || change.Asserted || missed != 1 {
+		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
+	}
+	if f.kernelPin != term.ModemDCD {
+		t.Errorf("kernel-watched pin = %v, want DCD", f.kernelPin)
+	}
+	c.Stop()
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestSerialConnKernelMethodUnsupported(t *testing.T) {
+	c := newSerialConn(&fakeWaitTerm{watch: newFakePinWatch()}, term.DevUSBtoUART)
+	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}

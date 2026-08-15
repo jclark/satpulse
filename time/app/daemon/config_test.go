@@ -214,7 +214,7 @@ func TestSerialPPSSampleConfig(t *testing.T) {
 
 	cfg, err := readConfig(strings.NewReader(`
 [sample.serial.pps]
-method = "wait"
+method = "kernel"
 delayUncertainty = 0.01
 maxDelay = 0.7
 `))
@@ -227,8 +227,8 @@ maxDelay = 0.7
 	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.7 {
 		t.Errorf("configured maxDelay = %v, want 0.7", got)
 	}
-	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodWait {
-		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodWait)
+	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodKernel {
+		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodKernel)
 	}
 	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -238,7 +238,7 @@ maxDelay = 0.7
 func TestSerialPPSSampleConfigRejectsInvalidMethod(t *testing.T) {
 	_, err := readConfig(strings.NewReader(`
 [sample.serial.pps]
-method = "kernel"
+method = "sideband"
 `))
 	if err == nil {
 		t.Fatal("readConfig succeeded with invalid PPS method")

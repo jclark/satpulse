@@ -144,8 +144,9 @@ func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
 
-// newPinWatch creates the watch that method selects. A backend without the
-// capability at all fails with an error wrapping errors.ErrUnsupported; an
+// newPinWatch creates the watch that method selects. Inherent impossibility --
+// a backend without the capability at all, or a pin the kernel method can
+// never report -- fails with an error wrapping errors.ErrUnsupported; an
 // attempt that fails on something that could have worked returns the
 // underlying error.
 func (c *SerialConn) newPinWatch(pin ModemControlPin, method PPSMethod) (term.ModemControlPinWatch, error) {
@@ -156,19 +157,25 @@ func (c *SerialConn) newPinWatch(pin ModemControlPin, method PPSMethod) (term.Mo
 			return nil, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
 		}
 		return watcher.NewModemControlPinWatch(pin)
+	case PPSMethodKernel:
+		watcher, ok := c.file.(term.KernelModemControlPinWatcher)
+		if !ok {
+			return nil, fmt.Errorf("%s: kernel PPS is not available on this platform or device: %w", c.file.Path(), errors.ErrUnsupported)
+		}
+		return watcher.NewKernelModemControlPinWatch(pin)
 	default:
 		panic("gpsio: invalid PPS method for a pin watch")
 	}
 }
 
 // WaitModemControlPinChange blocks until a modem control input changes,
-// watching it with the given detection method (PPSMethodWait; anything else
-// is a contract violation). The watch is created on the first call and kept
-// until an error or cancellation releases it; every call must pass the same
-// pin and method.
+// watching it with the given detection method (PPSMethodWait or
+// PPSMethodKernel; anything else is a contract violation). The watch is
+// created on the first call and kept until an error or cancellation releases
+// it; every call must pass the same pin and method.
 func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin, method PPSMethod) (ModemControlPinChange, int, error) {
-	if method != PPSMethodWait {
-		panic("gpsio: WaitModemControlPinChange requires the wait method")
+	if method != PPSMethodWait && method != PPSMethodKernel {
+		panic("gpsio: WaitModemControlPinChange requires the wait or kernel method")
 	}
 	c.mu.Lock()
 	if c.stopped {
