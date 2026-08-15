@@ -146,8 +146,9 @@ func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 
 // newPinWatch creates the watch that method selects. A backend without the
 // capability at all fails with an error wrapping errors.ErrUnsupported; an
-// attempt that fails on something that could have worked returns the
-// underlying error.
+// available backend whose device or driver cannot provide it fails with an
+// error wrapping ErrUnavailable. Other failures retain their underlying
+// error.
 func (c *SerialConn) newPinWatch(pin ModemControlPin, method PPSMethod) (term.ModemControlPinWatch, error) {
 	switch method {
 	case PPSMethodWait:
