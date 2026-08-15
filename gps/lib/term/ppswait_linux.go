@@ -10,9 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var _ ModemControlPinWatcher = (*unixTerm)(nil)
-
-type pinWatch struct {
+type waitPinWatch struct {
 	fd          int
 	mask        uint
 	pin         ModemControlPin
@@ -23,10 +21,7 @@ type pinWatch struct {
 	path        string
 }
 
-// NewModemControlPinWatch creates a watch with a private descriptor. All watch syscalls
-// use the duplicate, so the watch remains safe if the terminal is later
-// closed.
-func (t *unixTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
+func newWaitPinWatch(t *unixTerm, pin ModemControlPin) (*waitPinWatch, error) {
 	mask, err := tiocmPinMask(pin)
 	if err != nil {
 		return nil, err
@@ -35,7 +30,7 @@ func (t *unixTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPin
 	if err != nil {
 		return nil, t.wrapErr(err, "fcntl(F_DUPFD_CLOEXEC)")
 	}
-	w := &pinWatch{fd: fd, mask: mask, pin: pin, path: t.path}
+	w := &waitPinWatch{fd: fd, mask: mask, pin: pin, path: t.path}
 	if count, err := w.readCounter(); err == nil {
 		w.baseline = count
 		w.haveCounter = true
@@ -47,7 +42,7 @@ func (t *unixTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPin
 // interrupt this ioctl, so cancellation becomes observable only after the pin
 // next changes. time.Now is the best clock here, so one reading serves as both
 // Wall and Mono.
-func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
+func (w *waitPinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
 	if w.cancelled.Load() {
@@ -104,7 +99,7 @@ func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 	}
 }
 
-func (w *pinWatch) readCounter() (int32, error) {
+func (w *waitPinWatch) readCounter() (int32, error) {
 	ic, err := ioctlGetSerialICounter(w.fd)
 	if err != nil {
 		return 0, err
@@ -123,9 +118,9 @@ func (w *pinWatch) readCounter() (int32, error) {
 	}
 }
 
-func (w *pinWatch) Cancel() { w.cancelled.Store(true) }
+func (w *waitPinWatch) Cancel() { w.cancelled.Store(true) }
 
-func (w *pinWatch) Close() error {
+func (w *waitPinWatch) Close() error {
 	if w.inWait.Load() {
 		panic("term: ModemControlPinWatch.Close during Wait")
 	}
@@ -134,7 +129,7 @@ func (w *pinWatch) Close() error {
 	return w.wrapErr(unix.Close(fd), "close")
 }
 
-func (w *pinWatch) wrapErr(err error, op string) error {
+func (w *waitPinWatch) wrapErr(err error, op string) error {
 	if err == nil {
 		return nil
 	}

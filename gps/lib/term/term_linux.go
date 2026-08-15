@@ -239,6 +239,15 @@ func (t *unixTerm) readError() *Error {
 	return &Error{Path: t.path, Flags: flags, Counts: &ec}
 }
 
+var _ ModemControlPinWatcher = (*unixTerm)(nil)
+
+// NewModemControlPinWatch creates a watch with a private descriptor. All watch syscalls
+// use the duplicate, so the watch remains safe if the terminal is later
+// closed.
+func (t *unixTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
+	return newWaitPinWatch(t, pin)
+}
+
 func (t *unixTerm) DevKind() DevKind {
 	s := unix.Stat_t{}
 	err := unix.Fstat(t.fd, &s)
