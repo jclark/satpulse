@@ -69,7 +69,10 @@ func (w *kernelPPSPinWatch) setup() error {
 	// but another can, so they are unavailable rather than unsupported: the
 	// caller warns and falls back instead of failing the run.
 	if err := unix.IoctlSetPointerInt(w.fd, unix.TIOCSETD, nPPS); err != nil {
-		if errors.Is(err, unix.EINVAL) {
+		// EINVAL is a kernel without N_PPS. EPERM is one whose pps_ldisc
+		// module is not loaded, on a system that has turned off
+		// dev.tty.ldisc_autoload for callers without CAP_SYS_MODULE.
+		if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.EPERM) {
 			err = fmt.Errorf("%w: no N_PPS line discipline: %w", ErrUnavailable, err)
 		}
 		return w.wrapErr(err, "ioctl(TIOCSETD)")
