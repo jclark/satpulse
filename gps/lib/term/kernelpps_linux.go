@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,7 +17,6 @@ import (
 const nPPS = 18
 
 const (
-	sysClassPPS          = "/sys/class/pps"
 	ppsOpenRetryTotal    = 2 * time.Second
 	ppsOpenRetryInterval = 100 * time.Millisecond
 )
@@ -72,17 +69,11 @@ func (w *kernelPPSPinWatch) setup() error {
 	}
 	w.ldiscSet = true
 
-	// The kernel source records the canonical device path rather than the
-	// possibly-symlinked path through which the caller opened the TTY.
-	ttyPath, err := DevicePathForTTY(w.fd)
+	path, err := kpps.DevicePathForTTY(w.fd)
 	if err != nil {
-		return w.wrapErr(err, "readlink(/proc/self/fd)")
+		return w.wrapErr(err, "find kernel PPS device")
 	}
-	name, err := findKernelPPS(sysClassPPS, ttyPath)
-	if err != nil {
-		return err
-	}
-	w.source, err = openKernelPPSRetry(filepath.Join("/dev", name))
+	w.source, err = openKernelPPSRetry(path)
 	if err != nil {
 		return err
 	}
@@ -93,34 +84,6 @@ func (w *kernelPPSPinWatch) setup() error {
 	w.seq.lastAssert = info.Assert.Sequence
 	w.seq.lastClear = info.Clear.Sequence
 	return nil
-}
-
-// DevicePathForTTY returns the canonical device path associated with an open
-// TTY file descriptor. On Linux this is the target of /proc/self/fd/N, which
-// remains the TTY's device path even when it was opened through a symlink.
-func DevicePathForTTY(fd int) (string, error) {
-	return os.Readlink(fmt.Sprintf("/proc/self/fd/%d", fd))
-}
-
-// findKernelPPS finds the PPS source whose sysfs path attribute is sourcePath.
-// PPS numbers are not stable across reopens, so sources are identified by the
-// attribute content rather than by creation order. Unreadable entries are
-// skipped because another process's PPS source may vanish during the scan.
-func findKernelPPS(sysDir, sourcePath string) (string, error) {
-	entries, err := os.ReadDir(sysDir)
-	if err != nil {
-		return "", err
-	}
-	for _, entry := range entries {
-		b, err := os.ReadFile(filepath.Join(sysDir, entry.Name(), "path"))
-		if err != nil {
-			continue
-		}
-		if strings.TrimSuffix(string(b), "\n") == sourcePath {
-			return entry.Name(), nil
-		}
-	}
-	return "", fmt.Errorf("%s: no kernel PPS source in %s", sourcePath, sysDir)
 }
 
 // openKernelPPSRetry allows time for udev to change the permissions on a new

@@ -2,8 +2,6 @@ package term
 
 import (
 	"errors"
-	"os"
-	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
@@ -27,30 +25,6 @@ func TestNewKernelModemControlPinWatchWrongPin(t *testing.T) {
 	}
 	if _, err := watcher.NewKernelModemControlPinWatch(ModemCTS); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("NewKernelModemControlPinWatch(ModemCTS) error = %v, want errors.ErrUnsupported", err)
-	}
-}
-
-func TestDevicePathForTTY(t *testing.T) {
-	path := newTestPTY(t)
-	alias := filepath.Join(t.TempDir(), "tty")
-	if err := os.Symlink(path, alias); err != nil {
-		t.Fatal(err)
-	}
-	f, err := os.OpenFile(alias, os.O_RDWR, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() {
-		if err := f.Close(); err != nil {
-			t.Errorf("Close: %v", err)
-		}
-	})
-	got, err := DevicePathForTTY(int(f.Fd()))
-	if err != nil {
-		t.Fatalf("DevicePathForTTY: %v", err)
-	}
-	if got != path {
-		t.Errorf("DevicePathForTTY = %q, want %q", got, path)
 	}
 }
 
@@ -144,50 +118,5 @@ func TestKernelPPSSeqTakePending(t *testing.T) {
 	}
 	if _, ok := seq.takePending(); ok {
 		t.Error("takePending returned a change twice")
-	}
-}
-
-func TestFindKernelPPS(t *testing.T) {
-	dir := t.TempDir()
-	write := func(name, path string) {
-		if err := os.MkdirAll(filepath.Join(dir, name), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, name, "path"), []byte(path), 0o644); err != nil {
-			t.Fatal(err)
-		}
-	}
-	write("pps0", "\n")
-	write("pps1", "/dev/ttyS9\n")
-	write("pps2", "/dev/ttyS0\n")
-	if err := os.MkdirAll(filepath.Join(dir, "pps3"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	tests := []struct {
-		name      string
-		source    string
-		expect    string
-		expectErr bool
-	}{
-		{name: "match", source: "/dev/ttyS0", expect: "pps2"},
-		{name: "other tty", source: "/dev/ttyS9", expect: "pps1"},
-		{name: "no match", source: "/dev/ttyUSB0", expectErr: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, err := findKernelPPS(dir, tc.source)
-			if tc.expectErr {
-				if err == nil {
-					t.Fatalf("expected error, got %q", got)
-				}
-				return
-			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if got != tc.expect {
-				t.Errorf("findKernelPPS = %q, want %q", got, tc.expect)
-			}
-		})
 	}
 }
