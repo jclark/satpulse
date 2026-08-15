@@ -200,6 +200,27 @@ interface = "eth0"
 	}
 }
 
+func TestSerialPPSKernelMethodRequiresDCD(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+pin = "cts"
+
+[sample.serial.pps]
+method = "kernel"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "dcd"`) {
+		t.Fatalf("Validate error = %v, want the kernel method to require DCD", err)
+	}
+	cfg.Serial.PPS.Pin = "dcd"
+	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Validate with dcd: %v", err)
+	}
+}
+
 func TestSerialPPSSampleConfig(t *testing.T) {
 	cfg := defaultConfig()
 	if got := cfg.Sample.Serial.PPS.Method; got != 0 {

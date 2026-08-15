@@ -232,6 +232,11 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
 	}
+	// An explicitly selected method never falls back, and kernel PPS reports
+	// only DCD changes, so the combination could only fail at startup.
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != "dcd" {
+		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = "dcd" in the [serial] table, got %q`, cfg.Serial.PPS.Pin)}
+	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
