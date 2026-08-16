@@ -200,6 +200,27 @@ interface = "eth0"
 	}
 }
 
+func TestSerialPPSKernelMethodRequiresDCD(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+pin = "cts"
+
+[sample.serial.pps]
+method = "kernel"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "dcd"`) {
+		t.Fatalf("Validate error = %v, want the kernel method to require DCD", err)
+	}
+	cfg.Serial.PPS.Pin = "dcd"
+	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Validate with dcd: %v", err)
+	}
+}
+
 func TestSerialPPSSampleConfig(t *testing.T) {
 	cfg := defaultConfig()
 	if got := cfg.Sample.Serial.PPS.Method; got != 0 {
@@ -214,7 +235,7 @@ func TestSerialPPSSampleConfig(t *testing.T) {
 
 	cfg, err := readConfig(strings.NewReader(`
 [sample.serial.pps]
-method = "wait"
+method = "kernel"
 delayUncertainty = 0.01
 maxDelay = 0.7
 `))
@@ -227,8 +248,8 @@ maxDelay = 0.7
 	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.7 {
 		t.Errorf("configured maxDelay = %v, want 0.7", got)
 	}
-	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodWait {
-		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodWait)
+	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodKernel {
+		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodKernel)
 	}
 	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -238,7 +259,7 @@ maxDelay = 0.7
 func TestSerialPPSSampleConfigRejectsInvalidMethod(t *testing.T) {
 	_, err := readConfig(strings.NewReader(`
 [sample.serial.pps]
-method = "kernel"
+method = "sideband"
 `))
 	if err == nil {
 		t.Fatal("readConfig succeeded with invalid PPS method")

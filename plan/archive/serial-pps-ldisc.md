@@ -79,46 +79,60 @@ Verified against Linux master (2026-08-14), `drivers/pps/*`,
 
 ## Backend design
 
-A second `ModemControlPinWatch` implementation in `term_linux.go`.
-`NewModemControlPinWatch` tries it when the pin is `ModemDCD` and
-falls back to the existing `pinWatch` on any setup failure. Nothing
-above `term` changes: `serialpps.Wait`, `gpsio.SerialConn`, and the
-daemon wiring are untouched. `term` stays log-free, so the concrete
-watch types identify themselves (a `String` method: "kernel PPS",
-"TIOCMIWAIT") and `serialpps.Detect` logs which backend it got.
+A second `ModemControlPinWatch` implementation, in
+`kernelpps_linux.go`. It is offered as its own capability interface,
+`KernelModemControlPinWatcher`, rather than tried inside
+`NewModemControlPinWatch`: the configurable PPS methods of #413
+landed first, so selection and fallback are `serialpps.Detect`'s
+ladder over `gpsio.PPSMethod` values, which also supplies the method
+name for the log line. `term` stays log-free and needs no `String`
+method on the watch types.
 
 Setup, on the watch's private dup (the ldisc is per-tty, so which fd
 issues the ioctls does not matter):
 
 1. `TIOCGETD` to save the current ldisc; `TIOCSETD` to N_PPS (18).
-2. Resolve the tty's canonical device path via
-   `os.Readlink("/proc/self/fd/N")`, which is immune to the
-   configured path being a symlink (`/dev/serial/by-id/...`).
-3. Scan `/sys/class/pps/*/path` for that path to learn N. Entries
-   that vanish mid-scan (another process's source) are skipped.
-4. Open `/dev/ppsN`, with a short retry loop on EACCES (about 2 s
-   total) to cover udev applying the packaged rule asynchronously.
-5. `PPS_GETCAP` sanity check.
+2. `kpps.DevicePathForTTY` resolves the tty's canonical device path
+   via `os.Readlink("/proc/self/fd/N")`, which is immune to the
+   configured path being a symlink (`/dev/serial/by-id/...`), and
+   scans `/sys/class/pps/*/path` for it to learn N. Entries that
+   vanish mid-scan (another process's source) are skipped. It takes
+   the descriptor rather than a path so the resolution and the match
+   are in one place, and knowledge of the PPS subsystem's sysfs
+   layout stays in `kpps` with the ioctls.
+3. Open `/dev/ppsN`, with a short retry loop on EACCES (about 2 s
+   total) to cover udev applying the rule asynchronously.
+4. `PPS_GETCAP` sanity check, inside `kpps.Open`.
+
+The failures that mean this system cannot use the method but another
+can -- EINVAL or EPERM from `TIOCSETD`, no source for the tty, a node
+we may not open -- are wrapped in `term.ErrUnavailable`, which is the
+ladder's warn-and-fall-back branch. Anything else propagates.
 
 Any failure restores the saved ldisc and falls back. Close also
 restores the saved ldisc.
 
-Wait blocks in `poll` on the pps fd and an eventfd, with no timeout.
-`Cancel` writes the eventfd, so cancellation is prompt and the
+Wait fetches through `kpps`, which uses the Go runtime poller on the
+pps fd rather than `poll` on the fd and an eventfd: `Fetch` performs
+the ioctl before parking and parks only while neither sequence has
+advanced past the baseline the caller passes in, so an edge that
+arrived between calls is returned without waiting. `Cancel` closes
+the source, which wakes a parked `Fetch` promptly, so the
 abandoned-goroutine caveat that `gpsio.SerialConn` documents for
-TIOCMIWAIT does not apply to this watch. On POLLIN it fetches with a
-zero timeout and diffs the assert and clear sequence numbers against
-the last seen:
+TIOCMIWAIT does not apply to this watch. Each fetch diffs the assert
+and clear sequence numbers against the last seen:
 
-- Each advanced counter yields a `ModemControlPinChange` with the
-  kernel timestamp; when both advanced, the two changes are emitted
-  in timestamp order, the second buffered for the next Wait call
-  without re-polling.
-- `missed` is the sequence delta minus one, per edge type -- exact,
-  where TIOCMIWAIT's `TIOCGICOUNT` deltas are an inferred lower
-  bound. Nothing is withheld: each event carries its own timestamp,
-  so the multi-transition ambiguity that makes the TIOCMIWAIT
-  backend withhold a wakeup cannot arise.
+- A fetch carries one monotonic reading, taken when it returned, and
+  that reading dates the newest edge only. So the newest edge is the
+  one reported, and every other capture the fetch accounted for is
+  counted as missed rather than reported with a reading that belongs
+  to a different instant.
+- `missed` is therefore every capture since the last fetch bar the
+  one reported -- exact, where TIOCMIWAIT's `TIOCGICOUNT` deltas are
+  an inferred lower bound.
+- Which of two new edges is the newest is decided by their kernel
+  timestamps, the only ordering available: the sequence counters are
+  per polarity and cannot order across them.
 - Asserted is true for an assert event, false for a clear event, per
   the uapi's definition (assert means the flag bit is set).
 
@@ -128,8 +142,12 @@ at the wakeup. Unlike the other backends the two are readings of
 slightly different instants -- the edge and its delivery -- but
 `Mono` only labels the second against message read times, where the
 association bounds are milliseconds and the delivery skew is far
-below them. The `ModemControlPinChange` contract comment gains a
-sentence saying a backend may do this.
+below them while the caller keeps up. It is not below them after a
+stall, which is why only the edge the reading dates is reported: past
+about a quarter second of skew `serialpps.Generator` does not discard
+the sample but labels it with the following second. The
+`ModemControlPinChange` contract comment gains a sentence saying a
+backend may do this.
 
 Edge sense is unchanged at the `serialpps` layer: the leading edge is
 the flag becoming deasserted (the TTL-adapter convention from
@@ -141,16 +159,17 @@ future `pps.edge` key (see Open questions).
 
 `/dev/ppsN` being root-only is fine for satpulsed under the packaged
 unit, which runs as root; unprivileged runs (test instances, a future
-Workbench use) need a udev rule. Ship one in the deb/rpm and
-`make install`, scoped to tty-backed sources so PHC-backed pps
-devices are not opened up:
+Workbench use) need a udev rule, scoped to tty-backed sources so
+PHC-backed pps devices are not opened up:
 
 ```
 SUBSYSTEM=="pps", ATTR{path}=="/dev/tty*", GROUP="dialout", MODE="0660"
 ```
 
-Installed to `/usr/lib/udev/rules.d/60-satpulse-pps.rules`. The
-EACCES retry in setup step 4 covers the gap between the devtmpfs node
+Shipped as `configs/60-satpulse-pps.rules` and copied to
+`/etc/udev/rules.d` by hand. Installing it from `make install` and
+the deb/rpm, to `/usr/lib/udev/rules.d`, is deferred. The EACCES
+retry in setup step 4 covers the gap between the devtmpfs node
 appearing and udev applying the rule. Without the rule an
 unprivileged run falls back to TIOCMIWAIT after the retry window; the
 fallback log line says why.
@@ -166,14 +185,16 @@ around.
 
 ## Testing
 
-The sequence bookkeeping (event diffing, ordering, the one-change
-buffer, missed arithmetic) is pure logic once the fetch is behind a
-small interface; table-driven tests feed it synthetic `PPSKInfo`
-sequences, including both-edges-advanced and counter-jump cases. The
-sysfs scan gets a test against a fake directory tree, including a
-non-matching PHC-style entry with an empty path. The poll/eventfd
-loop and the ioctls stay a thin shell exercised by the hardware runs;
-`serialpps` and above need no new tests.
+The sequence bookkeeping (event diffing, ordering, missed
+arithmetic) is pure logic once the fetch is behind a small interface;
+table-driven tests feed it synthetic `PPSKInfo` sequences, including
+both-edges-advanced and counter-jump cases. The sysfs scan gets a
+test against a fake directory tree, including a non-matching
+PHC-style entry with an empty path. The poller loop gets tests over a
+pipe, for the operation running before any readiness, for the retry
+after one arrives, and for deadlines; the ioctls stay a thin shell
+exercised by the hardware runs. `serialpps` and above need no new
+tests.
 
 Hardware validation uses the EVK-X20P, whose DB9 wires time pulse 1
 to pins 1 and 6 -- DCD and DSR -- at RS-232 levels, so a USB-RS232
@@ -186,18 +207,12 @@ chrony. The fallback path is validated by pointing the backend at a
 tty whose driver lacks DCD and by an unprivileged run without the
 udev rule.
 
-## Open questions
+## Open questions, as settled
 
-- `pps.edge`: on true RS-232 levels the flag sense is inverted
-  relative to a TTL adapter -- the electrical rising edge asserts the
-  flag -- so on the EVK-X20P the leading edge is the assert event,
-  and the current deassert-only rule would timestamp the trailing
-  edge, off by the pulse width. `plan/archive/serial-pps.md` deferred
-  a `pps.edge` key until inverted pulses mattered; the EVK is that
-  case, and validation will hit it. Decide during implementation
-  whether the key lands here (a `Wiring` field and a config key; the
-  watch already delivers both senses) or the EVK is validated with
-  its pulse polarity configured to match the TTL convention.
-- Whether the restore-on-Close of the saved ldisc is worth keeping if
-  it complicates shutdown ordering; leaving N_PPS attached is
-  harmless (it behaves as N_TTY) and the tty teardown removes it.
+- `pps.edge`: no key was needed. The EVK-X20P on RS-232 was measured
+  to deassert DCD at the top of the second and reassert 100 ms later,
+  which is the TTL-adapter convention `serialpps` already assumes, so
+  the leading edge is the clear event on this wiring after all.
+- The restore-on-Close of the saved ldisc was kept and did not
+  complicate shutdown: the source appears in `/sys/class/pps` for the
+  life of the watch and is gone once it is closed.

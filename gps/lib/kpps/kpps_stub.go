@@ -13,6 +13,12 @@ var errNotSupported = fmt.Errorf("kernel PPS: %w", errors.ErrUnsupported)
 // Source represents a kernel PPS source on supported platforms.
 type Source struct{}
 
+// DevicePathForTTY reports that kernel PPS is not yet supported on this
+// platform.
+func DevicePathForTTY(int) (string, error) {
+	return "", errNotSupported
+}
+
 // Open reports that kernel PPS is not yet supported on this platform.
 func Open(string) (*Source, error) {
 	return nil, errNotSupported

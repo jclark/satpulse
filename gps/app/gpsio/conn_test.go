@@ -9,6 +9,7 @@ func TestPPSMethodText(t *testing.T) {
 	}{
 		{PPSMethodPoll, "poll"},
 		{PPSMethodWait, "wait"},
+		{PPSMethodKernel, "kernel"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.text, func(t *testing.T) {
@@ -32,7 +33,7 @@ func TestPPSMethodText(t *testing.T) {
 }
 
 func TestPPSMethodInvalidText(t *testing.T) {
-	for _, text := range []string{"", "auto", "kernel", "Poll"} {
+	for _, text := range []string{"", "auto", "sideband", "Poll"} {
 		t.Run(text, func(t *testing.T) {
 			if _, err := ParsePPSMethod(text); err == nil {
 				t.Errorf("ParsePPSMethod(%q) succeeded", text)
@@ -49,7 +50,7 @@ func TestPPSMethodInvalidText(t *testing.T) {
 }
 
 func TestPPSMethodWithoutTextForm(t *testing.T) {
-	for _, method := range []PPSMethod{-1, 0, PPSMethodWait + 1} {
+	for _, method := range []PPSMethod{-1, 0, PPSMethodKernel + 1} {
 		t.Run(method.String(), func(t *testing.T) {
 			if _, err := method.MarshalText(); err == nil {
 				t.Errorf("PPSMethod(%d).MarshalText succeeded", method)

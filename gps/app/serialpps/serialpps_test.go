@@ -176,23 +176,23 @@ func TestDetectMethodSelection(t *testing.T) {
 		expectNoLog     string
 	}{
 		{
-			name: "auto skips an unsupported method quietly", waitErr: errUnsup,
-			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodWait},
-			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait, gpsio.PPSMethodPoll},
+			name: "auto skips unsupported methods quietly", waitErr: errUnsup,
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait, gpsio.PPSMethodPoll},
 			expectErr:      context.Canceled, expectPolled: true,
 			expectLog: "serial PPS method unavailable", expectNoLog: "level=WARN",
 		},
 		{
 			name: "auto warns when the method is unavailable", waitErr: errUnavailable,
-			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodWait},
-			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait, gpsio.PPSMethodPoll},
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait, gpsio.PPSMethodPoll},
 			expectErr:      context.Canceled, expectPolled: true,
 			expectLog: "level=WARN msg=\"serial PPS method unavailable; falling back\"",
 		},
 		{
 			name: "auto returns an ordinary failure after a successful wait", waitErr: errDriver, successfulWaits: 1,
-			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodWait, gpsio.PPSMethodWait},
-			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodWait},
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodKernel},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodKernel},
 			expectErr:      errDriver, expectPolled: false,
 			expectNoLog: "level=WARN",
 		},
@@ -200,6 +200,12 @@ func TestDetectMethodSelection(t *testing.T) {
 			name: "forced poll never waits", method: gpsio.PPSMethodPoll,
 			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodPoll},
 			expectErr:      context.Canceled, expectPolled: true,
+		},
+		{
+			name: "forced kernel returns failure", method: gpsio.PPSMethodKernel, waitErr: errDriver,
+			expectMethods:  []gpsio.PPSMethod{gpsio.PPSMethodKernel},
+			expectSelected: []gpsio.PPSMethod{gpsio.PPSMethodKernel},
+			expectErr:      errDriver, expectNoLog: "level=WARN",
 		},
 		{
 			name: "forced wait returns unsupported", method: gpsio.PPSMethodWait, waitErr: errUnsup,
@@ -274,11 +280,15 @@ func TestDetectWithoutWaiterPolls(t *testing.T) {
 }
 
 func TestDetectForcedWaitWithoutWaiter(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, make(chan Observation, 1), nil)
-	if !errors.Is(err, errors.ErrUnsupported) {
-		t.Errorf("Detect error = %v, want errors.ErrUnsupported", err)
+	for _, method := range []gpsio.PPSMethod{gpsio.PPSMethodWait, gpsio.PPSMethodKernel} {
+		t.Run(method.String(), func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, method, make(chan Observation, 1), nil)
+			if !errors.Is(err, errors.ErrUnsupported) {
+				t.Errorf("Detect error = %v, want errors.ErrUnsupported", err)
+			}
+		})
 	}
 }
 

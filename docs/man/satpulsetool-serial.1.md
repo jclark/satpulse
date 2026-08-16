@@ -8,7 +8,7 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-a**\|**\-\-all**] [**\-d**\|**\-\-serial\-device** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-info**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**\|**kernel**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
@@ -45,9 +45,12 @@ Otherwise, the default operation is to discover the available serial ports and s
 : Detect PPS edges on the specified modem-control pin.
 This causes speed detection not to be performed.
 
-**\-m**, **\-\-pps\-method** **poll**\|**wait**
-: Force the method used to detect PPS edges.
-The default is to use the **wait** method if available, and otherwise **poll**.
+**\-m**, **\-\-pps\-method** **poll**\|**wait**\|**kernel**
+: Controls how the operating system is used to detect modem status changes that mark pulse edges:
+**kernel** means the kernel timestamps the time of a status change;
+**wait** means the kernel notifies the application of a status change;
+**poll** means the application continually asks for the current status.
+When this option is omitted, the best available method is used.
 Requires **\-p**.
 
 **\-\-packet\-log** *path*

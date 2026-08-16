@@ -121,7 +121,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags.StringVarP(&v.device, "serial-device", "d", "", "operate on the serial port at `path`")
 	flags.BoolVarP(&v.info, "info", "i", false, "show information about serial ports without opening them")
 	flags.StringVarP(&ppsPinName, "pps-pin", "p", "", "detect PPS edges on the modem-control input `pin` (cts, dcd, dsr, or ri)")
-	flags.StringVarP(&ppsMethodName, "pps-method", "m", "", "force the PPS edge detection `method` (poll or wait)")
+	flags.StringVarP(&ppsMethodName, "pps-method", "m", "", "force the PPS edge detection `method` (poll, wait, or kernel)")
 	flags.StringVar(&v.packetLog, "packet-log", "", "write received packets to a JSON Lines log at `path`")
 	flags.IntVarP(&v.deviceSpeed, "device-speed", "s", 0, "set the serial port speed to `bps` (0 uses the current speed)")
 	flags.Float64VarP(&timeoutSec, "timeout", "t", 0, "stop detecting PPS edges or capturing packets after `seconds` (0 = until interrupted)")
@@ -148,7 +148,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	}
 	if methodSet {
 		if v.ppsMethod, err = gpsio.ParsePPSMethod(ppsMethodName); err != nil {
-			err = fmt.Errorf("--pps-method must be poll or wait")
+			err = fmt.Errorf("--pps-method must be one of poll, wait, or kernel")
 			return
 		}
 	}

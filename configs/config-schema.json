@@ -92,9 +92,9 @@
                   "default": 0.8
                 },
                 "method": {
-                  "description": "PPS edge detection method: poll or wait; omit for automatic selection",
+                  "description": "PPS edge detection method: poll, wait, or kernel; omit for automatic selection",
                   "type": "string",
-                  "enum": ["poll", "wait"]
+                  "enum": ["poll", "wait", "kernel"]
                 }
               }
             }

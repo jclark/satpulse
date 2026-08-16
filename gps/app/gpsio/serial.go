@@ -144,8 +144,9 @@ func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
 
-// newPinWatch creates the watch that method selects. A backend without the
-// capability at all fails with an error wrapping errors.ErrUnsupported; an
+// newPinWatch creates the watch that method selects. Inherent impossibility --
+// a backend without the capability at all, or a pin the kernel method can
+// never report -- fails with an error wrapping errors.ErrUnsupported; an
 // available backend whose device or driver cannot provide it fails with an
 // error wrapping ErrUnavailable. Other failures retain their underlying
 // error.
@@ -157,19 +158,25 @@ func (c *SerialConn) newPinWatch(pin ModemControlPin, method PPSMethod) (term.Mo
 			return nil, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
 		}
 		return watcher.NewModemControlPinWatch(pin)
+	case PPSMethodKernel:
+		watcher, ok := c.file.(term.KernelModemControlPinWatcher)
+		if !ok {
+			return nil, fmt.Errorf("%s: kernel PPS is not available on this platform or device: %w", c.file.Path(), errors.ErrUnsupported)
+		}
+		return watcher.NewKernelModemControlPinWatch(pin)
 	default:
 		panic("gpsio: invalid PPS method for a pin watch")
 	}
 }
 
 // WaitModemControlPinChange blocks until a modem control input changes,
-// watching it with the given detection method (PPSMethodWait; anything else
-// is a contract violation). The watch is created on the first call and kept
-// until an error or cancellation releases it; every call must pass the same
-// pin and method.
+// watching it with the given detection method (PPSMethodWait or
+// PPSMethodKernel; anything else is a contract violation). The watch is
+// created on the first call and kept until an error or cancellation releases
+// it; every call must pass the same pin and method.
 func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin, method PPSMethod) (ModemControlPinChange, int, error) {
-	if method != PPSMethodWait {
-		panic("gpsio: WaitModemControlPinChange requires the wait method")
+	if method != PPSMethodWait && method != PPSMethodKernel {
+		panic("gpsio: WaitModemControlPinChange requires the wait or kernel method")
 	}
 	c.mu.Lock()
 	if c.stopped {
@@ -177,21 +184,38 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 		return ModemControlPinChange{}, 0, net.ErrClosed
 	}
 	w := c.watch
-	if w == nil {
-		var err error
-		w, err = c.newPinWatch(pin, method)
-		if err != nil {
-			c.mu.Unlock()
-			return ModemControlPinChange{}, 0, err
-		}
-		c.watch = w
-		c.watchPin = pin
-		c.watchMethod = method
-	} else if pin != c.watchPin || method != c.watchMethod {
+	if w != nil && (pin != c.watchPin || method != c.watchMethod) {
 		c.mu.Unlock()
 		panic("gpsio: WaitModemControlPinChange called with a different pin or method")
 	}
 	c.mu.Unlock()
+	if w == nil {
+		// Creating the watch can be slow: the kernel method attaches a line
+		// discipline, scans sysfs, and waits for udev to open up the new
+		// device. Reads and writes take mu, so it is not held here.
+		fresh, err := c.newPinWatch(pin, method)
+		if err != nil {
+			return ModemControlPinChange{}, 0, err
+		}
+		c.mu.Lock()
+		// A Stop during the creation above cancelled a watch that was not
+		// there yet, so this one is closed rather than installed.
+		if c.stopped {
+			c.mu.Unlock()
+			_ = fresh.Close()
+			return ModemControlPinChange{}, 0, net.ErrClosed
+		}
+		if c.watch == nil {
+			c.watch = fresh
+			c.watchPin = pin
+			c.watchMethod = method
+		}
+		w = c.watch
+		c.mu.Unlock()
+		if w != fresh {
+			_ = fresh.Close()
+		}
+	}
 
 	type waitResult struct {
 		change ModemControlPinChange

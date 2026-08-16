@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -169,6 +170,49 @@ func (f *fakeWaitTerm) NewModemControlPinWatch(pin term.ModemControlPin) (term.M
 	return f.watch, nil
 }
 
+// slowWaitTerm blocks in the middle of creating a watch, as the kernel method
+// does while it waits for udev to open up a new PPS device.
+type slowWaitTerm struct {
+	fakeTerm
+	watch    *fakePinWatch
+	creating chan struct{}
+	release  chan struct{}
+}
+
+var _ term.ModemControlPinWatcher = (*slowWaitTerm)(nil)
+
+func (f *slowWaitTerm) NewModemControlPinWatch(term.ModemControlPin) (term.ModemControlPinWatch, error) {
+	close(f.creating)
+	<-f.release
+	return f.watch, nil
+}
+
+func TestSerialConnWaitDoesNotBlockReadsWhileCreatingWatch(t *testing.T) {
+	f := &slowWaitTerm{watch: newFakePinWatch(), creating: make(chan struct{}), release: make(chan struct{})}
+	c := newSerialConn(f, term.DevUART)
+	errCh := make(chan error, 1)
+	go func() {
+		_, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait)
+		errCh <- err
+	}()
+	<-f.creating
+	if _, err := c.Read(make([]byte, 1)); !errors.Is(err, io.EOF) {
+		t.Fatalf("Read during watch creation = %v, want io.EOF from the fake", err)
+	}
+	// The watch is created but not yet installed, so Stop has nothing to
+	// cancel and the connection must close it instead.
+	c.Stop()
+	close(f.release)
+	if err := <-errCh; !errors.Is(err, net.ErrClosed) {
+		t.Fatalf("WaitModemControlPinChange error = %v, want net.ErrClosed", err)
+	}
+	select {
+	case <-f.watch.closed:
+	case <-time.After(time.Second):
+		t.Error("the watch created during Stop was not closed")
+	}
+}
+
 func TestSerialConnWaitCapability(t *testing.T) {
 	w := newFakePinWatch()
 	now := time.Now()
@@ -273,5 +317,50 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	}
 	if !f.closed {
 		t.Error("Close did not close fallback file")
+	}
+}
+
+// fakeKernelTerm is a terminal that also offers the kernel PPS capability.
+type fakeKernelTerm struct {
+	fakeWaitTerm
+	kernelPin term.ModemControlPin
+}
+
+var _ term.KernelModemControlPinWatcher = (*fakeKernelTerm)(nil)
+
+func (f *fakeKernelTerm) NewKernelModemControlPinWatch(pin term.ModemControlPin) (term.ModemControlPinWatch, error) {
+	f.kernelPin = pin
+	return f.watch, nil
+}
+
+func TestSerialConnKernelMethod(t *testing.T) {
+	w := newFakePinWatch()
+	now := time.Now()
+	w.result <- fakeWatchResult{
+		change: term.ModemControlPinChange{Wall: now, Mono: now, Asserted: false},
+		missed: 1,
+	}
+	f := &fakeKernelTerm{fakeWaitTerm: fakeWaitTerm{watch: w}}
+	c := newSerialConn(f, term.DevUART)
+	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel)
+	if err != nil || change.Wall != now || change.Asserted || missed != 1 {
+		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
+	}
+	if f.kernelPin != term.ModemDCD {
+		t.Errorf("kernel-watched pin = %v, want DCD", f.kernelPin)
+	}
+	c.Stop()
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+}
+
+func TestSerialConnKernelMethodUnsupported(t *testing.T) {
+	c := newSerialConn(&fakeWaitTerm{watch: newFakePinWatch()}, term.DevUSBtoUART)
+	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	}
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 }

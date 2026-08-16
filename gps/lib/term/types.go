@@ -112,6 +112,9 @@ type ModemControlPinChange struct {
 	// against other time.Now values. Where time.Now is the best clock
 	// available they are the same reading. The readings are taken on the
 	// waiting thread as soon as the wait ends, before any other call.
+	// A backend that timestamps the edge itself may instead deliver Wall
+	// and Mono as readings of two slightly different instants: the edge,
+	// and its delivery to the waiter.
 	Wall, Mono time.Time
 	// Asserted is the pin's sense after the transition that ended the wait,
 	// as far as the platform can determine it. Where the platform can tell
@@ -122,9 +125,11 @@ type ModemControlPinChange struct {
 
 // ModemControlPinWatch observes transitions of one modem control input. Its
 // validity is independent of the Term it came from: it stays usable after the
-// Term is closed, and everything an abandoned Wait does is confined to the
-// watch, so it can neither disturb the Term nor touch a resource the platform
-// recycles after that close. The watch holds a claim on the port of its own
+// Term is closed, and an abandoned Wait touches no resource the platform
+// recycles after that close. A watch may change state that belongs to the port
+// rather than to the watch itself, as the Linux kernel PPS watch does by
+// attaching a line discipline until Close, but not state that disturbs the
+// Term's own reads and writes. The watch holds a claim on the port of its own
 // until Close, so a watch left behind by an abandoned Wait must still be
 // closed, and the port can stay unavailable to other openers until it is.
 // Close must not overlap a Wait: the caller must observe Wait's return,
@@ -153,6 +158,16 @@ type ModemControlPinWatch interface {
 // for this interface.
 type ModemControlPinWatcher interface {
 	NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
+}
+
+// KernelModemControlPinWatcher is implemented by terminals that can watch a
+// modem control input with edge timestamps taken by the OS kernel. Callers
+// discover the capability by asserting for this interface.
+type KernelModemControlPinWatcher interface {
+	// NewKernelModemControlPinWatch creates a kernel-timestamped watch. It
+	// fails with an error wrapping errors.ErrUnsupported when the selected
+	// pin can never be watched this way.
+	NewKernelModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
 }
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)
