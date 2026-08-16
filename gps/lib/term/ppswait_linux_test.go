@@ -3,11 +3,15 @@ package term
 import (
 	"errors"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // TestModemControlPinWatchUnsupported checks that a tty whose driver
-// lacks TIOCMIWAIT (a pty) reports the wait capability as unsupported, which
-// is what triggers the fallback to the polling backend.
+// lacks TIOCMIWAIT (a pty) reports that the wait facility is unavailable for
+// this driver, preserving ENOTTY as the underlying cause. It deliberately
+// does not report errors.ErrUnsupported, which is reserved for a backend that
+// has no wait facility at all.
 func TestModemControlPinWatchUnsupported(t *testing.T) {
 	w := openTestWatcher(t)
 	watch, err := w.NewModemControlPinWatch(ModemCTS)
@@ -19,13 +23,14 @@ func TestModemControlPinWatchUnsupported(t *testing.T) {
 			t.Errorf("ModemControlPinWatch.Close: %v", err)
 		}
 	})
-	if _, _, err := watch.Wait(); !errors.Is(err, errors.ErrUnsupported) {
-		t.Fatalf("ModemControlPinWatch.Wait error = %v, want errors.ErrUnsupported", err)
+	_, _, err = watch.Wait()
+	if !errors.Is(err, ErrUnavailable) || !errors.Is(err, unix.ENOTTY) || errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("ModemControlPinWatch.Wait error = %v, want ErrUnavailable wrapping ENOTTY without errors.ErrUnsupported", err)
 	}
 }
 
 // TestModemControlPinWatchCancel checks that cancellation is sticky and is observed before
-// the ioctl: on a pty a non-cancelled wait fails with ErrUnsupported, so
+// the ioctl: on a pty a non-cancelled wait fails with ErrUnavailable, so
 // ErrCancelled proves the ioctl was never entered.
 func TestModemControlPinWatchCancel(t *testing.T) {
 	w := openTestWatcher(t)

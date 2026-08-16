@@ -1,7 +1,6 @@
 package term
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
@@ -68,7 +67,7 @@ func (w *waitPinWatch) Wait() (ModemControlPinChange, int, error) {
 			continue
 		}
 		if errno == unix.ENOTTY {
-			err := fmt.Errorf("%w: %v", errors.ErrUnsupported, errno)
+			err := fmt.Errorf("%w: %w", ErrUnavailable, errno)
 			return ModemControlPinChange{}, missed, w.wrapErr(err, "ioctl(TIOCMIWAIT)")
 		}
 		if errno != 0 {

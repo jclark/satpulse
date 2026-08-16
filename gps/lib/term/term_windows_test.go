@@ -78,18 +78,21 @@ func TestCommWaitError(t *testing.T) {
 	tests := []struct {
 		name              string
 		err               error
-		expectUnsupported bool
+		expectUnavailable bool
 	}{
-		{name: "invalid function", err: windows.ERROR_INVALID_FUNCTION, expectUnsupported: true},
-		{name: "not supported", err: windows.ERROR_NOT_SUPPORTED, expectUnsupported: true},
-		{name: "invalid parameter", err: windows.ERROR_INVALID_PARAMETER, expectUnsupported: true},
+		{name: "invalid function", err: windows.ERROR_INVALID_FUNCTION, expectUnavailable: true},
+		{name: "not supported", err: windows.ERROR_NOT_SUPPORTED, expectUnavailable: true},
+		{name: "invalid parameter", err: windows.ERROR_INVALID_PARAMETER, expectUnavailable: true},
 		{name: "other", err: windows.ERROR_ACCESS_DENIED},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			got := commWaitError(tc.err)
-			if errors.Is(got, errors.ErrUnsupported) != tc.expectUnsupported {
+			if errors.Is(got, ErrUnavailable) != tc.expectUnavailable {
 				t.Errorf("commWaitError(%v) = %v", tc.err, got)
+			}
+			if !errors.Is(got, tc.err) {
+				t.Errorf("commWaitError(%v) = %v, does not preserve the underlying error", tc.err, got)
 			}
 		})
 	}

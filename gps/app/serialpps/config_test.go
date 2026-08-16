@@ -3,6 +3,8 @@ package serialpps
 import (
 	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/gps/app/gpsio"
 )
 
 func TestConfig(t *testing.T) {
@@ -13,6 +15,9 @@ func TestConfig(t *testing.T) {
 	}{
 		{name: "defaults", cfg: DefaultConfig()},
 		{name: "zero uncertainty", cfg: Config{MaxDelay: 0.8}},
+		{name: "poll method", cfg: Config{MaxDelay: 0.8, Method: gpsio.PPSMethodPoll}},
+		{name: "wait method", cfg: Config{MaxDelay: 0.8, Method: gpsio.PPSMethodWait}},
+		{name: "invalid method", cfg: Config{MaxDelay: 0.8, Method: gpsio.PPSMethodWait + 1}, errText: "method"},
 		{name: "negative uncertainty", cfg: Config{DelayUncertainty: -0.001, MaxDelay: 0.8}, errText: "delayUncertainty"},
 		{name: "zero maximum", cfg: Config{DelayUncertainty: 0.005}, errText: "maxDelay"},
 		{name: "one-second interval", cfg: Config{DelayUncertainty: 0.2, MaxDelay: 0.8}, errText: "delayUncertainty + maxDelay"},

@@ -43,7 +43,8 @@ func TestParseFlags(t *testing.T) {
 		{name: "pps with packet log and timeout", args: []string{"-p", "dsr", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl", "-t", "30"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDSR, packetLog: "capture.jsonl", timeout: 30 * time.Second}},
 		{name: "pps until interrupted", args: []string{"-p", "cts", "-t", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS}},
 		{name: "pps JSONL", args: []string{"-j", "-p", "cts", "-a"}, want: flagVars{jsonl: true, all: true, ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
-		{name: "pps by polling", args: []string{"-p", "cts", "--poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, poll: true, timeout: defaultPPSTimeout}},
+		{name: "pps by polling", args: []string{"-p", "cts", "-m", "poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodPoll, timeout: defaultPPSTimeout}},
+		{name: "pps by waiting", args: []string{"-p", "cts", "--pps-method", "wait", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodWait, timeout: defaultPPSTimeout}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "positional port", args: []string{"/dev/ttyS0"}, wantErr: true},
 		{name: "all and device", args: []string{"-a", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -51,7 +52,8 @@ func TestParseFlags(t *testing.T) {
 		{name: "info and packet log", args: []string{"-i", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "info and timeout", args: []string{"-i", "-d", "/dev/ttyS0", "-t", "1"}, wantErr: true},
 		{name: "info and pps", args: []string{"-i", "-p", "cts", "-d", "/dev/ttyS0"}, wantErr: true},
-		{name: "poll without pps", args: []string{"--poll", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "method without pps", args: []string{"-m", "poll", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "invalid method", args: []string{"-p", "cts", "-m", "kernel", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps without target", args: []string{"-p", "cts"}, wantErr: true},
 		{name: "pps invalid pin", args: []string{"-p", "rts", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps value required", args: []string{"--pps-pin", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -260,19 +262,19 @@ func TestEdgePrinter(t *testing.T) {
 }
 
 type monitorWaitConn struct {
-	state gpsio.ModemControlPinState
-	next  chan gpsio.ModemControlPinState
-	waits int
+	state  gpsio.ModemControlPinState
+	next   chan gpsio.ModemControlPinState
+	waits  int
+	method gpsio.PPSMethod
 }
 
 func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, error) {
 	return c.state, nil
 }
 
-func (c *monitorWaitConn) CanWaitModemControlPinChange() bool { return true }
-
-func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gpsio.ModemControlPin) (gpsio.ModemControlPinChange, int, error) {
+func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gpsio.ModemControlPin, method gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error) {
 	c.waits++
+	c.method = method
 	select {
 	case c.state = <-c.next:
 		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
@@ -311,7 +313,7 @@ func TestDetectEdgesWaitBackend(t *testing.T) {
 	}, 1)
 	go func() {
 		pr := &edgePrinter{out: output}
-		count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", false, pr)
+		count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", 0, pr)
 		result <- struct {
 			count int
 			err   error
@@ -337,6 +339,9 @@ func TestDetectEdgesWaitBackend(t *testing.T) {
 	if strings.Contains(logs.String(), "serial PPS polling statistics") {
 		t.Errorf("wait run logged polling statistics: %q", logs.String())
 	}
+	if conn.method != gpsio.PPSMethodWait {
+		t.Errorf("wait method = %v, want wait", conn.method)
+	}
 }
 
 func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
@@ -347,7 +352,7 @@ func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
-	count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", true, &edgePrinter{out: io.Discard})
+	count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", gpsio.PPSMethodPoll, &edgePrinter{out: io.Discard})
 	if err != nil || count != 0 {
 		t.Fatalf("detectEdges = %d, %v; want 0, nil", count, err)
 	}
