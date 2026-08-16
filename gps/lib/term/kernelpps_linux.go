@@ -158,18 +158,31 @@ type kernelPPSSeq struct {
 }
 
 func (s *kernelPPSSeq) update(info kpps.Info, mono time.Time) (ModemControlPinChange, int, bool) {
-	assertDelta := int(info.Assert.Sequence - s.lastAssert)
-	clearDelta := int(info.Clear.Sequence - s.lastClear)
+	// The counters only ever advance, so the unsigned difference is the number
+	// of captures since the last fetch however the 32-bit counter wraps.
+	assertDelta := info.Assert.Sequence - s.lastAssert
+	clearDelta := info.Clear.Sequence - s.lastClear
 	s.lastAssert = info.Assert.Sequence
 	s.lastClear = info.Clear.Sequence
-	if assertDelta <= 0 && clearDelta <= 0 {
+	if assertDelta == 0 && clearDelta == 0 {
 		return ModemControlPinChange{}, 0, false
 	}
-	missed := assertDelta + clearDelta - 1
-	if clearDelta > 0 && (assertDelta <= 0 || info.Clear.T.After(info.Assert.T)) {
-		return ModemControlPinChange{Wall: info.Clear.T, Mono: mono, Asserted: false}, missed, true
+	// One edge is reported and the rest are missed: the ones whose timestamps
+	// the latches overwrote, and, when both polarities are new, the older of
+	// the two, which the reading does not date.
+	missed := int(assertDelta) + int(clearDelta) - 1
+	assert := ModemControlPinChange{Wall: info.Assert.T, Mono: mono, Asserted: true}
+	clear := ModemControlPinChange{Wall: info.Clear.T, Mono: mono, Asserted: false}
+	if clearDelta == 0 {
+		return assert, missed, true // only the assert is new
 	}
-	return ModemControlPinChange{Wall: info.Assert.T, Mono: mono, Asserted: true}, missed, true
+	if assertDelta == 0 {
+		return clear, missed, true // only the clear is new
+	}
+	if info.Clear.T.After(info.Assert.T) {
+		return clear, missed, true // both are new; the clear is the later one
+	}
+	return assert, missed, true // both are new; the assert is the later one
 }
 
 // Cancel is sticky. Closing a kpps source interrupts a Fetch waiting in the
