@@ -158,6 +158,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
+`gps/lib/kpps` provides low-level access to kernel PPS sources using the RFC 2783 data model. It is currently implemented on Linux.
+
 `gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; other platforms use go.bug.st/serial/enumerator.
 
 `gps/lib/decconv` converts between base-10 decimal strings and int64 scaled integers without floating point. It is used for exact parsing and formatting of physical quantities like angles and lengths.
