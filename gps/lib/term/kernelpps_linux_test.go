@@ -90,11 +90,9 @@ func TestKernelPPSSeqUpdate(t *testing.T) {
 		return kpps.Edge{T: time.Unix(sec, int64(nsec)), Sequence: sequence}
 	}
 	type result struct {
-		change  ModemControlPinChange
-		missed  int
-		ok      bool
-		pending ModemControlPinChange
-		hasPend bool
+		change ModemControlPinChange
+		missed int
+		ok     bool
 	}
 	tests := []struct {
 		name   string
@@ -120,25 +118,22 @@ func TestKernelPPSSeqUpdate(t *testing.T) {
 			expect: result{change: change(101, 40000, false), ok: true},
 		},
 		{
-			name: "both advanced, clear older",
-			seq:  kernelPPSSeq{lastAssert: 5, lastClear: 5},
-			info: kpps.Info{Assert: edge(100, 100000000, 6), Clear: edge(100, 50000, 6)},
-			expect: result{change: change(100, 50000, false), ok: true,
-				pending: change(100, 100000000, true), hasPend: true},
+			name:   "both advanced, clear older",
+			seq:    kernelPPSSeq{lastAssert: 5, lastClear: 5},
+			info:   kpps.Info{Assert: edge(100, 100000000, 6), Clear: edge(100, 50000, 6)},
+			expect: result{change: change(100, 100000000, true), missed: 1, ok: true},
 		},
 		{
-			name: "both advanced, assert older",
-			seq:  kernelPPSSeq{lastAssert: 5, lastClear: 5},
-			info: kpps.Info{Assert: edge(99, 900000000, 6), Clear: edge(100, 50000, 6)},
-			expect: result{change: change(99, 900000000, true), ok: true,
-				pending: change(100, 50000, false), hasPend: true},
+			name:   "both advanced, assert older",
+			seq:    kernelPPSSeq{lastAssert: 5, lastClear: 5},
+			info:   kpps.Info{Assert: edge(99, 900000000, 6), Clear: edge(100, 50000, 6)},
+			expect: result{change: change(100, 50000, false), missed: 1, ok: true},
 		},
 		{
-			name: "counter jumps count missed edges",
-			seq:  kernelPPSSeq{lastAssert: 5, lastClear: 5},
-			info: kpps.Info{Assert: edge(103, 100000000, 8), Clear: edge(104, 40000, 7)},
-			expect: result{change: change(103, 100000000, true), missed: 3, ok: true,
-				pending: change(104, 40000, false), hasPend: true},
+			name:   "counter jumps count missed edges",
+			seq:    kernelPPSSeq{lastAssert: 5, lastClear: 5},
+			info:   kpps.Info{Assert: edge(103, 100000000, 8), Clear: edge(104, 40000, 7)},
+			expect: result{change: change(104, 40000, false), missed: 4, ok: true},
 		},
 		{
 			name:   "sequence wraparound",
@@ -151,7 +146,6 @@ func TestKernelPPSSeqUpdate(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			var got result
 			got.change, got.missed, got.ok = tc.seq.update(tc.info, mono)
-			got.pending, got.hasPend = tc.seq.pending, tc.seq.hasPending
 			if !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
 			}
@@ -160,16 +154,5 @@ func TestKernelPPSSeqUpdate(t *testing.T) {
 					tc.seq.lastAssert, tc.seq.lastClear, tc.info.Assert.Sequence, tc.info.Clear.Sequence)
 			}
 		})
-	}
-}
-
-func TestKernelPPSSeqTakePending(t *testing.T) {
-	change := ModemControlPinChange{Wall: time.Unix(100, 0), Asserted: true}
-	seq := kernelPPSSeq{pending: change, hasPending: true}
-	if got, ok := seq.takePending(); !ok || !reflect.DeepEqual(got, change) {
-		t.Errorf("takePending = %+v, %v; want %+v, true", got, ok, change)
-	}
-	if _, ok := seq.takePending(); ok {
-		t.Error("takePending returned a change twice")
 	}
 }

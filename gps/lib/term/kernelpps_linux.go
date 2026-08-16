@@ -121,16 +121,12 @@ func openKernelPPSRetry(path string) (*kpps.Source, error) {
 // Wait fetches the next kernel PPS event. The sequence numbers the watch has
 // already accounted for are the baseline Fetch waits past, so an edge that
 // arrived between calls is returned without waiting. kpps uses the Go runtime
-// poller, so closing the source in Cancel promptly wakes a pending Fetch. If
-// both edge counters advanced, the newer event is buffered for the next Wait.
+// poller, so closing the source in Cancel promptly wakes a pending Fetch.
 func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
 	if w.cancelled.Load() {
 		return ModemControlPinChange{}, 0, ErrCancelled
-	}
-	if change, ok := w.seq.takePending(); ok {
-		return change, 0, nil
 	}
 	for {
 		previous := kpps.Info{
@@ -151,13 +147,14 @@ func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 }
 
 // kernelPPSSeq turns the independently sequenced assert and clear edges in a
-// kpps.Info into pin changes. When both counters advance in one fetch, it
-// returns the older change and buffers the newer one.
+// kpps.Info into pin changes. A fetch reports the most recent edge of each
+// polarity, but carries one monotonic reading, taken when it returned. That
+// reading dates the newest edge, so only that edge is reported; anything else
+// the fetch found is counted as missed, along with the edges whose timestamps
+// the latches had already overwritten.
 type kernelPPSSeq struct {
 	lastAssert uint32
 	lastClear  uint32
-	pending    ModemControlPinChange
-	hasPending bool
 }
 
 func (s *kernelPPSSeq) update(info kpps.Info, mono time.Time) (ModemControlPinChange, int, bool) {
@@ -165,40 +162,14 @@ func (s *kernelPPSSeq) update(info kpps.Info, mono time.Time) (ModemControlPinCh
 	clearDelta := int(info.Clear.Sequence - s.lastClear)
 	s.lastAssert = info.Assert.Sequence
 	s.lastClear = info.Clear.Sequence
-
-	missed := 0
-	var assert, clear ModemControlPinChange
-	if assertDelta > 0 {
-		missed += assertDelta - 1
-		assert = ModemControlPinChange{Wall: info.Assert.T, Mono: mono, Asserted: true}
+	if assertDelta <= 0 && clearDelta <= 0 {
+		return ModemControlPinChange{}, 0, false
 	}
-	if clearDelta > 0 {
-		missed += clearDelta - 1
-		clear = ModemControlPinChange{Wall: info.Clear.T, Mono: mono, Asserted: false}
+	missed := assertDelta + clearDelta - 1
+	if clearDelta > 0 && (assertDelta <= 0 || info.Clear.T.After(info.Assert.T)) {
+		return ModemControlPinChange{Wall: info.Clear.T, Mono: mono, Asserted: false}, missed, true
 	}
-	if assertDelta > 0 && clearDelta > 0 {
-		first, second := assert, clear
-		if second.Wall.Before(first.Wall) {
-			first, second = second, first
-		}
-		s.pending, s.hasPending = second, true
-		return first, missed, true
-	}
-	if assertDelta > 0 {
-		return assert, missed, true
-	}
-	if clearDelta > 0 {
-		return clear, missed, true
-	}
-	return ModemControlPinChange{}, 0, false
-}
-
-func (s *kernelPPSSeq) takePending() (ModemControlPinChange, bool) {
-	if !s.hasPending {
-		return ModemControlPinChange{}, false
-	}
-	s.hasPending = false
-	return s.pending, true
+	return ModemControlPinChange{Wall: info.Assert.T, Mono: mono, Asserted: true}, missed, true
 }
 
 // Cancel is sticky. Closing a kpps source interrupts a Fetch waiting in the
