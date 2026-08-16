@@ -541,14 +541,14 @@ func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsi
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
-	observations := make(chan serialpps.Observation)
+	edges := make(chan serialpps.CandidateEdge)
 	errCh := make(chan error, 1)
 	stats := new(serialpps.PollStats)
 	if !lg.Enabled(ctx, slog.LevelInfo) {
 		stats = nil
 	}
 	go func() {
-		err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Pin: pin}, method, observations, stats)
+		err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Pin: pin}, method, edges, stats)
 		stats.Log(lg)
 		errCh <- err
 	}()
@@ -557,11 +557,11 @@ func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsi
 	var outputErr error
 	for {
 		select {
-		case observation := <-observations:
+		case edge := <-edges:
 			if outputErr != nil {
 				continue
 			}
-			if err := pr.print(device, observation); err != nil {
+			if err := pr.print(device, edge); err != nil {
 				outputErr = err
 				cancel()
 				continue
@@ -594,8 +594,8 @@ func (e *ppsOutputError) Unwrap() error {
 	return e.err
 }
 
-func (p *edgePrinter) print(device string, observation serialpps.Observation) error {
-	t := observation.Wall.UTC().Round(time.Microsecond)
+func (p *edgePrinter) print(device string, edge serialpps.CandidateEdge) error {
+	t := edge.Wall.UTC().Round(time.Microsecond)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.failure != nil {
@@ -612,8 +612,8 @@ func (p *edgePrinter) print(device string, observation serialpps.Observation) er
 		event := ppsEvent{
 			Device:      device,
 			T:           t.Format("2006-01-02T15:04:05.000000Z"),
-			Uncertainty: observation.Uncertainty.Seconds(),
-			Settling:    !observation.Settled,
+			Uncertainty: edge.Uncertainty.Seconds(),
+			Settling:    !edge.Settled,
 		}
 		err = json.NewEncoder(p.out).Encode(&event)
 	}

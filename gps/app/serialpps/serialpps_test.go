@@ -80,22 +80,22 @@ func TestWait(t *testing.T) {
 	// the backend reports missed transitions.
 	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall.Add(-time.Second), Mono: mono.Add(-time.Second), Asserted: true}}
 	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall, Mono: mono}, missed: 2}
-	observations := make(chan Observation, 1)
+	candidates := make(chan CandidateEdge, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, observations) }()
+	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, candidates) }()
 	select {
-	case observation := <-observations:
-		if observation.Wall != wall || observation.Mono != mono {
-			t.Fatalf("Wait edge = %+v, want supplied wakeup times", observation.Edge)
+	case candidate := <-candidates:
+		if candidate.Wall != wall || candidate.Mono != mono {
+			t.Fatalf("Wait edge = %+v, want supplied wakeup times", candidate.Edge)
 		}
-		if observation.Uncertainty != 0 {
-			t.Errorf("Wait uncertainty = %v, want no polling-bracket uncertainty", observation.Uncertainty)
+		if candidate.Uncertainty != 0 {
+			t.Errorf("Wait uncertainty = %v, want no polling-bracket uncertainty", candidate.Uncertainty)
 		}
-		if !observation.Settled {
-			t.Error("Wait observation is unsettled")
+		if !candidate.Settled {
+			t.Error("Wait candidate is unsettled")
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Wait did not emit the deasserting edge")
@@ -111,17 +111,17 @@ func TestWait(t *testing.T) {
 
 func TestWaitContextCancellation(t *testing.T) {
 	w := &testChangeWaiter{next: make(chan testWaitResult), entered: make(chan struct{}, 1)}
-	observations := make(chan Observation, 1)
+	candidates := make(chan CandidateEdge, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
-	go func() { errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, observations) }()
+	go func() { errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, candidates) }()
 	<-w.entered
 	cancel()
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
 		t.Fatalf("Wait error = %v, want context.Canceled", err)
 	}
-	if n := len(observations); n != 0 {
-		t.Fatalf("Wait emitted %d observations after cancellation, want none", n)
+	if n := len(candidates); n != 0 {
+		t.Fatalf("Wait emitted %d candidates after cancellation, want none", n)
 	}
 }
 
@@ -228,7 +228,7 @@ func TestDetectMethodSelection(t *testing.T) {
 			stats := new(PollStats)
 			var logs bytes.Buffer
 			lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, tc.method, make(chan Observation, 1), stats)
+			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, tc.method, make(chan CandidateEdge, 1), stats)
 			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("Detect error = %v, want %v", err, tc.expectErr)
 			}
@@ -264,7 +264,7 @@ func TestDetectWithoutWaiterPolls(t *testing.T) {
 	stats := new(PollStats)
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	err := Detect(ctx, lg, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, 0, make(chan Observation, 1), stats)
+	err := Detect(ctx, lg, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, 0, make(chan CandidateEdge, 1), stats)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Detect error = %v, want context.Canceled", err)
 	}
@@ -284,7 +284,7 @@ func TestDetectForcedWaitWithoutWaiter(t *testing.T) {
 		t.Run(method.String(), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, method, make(chan Observation, 1), nil)
+			err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, method, make(chan CandidateEdge, 1), nil)
 			if !errors.Is(err, errors.ErrUnsupported) {
 				t.Errorf("Detect error = %v, want errors.ErrUnsupported", err)
 			}
@@ -292,7 +292,7 @@ func TestDetectForcedWaitWithoutWaiter(t *testing.T) {
 	}
 }
 
-func TestClassifyReading(t *testing.T) {
+func TestClassify(t *testing.T) {
 	base := time.Unix(1_000, 0)
 	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
 	tests := []struct {
@@ -354,7 +354,7 @@ func TestClassifyReading(t *testing.T) {
 			curAt := clockReading{wall: base.Add(tc.curAt), mono: base.Add(tc.curAt + monoSkew)}
 			prev := reading{state: asserted, poll: poll{start: prevAt, end: prevAt}}
 			cur := reading{state: tc.curState, poll: poll{start: curAt, end: curAt}}
-			edge, missed := classifyReading(prev, cur, Wiring{Pin: gpsio.ModemCTS}, base.Add(tc.deadline+monoSkew))
+			edge, missed := classify(prev, cur, Wiring{Pin: gpsio.ModemCTS}, base.Add(tc.deadline+monoSkew))
 			if missed != tc.wantMissed {
 				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
 			}
@@ -405,7 +405,7 @@ func TestGenerator(t *testing.T) {
 			// The wall reading is skewed from the mono reading so a
 			// generator using the wrong one for either role is caught.
 			wall := tEdge.Add(2 * time.Millisecond)
-			sample, ok := g.Edge(Edge{Wall: wall, Mono: tEdge})
+			sample, ok := g.Sample(Edge{Wall: wall, Mono: tEdge})
 			if ok != tc.ok {
 				t.Fatalf("Edge ok = %v, want %v", ok, tc.ok)
 			}
@@ -413,11 +413,11 @@ func TestGenerator(t *testing.T) {
 				return
 			}
 			wantRef := time.Unix(1_000, 0).UTC()
-			if !sample.Reference.Equal(wantRef) {
-				t.Errorf("reference = %v, want %v", sample.Reference, wantRef)
+			if !sample.Ref.Equal(wantRef) {
+				t.Errorf("reference = %v, want %v", sample.Ref, wantRef)
 			}
-			if !sample.System.Equal(wall) {
-				t.Errorf("system = %v, want %v", sample.System, wall)
+			if !sample.Sys.Equal(wall) {
+				t.Errorf("system = %v, want %v", sample.Sys, wall)
 			}
 			if sample.Leap != tc.leap {
 				t.Errorf("leap = %v, want %v", sample.Leap, tc.leap)
@@ -431,11 +431,11 @@ func TestGeneratorKeepsNewestMessage(t *testing.T) {
 	newRead := time.Unix(100, 100_000_000)
 	g.MsgUTCTime(time.Unix(200, 0), newRead, ptime.LeapSecondPositive)
 	g.MsgUTCTime(time.Unix(300, 0), newRead.Add(-time.Second), ptime.LeapSecondNegative)
-	sample, ok := g.Edge(Edge{Wall: time.Unix(100, 0), Mono: time.Unix(100, 0)})
+	sample, ok := g.Sample(Edge{Wall: time.Unix(100, 0), Mono: time.Unix(100, 0)})
 	if !ok {
 		t.Fatal("Edge returned no sample")
 	}
-	if !sample.Reference.Equal(time.Unix(200, 0)) || sample.Leap != ptime.LeapSecondPositive {
+	if !sample.Ref.Equal(time.Unix(200, 0)) || sample.Leap != ptime.LeapSecondPositive {
 		t.Fatalf("sample = %+v, want newest message reference and leap", sample)
 	}
 }
@@ -460,12 +460,12 @@ func TestGeneratorDelayBounds(t *testing.T) {
 			tRead := time.Unix(900, 0)
 			g.MsgUTCTime(utc, tRead, ptime.LeapSecondNone)
 			at := tRead.Add(-tc.delay)
-			sample, ok := g.Edge(Edge{Wall: at, Mono: at})
+			sample, ok := g.Sample(Edge{Wall: at, Mono: at})
 			if ok != tc.ok {
 				t.Fatalf("Edge ok = %v, want %v", ok, tc.ok)
 			}
-			if ok && !sample.Reference.Equal(utc) {
-				t.Errorf("reference = %v, want %v", sample.Reference, utc)
+			if ok && !sample.Ref.Equal(utc) {
+				t.Errorf("reference = %v, want %v", sample.Ref, utc)
 			}
 		})
 	}
@@ -500,14 +500,14 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 			read := time.Unix(1_000_000, 125_000_000)
 			g.MsgUTCTime(tc.utc, read, tc.leap)
 			at := read.Add(tc.elapsed)
-			sample, ok := g.Edge(Edge{Wall: at, Mono: at})
+			sample, ok := g.Sample(Edge{Wall: at, Mono: at})
 			if ok != tc.expectOK {
 				t.Fatalf("Edge ok = %v, want %v", ok, tc.expectOK)
 			}
 			if !ok {
 				return
 			}
-			if !sample.Reference.Equal(tc.expectRef) || sample.Leap != tc.expectLeap {
+			if !sample.Ref.Equal(tc.expectRef) || sample.Leap != tc.expectLeap {
 				t.Errorf("sample = %+v, want reference %v and leap %v", sample, tc.expectRef, tc.expectLeap)
 			}
 		})
@@ -569,8 +569,8 @@ func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
 	}
 	time.Sleep(callDur)
 	since = time.Since(f.epoch)
-	n := int(since / pulsePeriod)
-	off := since % pulsePeriod
+	n := int(since / period)
+	off := since % period
 	if f.lateEvery > 0 && n%f.lateEvery == 0 {
 		off -= f.late
 	}
@@ -582,25 +582,25 @@ func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
 
 // pulseIndex is the index of the pulse nearest t, counting from epoch.
 func pulseIndex(t, epoch time.Time) int {
-	return int((t.Sub(epoch) + pulsePeriod/2) / pulsePeriod)
+	return int((t.Sub(epoch) + period/2) / period)
 }
 
-func nextSettled(observations <-chan Observation) Observation {
+func nextSettled(candidates <-chan CandidateEdge) CandidateEdge {
 	for {
-		observation := <-observations
-		if observation.Settled {
-			return observation
+		candidate := <-candidates
+		if candidate.Settled {
+			return candidate
 		}
 	}
 }
 
-func TestHalfDurationCeil(t *testing.T) {
+func TestHalfCeil(t *testing.T) {
 	for d, want := range map[time.Duration]time.Duration{
 		4 * time.Nanosecond: 2 * time.Nanosecond,
 		5 * time.Nanosecond: 3 * time.Nanosecond,
 	} {
-		if got := halfDurationCeil(d); got != want {
-			t.Errorf("halfDurationCeil(%v) = %v, want %v", d, got, want)
+		if got := halfCeil(d); got != want {
+			t.Errorf("halfCeil(%v) = %v, want %v", d, got, want)
 		}
 	}
 }
@@ -710,33 +710,33 @@ func TestPoll(t *testing.T) {
 			runBubble(t, func(t *testing.T) {
 				f := &fakePulse{epoch: time.Now().Add(tc.epochOffset), width: 100 * time.Millisecond, callDur: tc.callDur}
 				ctx, cancel := context.WithCancel(context.Background())
-				observations := make(chan Observation)
+				candidates := make(chan CandidateEdge)
 				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
-				var got []Observation
+				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+				var got []CandidateEdge
 				sawUnsettled := false
 				for len(got) < 3 {
-					observation := <-observations
-					if !observation.Settled {
+					candidate := <-candidates
+					if !candidate.Settled {
 						sawUnsettled = true
 						continue
 					}
-					got = append(got, observation)
+					got = append(got, candidate)
 				}
 				cancel()
 				if err := <-errCh; err != context.Canceled {
 					t.Fatalf("Poll error = %v, want context.Canceled", err)
 				}
 				if !sawUnsettled {
-					t.Error("Poll did not report any observations before settling")
+					t.Error("Poll did not report any candidates before settling")
 				}
 				for i, e := range got {
 					if e.Uncertainty <= 0 {
-						t.Errorf("observation %d uncertainty = %v, want positive", i, e.Uncertainty)
+						t.Errorf("candidate %d uncertainty = %v, want positive", i, e.Uncertainty)
 					}
 					since := e.Wall.Sub(f.epoch)
 					pulse := pulseIndex(e.Wall, f.epoch)
-					if err := since - time.Duration(pulse)*pulsePeriod; err < -tc.expectTol || err > tc.expectTol {
+					if err := since - time.Duration(pulse)*period; err < -tc.expectTol || err > tc.expectTol {
 						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.Wall, err, pulse, tc.expectTol)
 					}
 					if i == 0 && (pulse < tc.expectFirstPulse || pulse > tc.expectLastPulse) {
@@ -745,8 +745,8 @@ func TestPoll(t *testing.T) {
 					}
 					if i > 0 {
 						d := e.Wall.Sub(got[i-1].Wall)
-						if d < pulsePeriod-2*tc.expectTol || d > pulsePeriod+2*tc.expectTol {
-							t.Errorf("edge %d follows edge %d by %v, want ~%v", i, i-1, d, pulsePeriod)
+						if d < period-2*tc.expectTol || d > period+2*tc.expectTol {
+							t.Errorf("edge %d follows edge %d by %v, want ~%v", i, i-1, d, period)
 						}
 					}
 				}
@@ -760,12 +760,12 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 17}
 		ctx, cancel := context.WithCancel(context.Background())
-		observations := make(chan Observation)
+		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
-			pulse = pulseIndex(nextSettled(observations).Wall, f.epoch)
+			pulse = pulseIndex(nextSettled(candidates).Wall, f.epoch)
 			seen[pulse] = true
 		}
 		cancel()
@@ -784,12 +784,12 @@ func TestPollOutageResettles(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 31}
 		ctx, cancel := context.WithCancel(context.Background())
-		observations := make(chan Observation)
+		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var first int
 		for first <= 15 {
-			first = pulseIndex(nextSettled(observations).Wall, f.epoch)
+			first = pulseIndex(nextSettled(candidates).Wall, f.epoch)
 		}
 		cancel()
 		<-errCh
@@ -803,21 +803,21 @@ func TestPollOutageResettles(t *testing.T) {
 // TestPollShrinksToFloor checks that the additive shrink walks the settled
 // window down until steady state costs only a handful of state queries per
 // pulse. The descent is one bracket gap per shrinkAfter catches from a
-// settled window of about pollsPerWindow gaps, so it needs several hundred
+// settled window of about initialPolls gaps, so it needs several hundred
 // simulated pulses to reach the floor.
 func TestPollShrinksToFloor(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 2 * time.Millisecond}
 		ctx, cancel := context.WithCancel(context.Background())
-		observations := make(chan Observation)
+		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
-		for pulseIndex(nextSettled(observations).Wall, f.epoch) < 900 {
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		for pulseIndex(nextSettled(candidates).Wall, f.epoch) < 900 {
 		}
 		start := f.calls.Load()
 		for i := 0; i < 50; i++ {
-			nextSettled(observations)
+			nextSettled(candidates)
 		}
 		perPulse := (f.calls.Load() - start) / 50
 		cancel()
@@ -837,12 +837,12 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 100 * time.Microsecond, lateEvery: 5, late: time.Millisecond}
 		ctx, cancel := context.WithCancel(context.Background())
-		observations := make(chan Observation)
+		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
-			last = pulseIndex(nextSettled(observations).Wall, f.epoch)
+			last = pulseIndex(nextSettled(candidates).Wall, f.epoch)
 			seen[last] = true
 		}
 		cancel()
@@ -874,12 +874,12 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 			stallAfter: 3999 * time.Millisecond, stall: 3 * time.Millisecond}
 		capture := &settleCapture{Handler: slog.DiscardHandler}
 		ctx, cancel := context.WithCancel(context.Background())
-		observations := make(chan Observation)
+		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
-		var got []Observation
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		var got []CandidateEdge
 		for len(got) < 20 {
-			got = append(got, nextSettled(observations))
+			got = append(got, nextSettled(candidates))
 		}
 		cancel()
 		<-errCh
@@ -893,7 +893,7 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 		}
 		for i, e := range got {
 			pulse := pulseIndex(e.Wall, f.epoch)
-			if err := e.Wall.Sub(f.epoch) - time.Duration(pulse)*pulsePeriod; err < -500*time.Microsecond || err > 500*time.Microsecond {
+			if err := e.Wall.Sub(f.epoch) - time.Duration(pulse)*period; err < -500*time.Microsecond || err > 500*time.Microsecond {
 				t.Errorf("edge %d at pulse %d: error %v, want within 500µs of the query-time floor", i, pulse, err)
 			}
 		}
@@ -917,11 +917,11 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		}
 		capture := &settleCapture{Handler: slog.DiscardHandler}
 		ctx, cancel := context.WithCancel(context.Background())
-		observations := make(chan Observation)
+		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		for range 3 {
-			nextSettled(observations)
+			nextSettled(candidates)
 		}
 		cancel()
 		<-errCh
@@ -940,12 +940,12 @@ func TestPollNarrowPulse(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 5 * time.Millisecond,
 			callDur: 2 * time.Millisecond}
 		ctx, cancel := context.WithCancel(context.Background())
-		observations := make(chan Observation)
+		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, observations, nil) }()
-		var got []Observation
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		var got []CandidateEdge
 		for len(got) < 3 {
-			got = append(got, nextSettled(observations))
+			got = append(got, nextSettled(candidates))
 		}
 		cancel()
 		<-errCh
@@ -954,7 +954,7 @@ func TestPollNarrowPulse(t *testing.T) {
 		}
 		for i, e := range got {
 			pulse := pulseIndex(e.Wall, f.epoch)
-			if err := e.Wall.Sub(f.epoch) - time.Duration(pulse)*pulsePeriod; err < -3*time.Millisecond || err > 3*time.Millisecond {
+			if err := e.Wall.Sub(f.epoch) - time.Duration(pulse)*period; err < -3*time.Millisecond || err > 3*time.Millisecond {
 				t.Errorf("edge %d at %v: error %v from pulse %d, want within 3ms", i, e.Wall, err, pulse)
 			}
 		}

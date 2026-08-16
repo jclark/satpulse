@@ -234,25 +234,25 @@ func TestEdgePrinter(t *testing.T) {
 		Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
 	}
 	for _, tc := range []struct {
-		name        string
-		observation serialpps.Observation
-		jsonl       bool
-		withDevice  bool
-		want        string
+		name       string
+		edge       serialpps.CandidateEdge
+		jsonl      bool
+		withDevice bool
+		want       string
 	}{
-		{name: "human", observation: serialpps.Observation{Edge: edge}, want: "14:23:05.123456\n"},
-		{name: "human with device", observation: serialpps.Observation{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
-		{name: "wait JSONL", observation: serialpps.Observation{Edge: edge, Settled: true}, jsonl: true,
+		{name: "human", edge: serialpps.CandidateEdge{Edge: edge}, want: "14:23:05.123456\n"},
+		{name: "human with device", edge: serialpps.CandidateEdge{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
+		{name: "wait JSONL", edge: serialpps.CandidateEdge{Edge: edge, Settled: true}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\"}\n"},
-		{name: "settling poll JSONL", observation: serialpps.Observation{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
+		{name: "settling poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settling\":true}\n"},
-		{name: "settled poll JSONL", observation: serialpps.Observation{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
+		{name: "settled poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer
 			pr := &edgePrinter{out: &output, jsonl: tc.jsonl, withDevice: tc.withDevice}
-			if err := pr.print("/dev/ttyS0", tc.observation); err != nil {
+			if err := pr.print("/dev/ttyS0", tc.edge); err != nil {
 				t.Fatal(err)
 			}
 			if got := output.String(); got != tc.want {
@@ -323,7 +323,7 @@ func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 	select {
 	case <-output.wrote:
 	case <-time.After(time.Second):
-		t.Fatal("detectEdges did not print the kernel observation")
+		t.Fatal("detectEdges did not print the kernel edge")
 	}
 	cancel()
 	select {
@@ -449,7 +449,7 @@ func TestMonitorPortListOutputFailure(t *testing.T) {
 	ports := []serialenum.Port{{Device: "writer"}, {Device: "waiting"}}
 	monitor := func(ctx context.Context, _ *slog.Logger, device string) ppsResult {
 		if device == "writer" {
-			err := pr.print(device, serialpps.Observation{})
+			err := pr.print(device, serialpps.CandidateEdge{})
 			return ppsResult{device: device, failure: err.Error()}
 		}
 		<-ctx.Done()

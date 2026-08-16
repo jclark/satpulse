@@ -280,25 +280,25 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 	}
 }
 
-func TestDispatcherSerialPPSObservationWritesSettledSample(t *testing.T) {
+func TestDispatcherSerialPPSCandidateWritesSettledSample(t *testing.T) {
 	shm := &fakeSHM{precision: -9}
 	observer := &ntpSampleObserver{}
 	g := serialpps.NewGenerator(serialpps.DefaultConfig())
 	d := &Dispatcher{
-		serialPPS: g,
-		shm:       shm,
-		obs:       observer,
-		lg:        slog.New(slog.NewTextHandler(io.Discard, nil)),
+		spGen: g,
+		shm:   shm,
+		obs:   observer,
+		lg:    slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	msgUTC := time.Unix(1_000, 0).UTC()
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.serialPPSObservation(serialpps.Observation{Edge: serialpps.Edge{Wall: edge, Mono: edge}})
+	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Wall: edge, Mono: edge}})
 	if len(shm.writes) != 0 {
-		t.Fatalf("unsettled observation produced %d SHM writes, want none", len(shm.writes))
+		t.Fatalf("unsettled candidate produced %d SHM writes, want none", len(shm.writes))
 	}
-	d.serialPPSObservation(serialpps.Observation{Edge: serialpps.Edge{Wall: edge, Mono: edge}, Settled: true})
+	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Wall: edge, Mono: edge}, Settled: true})
 
 	if len(shm.writes) != 1 {
 		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
