@@ -9,6 +9,7 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-info**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**\|**kernel**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-max\-wakeup\-latency** *microseconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
@@ -52,6 +53,9 @@ This causes speed detection not to be performed.
 **poll** means the application continually asks for the current status.
 When this option is omitted, the best available method is used.
 Requires **\-p**.
+
+**\-\-max\-wakeup\-latency** *microseconds*
+: Limit CPU wakeup latency while detecting PPS; `0` is maximally strict. Currently supported only on Linux; failure to apply the limit is logged as a warning. Requires **\-p**.
 
 **\-\-packet\-log** *path*
 : Write a log of packets received to *path*.

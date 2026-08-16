@@ -1,13 +1,16 @@
 package serialpps
 
 import (
+	"math"
 	"strings"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/lib/wakeup"
 )
 
 func TestConfig(t *testing.T) {
+	floatPtr := func(v float64) *float64 { return &v }
 	tests := []struct {
 		name    string
 		cfg     Config
@@ -18,7 +21,15 @@ func TestConfig(t *testing.T) {
 		{name: "poll method", cfg: Config{MaxDelay: 0.8, Method: gpsio.PPSMethodPoll}},
 		{name: "wait method", cfg: Config{MaxDelay: 0.8, Method: gpsio.PPSMethodWait}},
 		{name: "kernel method", cfg: Config{MaxDelay: 0.8, Method: gpsio.PPSMethodKernel}},
+		{name: "zero wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(0)}},
+		{name: "minimum wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(wakeup.LatencyResolution.Seconds() * 1e6)}},
+		{name: "fractional wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(10.5)}},
 		{name: "invalid method", cfg: Config{MaxDelay: 0.8, Method: gpsio.PPSMethodKernel + 1}, errText: "method"},
+		{name: "negative wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(-1)}, errText: "maxWakeupLatency"},
+		{name: "sub-resolution wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(wakeup.LatencyResolution.Seconds() * 1e6 / 2)}, errText: "maxWakeupLatency"},
+		{name: "NaN wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(math.NaN())}, errText: "maxWakeupLatency"},
+		{name: "infinite wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(math.Inf(1))}, errText: "maxWakeupLatency"},
+		{name: "overflowing wakeup latency", cfg: Config{MaxDelay: 0.8, MaxWakeupLatency: floatPtr(1e20)}, errText: "maxWakeupLatency"},
 		{name: "negative uncertainty", cfg: Config{DelayUncertainty: -0.001, MaxDelay: 0.8}, errText: "delayUncertainty"},
 		{name: "zero maximum", cfg: Config{DelayUncertainty: 0.005}, errText: "maxDelay"},
 		{name: "one-second interval", cfg: Config{DelayUncertainty: 0.2, MaxDelay: 0.8}, errText: "delayUncertainty + maxDelay"},

@@ -16,6 +16,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
+	"github.com/jclark/satpulse/gps/lib/wakeup"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -46,6 +47,8 @@ func TestParseFlags(t *testing.T) {
 		{name: "pps by polling", args: []string{"-p", "cts", "-m", "poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodPoll, timeout: defaultPPSTimeout}},
 		{name: "pps by waiting", args: []string{"-p", "cts", "--pps-method", "wait", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodWait, timeout: defaultPPSTimeout}},
 		{name: "pps with kernel timestamps", args: []string{"-p", "dcd", "--pps-method", "kernel", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDCD, ppsMethod: gpsio.PPSMethodKernel, timeout: defaultPPSTimeout}},
+		{name: "pps with wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "10.5", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, maxWakeupLatency: 10*time.Microsecond + 500*time.Nanosecond, maxWakeupLatencySet: true, timeout: defaultPPSTimeout}},
+		{name: "pps with zero wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, maxWakeupLatencySet: true, timeout: defaultPPSTimeout}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "positional port", args: []string{"/dev/ttyS0"}, wantErr: true},
 		{name: "all and device", args: []string{"-a", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -55,6 +58,12 @@ func TestParseFlags(t *testing.T) {
 		{name: "info and pps", args: []string{"-i", "-p", "cts", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "method without pps", args: []string{"-m", "poll", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "invalid method", args: []string{"-p", "cts", "-m", "sideband", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "wakeup latency without pps", args: []string{"--max-wakeup-latency", "10", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "negative wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "-1", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "NaN wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "NaN", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "infinite wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "+Inf", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "overflowing wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "1e20", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "under-resolution wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "1e-10", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps without target", args: []string{"-p", "cts"}, wantErr: true},
 		{name: "pps invalid pin", args: []string{"-p", "rts", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "pps value required", args: []string{"--pps-pin", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -89,6 +98,16 @@ func TestParseFlags(t *testing.T) {
 				t.Errorf("flags = %+v, want %+v", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestParseWakeupLatencyResolution(t *testing.T) {
+	resolution := wakeup.LatencyResolution.Seconds() * 1e6
+	if _, err := parseWakeupLatency(resolution / 2); err == nil {
+		t.Fatal("parseWakeupLatency accepted a positive value below LatencyResolution")
+	}
+	if got, err := parseWakeupLatency(resolution); err != nil || got != wakeup.LatencyResolution {
+		t.Fatalf("parseWakeupLatency(LatencyResolution) = %v, %v", got, err)
 	}
 }
 
