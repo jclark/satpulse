@@ -64,18 +64,13 @@ func (w *kernelPPSPinWatch) setup() error {
 		return w.wrapErr(err, "ioctl(TIOCGETD)")
 	}
 	w.savedLdisc = ldisc
-	// A kernel built without N_PPS, a TTY with no source of its own, and a
-	// /dev/ppsN we may not open are all systems where this method cannot run
-	// but another can, so they are unavailable rather than unsupported: the
-	// caller warns and falls back instead of failing the run.
+	// A kernel built without N_PPS, a system that will not autoload N_PPS, a
+	// TTY with no source of its own, and a /dev/ppsN we may not open are all
+	// systems where this method cannot run but another can, so they are
+	// unavailable rather than unsupported: the caller warns and falls back
+	// instead of failing the run.
 	if err := unix.IoctlSetPointerInt(w.fd, unix.TIOCSETD, nPPS); err != nil {
-		// EINVAL is a kernel without N_PPS. EPERM is one whose pps_ldisc
-		// module is not loaded, on a system that has turned off
-		// dev.tty.ldisc_autoload for callers without CAP_SYS_MODULE.
-		if errors.Is(err, unix.EINVAL) || errors.Is(err, unix.EPERM) {
-			err = fmt.Errorf("%w: no N_PPS line discipline: %w", ErrUnavailable, err)
-		}
-		return w.wrapErr(err, "ioctl(TIOCSETD)")
+		return w.wrapErr(kernelPPSAttachError(err), "ioctl(TIOCSETD)")
 	}
 	w.ldiscSet = true
 
@@ -94,6 +89,17 @@ func (w *kernelPPSPinWatch) setup() error {
 	w.seq.lastAssert = info.Assert.Sequence
 	w.seq.lastClear = info.Clear.Sequence
 	return nil
+}
+
+func kernelPPSAttachError(err error) error {
+	switch {
+	case errors.Is(err, unix.EINVAL):
+		return fmt.Errorf("%w: no N_PPS line discipline: %w", ErrUnavailable, err)
+	case errors.Is(err, unix.EPERM):
+		return fmt.Errorf("%w: cannot attach N_PPS line discipline: %w", ErrUnavailable, err)
+	default:
+		return err
+	}
 }
 
 // openKernelPPSRetry allows time for udev to change the permissions on a new

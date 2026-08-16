@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/kpps"
+	"golang.org/x/sys/unix"
 )
 
 func TestNewKernelModemControlPinWatchWrongPin(t *testing.T) {
@@ -54,6 +55,29 @@ func TestNewKernelModemControlPinWatchUnavailable(t *testing.T) {
 	}
 	if !errors.Is(err, ErrUnavailable) || errors.Is(err, errors.ErrUnsupported) {
 		t.Errorf("error = %v, want ErrUnavailable without errors.ErrUnsupported", err)
+	}
+}
+
+func TestKernelPPSAttachError(t *testing.T) {
+	tests := []struct {
+		name            string
+		err             error
+		wantUnavailable bool
+	}{
+		{name: "line discipline absent", err: unix.EINVAL, wantUnavailable: true},
+		{name: "line discipline autoload denied", err: unix.EPERM, wantUnavailable: true},
+		{name: "unexpected failure", err: unix.EIO},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := kernelPPSAttachError(tc.err)
+			if !errors.Is(err, tc.err) {
+				t.Errorf("error = %v, want it to wrap %v", err, tc.err)
+			}
+			if got := errors.Is(err, ErrUnavailable); got != tc.wantUnavailable {
+				t.Errorf("errors.Is(error, ErrUnavailable) = %v, want %v", got, tc.wantUnavailable)
+			}
+		})
 	}
 }
 
