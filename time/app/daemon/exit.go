@@ -10,9 +10,9 @@ import (
 const (
 	exitSuccess = 0
 	exitFailure = 1
-	exitUsage   = 64 // EX_USAGE: command line usage error
+	ExitUsage   = 64 // EX_USAGE: command line usage error
 	exitNoPerm  = 77 // EX_NOPERM: permission denied
-	exitConfig  = 78 // EX_CONFIG: configuration error
+	ExitConfig  = 78 // EX_CONFIG: configuration error
 )
 
 type configError struct {
@@ -26,13 +26,14 @@ func configErrorf(format string, args ...any) *configError {
 	return &configError{err: fmt.Errorf(format, args...)}
 }
 
-func exitCode(err error) int {
+// ExitCode maps an error returned by Run to a process exit code.
+func ExitCode(err error) int {
 	if err == nil {
 		return exitSuccess
 	}
 	var cfgErr *configError
 	if errors.As(err, &cfgErr) {
-		return exitConfig
+		return ExitConfig
 	}
 	if errors.Is(err, os.ErrPermission) {
 		return exitNoPerm

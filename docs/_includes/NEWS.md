@@ -73,6 +73,7 @@ _Not yet released_
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
 - The JSONL event log now uses a natural event shape with a `type` discriminator and a `data` payload, replacing the previous one-field-per-type record shape. The `nanos` integer field is replaced by a `mono` field holding monotonic elapsed seconds. This matches the envelope already emitted by `satpulsetool replay`. Existing event logs in the old format can be converted with the `migrate_log.go` tool in `time/internal/gpsevent`. (#277)
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
+- `satpulsed` can now run as a Windows service: `satpulsed --register` registers it with the Service Control Manager so that it starts automatically at boot, with the daemon log written to the file given by `--log-file` and service lifecycle events recorded in the Windows Event Log; `satpulsed --unregister` removes the registration. (#338)
 
 ## Changes in 0.2
 

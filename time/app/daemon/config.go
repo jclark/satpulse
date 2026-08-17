@@ -26,7 +26,9 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
-const configFileEnvVar = "SATPULSE_CONFIG_FILE"
+// ConfigFileEnvVar is the environment variable giving the default
+// configuration file path when no -f option is specified.
+const ConfigFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
