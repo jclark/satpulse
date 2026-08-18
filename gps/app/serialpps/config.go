@@ -21,6 +21,10 @@ type Config struct {
 	MaxDelay float64 `toml:"maxDelay" check:">0,<1" comment:"Maximum post-pulse message delay (s)"`
 	// Method selects how edges are detected; unspecified means automatic.
 	Method gpsio.PPSMethod `toml:"method" comment:"PPS edge detection method: poll, wait, or kernel; omit for automatic selection"`
+	// PollPreWarm is how long the poll method busy-waits before each poll
+	// window opens, countering hosts whose state queries slow down while
+	// the machine idles. Zero disables it.
+	PollPreWarm float64 `toml:"pollPreWarm" check:">=0,<1" comment:"CPU busy-wait before each poll window (s); 0 disables"`
 }
 
 // DefaultConfig returns the default serial PPS sampling configuration.

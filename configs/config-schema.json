@@ -95,6 +95,13 @@
                   "description": "PPS edge detection method: poll, wait, or kernel; omit for automatic selection",
                   "type": "string",
                   "enum": ["poll", "wait", "kernel"]
+                },
+                "pollPreWarm": {
+                  "description": "CPU busy-wait before each poll window (s); 0 disables",
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
                 }
               }
             }

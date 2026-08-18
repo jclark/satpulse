@@ -136,15 +136,18 @@ func (p poll) gapAfter(prev poll) time.Duration {
 // Detect sends candidate edges for the pulse described by w. An unspecified
 // method automatically tries kernel, then wait, then poll, moving on when a
 // method is unsupported or unavailable for the device. Other failures are
-// returned. An explicitly requested method never falls back. If stats is
-// non-nil, it records timings only when polling is selected.
-func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, ceCh chan<- CandidateEdge, stats *PollStats) error {
-	if method != 0 {
-		return detect(ctx, lg, r, w, method, ceCh, stats)
+// returned. An explicitly requested method never falls back. cfg.PollPreWarm
+// applies only to polling, the one method whose resolution the host's own
+// speed sets. If stats is non-nil, it records timings only when polling is
+// selected.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- CandidateEdge, stats *PollStats) error {
+	prewarm := seconds(cfg.PollPreWarm)
+	if cfg.Method != 0 {
+		return detect(ctx, lg, r, w, cfg.Method, prewarm, ceCh, stats)
 	}
 	if _, ok := r.(ChangeWaiter); ok {
 		for _, m := range []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait} {
-			err := detect(ctx, lg, r, w, m, ceCh, stats)
+			err := detect(ctx, lg, r, w, m, prewarm, ceCh, stats)
 			if ctx.Err() != nil {
 				return err
 			}
@@ -158,10 +161,10 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 			}
 		}
 	}
-	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, ceCh, stats)
+	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, prewarm, ceCh, stats)
 }
 
-func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	switch method {
 	case gpsio.PPSMethodPoll, gpsio.PPSMethodWait, gpsio.PPSMethodKernel:
 	default:
@@ -169,7 +172,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 	}
 	lg.Info("serial PPS method selected", "method", method)
 	if method == gpsio.PPSMethodPoll {
-		return Poll(ctx, lg, r, w, ceCh, stats)
+		return Poll(ctx, lg, r, w, prewarm, ceCh, stats)
 	}
 	cw, ok := r.(ChangeWaiter)
 	if !ok {
@@ -213,7 +216,12 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 // must filter on Settled and take the embedded Edge. Every caught edge and
 // every window size change is logged to lg at debug level. If stats is
 // non-nil, Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh chan<- CandidateEdge, stats *PollStats) error {
+//
+// A nonzero prewarm ends the sleep to each window open that much early and
+// busy-waits the remainder. It is for hosts whose state queries slow down
+// severalfold while the machine idles, where only continuous work ending at
+// the open restores full query speed; it costs that fraction of a core.
+func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	stats.begin()
@@ -233,7 +241,18 @@ func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh ch
 	for {
 		spacing := max(window/initialPolls, minSpacing)
 		deadline := nextEdge.Add(window / 2)
-		cur, err := readState(ctx, r, nextEdge.Add(-window/2))
+		open := nextEdge.Add(-window / 2)
+		if prewarm > 0 {
+			if _, err := waitUntil(ctx, open.Add(-prewarm)); err != nil {
+				return err
+			}
+			for time.Now().Before(open) {
+				if ctx.Err() != nil {
+					return ctx.Err()
+				}
+			}
+		}
+		cur, err := readState(ctx, r, open)
 		if err != nil {
 			return err
 		}

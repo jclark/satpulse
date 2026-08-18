@@ -314,7 +314,7 @@ func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 	}, 1)
 	go func() {
 		pr := &edgePrinter{out: output}
-		count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", 0, pr)
+		count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", serialpps.Config{}, pr)
 		result <- struct {
 			count int
 			err   error
@@ -353,7 +353,7 @@ func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
-	count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", gpsio.PPSMethodPoll, &edgePrinter{out: io.Discard})
+	count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", serialpps.Config{Method: gpsio.PPSMethodPoll}, &edgePrinter{out: io.Discard})
 	if err != nil || count != 0 {
 		t.Fatalf("detectEdges = %d, %v; want 0, nil", count, err)
 	}

@@ -13,6 +13,9 @@ speed = 38400
 #[sample.serial.pps]
 #delayUncertainty = 0.005
 #maxDelay = 0.8
+# Busy-wait this long before each poll window on hosts whose modem status
+# reads slow down while idle, at the cost of that fraction of a CPU core.
+#pollPreWarm = 50e-3
 
 [gps]
 # Uncommenting the following line will enable configuration of the GPS
