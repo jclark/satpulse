@@ -10,6 +10,7 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**\|**kernel**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-poll\-pre\-warm** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-max\-wakeup\-latency** *microseconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
@@ -59,6 +60,9 @@ Requires **\-p**.
 This speeds up the **poll** method on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core.
 The default is 0, which disables it; a value between 0.02 and 0.05 is suggested.
 Requires **\-p**.
+
+**\-\-max\-wakeup\-latency** *microseconds*
+: Limit CPU wakeup latency while detecting PPS; `0` is maximally strict. Currently supported only on Linux. Requires **\-p**.
 
 **\-\-packet\-log** *path*
 : Write a log of packets received to *path*.

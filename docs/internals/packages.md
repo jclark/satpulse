@@ -110,6 +110,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
 
+`gps/lib/wakeup` requests operating-system limits on latency added when CPUs wake from idle. It is Linux-dependent.
+
 `gps/lib/ubxbin` translates binary packets in the UBX protocol to and from Go structs.
 
 `gps/lib/ubxcfgval` handles the 9th generation UBX format for configuration data that is payload for UBX-CFG-VALGET/VALSET messages.

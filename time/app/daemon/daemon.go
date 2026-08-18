@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -17,6 +19,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/wakeup"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/gpsevent"
@@ -143,6 +146,17 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	if speed == 0 {
 		speed = cfgSpeed
 	}
+	// The request is acquired immediately before serial PPS detection starts.
+	// Register its cleanup here so it runs after the worker-wait and serial-port
+	// cleanup registered below.
+	var wakeupLatencyLimit io.Closer
+	defer func() {
+		if wakeupLatencyLimit != nil {
+			if err := wakeupLatencyLimit.Close(); err != nil {
+				lg.Warn("cannot release CPU wakeup latency limit", "err", err)
+			}
+		}
+	}()
 
 	// During normal shutdown, the worker-wait defer registered below runs
 	// first, so the serial PPS poller stops before the connection is closed.
@@ -325,6 +339,16 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	var spCh <-chan serialpps.CandidateEdge
 	var spGen *serialpps.Generator
 	if cfg.Serial.PPS != nil {
+		if configuredMax := cfg.Sample.Serial.PPS.MaxWakeupLatency; configuredMax != nil {
+			max := time.Duration(math.Round(*configuredMax * float64(time.Microsecond)))
+			req, err := wakeup.RequestLatencyLimit(max)
+			if err != nil {
+				lg.Warn("cannot limit CPU wakeup latency", "max", max, "err", err)
+			} else {
+				wakeupLatencyLimit = req
+				lg.Info("limited CPU wakeup latency", "max", max.Truncate(wakeup.LatencyResolution))
+			}
+		}
 		pin, _ := cfg.Serial.PPS.modemControlPin() // checked by Config.Validate
 		spGen = serialpps.NewGenerator(cfg.Sample.Serial.PPS)
 		ch := make(chan serialpps.CandidateEdge, 1)
