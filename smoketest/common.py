@@ -238,7 +238,7 @@ def check_event_log(ctx: SmokeContext, expect_types: Iterable[str] = ()) -> set[
     """The event log exists and contains entries of the expected types.
 
     Each event-log entry is an envelope with a top-level "type" discriminator
-    (such as "time", "posGeo", "navEpoch", "pulseEdge") and a "data" payload.
+    (such as "time", "posGeo", "navEpoch", "phcPulseEdge") and a "data" payload.
     """
     path = _log_path(ctx, "event")
     want = set(expect_types)

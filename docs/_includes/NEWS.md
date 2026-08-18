@@ -34,7 +34,7 @@ _Not yet released_
 ### NTP support
 
 - SatPulse now supports the NTP SHM protocol in addition to the chrony refclock SOCK protocol for sending time information to an NTP server. `satpulse.toml` has a new `[ntp.shm]` table for configuring this. (#300)
-- The `[serial]` table in `satpulse.toml` has a new `pps.pin` key that lets `satpulsed` detect receiver PPS edges on a serial modem-control input and use them for more precise refclock samples on systems without a PTP hardware clock. (#402)
+- The `[serial]` table in `satpulse.toml` has a new `pps.pin` key that lets `satpulsed` detect receiver PPS edges on a serial modem-control input and use them for more precise refclock samples on systems without a PTP hardware clock. Detected edges are logged in the JSONL event log as a new `sysPulseEdge` event type. (#402)
 
 ### GPS high-level configuration
 
@@ -72,6 +72,7 @@ _Not yet released_
 - The `satpulse@.service` has been improved so that if a USB GNSS receiver is unplugged, its `satpulse@...` service stops, and when the receiver is plugged back in, its service is automatically restarted, provided it was enabled. To take advantage of this after installing the new unit file, previously enabled instances need to be reenabled, for example with `systemctl reenable satpulse@ttyS0`. (#172)
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
 - The JSONL event log now uses a natural event shape with a `type` discriminator and a `data` payload, replacing the previous one-field-per-type record shape. The `nanos` integer field is replaced by a `mono` field holding monotonic elapsed seconds. This matches the envelope already emitted by `satpulsetool replay`. Existing event logs in the old format can be converted with the `migrate_log.go` tool in `time/internal/gpsevent`. (#277)
+- The `pulseEdge` event type in the JSONL event log has been renamed to `phcPulseEdge`, because SatPulse now supports two different kinds of pulse edge: PHC-timestamped and system-clock-timestamped. (#402)
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
 
 ## Changes in 0.2

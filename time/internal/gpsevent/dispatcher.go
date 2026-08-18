@@ -312,6 +312,15 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan serialpps.CandidateEd
 }
 
 func (d *Dispatcher) serialPPSCandidateEdge(ce serialpps.CandidateEdge) {
+	d.logEvent(LogEvent{
+		Type: sysPulseEdgeType,
+		T:    ce.TRead,
+		Data: &SysPulseEdge{
+			T:           ce.Timestamp,
+			Uncertainty: gpsprot.Duration(ce.Uncertainty),
+			Settled:     ce.Settled,
+		},
+	})
 	if ce.Settled {
 		d.serialPPSEdge(ce.Edge)
 	}
@@ -385,23 +394,35 @@ func (d *Dispatcher) handlePulledPacket(pkt scan.Packet) {
 }
 
 // LogEvent is a daemon event-log entry: the universal gpsprot event envelope
-// with a payload that is either a gpsprot.Msg (GPS message records) or a
-// *PulseEdge (pulse-edge records, with Type "pulseEdge").
+// with a payload that is either a gpsprot.Msg (GPS message records), a
+// *PHCPulseEdge (Type "phcPulseEdge"), or a *SysPulseEdge (Type
+// "sysPulseEdge").
 type LogEvent gpsprot.Event[any]
 
-// pulseEdgeType is the LogEvent.Type value for pulse-edge records.
-const pulseEdgeType = "pulseEdge"
+// phcPulseEdgeType is the LogEvent.Type value for PHC-timestamped pulse-edge
+// records.
+const phcPulseEdgeType = "phcPulseEdge"
 
-type PulseEdge struct {
+type PHCPulseEdge struct {
 	T     ptime.Time  `json:"t"`
 	Era   phctime.Era `json:"era"`
 	TRead ptime.Time  `json:"tRead"`
 }
 
+// sysPulseEdgeType is the LogEvent.Type value for system-clock-timestamped
+// pulse-edge records produced by serial PPS detection.
+const sysPulseEdgeType = "sysPulseEdge"
+
+type SysPulseEdge struct {
+	T           time.Time        `json:"t"`
+	Uncertainty gpsprot.Duration `json:"uncertainty"`
+	Settled     bool             `json:"settled"`
+}
+
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:
-// "pulseEdge" records decode Data as *PulseEdge, all others as the gpsprot.Msg
-// named by Type. It accepts only the new envelope format; old sparse event
-// logs are handled by gpsevent/migrate_log.go.
+// pulse-edge records decode Data as *PHCPulseEdge or *SysPulseEdge, all
+// others as the gpsprot.Msg named by Type. It accepts only the new envelope
+// format; old sparse event logs are handled by gpsevent/migrate_log.go.
 func (e *LogEvent) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Type string           `json:"type"`
@@ -415,12 +436,20 @@ func (e *LogEvent) UnmarshalJSON(data []byte) error {
 	e.Type = raw.Type
 	e.T = raw.T
 	e.Mono = raw.Mono
-	if raw.Type == pulseEdgeType {
-		var pe PulseEdge
+	switch raw.Type {
+	case phcPulseEdgeType:
+		var pe PHCPulseEdge
 		if err := json.Unmarshal(raw.Data, &pe); err != nil {
 			return err
 		}
 		e.Data = &pe
+		return nil
+	case sysPulseEdgeType:
+		var se SysPulseEdge
+		if err := json.Unmarshal(raw.Data, &se); err != nil {
+			return err
+		}
+		e.Data = &se
 		return nil
 	}
 	msg, err := gpsprot.UnmarshalMsg(raw.Type, raw.Data)
@@ -444,9 +473,9 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
-		Type: pulseEdgeType,
+		Type: phcPulseEdgeType,
 		T:    e.TReadMono.Sys,
-		Data: &PulseEdge{
+		Data: &PHCPulseEdge{
 			T:     e.Ts.T,
 			Era:   e.Ts.Era,
 			TRead: e.TReadMono.PHC.T,
