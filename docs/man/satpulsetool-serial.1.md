@@ -55,7 +55,7 @@ When this option is omitted, the best available method is used.
 Requires **\-p**.
 
 **\-\-max\-wakeup\-latency** *microseconds*
-: Limit CPU wakeup latency while detecting PPS; `0` is maximally strict. Currently supported only on Linux; failure to apply the limit is logged as a warning. Requires **\-p**.
+: Limit CPU wakeup latency while detecting PPS; `0` is maximally strict. Currently supported only on Linux. Requires **\-p**.
 
 **\-\-packet\-log** *path*
 : Write a log of packets received to *path*.

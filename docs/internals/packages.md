@@ -110,7 +110,7 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
 
-`gps/lib/wakeup` requests operating-system limits on latency added when CPUs wake from idle. On Linux, a request is represented by an open `/dev/cpu_dma_latency` file descriptor and remains active until its returned closer is closed.
+`gps/lib/wakeup` requests operating-system limits on latency added when CPUs wake from idle. It is Linux-dependent.
 
 `gps/lib/ubxbin` translates binary packets in the UBX protocol to and from Go structs.
 

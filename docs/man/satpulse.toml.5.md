@@ -106,7 +106,7 @@ It can have the following keys:
 * `maxDelay` - the maximum accepted inferred delay from the pulse to its post-pulse message, in seconds;
   the default is 0.8
 * `maxWakeupLatency` - optionally limits CPU wakeup latency while serial PPS is active, in microseconds; `0` is maximally strict;
-  currently supported only on Linux; failure to apply the limit is logged as a warning
+  currently supported only on Linux
 * `method` - controls how the operating system is used to detect modem status changes that mark pulse edges:
   `"kernel"` means the kernel timestamps the time of a status change;
   `"wait"` means the kernel notifies the application of a status change;
