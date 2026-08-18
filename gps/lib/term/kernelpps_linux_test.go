@@ -82,9 +82,9 @@ func TestKernelPPSAttachError(t *testing.T) {
 }
 
 func TestKernelPPSSeqUpdate(t *testing.T) {
-	mono := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
+	tRead := time.Date(2026, 8, 14, 12, 0, 0, 0, time.UTC)
 	change := func(sec int64, nsec int, asserted bool) ModemControlPinChange {
-		return ModemControlPinChange{Wall: time.Unix(sec, int64(nsec)), Mono: mono, Asserted: asserted}
+		return ModemControlPinChange{Timestamp: time.Unix(sec, int64(nsec)), TRead: tRead, Asserted: asserted}
 	}
 	edge := func(sec int64, nsec int, sequence uint32) kpps.Edge {
 		return kpps.Edge{T: time.Unix(sec, int64(nsec)), Sequence: sequence}
@@ -145,7 +145,7 @@ func TestKernelPPSSeqUpdate(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var got result
-			got.change, got.missed, got.ok = tc.seq.update(tc.info, mono)
+			got.change, got.missed, got.ok = tc.seq.update(tc.info, tRead)
 			if !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
 			}

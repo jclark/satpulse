@@ -233,10 +233,10 @@ func (t *windowsTerm) Write(buf []byte) (int, error) {
 }
 
 // overlapped runs one operation on an overlapped handle to completion. When
-// wall is non-nil the clocks are read the instant the operation completes,
+// timestamp is non-nil the clocks are read the instant the operation completes,
 // before anything else the caller might do. They are two adjacent reads, not
 // one atomic reading of both clocks.
-func overlapped(h windows.Handle, op func(*windows.Overlapped) error, n *uint32, wall, mono *time.Time) error {
+func overlapped(h windows.Handle, op func(*windows.Overlapped) error, n *uint32, timestamp, tRead *time.Time) error {
 	event, err := windows.CreateEvent(nil, 1, 0, nil)
 	if err != nil {
 		return err
@@ -247,9 +247,9 @@ func overlapped(h windows.Handle, op func(*windows.Overlapped) error, n *uint32,
 	if errors.Is(err, windows.ERROR_IO_PENDING) {
 		err = windows.GetOverlappedResult(h, &o, n, true)
 	}
-	if wall != nil {
-		*wall = preciseNow()
-		*mono = time.Now()
+	if timestamp != nil {
+		*timestamp = preciseNow()
+		*tRead = time.Now()
 	}
 	return err
 }
@@ -366,10 +366,10 @@ func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 		return ModemControlPinChange{}, 0, ErrCancelled
 	}
 	var events, n uint32
-	var wall, mono time.Time
+	var timestamp, tRead time.Time
 	err := overlapped(w.handle, func(o *windows.Overlapped) error {
 		return windows.WaitCommEvent(w.handle, &events, o)
-	}, &n, &wall, &mono)
+	}, &n, &timestamp, &tRead)
 	if w.cancelled.Load() {
 		return ModemControlPinChange{}, 0, ErrCancelled
 	}
@@ -380,7 +380,7 @@ func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
 	if err != nil {
 		return ModemControlPinChange{}, 0, w.wrapErr(err, "GetCommModemStatus")
 	}
-	return ModemControlPinChange{Wall: wall, Mono: mono, Asserted: state.Asserted(w.pin)}, 0, nil
+	return ModemControlPinChange{Timestamp: timestamp, TRead: tRead, Asserted: state.Asserted(w.pin)}, 0, nil
 }
 
 // Cancel latches the watch closed and clears the event mask, which the serial

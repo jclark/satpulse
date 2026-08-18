@@ -72,14 +72,14 @@ func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsi
 }
 
 func TestWait(t *testing.T) {
-	mono := time.Now()
-	wall := mono.Add(time.Millisecond)
+	tRead := time.Now()
+	timestamp := tRead.Add(time.Millisecond)
 	w := &testChangeWaiter{next: make(chan testWaitResult, 3)}
 	// An asserted transition is not a leading pulse edge and must not be
 	// published. The following deasserted transition is published even when
 	// the backend reports missed transitions.
-	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall.Add(-time.Second), Mono: mono.Add(-time.Second), Asserted: true}}
-	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Wall: wall, Mono: mono}, missed: 2}
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp.Add(-time.Second), TRead: tRead.Add(-time.Second), Asserted: true}}
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp, TRead: tRead}, missed: 2}
 	candidates := make(chan CandidateEdge, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
@@ -88,8 +88,8 @@ func TestWait(t *testing.T) {
 	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, candidates) }()
 	select {
 	case candidate := <-candidates:
-		if candidate.Wall != wall || candidate.Mono != mono {
-			t.Fatalf("Wait edge = %+v, want supplied wakeup times", candidate.Edge)
+		if candidate.Timestamp != timestamp || candidate.TRead != tRead {
+			t.Fatalf("Wait edge = %+v, want supplied timestamp and read time", candidate.Edge)
 		}
 		if candidate.Uncertainty != 0 {
 			t.Errorf("Wait uncertainty = %v, want no polling-bracket uncertainty", candidate.Uncertainty)
@@ -342,16 +342,16 @@ func TestClassify(t *testing.T) {
 			wantMissed: true,
 		},
 	}
-	// The mono readings are skewed from the wall readings so a midpoint or a
+	// The mono readings are skewed from the stamp readings so a midpoint or a
 	// deadline comparison taken from the wrong clock is caught. deadline is
 	// on the mono timeline, as Poll's is; the "reaching deadline" case
-	// straddles the two, so comparing it against wall would report a miss
+	// straddles the two, so comparing it against stamp would report a miss
 	// one poll late.
 	const monoSkew = time.Millisecond
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			prevAt := clockReading{wall: base, mono: base.Add(monoSkew)}
-			curAt := clockReading{wall: base.Add(tc.curAt), mono: base.Add(tc.curAt + monoSkew)}
+			prevAt := clockReading{stamp: base, mono: base.Add(monoSkew)}
+			curAt := clockReading{stamp: base.Add(tc.curAt), mono: base.Add(tc.curAt + monoSkew)}
 			prev := reading{state: asserted, poll: poll{start: prevAt, end: prevAt}}
 			cur := reading{state: tc.curState, poll: poll{start: curAt, end: curAt}}
 			edge, missed := classify(prev, cur, Wiring{Pin: gpsio.ModemCTS}, base.Add(tc.deadline+monoSkew))
@@ -359,13 +359,13 @@ func TestClassify(t *testing.T) {
 				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
 			}
 			if tc.wantEdgeAt == 0 {
-				if !edge.Wall.IsZero() {
+				if !edge.stamp.IsZero() {
 					t.Errorf("edge = %v, want zero", edge)
 				}
-			} else if want := base.Add(tc.wantEdgeAt); !edge.Wall.Equal(want) {
-				t.Errorf("edge.Wall = %v, want %v", edge.Wall, want)
-			} else if !edge.Mono.Equal(want.Add(monoSkew)) {
-				t.Errorf("edge.Mono = %v, want %v", edge.Mono, want.Add(monoSkew))
+			} else if want := base.Add(tc.wantEdgeAt); !edge.stamp.Equal(want) {
+				t.Errorf("edge stamp = %v, want %v", edge.stamp, want)
+			} else if !edge.mono.Equal(want.Add(monoSkew)) {
+				t.Errorf("edge mono = %v, want %v", edge.mono, want.Add(monoSkew))
 			}
 		})
 	}
@@ -402,10 +402,7 @@ func TestGenerator(t *testing.T) {
 			if tc.msg {
 				g.MsgUTCTime(utc, read, tc.leap)
 			}
-			// The wall reading is skewed from the mono reading so a
-			// generator using the wrong one for either role is caught.
-			wall := tEdge.Add(2 * time.Millisecond)
-			sample, ok := g.Sample(Edge{Wall: wall, Mono: tEdge})
+			sample, ok := g.Sample(Edge{Timestamp: tEdge, TRead: tEdge})
 			if ok != tc.ok {
 				t.Fatalf("Edge ok = %v, want %v", ok, tc.ok)
 			}
@@ -416,11 +413,54 @@ func TestGenerator(t *testing.T) {
 			if !sample.Ref.Equal(wantRef) {
 				t.Errorf("reference = %v, want %v", sample.Ref, wantRef)
 			}
-			if !sample.Sys.Equal(wall) {
-				t.Errorf("system = %v, want %v", sample.Sys, wall)
+			if !sample.Sys.Equal(tEdge) {
+				t.Errorf("system = %v, want %v", sample.Sys, tEdge)
 			}
 			if sample.Leap != tc.leap {
 				t.Errorf("leap = %v, want %v", sample.Leap, tc.leap)
+			}
+		})
+	}
+}
+
+func TestGeneratorTransfersTimestampThroughReadTime(t *testing.T) {
+	tests := []struct {
+		name          string
+		readSinceMsg  time.Duration
+		readAfterEdge time.Duration
+		wantRef       time.Time
+	}{
+		{
+			name:          "delivery correction determines second label",
+			readSinceMsg:  9 * time.Millisecond,
+			readAfterEdge: 10 * time.Millisecond,
+			wantRef:       time.Unix(1_000, 0).UTC(),
+		},
+		{
+			name:          "delivery correction determines message age",
+			readSinceMsg:  3100 * time.Millisecond,
+			readAfterEdge: 100 * time.Millisecond,
+			wantRef:       time.Unix(1_003, 0).UTC(),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			g := NewGenerator(DefaultConfig())
+			msgRead := time.Now()
+			g.MsgUTCTime(time.Unix(1_000, 0).UTC(), msgRead, ptime.LeapSecondNone)
+			tRead := msgRead.Add(tc.readSinceMsg)
+			// Reconstruct Timestamp from wall time to model a kernel or
+			// Windows timestamp without a monotonic reading.
+			timestamp := time.Unix(0, tRead.UnixNano()).Add(-tc.readAfterEdge)
+			sample, ok := g.Sample(Edge{Timestamp: timestamp, TRead: tRead})
+			if !ok {
+				t.Fatal("Edge returned no sample")
+			}
+			if !sample.Ref.Equal(tc.wantRef) {
+				t.Errorf("reference = %v, want %v", sample.Ref, tc.wantRef)
+			}
+			if !sample.Sys.Equal(timestamp) {
+				t.Errorf("system = %v, want timestamp %v", sample.Sys, timestamp)
 			}
 		})
 	}
@@ -431,7 +471,7 @@ func TestGeneratorKeepsNewestMessage(t *testing.T) {
 	newRead := time.Unix(100, 100_000_000)
 	g.MsgUTCTime(time.Unix(200, 0), newRead, ptime.LeapSecondPositive)
 	g.MsgUTCTime(time.Unix(300, 0), newRead.Add(-time.Second), ptime.LeapSecondNegative)
-	sample, ok := g.Sample(Edge{Wall: time.Unix(100, 0), Mono: time.Unix(100, 0)})
+	sample, ok := g.Sample(Edge{Timestamp: time.Unix(100, 0), TRead: time.Unix(100, 0)})
 	if !ok {
 		t.Fatal("Edge returned no sample")
 	}
@@ -460,7 +500,7 @@ func TestGeneratorDelayBounds(t *testing.T) {
 			tRead := time.Unix(900, 0)
 			g.MsgUTCTime(utc, tRead, ptime.LeapSecondNone)
 			at := tRead.Add(-tc.delay)
-			sample, ok := g.Sample(Edge{Wall: at, Mono: at})
+			sample, ok := g.Sample(Edge{Timestamp: at, TRead: at})
 			if ok != tc.ok {
 				t.Fatalf("Edge ok = %v, want %v", ok, tc.ok)
 			}
@@ -476,7 +516,7 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 		name       string
 		utc        time.Time
 		leap       ptime.LeapSecondKind
-		elapsed    time.Duration // edge.Wall - tRead
+		elapsed    time.Duration // edge.Timestamp - tRead
 		expectRef  time.Time
 		expectLeap ptime.LeapSecondKind
 		expectOK   bool
@@ -500,7 +540,7 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 			read := time.Unix(1_000_000, 125_000_000)
 			g.MsgUTCTime(tc.utc, read, tc.leap)
 			at := read.Add(tc.elapsed)
-			sample, ok := g.Sample(Edge{Wall: at, Mono: at})
+			sample, ok := g.Sample(Edge{Timestamp: at, TRead: at})
 			if ok != tc.expectOK {
 				t.Fatalf("Edge ok = %v, want %v", ok, tc.expectOK)
 			}
@@ -608,7 +648,7 @@ func TestHalfCeil(t *testing.T) {
 func TestPollStatsSummary(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
 	newReading := func(offset time.Duration) clockReading {
-		return clockReading{wall: base.Add(offset), mono: base.Add(offset)}
+		return clockReading{stamp: base.Add(offset), mono: base.Add(offset)}
 	}
 	polls := []poll{
 		{start: newReading(0), end: newReading(time.Millisecond)},
@@ -645,12 +685,21 @@ func TestPollStatsSummary(t *testing.T) {
 	}
 }
 
+func TestClockReadingElapsedSinceUsesStamp(t *testing.T) {
+	base := time.Unix(1_700_000_000, 0)
+	start := clockReading{stamp: base, mono: base}
+	end := clockReading{stamp: base.Add(2 * time.Millisecond), mono: base.Add(10 * time.Millisecond)}
+	if got := end.elapsedSince(start); got != 2*time.Millisecond {
+		t.Errorf("elapsedSince = %v, want 2ms from stamp readings", got)
+	}
+}
+
 func TestPollStatsTimingSamplesAreBounded(t *testing.T) {
 	stats := new(PollStats)
 	base := time.Unix(1_700_000_000, 0)
 	for i := range pollStatsSampleLimit + 1 {
-		start := clockReading{wall: base, mono: base}
-		end := clockReading{wall: base.Add(time.Duration(i) + 1), mono: base.Add(time.Duration(i) + 1)}
+		start := clockReading{stamp: base, mono: base}
+		end := clockReading{stamp: base.Add(time.Duration(i) + 1), mono: base.Add(time.Duration(i) + 1)}
 		stats.addPoll(poll{start: start, end: end}, nil)
 	}
 	summary := stats.summary().PollDuration
@@ -663,8 +712,8 @@ func TestPollStatsTimingSamplesAreBounded(t *testing.T) {
 func TestPollStatsLog(t *testing.T) {
 	stats := new(PollStats)
 	stats.begin()
-	start := clockReading{wall: time.Unix(1_700_000_000, 0), mono: time.Unix(1_700_000_000, 0)}
-	end := clockReading{wall: start.wall.Add(2 * time.Millisecond), mono: start.mono.Add(2 * time.Millisecond)}
+	start := clockReading{stamp: time.Unix(1_700_000_000, 0), mono: time.Unix(1_700_000_000, 0)}
+	end := clockReading{stamp: start.stamp.Add(2 * time.Millisecond), mono: start.mono.Add(2 * time.Millisecond)}
 	stats.addPoll(poll{start: start, end: end}, nil)
 	stats.addWindow(true, false)
 
@@ -734,17 +783,20 @@ func TestPoll(t *testing.T) {
 					if e.Uncertainty <= 0 {
 						t.Errorf("candidate %d uncertainty = %v, want positive", i, e.Uncertainty)
 					}
-					since := e.Wall.Sub(f.epoch)
-					pulse := pulseIndex(e.Wall, f.epoch)
+					if !e.TRead.After(e.Timestamp) {
+						t.Errorf("candidate %d read time %v is not after timestamp %v", i, e.TRead, e.Timestamp)
+					}
+					since := e.Timestamp.Sub(f.epoch)
+					pulse := pulseIndex(e.Timestamp, f.epoch)
 					if err := since - time.Duration(pulse)*period; err < -tc.expectTol || err > tc.expectTol {
-						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.Wall, err, pulse, tc.expectTol)
+						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.Timestamp, err, pulse, tc.expectTol)
 					}
 					if i == 0 && (pulse < tc.expectFirstPulse || pulse > tc.expectLastPulse) {
 						t.Errorf("first published edge is pulse %d, want settling to end between pulses %d and %d",
 							pulse, tc.expectFirstPulse, tc.expectLastPulse)
 					}
 					if i > 0 {
-						d := e.Wall.Sub(got[i-1].Wall)
+						d := e.Timestamp.Sub(got[i-1].Timestamp)
 						if d < period-2*tc.expectTol || d > period+2*tc.expectTol {
 							t.Errorf("edge %d follows edge %d by %v, want ~%v", i, i-1, d, period)
 						}
@@ -765,7 +817,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
-			pulse = pulseIndex(nextSettled(candidates).Wall, f.epoch)
+			pulse = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 			seen[pulse] = true
 		}
 		cancel()
@@ -789,7 +841,7 @@ func TestPollOutageResettles(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var first int
 		for first <= 15 {
-			first = pulseIndex(nextSettled(candidates).Wall, f.epoch)
+			first = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 		}
 		cancel()
 		<-errCh
@@ -813,7 +865,7 @@ func TestPollShrinksToFloor(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
-		for pulseIndex(nextSettled(candidates).Wall, f.epoch) < 900 {
+		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 900 {
 		}
 		start := f.calls.Load()
 		for i := 0; i < 50; i++ {
@@ -842,7 +894,7 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
-			last = pulseIndex(nextSettled(candidates).Wall, f.epoch)
+			last = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 			seen[last] = true
 		}
 		cancel()
@@ -883,7 +935,7 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 		}
 		cancel()
 		<-errCh
-		if first := pulseIndex(got[0].Wall, f.epoch); first > 15 {
+		if first := pulseIndex(got[0].Timestamp, f.epoch); first > 15 {
 			t.Errorf("first edge published at pulse %d, want settling despite the jitter plateau", first)
 		}
 		// Settling in the jitter plateau leaves the window at 15.625ms or
@@ -892,8 +944,8 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 			t.Errorf("settled at window %v, want the latch to hold out until the queries pace the loop", capture.window)
 		}
 		for i, e := range got {
-			pulse := pulseIndex(e.Wall, f.epoch)
-			if err := e.Wall.Sub(f.epoch) - time.Duration(pulse)*period; err < -500*time.Microsecond || err > 500*time.Microsecond {
+			pulse := pulseIndex(e.Timestamp, f.epoch)
+			if err := e.Timestamp.Sub(f.epoch) - time.Duration(pulse)*period; err < -500*time.Microsecond || err > 500*time.Microsecond {
 				t.Errorf("edge %d at pulse %d: error %v, want within 500µs of the query-time floor", i, pulse, err)
 			}
 		}
@@ -949,13 +1001,13 @@ func TestPollNarrowPulse(t *testing.T) {
 		}
 		cancel()
 		<-errCh
-		if first := pulseIndex(got[0].Wall, f.epoch); first > 40 {
+		if first := pulseIndex(got[0].Timestamp, f.epoch); first > 40 {
 			t.Errorf("first edge published at pulse %d, want acquisition well before pulse 40", first)
 		}
 		for i, e := range got {
-			pulse := pulseIndex(e.Wall, f.epoch)
-			if err := e.Wall.Sub(f.epoch) - time.Duration(pulse)*period; err < -3*time.Millisecond || err > 3*time.Millisecond {
-				t.Errorf("edge %d at %v: error %v from pulse %d, want within 3ms", i, e.Wall, err, pulse)
+			pulse := pulseIndex(e.Timestamp, f.epoch)
+			if err := e.Timestamp.Sub(f.epoch) - time.Duration(pulse)*period; err < -3*time.Millisecond || err > 3*time.Millisecond {
+				t.Errorf("edge %d at %v: error %v from pulse %d, want within 3ms", i, e.Timestamp, err, pulse)
 			}
 		}
 	})

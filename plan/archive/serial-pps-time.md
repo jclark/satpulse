@@ -64,11 +64,11 @@ Per backend:
 
 | Backend | `Timestamp` | `TRead` |
 |---|---|---|
-| kernel | kernel edge stamp (wall only) | `time.Now` immediately after the fetch (already taken at `kernelpps_linux.go:143`) |
-| poll (non-Windows) | bracket midpoint | the bracket's closing poll reading |
+| kernel | kernel edge stamp (wall only) | `time.Now` immediately after the fetch returns, before cancellation and error checks |
+| poll (non-Windows) | bracket midpoint | the closing poll's end reading |
 | wait (Linux) | the wakeup reading | same reading; `Timestamp == TRead` is the literal truth |
 | wait (Windows) | precise wall read at the wakeup (no mono bit) | adjacent `time.Now` read |
-| poll (Windows) | bracket midpoint of precise wall reads (no mono bit) | the closing poll's `time.Now` reading |
+| poll (Windows) | bracket midpoint of precise wall reads (no mono bit) | the closing poll's end `time.Now` reading |
 
 The two Windows rows produce similar clock pairs but through different code
 paths, and what `TRead - Timestamp` measures varies by backend: delivery latency for
@@ -200,12 +200,14 @@ roughly 200 ms rejection margin used for second labelling.
 The private pair remains useful after `Edge` changes to `Timestamp` and `TRead`. For a
 polled edge, the loop continues scheduling from the interpolated `mono`
 coordinate, publishes the interpolated `stamp` coordinate as `Timestamp`, and publishes
-the closing poll's `mono` value as `TRead`. Thus the Windows-specific choice is
+the closing poll's end `mono` reading as `TRead`. Thus the Windows-specific choice is
 confined to `now()`, internal to polling; it is not part of the `Timestamp`/`TRead`
 contract or the Generator arithmetic.
 
-One plumbing consequence: `classify` must retain or return the bracketing
-`clockReading`s rather than only an `Edge`. The loop still needs the
-interpolated `mono` coordinate of the edge for `nextEdge`, while `Edge.TRead`
-comes separately from the closing poll, so the current `clockReading.edge()`
-conversion of a single reading cannot construct both new fields by itself.
+One plumbing consequence: `classify` returns the interpolated midpoint
+`clockReading` rather than an `Edge`. The loop still needs the midpoint's
+`mono` coordinate for `nextEdge` and its `stamp` coordinate for `Timestamp`,
+while `Edge.TRead` comes separately from the closing poll's end reading, so
+no conversion of a single reading can construct both `Edge` fields; the
+`clockReading.edge()` conversion is deleted and the `Edge` is assembled where
+the candidate is built.

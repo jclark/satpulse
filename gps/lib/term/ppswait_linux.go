@@ -39,8 +39,8 @@ func newWaitPinWatch(t *unixTerm, pin ModemControlPin) (*waitPinWatch, error) {
 
 // Wait blocks the calling goroutine's OS thread in TIOCMIWAIT. Linux cannot
 // interrupt this ioctl, so cancellation becomes observable only after the pin
-// next changes. time.Now is the best clock here, so one reading serves as both
-// Wall and Mono.
+// next changes. time.Now is the best clock here, so the wakeup reading is both
+// the edge proxy and its read time.
 func (w *waitPinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
@@ -94,7 +94,7 @@ func (w *waitPinWatch) Wait() (ModemControlPinChange, int, error) {
 				continue
 			}
 		}
-		return ModemControlPinChange{Wall: at, Mono: at, Asserted: asserted}, missed, nil
+		return ModemControlPinChange{Timestamp: at, TRead: at, Asserted: asserted}, missed, nil
 	}
 }
 

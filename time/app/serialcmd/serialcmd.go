@@ -595,7 +595,7 @@ func (e *ppsOutputError) Unwrap() error {
 }
 
 func (p *edgePrinter) print(device string, edge serialpps.CandidateEdge) error {
-	t := edge.Wall.UTC().Round(time.Microsecond)
+	t := edge.Timestamp.UTC().Round(time.Microsecond)
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.failure != nil {

@@ -41,17 +41,15 @@ const (
 	maxMsgAge = 3 * time.Second
 )
 
-// Edge is the detected time of a leading edge. Wall and Mono are readings of
-// that one instant on the two clocks used here: Wall is the most precise
-// available system-time reading and is what published samples carry; Mono is
-// an ordinary time.Now reading, the only one valid for elapsed-time arithmetic
-// against other time.Now values such as message read times. Polling locates the
-// edge at the midpoint of the modem-state observations straddling it; a wait
-// backend uses the wait primitive's paired wakeup readings. Where time.Now is
-// the best clock available both fields contain the same reading.
+// Edge is a detected leading edge and the time at which the backend read it.
+// Timestamp is the time assigned to the edge: a kernel timestamp, a polling
+// bracket midpoint, or a wait wakeup used as an edge proxy. Its wall reading
+// is always meaningful, and it carries a monotonic reading when the backend
+// can preserve one. TRead is an ordinary time.Now reading captured when the
+// wait or closing poll completed, before subsequent validation.
 type Edge struct {
-	Wall time.Time
-	Mono time.Time
+	Timestamp time.Time
+	TRead     time.Time
 }
 
 // CandidateEdge is an edge reported by a detection backend. Poll reports every
@@ -90,24 +88,23 @@ type Wiring struct {
 }
 
 // clockReading keeps adjacent readings of the clocks used by serial PPS
-// together. wall locates an edge in system time; mono relates it to receiver
-// message read times and paces the polling loop, which must not be disturbed
-// by a step in the system clock. A platform can choose the better pair for
-// measuring short elapsed intervals in elapsedSince.
+// together. stamp is the measurement reading used for short intervals and
+// published edge timestamps; mono paces the polling loop, which must not be
+// disturbed by a step in the system clock.
 type clockReading struct {
-	wall time.Time
-	mono time.Time
+	stamp time.Time
+	mono  time.Time
 }
 
 func (r clockReading) midpoint(other clockReading) clockReading {
 	return clockReading{
-		wall: midpoint(r.wall, other.wall),
-		mono: midpoint(r.mono, other.mono),
+		stamp: midpoint(r.stamp, other.stamp),
+		mono:  midpoint(r.mono, other.mono),
 	}
 }
 
-func (r clockReading) edge() Edge {
-	return Edge{Wall: r.wall, Mono: r.mono}
+func (r clockReading) elapsedSince(start clockReading) time.Duration {
+	return r.stamp.Sub(start.stamp)
 }
 
 type reading struct {
@@ -118,8 +115,7 @@ type reading struct {
 	slept bool      // whether the schedule was still in the future
 }
 
-// poll retains both clock readings around one modem-state query. Its methods
-// choose the platform-appropriate clock for elapsed-time measurements.
+// poll retains both clock readings around one modem-state query.
 type poll struct {
 	start clockReading
 	end   clockReading
@@ -261,9 +257,9 @@ func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh ch
 		}
 		prev := cur
 		missed := inPulse(cur.state, w)
-		var edge Edge
+		var edge clockReading
 		var bracket time.Duration
-		for !missed && edge.Wall.IsZero() {
+		for !missed && edge.stamp.IsZero() {
 			cur, err = readState(ctx, r, prev.start.Add(spacing))
 			if err != nil {
 				return err
@@ -272,18 +268,18 @@ func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh ch
 			polls++
 			slept = slept || cur.slept
 			edge, missed = classify(prev, cur, w, deadline)
-			if !edge.Wall.IsZero() {
+			if !edge.stamp.IsZero() {
 				bracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
 			}
 			prev = cur
 		}
-		if !edge.Wall.IsZero() {
+		if !edge.stamp.IsZero() {
 			// "late" is how far past its scheduled time the catching poll
 			// started: sleep overshoot when the loop is sleep-paced, queue
 			// debt when the queries pace it.
 			lg.Debug("serial PPS caught edge", "window", window, "bracket", bracket,
-				"offset", edge.Mono.Sub(nextEdge), "late", cur.start.Sub(cur.sched), "polls", polls)
-			nextEdge = edge.Mono.Add(period)
+				"offset", edge.mono.Sub(nextEdge), "late", cur.start.Sub(cur.sched), "polls", polls)
+			nextEdge = edge.mono.Add(period)
 			misses = 0
 			if !settled {
 				if spacing == minSpacing {
@@ -301,7 +297,10 @@ func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh ch
 				}
 			}
 			ce := CandidateEdge{
-				Edge:        edge,
+				Edge: Edge{
+					Timestamp: edge.stamp,
+					TRead:     cur.poll.end.mono,
+				},
 				Uncertainty: halfCeil(bracket),
 				Settled:     settled,
 			}
@@ -373,7 +372,7 @@ func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method
 		}
 		if !change.Asserted {
 			ce := CandidateEdge{
-				Edge:    Edge{Wall: change.Wall, Mono: change.Mono},
+				Edge:    Edge{Timestamp: change.Timestamp, TRead: change.TRead},
 				Settled: true,
 			}
 			select {
@@ -393,14 +392,14 @@ func halfCeil(d time.Duration) time.Duration {
 // The deadline says when to stop looking, not whether a measured edge is
 // valid. A bracket spanning a full period or more may contain several
 // leading edges, so its midpoint identifies none of them: it is a miss.
-func classify(prev, cur reading, w Wiring, deadline time.Time) (Edge, bool) {
+func classify(prev, cur reading, w Wiring, deadline time.Time) (clockReading, bool) {
 	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
 		if cur.poll.midpoint().elapsedSince(prev.poll.midpoint()) >= period {
-			return Edge{}, true
+			return clockReading{}, true
 		}
-		return prev.poll.midpoint().midpoint(cur.poll.midpoint()).edge(), false
+		return prev.poll.midpoint().midpoint(cur.poll.midpoint()), false
 	}
-	return Edge{}, !cur.poll.midpoint().mono.Before(deadline)
+	return clockReading{}, !cur.poll.midpoint().mono.Before(deadline)
 }
 
 // inPulse reports whether the state was observed during a pulse. The pulse's
@@ -493,16 +492,23 @@ func (g *Generator) MsgUTCTime(utc, tRead time.Time, leap ptime.LeapSecondKind) 
 // pulse-to-message delay bounds, or for the pulse marking an inserted leap
 // second.
 func (g *Generator) Sample(edge Edge) (Sample, bool) {
-	if g.msgRead.IsZero() || edge.Mono.Sub(g.msgRead) > maxMsgAge {
+	if g.msgRead.IsZero() {
 		return Sample{}, false
 	}
-	// Advancing utc by the monotonic elapsed time since tRead gives the
-	// edge's position on the message's UTC timescale and is immune to any
-	// wall-clock step between the message and the edge. Select the integral
-	// second whose inferred pulse-to-message delay is in the configured
-	// causal interval. The validated interval is narrower than a second, so
-	// the label is unique when it exists.
-	edgeUTC := g.msgUTC.Add(edge.Mono.Sub(g.msgRead))
+	// Transfer the timestamp onto the message-read timeline through TRead.
+	// The long message-to-read interval is monotonic; the short correction
+	// back to the edge uses Timestamp's monotonic reading when it has one and
+	// otherwise its wall reading. A wall-clock step during that correction can
+	// still corrupt it, but a step anywhere else in the message-to-edge span
+	// cannot. Use the transferred interval for both age and UTC extrapolation.
+	edgeSinceMsg := edge.TRead.Sub(g.msgRead) - edge.TRead.Sub(edge.Timestamp)
+	if edgeSinceMsg > maxMsgAge {
+		return Sample{}, false
+	}
+	// Select the integral second whose inferred pulse-to-message delay is in
+	// the configured causal interval. The validated interval is narrower than
+	// a second, so the label is unique when it exists.
+	edgeUTC := g.msgUTC.Add(edgeSinceMsg)
 	ref := edgeUTC.Truncate(time.Second)
 	delay := ref.Sub(edgeUTC)
 	if delay < -g.delayUncertainty {
@@ -537,7 +543,7 @@ func (g *Generator) Sample(edge Edge) (Sample, bool) {
 	}
 	return Sample{
 		Ref:  ref,
-		Sys:  edge.Wall,
+		Sys:  edge.Timestamp,
 		Leap: leap,
 	}, true
 }

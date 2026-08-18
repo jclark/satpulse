@@ -105,17 +105,16 @@ func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
 
 // ModemControlPinChange reports one observed transition of a modem control input.
 type ModemControlPinChange struct {
-	// Wall and Mono are the time the wakeup was observed on two clocks:
-	// Wall is the most precise system-time reading the platform offers and
-	// may carry no monotonic reading, so it must not be used for elapsed-time
-	// arithmetic; Mono is an ordinary time.Now reading, for elapsed time
-	// against other time.Now values. Where time.Now is the best clock
-	// available they are the same reading. The readings are taken on the
-	// waiting thread as soon as the wait ends, before any other call.
-	// A backend that timestamps the edge itself may instead deliver Wall
-	// and Mono as readings of two slightly different instants: the edge,
-	// and its delivery to the waiter.
-	Wall, Mono time.Time
+	// Timestamp is the timestamp assigned to the edge. It always has a
+	// meaningful wall-clock reading. It also has a monotonic reading when the
+	// backend can preserve one; a kernel-provided timestamp does not.
+	Timestamp time.Time
+	// TRead is captured when the backend's wait completes, before subsequent
+	// state or counter validation. It is an ordinary time.Now reading and
+	// therefore carries both wall and monotonic readings. A backend without
+	// an independent edge timestamp uses the wakeup reading, or an adjacent
+	// precise wall-clock reading, as Timestamp.
+	TRead time.Time
 	// Asserted is the pin's sense after the transition that ended the wait,
 	// as far as the platform can determine it. Where the platform can tell
 	// that the wakeup covered more than one transition it does not report the

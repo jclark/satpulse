@@ -6,9 +6,9 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// now reads the clocks behind Edge. time.Now is quantized to the shared
+// now reads the clocks used by the poller. time.Now is quantized to the shared
 // clock page's update (~0.5 ms measured), far coarser than the brackets the
-// polling loop measures, so wall comes from GetSystemTimePreciseAsFileTime,
+// polling loop measures, so stamp comes from GetSystemTimePreciseAsFileTime,
 // which resolves ~100 ns; that reading has no monotonic component, so mono
 // stays a time.Now reading, pacing the loop and serving elapsed-time
 // arithmetic against message read times. The two are adjacent reads rather
@@ -22,13 +22,5 @@ import (
 func now() clockReading {
 	var ft windows.Filetime
 	windows.GetSystemTimePreciseAsFileTime(&ft)
-	return clockReading{wall: time.Unix(0, ft.Nanoseconds()), mono: time.Now()}
-}
-
-// elapsedSince measures from the wall readings on Windows, because that is
-// where the platform's most precise system-clock read appears and time.Now's
-// quantum is too coarse for modem-state read times. Where now returns one
-// reading for both fields the two forms coincide.
-func (r clockReading) elapsedSince(start clockReading) time.Duration {
-	return r.wall.Sub(start.wall)
+	return clockReading{stamp: time.Unix(0, ft.Nanoseconds()), mono: time.Now()}
 }

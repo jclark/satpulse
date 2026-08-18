@@ -217,14 +217,14 @@ func TestSerialConnWaitCapability(t *testing.T) {
 	w := newFakePinWatch()
 	now := time.Now()
 	w.result <- fakeWatchResult{
-		change: term.ModemControlPinChange{Wall: now, Mono: now, Asserted: true},
+		change: term.ModemControlPinChange{Timestamp: now, TRead: now, Asserted: true},
 		missed: 2,
 	}
 	f := &fakeWaitTerm{watch: w}
 	c := newSerialConn(f, term.DevUSBtoUART)
 
 	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait)
-	if err != nil || change.Wall != now || change.Mono != now || !change.Asserted || missed != 2 {
+	if err != nil || change.Timestamp != now || change.TRead != now || !change.Asserted || missed != 2 {
 		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 2, nil", change, missed, err)
 	}
 	if got := w.waitCount(); got != 1 {
@@ -337,13 +337,13 @@ func TestSerialConnKernelMethod(t *testing.T) {
 	w := newFakePinWatch()
 	now := time.Now()
 	w.result <- fakeWatchResult{
-		change: term.ModemControlPinChange{Wall: now, Mono: now, Asserted: false},
+		change: term.ModemControlPinChange{Timestamp: now, TRead: now, Asserted: false},
 		missed: 1,
 	}
 	f := &fakeKernelTerm{fakeWaitTerm: fakeWaitTerm{watch: w}}
 	c := newSerialConn(f, term.DevUART)
 	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel)
-	if err != nil || change.Wall != now || change.Asserted || missed != 1 {
+	if err != nil || change.Timestamp != now || change.TRead != now || change.Asserted || missed != 1 {
 		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
 	}
 	if f.kernelPin != term.ModemDCD {

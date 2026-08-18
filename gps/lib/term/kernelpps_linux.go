@@ -134,13 +134,14 @@ func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 			Clear:  kpps.Edge{Sequence: w.seq.lastClear},
 		}
 		info, err := w.source.Fetch(previous, -1)
+		tRead := time.Now()
 		if w.cancelled.Load() {
 			return ModemControlPinChange{}, 0, ErrCancelled
 		}
 		if err != nil {
 			return ModemControlPinChange{}, 0, err
 		}
-		if change, missed, ok := w.seq.update(info, time.Now()); ok {
+		if change, missed, ok := w.seq.update(info, tRead); ok {
 			return change, missed, nil
 		}
 	}
@@ -148,16 +149,15 @@ func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 
 // kernelPPSSeq turns the independently sequenced assert and clear edges in a
 // kpps.Info into pin changes. A fetch reports the most recent edge of each
-// polarity, but carries one monotonic reading, taken when it returned. That
-// reading dates the newest edge, so only that edge is reported; anything else
-// the fetch found is counted as missed, along with the edges whose timestamps
-// the latches had already overwritten.
+// polarity, but a Wait returns one change, so only the newest edge is
+// reported; anything else the fetch found is counted as missed, along with
+// the edges whose timestamps the latches had already overwritten.
 type kernelPPSSeq struct {
 	lastAssert uint32
 	lastClear  uint32
 }
 
-func (s *kernelPPSSeq) update(info kpps.Info, mono time.Time) (ModemControlPinChange, int, bool) {
+func (s *kernelPPSSeq) update(info kpps.Info, tRead time.Time) (ModemControlPinChange, int, bool) {
 	// The counters only ever advance, so the unsigned difference is the number
 	// of captures since the last fetch however the 32-bit counter wraps.
 	assertDelta := info.Assert.Sequence - s.lastAssert
@@ -169,10 +169,10 @@ func (s *kernelPPSSeq) update(info kpps.Info, mono time.Time) (ModemControlPinCh
 	}
 	// One edge is reported and the rest are missed: the ones whose timestamps
 	// the latches overwrote, and, when both polarities are new, the older of
-	// the two, which the reading does not date.
+	// the two, since a wait reports one change.
 	missed := int(assertDelta) + int(clearDelta) - 1
-	assert := ModemControlPinChange{Wall: info.Assert.T, Mono: mono, Asserted: true}
-	clear := ModemControlPinChange{Wall: info.Clear.T, Mono: mono, Asserted: false}
+	assert := ModemControlPinChange{Timestamp: info.Assert.T, TRead: tRead, Asserted: true}
+	clear := ModemControlPinChange{Timestamp: info.Clear.T, TRead: tRead, Asserted: false}
 	if clearDelta == 0 {
 		return assert, missed, true // only the assert is new
 	}

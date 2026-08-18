@@ -294,11 +294,11 @@ func TestDispatcherSerialPPSCandidateWritesSettledSample(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Wall: edge, Mono: edge}})
+	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Timestamp: edge, TRead: edge}})
 	if len(shm.writes) != 0 {
 		t.Fatalf("unsettled candidate produced %d SHM writes, want none", len(shm.writes))
 	}
-	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Wall: edge, Mono: edge}, Settled: true})
+	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Timestamp: edge, TRead: edge}, Settled: true})
 
 	if len(shm.writes) != 1 {
 		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))

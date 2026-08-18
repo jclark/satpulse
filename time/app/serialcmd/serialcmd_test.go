@@ -231,7 +231,7 @@ func TestPrintSpeedInfo(t *testing.T) {
 
 func TestEdgePrinter(t *testing.T) {
 	edge := serialpps.Edge{
-		Wall: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
+		Timestamp: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
 	}
 	for _, tc := range []struct {
 		name       string
@@ -279,7 +279,7 @@ func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gps
 	select {
 	case c.state = <-c.next:
 		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
-		return gpsio.ModemControlPinChange{Wall: t, Mono: t, Asserted: c.state.Asserted(pin)}, 0, nil
+		return gpsio.ModemControlPinChange{Timestamp: t, TRead: t, Asserted: c.state.Asserted(pin)}, 0, nil
 	case <-ctx.Done():
 		return gpsio.ModemControlPinChange{}, 0, ctx.Err()
 	}
