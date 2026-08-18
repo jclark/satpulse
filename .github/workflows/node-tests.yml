@@ -33,7 +33,7 @@ jobs:
       run: npm test --prefix webui
 
     # The browser suite runs the real binaries against real frontends, so it
-    # needs a Go toolchain, a full build, and a Playwright browser.
+    # needs a Go toolchain and a full build.
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
@@ -49,27 +49,32 @@ jobs:
         test "$version" != "undefined"
         echo "version=$version" >> "$GITHUB_OUTPUT"
 
-    - name: Cache Playwright browsers
-      id: playwright-cache
-      uses: actions/cache@v4
-      with:
-        path: ~/.cache/ms-playwright
-        key: playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
+    # The browser and the system libraries it needs come from Playwright's own
+    # image, whose tag must match the @playwright/test the suite runs. Pulling
+    # it in its own step keeps a slow registry off the suite's timing, and
+    # bounds it: apt from the runner's Ubuntu mirror used to hang for the whole
+    # 20-minute job budget.
+    - name: Pull the Playwright image
+      timeout-minutes: 10
+      run: docker pull mcr.microsoft.com/playwright:v${{ steps.playwright.outputs.version }}-noble
 
-    # The browser cache holds no apt packages, so install the system libraries
-    # every run; only the browser download is skipped on a cache hit.
-    - name: Install Playwright browser
-      run: |
-        if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
-          npx --prefix webui playwright install-deps chromium
-        else
-          npx --prefix webui playwright install --with-deps chromium
-        fi
-
+    # Only the browser comes from the image; the daemons under test are the
+    # binaries just built on the runner. Mounting the workspace at its own path
+    # and running as the runner user leaves absolute paths and file ownership
+    # as they are outside the container, so the report and rundirs stay
+    # readable by the upload step. --ipc=host keeps chromium off the
+    # container's small /dev/shm.
     - name: Run e2e suite
       env:
         SATPULSE_E2E_RUNDIR_PARENT: ${{ github.workspace }}/e2e-run-dirs
-      run: npm run e2e --prefix webui --workspace @satpulse/e2e
+      run: |
+        docker run --rm --ipc=host \
+          --user "$(id -u):$(id -g)" \
+          --volume "$GITHUB_WORKSPACE:$GITHUB_WORKSPACE" \
+          --workdir "$GITHUB_WORKSPACE" \
+          --env CI --env HOME=/tmp --env SATPULSE_E2E_RUNDIR_PARENT \
+          mcr.microsoft.com/playwright:v${{ steps.playwright.outputs.version }}-noble \
+          npm run e2e --prefix webui --workspace @satpulse/e2e
 
     - name: Upload e2e artifacts
       if: failure()
