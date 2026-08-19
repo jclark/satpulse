@@ -191,6 +191,7 @@ func NewDispatcher(
 const (
 	tickPeriod                = time.Second / 4
 	serialPPSFirstEdgeTimeout = 30 * time.Second
+	serialPPSMaxUncertainty   = time.Millisecond
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan serialpps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -321,7 +322,7 @@ func (d *Dispatcher) serialPPSCandidateEdge(ce serialpps.CandidateEdge) {
 			Settled:     ce.Settled,
 		},
 	})
-	if ce.Settled {
+	if ce.Uncertainty <= serialPPSMaxUncertainty || ce.Settled {
 		d.serialPPSEdge(ce.Edge)
 	}
 }

@@ -30,10 +30,10 @@ type poller struct {
 // window additively until signal loss restarts the cycle from acquisition.
 //
 // Candidates caught during acquisition have Settled false; candidates from
-// narrowing and tracking have Settled true. Consumers that require usable
-// edges must filter on Settled and take the embedded Edge. Every caught edge
-// and every window size change is logged to lg at debug level. If stats is
-// non-nil, Poll records timing and outcome statistics in it.
+// narrowing and tracking have Settled true. Consumers decide whether an edge
+// is usable from its Uncertainty and Settled state. Every caught edge and every
+// window size change is logged to lg at debug level. If stats is non-nil, Poll
+// records timing and outcome statistics in it.
 func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()

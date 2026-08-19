@@ -31,10 +31,11 @@ type Edge struct {
 // CandidateEdge is an edge reported by a detection backend. Poll reports every
 // edge it catches so that diagnostic consumers can follow acquisition:
 // Uncertainty is half the width of the polling bracket, and Settled says that
-// scheduled sleeps no longer limit the normal resolution. Timing consumers
-// must ignore polling candidates until they settle. A wait or kernel candidate
-// carries the backend timestamp directly, has no polling uncertainty, and is
-// always settled.
+// scheduled sleeps no longer limit the normal resolution. Timing consumers can
+// accept acquisition candidates with sufficiently small Uncertainty, and use
+// Settled to accept the resolution the hardware can achieve. A wait or kernel
+// candidate carries the backend timestamp directly, has no polling uncertainty,
+// and is always settled.
 type CandidateEdge struct {
 	Edge
 	Uncertainty time.Duration
