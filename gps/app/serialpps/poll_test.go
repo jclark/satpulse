@@ -193,65 +193,97 @@ func TestPoll(t *testing.T) {
 	}
 }
 
-// TestRunTrackNoisyBoundary runs the production controller against a varying
-// required poll count and an early false miss. It must retain fast startup
-// convergence, then stabilize with one-poll adjustments around the boundary.
-func TestRunTrackNoisyBoundary(t *testing.T) {
+// TestTrackSimulation drives the production tracking control with a
+// query-paced reader. Initial offsets make geometric narrowing overshoot;
+// continuing tracking must recover additively and settle at a few real state
+// reads per attempt.
+func TestTrackSimulation(t *testing.T) {
 	type sample struct {
-		polls  int
-		caught bool
+		window     time.Duration
+		caught     bool
+		stateReads int
 	}
 	type minute struct {
-		polls, catches, misses, minPolls, maxPolls, endPolls int
+		stateReads, catches, misses, minReads, maxReads int
+		endWindow                                       time.Duration
 	}
-	const minutes = 10
-	required := [...]int{32, 34, 33, 35, 34, 36, 33, 35, 32, 36}
+	const (
+		minutes     = 5
+		queryPeriod = 200 * time.Microsecond
+	)
+	offsets := [...]time.Duration{-250 * time.Microsecond, -150 * time.Microsecond,
+		-50 * time.Microsecond, 50 * time.Microsecond, 150 * time.Microsecond, 250 * time.Microsecond}
 	done := errors.New("simulation complete")
 	samples := make([]sample, 0, minutes*60)
-	err := runTrack(minSpacing, func(polls int) (trackObservation, error) {
+	var events []trackEvent
+	err := track(initialPolls*minSpacing, func(window time.Duration) (trackObservation, error) {
 		if len(samples) == cap(samples) {
 			return trackObservation{}, done
 		}
-		caught := polls >= required[len(samples)%len(required)] && len(samples) != 4
-		samples = append(samples, sample{polls: polls, caught: caught})
-		return trackObservation{caught: caught, bracket: minSpacing}, nil
-	}, func(trackEvent) {})
+		offset := time.Duration(0)
+		if len(samples) == 3 {
+			offset = 300 * time.Microsecond
+		} else if len(samples) > 3 {
+			offset = offsets[(len(samples)-4)%len(offsets)]
+		}
+		caught := offset > -window/2 && offset < window/2
+		stateReads := int((window+queryPeriod-1)/queryPeriod) + 1
+		if caught {
+			fromOpen := offset + window/2
+			stateReads = int((fromOpen+queryPeriod-1)/queryPeriod) + 1
+		}
+		samples = append(samples, sample{window: window, caught: caught, stateReads: stateReads})
+		return trackObservation{caught: caught, bracket: queryPeriod, stateReads: stateReads}, nil
+	}, func(e trackEvent) {
+		events = append(events, e)
+	})
 	if !errors.Is(err, done) {
-		t.Fatalf("runTrack error = %v, want simulation completion", err)
+		t.Fatalf("track error = %v, want simulation completion", err)
 	}
 	got := make([]minute, minutes)
 	for i, s := range samples {
 		m := &got[i/60]
-		m.polls += s.polls
+		m.stateReads += s.stateReads
 		if s.caught {
 			m.catches++
 		} else {
 			m.misses++
 		}
-		if m.minPolls == 0 || s.polls < m.minPolls {
-			m.minPolls = s.polls
+		if m.minReads == 0 || s.stateReads < m.minReads {
+			m.minReads = s.stateReads
 		}
-		m.maxPolls = max(m.maxPolls, s.polls)
-		m.endPolls = s.polls
+		m.maxReads = max(m.maxReads, s.stateReads)
+		m.endWindow = s.window
 	}
 	for i, m := range got {
-		t.Logf("minute %d: polls=%d catches=%d misses=%d min=%d max=%d end=%d",
-			i+1, m.polls, m.catches, m.misses, m.minPolls, m.maxPolls, m.endPolls)
+		t.Logf("minute %d: stateReads=%d catches=%d misses=%d min=%d max=%d endWindow=%v",
+			i+1, m.stateReads, m.catches, m.misses, m.minReads, m.maxReads, m.endWindow)
 	}
 	want := []minute{
-		{polls: 2426, catches: 55, misses: 5, minPolls: 33, maxPolls: 64, endPolls: 36},
-		{polls: 2146, catches: 56, misses: 4, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2145, catches: 57, misses: 3, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2154, catches: 57, misses: 3, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2151, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2155, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2149, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2153, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2157, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
-		{polls: 2151, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{stateReads: 214, catches: 59, misses: 1, minReads: 2, maxReads: 9, endWindow: 800 * time.Microsecond},
+		{stateReads: 211, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
+		{stateReads: 204, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
+		{stateReads: 211, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
+		{stateReads: 204, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("minute summaries = %+v, want %+v", got, want)
+	}
+	wantInitial := []trackEventKind{
+		trackStarted, trackInitialChanged, trackInitialChanged, trackInitialChanged, trackMissed,
+	}
+	if len(events) < len(wantInitial) {
+		t.Fatalf("tracking events = %v, want at least %d", events, len(wantInitial))
+	}
+	for i, want := range wantInitial {
+		if events[i].kind != want {
+			t.Errorf("tracking event %d kind = %v, want %v", i, events[i].kind, want)
+		}
+	}
+	firstRecovery := events[len(wantInitial)-1]
+	if firstRecovery.window != 400*time.Microsecond || firstRecovery.nextWindow != 800*time.Microsecond {
+		t.Errorf("first additive recovery is %v -> %v, want 400us -> 800us",
+			firstRecovery.window, firstRecovery.nextWindow)
 	}
 }
 
@@ -322,7 +354,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		if !strings.Contains(status, `msg="serial PPS track status" reason=miss`) {
 			t.Errorf("logs %q do not report the missed pulse at info level", status)
 		}
-		for _, field := range []string{"polls=", "reduction=", "shrinkAfter=", "spacing=", "window=", "bracket=", "misses=1"} {
+		for _, field := range []string{"window=", "nextWindow=", "stateReads=", "bracket=", "misses=1"} {
 			if !strings.Contains(status, field) {
 				t.Errorf("track status %q does not contain %q", status, field)
 			}
@@ -351,8 +383,11 @@ func TestPollOutageResettles(t *testing.T) {
 	})
 }
 
-// TestPollShrinksToFloor checks that proportional startup reductions bring
-// tracking down to a handful of state queries per pulse within a few minutes.
+// TestPollShrinksToFloor checks that the additive shrink walks the settled
+// window down until steady state costs only a handful of state queries per
+// pulse. The descent is one bracket gap per shrinkAfter catches from a
+// settled window of about initialPolls gaps, so it needs several hundred
+// simulated pulses to reach the floor.
 func TestPollShrinksToFloor(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
@@ -361,7 +396,7 @@ func TestPollShrinksToFloor(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
-		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 200 {
+		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 900 {
 		}
 		start := f.calls.Load()
 		for i := 0; i < 50; i++ {

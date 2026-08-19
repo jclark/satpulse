@@ -19,22 +19,22 @@ type poller struct {
 	nextEdge    time.Time
 	lastBracket time.Duration
 	slept       bool
-	polls       int
+	stateReads  int
 }
 
 // Poll adaptively polls for the pulse described by w and sends a candidate for
-// every leading edge it catches. It repeatedly runs two phases. Acquisition
-// ends when polling resolution is acquired, or restarts from cold after losing
-// the partly acquired signal. Tracking then adjusts the number of polls until
-// signal loss restarts the cycle from acquisition.
+// every leading edge it catches. It repeatedly runs acquisition followed by
+// tracking. Acquisition ends when polling resolution is acquired, or restarts
+// from cold after losing the partly acquired signal. Tracking first reduces
+// the window geometrically, then adjusts it additively until signal loss
+// restarts the cycle from acquisition.
 //
 // Candidates caught during acquisition have Settled false; candidates from
 // tracking have Settled true. Consumers decide whether an edge is usable from
-// its Uncertainty and Settled state. Every caught edge and every poll-count
-// change is logged to lg at debug level. Tracking status is logged at info
-// level when tracking starts, its proportional reduction changes, or a pulse
-// is missed. If stats is non-nil, Poll records timing and outcome statistics
-// in it.
+// its Uncertainty and Settled state. Every caught edge is logged to lg at
+// debug level. Tracking starts, window changes, misses, and loss are logged at
+// info level with actual state-read counts. If stats is non-nil, Poll records
+// timing and outcome statistics in it.
 func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -44,14 +44,14 @@ func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh ch
 		return err
 	}
 	for {
-		spacing, acquired, err := p.acquire()
+		window, acquired, err := p.acquire()
 		if err != nil {
 			return err
 		}
 		if !acquired {
 			continue
 		}
-		if err := p.track(spacing); err != nil {
+		if err := p.track(window); err != nil {
 			return err
 		}
 	}
@@ -90,7 +90,7 @@ const (
 // spacings that the state queries pace the loop. A slept catch or miss resets
 // that confirmation. Misses at the full-period window sweep the poll-grid
 // phase; missLimit misses after the window narrows abandon this attempt. The
-// returned duration is the spacing with which tracking should begin.
+// returned duration is the window with which tracking should begin.
 func (p *poller) acquire() (time.Duration, bool, error) {
 	spacing := maxWindow / initialPolls
 	misses, queryPaced := 0, 0
@@ -122,7 +122,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 				}
 			}
 			if acquired {
-				return spacing, true, nil
+				return initialPolls * spacing, true, nil
 			}
 			continue
 		}
@@ -144,140 +144,157 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 	}
 }
 
-const (
-	// pollReductionDivisor makes early reductions proportional to the number
-	// of polls, while the minimum reduction of one poll makes adjustment
-	// additive near equilibrium.
-	pollReductionDivisor = 8
-	// maxShrinkAfter is the eventual interval between attempts to use fewer
-	// polls. At one pulse per second, 300 makes such probes about five minutes
-	// apart. shrinkAfter starts at one after every acquisition and rises by one
-	// after each reduction; misses do not reset it.
-	maxShrinkAfter = 300
-)
-
 type trackObservation struct {
-	caught  bool
-	bracket time.Duration
+	caught     bool
+	bracket    time.Duration
+	stateReads int
 }
+
+type trackAttempt func(time.Duration) (trackObservation, error)
 
 type trackEventKind uint8
 
 const (
 	trackStarted trackEventKind = iota
+	trackInitialChanged
 	trackReduced
 	trackMissed
 	trackLost
 )
 
 type trackEvent struct {
-	kind        trackEventKind
-	polls       int
-	reduction   int
-	shrinkAfter int
-	misses      int
+	kind               trackEventKind
+	window, nextWindow time.Duration
+	observation        trackObservation
+	catches, misses    int
 }
 
-// track adapts real polling windows and logging to the tracking controller.
-func (p *poller) track(spacing time.Duration) error {
-	reportedReduction := 0
-	logStatus := func(reason string, e trackEvent) {
-		p.lg.Info("serial PPS track status", "reason", reason,
-			"polls", e.polls, "reduction", e.reduction, "shrinkAfter", e.shrinkAfter,
-			"spacing", spacing, "window", time.Duration(e.polls)*spacing,
-			"bracket", p.lastBracket, "misses", e.misses)
+// track adapts the real polling window and logging to the shared tracking
+// control. Tests call the same track function with a simulated attempt.
+func (p *poller) track(window time.Duration) error {
+	attempt := func(window time.Duration) (trackObservation, error) {
+		spacing := max(window/initialPolls, minSpacing)
+		caught, err := p.pollWindow(window, spacing, true)
+		return trackObservation{caught: caught, bracket: p.lastBracket, stateReads: p.stateReads}, err
 	}
-	return runTrack(spacing, func(polls int) (trackObservation, error) {
-		caught, err := p.pollWindow(time.Duration(polls)*spacing, spacing, true)
-		return trackObservation{caught: caught, bracket: p.lastBracket}, err
-	}, func(e trackEvent) {
-		switch e.kind {
-		case trackStarted:
-			reportedReduction = e.reduction
-			logStatus("start", e)
-		case trackReduced:
-			p.lg.Debug("serial PPS poll count reduced", "polls", e.polls,
-				"window", time.Duration(e.polls)*spacing, "shrinkAfter", e.shrinkAfter)
-			if e.reduction != reportedReduction {
-				reportedReduction = e.reduction
-				logStatus("reduction", e)
-			}
-		case trackMissed:
-			reportedReduction = e.reduction
-			p.lg.Debug("serial PPS poll count increased", "polls", e.polls,
-				"window", time.Duration(e.polls)*spacing, "misses", e.misses)
-			logStatus("miss", e)
-		case trackLost:
-			logStatus("lost", e)
-		}
-	})
+	return track(window, attempt, p.logTrackEvent)
 }
 
-// runTrack controls CPU use directly in numbers of scheduled polls. It starts
-// with initialPolls across the acquired window. After shrinkAfter consecutive
-// catches it reduces polls by one eighth, but always by at least one, and then
-// increments shrinkAfter up to maxShrinkAfter. Misses move halfway back toward
-// the last poll count validated by catches and reduce the next downward step;
-// once that step reaches one, tracking adjusts additively. missLimit
-// consecutive misses, or growth reaching maxWindow, stop tracking so
-// acquisition can restart from cold.
-func runTrack(spacing time.Duration, attempt func(int) (trackObservation, error), report func(trackEvent)) error {
-	polls := initialPolls
-	catches, misses := 0, 0
-	shrinkAfter := 1
-	headroom := 0
-	reduction := max(1, polls/pollReductionDivisor)
-	reportEvent := func(kind trackEventKind) {
-		report(trackEvent{kind: kind, polls: polls, reduction: reduction,
-			shrinkAfter: shrinkAfter, misses: misses})
+func (p *poller) logTrackEvent(e trackEvent) {
+	switch e.kind {
+	case trackStarted:
+		p.lg.Info("serial PPS track status", "reason", "start", "window", e.window)
+	case trackInitialChanged:
+		p.lg.Info("serial PPS track status", "reason", "initial",
+			"window", e.window, "nextWindow", e.nextWindow,
+			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket)
+	case trackReduced:
+		p.lg.Info("serial PPS track status", "reason", "shrink",
+			"window", e.window, "nextWindow", e.nextWindow,
+			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
+			"catches", e.catches)
+	case trackMissed:
+		p.lg.Info("serial PPS track status", "reason", "miss",
+			"window", e.window, "nextWindow", e.nextWindow,
+			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
+			"misses", e.misses)
+	case trackLost:
+		p.lg.Info("serial PPS track status", "reason", "lost",
+			"window", e.window, "stateReads", e.observation.stateReads,
+			"bracket", e.observation.bracket, "misses", e.misses)
 	}
-	reportEvent(trackStarted)
+}
+
+// track first reduces the acquired window geometrically and then maintains it
+// additively. Keeping the polling operation behind attempt lets deterministic
+// tests execute this exact control flow.
+func track(window time.Duration, attempt trackAttempt, report func(trackEvent)) error {
+	report(trackEvent{kind: trackStarted, window: window})
+	window, initial, err := trackInitial(window, attempt, report)
+	if err != nil {
+		return err
+	}
+	return trackContinue(window, initial, attempt, report)
+}
+
+// trackInitial geometrically reduces an acquired window. Each catch replaces
+// the window with the greater of half its size and two bracket widths. It ends
+// when that calculation leaves the window unchanged or at the first miss.
+func trackInitial(window time.Duration, attempt trackAttempt, report func(trackEvent)) (time.Duration, trackObservation, error) {
 	for {
-		obs, err := attempt(polls)
+		obs, err := attempt(window)
+		if err != nil {
+			return 0, trackObservation{}, err
+		}
+		if !obs.caught {
+			return window, obs, nil
+		}
+		nextWindow := max(window/2, 2*obs.bracket)
+		if nextWindow == window {
+			return window, obs, nil
+		}
+		report(trackEvent{kind: trackInitialChanged, window: window,
+			nextWindow: nextWindow, observation: obs})
+		window = nextWindow
+	}
+}
+
+// shrinkAfter is the target miss rate: the continuing tracking window widens
+// by a bracket width at each end on a miss and narrows by the same after this
+// many consecutive catches.
+const shrinkAfter = 60
+
+// trackContinue maintains the steady-state window additively. A miss grows
+// the window by the last bracket width at each end. Every shrinkAfter-th
+// consecutive catch removes the current bracket width from each end while the
+// window is at least four bracket widths. initial is the observation that
+// ended trackInitial, and may represent a miss already consumed there.
+func trackContinue(window time.Duration, initial trackObservation, attempt trackAttempt, report func(trackEvent)) error {
+	catches, misses := 0, 0
+	if !initial.caught {
+		misses = 1
+		var lost bool
+		window, lost = growTrackWindow(window, initial, misses, report)
+		if lost {
+			return nil
+		}
+	}
+	for {
+		obs, err := attempt(window)
 		if err != nil {
 			return err
 		}
 		if obs.caught {
 			misses = 0
 			catches++
-			if catches < shrinkAfter {
-				continue
-			}
-			catches = 0
-			// Two bracket widths keep the edge and its uncertainty inside
-			// the window. Express that floor in scheduled polls so polls,
-			// rather than a duration, remains the controller state.
-			minPolls := max(2, int((2*obs.bracket+spacing-1)/spacing))
-			nextPolls := max(minPolls, polls-reduction)
-			headroom = 0
-			if nextPolls < polls {
-				headroom = polls - nextPolls
-				polls = nextPolls
-				shrinkAfter = min(shrinkAfter+1, maxShrinkAfter)
-				reduction = min(headroom, max(1, polls/pollReductionDivisor))
-				reportEvent(trackReduced)
+			if catches >= shrinkAfter && window >= 4*obs.bracket {
+				nextWindow := window - 2*obs.bracket
+				report(trackEvent{kind: trackReduced, window: window,
+					nextWindow: nextWindow, observation: obs, catches: catches})
+				window = nextWindow
+				catches = 0
 			}
 			continue
 		}
 		misses++
-		if misses >= missLimit {
-			reportEvent(trackLost)
+		nextWindow, lost := growTrackWindow(window, obs, misses, report)
+		if lost {
 			return nil
 		}
+		window = nextWindow
 		catches = 0
-		growth := 1
-		if headroom > 0 {
-			growth = (headroom + 1) / 2
-			headroom -= growth
-		}
-		polls += growth
-		reduction = min(reduction, growth)
-		if polls >= int(maxWindow/spacing) {
-			reportEvent(trackLost)
-			return nil
-		}
-		reportEvent(trackMissed)
 	}
+}
+
+func growTrackWindow(window time.Duration, obs trackObservation, misses int, report func(trackEvent)) (time.Duration, bool) {
+	if misses >= missLimit || window+2*obs.bracket >= maxWindow {
+		report(trackEvent{kind: trackLost, window: window, observation: obs, misses: misses})
+		return window, true
+	}
+	nextWindow := window + 2*obs.bracket
+	report(trackEvent{kind: trackMissed, window: window, nextWindow: nextWindow,
+		observation: obs, misses: misses})
+	return nextWindow, false
 }
 
 // clockReading keeps adjacent readings of the clocks used by serial PPS
@@ -326,7 +343,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 	}
 	p.stats.addPoll(cur.poll, nil)
 	p.slept = false
-	p.polls = 1
+	p.stateReads = 1
 	// The windows advance in lockstep with the pulses, so treating an
 	// in-progress pulse at the open as a miss would reopen at the same phase
 	// every period and never acquire; poll through it instead. slept accumulates
@@ -339,7 +356,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 			return false, err
 		}
 		p.stats.addPoll(cur.poll, &prev.poll)
-		p.polls++
+		p.stateReads++
 		p.slept = p.slept || cur.slept
 	}
 	prev := cur
@@ -351,7 +368,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 			return false, err
 		}
 		p.stats.addPoll(cur.poll, &prev.poll)
-		p.polls++
+		p.stateReads++
 		p.slept = p.slept || cur.slept
 		edge, missed = classify(prev, cur, p.w, deadline)
 		if !edge.stamp.IsZero() {
@@ -368,7 +385,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
 	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
-		"offset", edge.mono.Sub(nextEdge), "late", cur.start.Sub(cur.sched), "polls", p.polls)
+		"offset", edge.mono.Sub(nextEdge), "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads)
 	p.stats.addWindow(true, acquired)
 	p.nextEdge = edge.mono.Add(period)
 	ce := CandidateEdge{
