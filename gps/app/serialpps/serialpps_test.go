@@ -567,8 +567,11 @@ func TestGeneratorLeapCrossing(t *testing.T) {
 // stallAfter (relative to epoch) by that much, stretching one bracket --
 // the noise event that made a latch comparing consecutive brackets misfire
 // in the daemon. A nonzero slowCallDur replaces callDur from slowFrom until
-// slowTo, modelling a transient run of slow queries. calls counts the state
-// queries.
+// slowTo, modelling a transient run of slow queries. A nonzero stateRefresh
+// exposes pulse-state changes only on that time grid, and edgeCallDur replaces
+// callDur for the one query that first observes each leading edge, modelling a
+// coarse status-delivery bracket around otherwise fast cached queries. calls
+// counts the state queries.
 type fakePulse struct {
 	epoch          time.Time
 	width          time.Duration
@@ -582,7 +585,11 @@ type fakePulse struct {
 	slowFrom       time.Duration
 	slowTo         time.Duration
 	slowCallDur    time.Duration
+	stateRefresh   time.Duration
+	edgeCallDur    time.Duration
 	stalled        bool
+	haveState      bool
+	lastState      gpsio.ModemControlPinState
 	lastEnd        time.Time
 	seq            uint32
 	calls          atomic.Int64
@@ -607,17 +614,70 @@ func (f *fakePulse) ModemControlPinState() (gpsio.ModemControlPinState, error) {
 	if f.slowCallDur > 0 && since >= f.slowFrom && since < f.slowTo {
 		callDur = f.slowCallDur
 	}
+	if state := f.state(since); f.edgeCallDur > 0 && f.haveState &&
+		f.lastState.Asserted(gpsio.ModemCTS) && !state.Asserted(gpsio.ModemCTS) {
+		callDur = f.edgeCallDur
+	}
 	time.Sleep(callDur)
-	since = time.Since(f.epoch)
+	state := f.state(time.Since(f.epoch))
+	f.lastState = state
+	f.haveState = true
+	return state, nil
+}
+
+func (f *fakePulse) state(since time.Duration) gpsio.ModemControlPinState {
+	if f.stateRefresh > 0 && since >= 0 {
+		since = since.Truncate(f.stateRefresh)
+	}
 	n := int(since / period)
 	off := since % period
 	if f.lateEvery > 0 && n%f.lateEvery == 0 {
 		off -= f.late
 	}
 	if since >= 0 && off >= 0 && off < f.width && !(f.offTo > 0 && n >= f.offFrom && n < f.offTo) {
-		return 0, nil
+		return 0
 	}
-	return gpsio.ModemControlPinState(1 << gpsio.ModemCTS), nil
+	return gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
+}
+
+// TestPollSettlesWithCoarseStateRefresh exercises the former fixed point: the
+// ordinary cached query takes only 5 us, but a state refresh stretches each
+// catching bracket to about 2 ms. The old window-driven acquisition stalled
+// above minSpacing while every caught window remained sleep-paced.
+func TestPollSettlesWithCoarseStateRefresh(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
+		f := &fakePulse{
+			epoch:        time.Now().Add(350 * time.Millisecond),
+			width:        100 * time.Millisecond,
+			callDur:      5 * time.Microsecond,
+			stateRefresh: 2 * time.Millisecond,
+			edgeCallDur:  4 * time.Millisecond,
+		}
+		ctx, cancel := context.WithCancel(context.Background())
+		candidates := make(chan CandidateEdge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		deadline := time.After(20 * period)
+		settled := 0
+		timedOut := false
+		for settled < 3 && !timedOut {
+			select {
+			case candidate := <-candidates:
+				if candidate.Settled {
+					settled++
+				}
+			case <-deadline:
+				timedOut = true
+			}
+		}
+		cancel()
+		if err := <-errCh; err != context.Canceled {
+			t.Fatalf("Poll error = %v, want context.Canceled", err)
+		}
+		if timedOut {
+			t.Fatal("Poll did not settle with coarse modem-state refreshes")
+		}
+	})
 }
 
 // pulseIndex is the index of the pulse nearest t, counting from epoch.
