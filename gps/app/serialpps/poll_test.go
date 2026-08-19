@@ -1,9 +1,11 @@
 package serialpps
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -237,7 +239,9 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		var logs bytes.Buffer
+		lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
+		go func() { errCh <- Poll(ctx, lg, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
 			pulse = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
@@ -250,6 +254,15 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		}
 		if !seen[15] || !seen[17] {
 			t.Errorf("pulses seen = %v, want 15 and 17 published around the missed pulse", seen)
+		}
+		status := logs.String()
+		if !strings.Contains(status, `msg="serial PPS track status" reason=miss`) {
+			t.Errorf("logs %q do not report the missed pulse at info level", status)
+		}
+		for _, field := range []string{"polls=", "reduction=", "shrinkAfter=", "spacing=", "window=", "bracket=", "misses=1"} {
+			if !strings.Contains(status, field) {
+				t.Errorf("track status %q does not contain %q", status, field)
+			}
 		}
 	})
 }
