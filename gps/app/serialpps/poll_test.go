@@ -194,96 +194,211 @@ func TestPoll(t *testing.T) {
 }
 
 // TestTrackSimulation drives the production tracking control with a
-// query-paced reader. Initial offsets make geometric narrowing overshoot;
-// continuing tracking must recover additively and settle at a few real state
-// reads per attempt.
+// query-paced reader. The simulated edges have absolute timing jitter and the
+// query pace varies per attempt, so the controller must derive each
+// prediction error while the window shrinks onto the measured need, then hold
+// it at a few real state reads per attempt. The late-opens scenario
+// reproduces the hardware's sporadic oversleep of the window open: an edge
+// arriving before the late open cannot be observed, so the window size that
+// misses is discovered only by missing, and the window must stay above it.
 func TestTrackSimulation(t *testing.T) {
-	type sample struct {
-		window     time.Duration
-		caught     bool
-		stateReads int
+	const openLate = 900 * time.Microsecond
+	tests := []struct {
+		name           string
+		lateEvery      int           // every lateEvery-th open is openLate late; 0 means none
+		offFrom, offTo int           // edges suppressed for attempts in [offFrom, offTo)
+		maxMisses      int           // per minute
+		maxReads       int           // per attempt after the first minute
+		maxMinuteReads int           // per minute after the first
+		convergeWindow time.Duration // the window must shrink to this
+		convergeBy     int           // by this attempt
+		recoverWindow  time.Duration // after an outage the window must return to this
+		recoverBy      int           // by this attempt
+	}{
+		{name: "prompt opens", maxMisses: 1, maxReads: 11, maxMinuteReads: 390,
+			convergeWindow: 1500 * time.Microsecond, convergeBy: 20},
+		{name: "late opens", lateEvery: 20, maxMisses: 2, maxReads: 17, maxMinuteReads: 600,
+			convergeWindow: 2400 * time.Microsecond, convergeBy: 15},
+		{name: "outage", offFrom: 150, offTo: 158, maxMisses: 9, maxReads: 70, maxMinuteReads: 2500,
+			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
+			recoverWindow: 2 * time.Millisecond, recoverBy: 280},
 	}
-	type minute struct {
-		stateReads, catches, misses, minReads, maxReads int
-		endWindow                                       time.Duration
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			type sample struct {
+				window, predictionError time.Duration
+				caught                  bool
+				stateReads              int
+			}
+			type minute struct {
+				stateReads, catches, misses, minReads, maxReads int
+				endWindow                                       time.Duration
+			}
+			const minutes = 12
+			jitters := [...]time.Duration{-250 * time.Microsecond, -150 * time.Microsecond,
+				-50 * time.Microsecond, 50 * time.Microsecond, 150 * time.Microsecond, 250 * time.Microsecond}
+			brackets := [...]time.Duration{100 * time.Microsecond, 250 * time.Microsecond,
+				150 * time.Microsecond, 90 * time.Microsecond, 200 * time.Microsecond}
+			done := errors.New("simulation complete")
+			samples := make([]sample, 0, minutes*60)
+			var events []trackEvent
+			nextEdge := time.Duration(0)
+			err := track(initialPolls*minSpacing, func(window time.Duration) (trackObservation, error) {
+				if len(samples) == cap(samples) {
+					return trackObservation{}, done
+				}
+				jitter := time.Duration(0)
+				if len(samples) == 3 {
+					jitter = 300 * time.Microsecond
+				} else if len(samples) > 3 {
+					jitter = jitters[(len(samples)-4)%len(jitters)]
+				}
+				late := time.Duration(0)
+				if tc.lateEvery > 0 && (len(samples)+1)%tc.lateEvery == 0 {
+					late = openLate
+				}
+				bracket := brackets[len(samples)%len(brackets)]
+				edge := time.Duration(len(samples))*period + jitter
+				predictionError := edge - nextEdge
+				caught := predictionError > late-window/2 && predictionError < window/2 &&
+					!(tc.offTo > 0 && len(samples) >= tc.offFrom && len(samples) < tc.offTo)
+				sweep := max(window-late, 0)
+				if caught {
+					sweep = predictionError + window/2 - late
+				}
+				pace := max(window/initialPolls, bracket)
+				stateReads := int((sweep+pace-1)/pace) + 1
+				samples = append(samples, sample{window: window, predictionError: predictionError,
+					caught: caught, stateReads: stateReads})
+				return trackObservation{caught: caught, predictionError: predictionError,
+					bracket: bracket, stateReads: stateReads}, nil
+			}, func(d time.Duration) {
+				nextEdge += d
+			}, func(e trackEvent) {
+				events = append(events, e)
+			})
+			if !errors.Is(err, done) {
+				t.Fatalf("track error = %v, want simulation completion", err)
+			}
+			got := make([]minute, minutes)
+			for i, s := range samples {
+				m := &got[i/60]
+				m.stateReads += s.stateReads
+				if s.caught {
+					m.catches++
+				} else {
+					m.misses++
+				}
+				if m.minReads == 0 || s.stateReads < m.minReads {
+					m.minReads = s.stateReads
+				}
+				m.maxReads = max(m.maxReads, s.stateReads)
+				m.endWindow = s.window
+			}
+			for i, m := range got {
+				t.Logf("minute %d: stateReads=%d catches=%d misses=%d min=%d max=%d endWindow=%v",
+					i+1, m.stateReads, m.catches, m.misses, m.minReads, m.maxReads, m.endWindow)
+			}
+			for i, m := range got {
+				if m.misses > tc.maxMisses {
+					t.Errorf("minute %d misses = %d, want at most %d", i+1, m.misses, tc.maxMisses)
+				}
+				if i > 0 && m.maxReads > tc.maxReads {
+					t.Errorf("minute %d max state reads = %d, want at most %d", i+1, m.maxReads, tc.maxReads)
+				}
+				if i > 0 && m.stateReads > tc.maxMinuteReads {
+					t.Errorf("minute %d state reads = %d, want at most %d", i+1, m.stateReads, tc.maxMinuteReads)
+				}
+			}
+			convergedAt := -1
+			for i, s := range samples {
+				if s.window <= tc.convergeWindow {
+					convergedAt = i
+					break
+				}
+			}
+			if convergedAt < 0 || convergedAt > tc.convergeBy {
+				t.Errorf("window first at or below %v at attempt %d, want by attempt %d",
+					tc.convergeWindow, convergedAt, tc.convergeBy)
+			}
+			if tc.offTo > 0 {
+				if s := samples[tc.offTo]; !s.caught {
+					t.Errorf("attempt %d after the outage missed at window %v, want the grown window to recapture the pulse immediately",
+						tc.offTo, s.window)
+				}
+				recoveredAt := -1
+				for i, s := range samples[tc.offTo:] {
+					if s.window <= tc.recoverWindow {
+						recoveredAt = tc.offTo + i
+						break
+					}
+				}
+				if recoveredAt < 0 || recoveredAt > tc.recoverBy {
+					t.Errorf("window back at or below %v at attempt %d, want by attempt %d",
+						tc.recoverWindow, recoveredAt, tc.recoverBy)
+				}
+			}
+			for _, e := range events {
+				if e.kind == trackLost {
+					t.Errorf("tracking event kind = %v, want no loss events", e.kind)
+				}
+			}
+			if samples[3].window <= 2*absDuration(samples[3].predictionError) {
+				t.Errorf("disturbance window = %v for prediction error %v, want the edge retained inside the margin",
+					samples[3].window, samples[3].predictionError)
+			}
+		})
 	}
-	const (
-		minutes     = 5
-		queryPeriod = 200 * time.Microsecond
-	)
-	offsets := [...]time.Duration{-250 * time.Microsecond, -150 * time.Microsecond,
-		-50 * time.Microsecond, 50 * time.Microsecond, 150 * time.Microsecond, 250 * time.Microsecond}
+}
+
+// TestTrackFeedback pins the feedback law step by step: shrinking reported
+// only once per halving, growth to the measured requirement reported at once,
+// half of each prediction error advancing the prediction, a first miss
+// growing the window by two brackets and setting its minimum, a second miss
+// doubling, and the recovery being reported.
+func TestTrackFeedback(t *testing.T) {
 	done := errors.New("simulation complete")
-	samples := make([]sample, 0, minutes*60)
+	var windows, advances []time.Duration
 	var events []trackEvent
-	err := track(initialPolls*minSpacing, func(window time.Duration) (trackObservation, error) {
-		if len(samples) == cap(samples) {
+	observations := []trackObservation{
+		{caught: true, bracket: 100 * time.Microsecond},
+		{caught: true, predictionError: 350 * time.Microsecond, bracket: 100 * time.Microsecond},
+		{caught: false, bracket: 100 * time.Microsecond},
+		{caught: false, bracket: 100 * time.Microsecond},
+		{caught: true, bracket: 100 * time.Microsecond},
+	}
+	err := track(800*time.Microsecond, func(window time.Duration) (trackObservation, error) {
+		windows = append(windows, window)
+		if len(windows) > len(observations) {
 			return trackObservation{}, done
 		}
-		offset := time.Duration(0)
-		if len(samples) == 3 {
-			offset = 300 * time.Microsecond
-		} else if len(samples) > 3 {
-			offset = offsets[(len(samples)-4)%len(offsets)]
-		}
-		caught := offset > -window/2 && offset < window/2
-		stateReads := int((window+queryPeriod-1)/queryPeriod) + 1
-		if caught {
-			fromOpen := offset + window/2
-			stateReads = int((fromOpen+queryPeriod-1)/queryPeriod) + 1
-		}
-		samples = append(samples, sample{window: window, caught: caught, stateReads: stateReads})
-		return trackObservation{caught: caught, bracket: queryPeriod, stateReads: stateReads}, nil
+		return observations[len(windows)-1], nil
+	}, func(d time.Duration) {
+		advances = append(advances, d)
 	}, func(e trackEvent) {
 		events = append(events, e)
 	})
 	if !errors.Is(err, done) {
 		t.Fatalf("track error = %v, want simulation completion", err)
 	}
-	got := make([]minute, minutes)
-	for i, s := range samples {
-		m := &got[i/60]
-		m.stateReads += s.stateReads
-		if s.caught {
-			m.catches++
-		} else {
-			m.misses++
-		}
-		if m.minReads == 0 || s.stateReads < m.minReads {
-			m.minReads = s.stateReads
-		}
-		m.maxReads = max(m.maxReads, s.stateReads)
-		m.endWindow = s.window
+	if want := []time.Duration{800 * time.Microsecond, 750 * time.Microsecond,
+		900 * time.Microsecond, 1100 * time.Microsecond, 2200 * time.Microsecond,
+		2062500 * time.Nanosecond}; !reflect.DeepEqual(windows, want) {
+		t.Errorf("tracking windows = %v, want %v", windows, want)
 	}
-	for i, m := range got {
-		t.Logf("minute %d: stateReads=%d catches=%d misses=%d min=%d max=%d endWindow=%v",
-			i+1, m.stateReads, m.catches, m.misses, m.minReads, m.maxReads, m.endWindow)
+	if want := []time.Duration{period, period + 175*time.Microsecond, period, period,
+		period}; !reflect.DeepEqual(advances, want) {
+		t.Errorf("prediction advances = %v, want %v", advances, want)
 	}
-	want := []minute{
-		{stateReads: 214, catches: 59, misses: 1, minReads: 2, maxReads: 9, endWindow: 800 * time.Microsecond},
-		{stateReads: 211, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
-		{stateReads: 204, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
-		{stateReads: 211, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
-		{stateReads: 204, catches: 59, misses: 1, minReads: 2, maxReads: 5, endWindow: 800 * time.Microsecond},
+	wantEvents := []trackEventKind{trackStarted, trackChanged, trackMissed,
+		trackMissed, trackRecovered}
+	if len(events) != len(wantEvents) {
+		t.Fatalf("tracking events = %v, want kinds %v", events, wantEvents)
 	}
-	if !reflect.DeepEqual(got, want) {
-		t.Errorf("minute summaries = %+v, want %+v", got, want)
-	}
-	wantInitial := []trackEventKind{
-		trackStarted, trackInitialChanged, trackInitialChanged, trackInitialChanged, trackMissed,
-	}
-	if len(events) < len(wantInitial) {
-		t.Fatalf("tracking events = %v, want at least %d", events, len(wantInitial))
-	}
-	for i, want := range wantInitial {
+	for i, want := range wantEvents {
 		if events[i].kind != want {
 			t.Errorf("tracking event %d kind = %v, want %v", i, events[i].kind, want)
 		}
-	}
-	firstRecovery := events[len(wantInitial)-1]
-	if firstRecovery.window != 400*time.Microsecond || firstRecovery.nextWindow != 800*time.Microsecond {
-		t.Errorf("first additive recovery is %v -> %v, want 400us -> 800us",
-			firstRecovery.window, firstRecovery.nextWindow)
 	}
 }
 
@@ -383,12 +498,10 @@ func TestPollOutageResettles(t *testing.T) {
 	})
 }
 
-// TestPollShrinksToFloor checks that the additive shrink walks the settled
-// window down until steady state costs only a handful of state queries per
-// pulse. The descent is one bracket gap per shrinkAfter catches from a
-// settled window of about initialPolls gaps, so it needs several hundred
-// simulated pulses to reach the floor.
-func TestPollShrinksToFloor(t *testing.T) {
+// TestPollTrackingConverges checks that tracking shrinks the settled window
+// to a handful of state queries per pulse within a small fraction of the time
+// the former additive controller needed.
+func TestPollTrackingConverges(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 2 * time.Millisecond}
@@ -396,7 +509,7 @@ func TestPollShrinksToFloor(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
-		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 900 {
+		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
 		for i := 0; i < 50; i++ {
