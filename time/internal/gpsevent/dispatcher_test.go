@@ -280,7 +280,7 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 	}
 }
 
-func TestDispatcherSerialPPSCandidateWritesSettledSample(t *testing.T) {
+func TestDispatcherSerialPPSCandidateWritesAcceptableSamples(t *testing.T) {
 	shm := &fakeSHM{precision: -9}
 	observer := &ntpSampleObserver{}
 	g := serialpps.NewGenerator(serialpps.DefaultConfig())
@@ -294,21 +294,32 @@ func TestDispatcherSerialPPSCandidateWritesSettledSample(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Timestamp: edge, TRead: edge}})
+	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
+		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
+		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
+	})
 	if len(shm.writes) != 0 {
-		t.Fatalf("unsettled candidate produced %d SHM writes, want none", len(shm.writes))
+		t.Fatalf("inaccurate unsettled candidate produced %d SHM writes, want none", len(shm.writes))
 	}
-	d.serialPPSCandidateEdge(serialpps.CandidateEdge{Edge: serialpps.Edge{Timestamp: edge, TRead: edge}, Settled: true})
+	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
+		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
+		Uncertainty: serialPPSMaxUncertainty,
+	})
+	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
+		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
+		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
+		Settled:     true,
+	})
 
-	if len(shm.writes) != 1 {
-		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
+	if len(shm.writes) != 2 {
+		t.Fatalf("SHM writes = %d, want 2", len(shm.writes))
 	}
 	w := shm.writes[0]
 	wantRef := time.Unix(1_000, 0).UTC()
 	if !w.clock.Equal(wantRef) || !w.receive.Equal(edge) || w.leap != ptime.LeapSecondPositive {
 		t.Fatalf("SHM write = %+v, want clock %v receive %v leap positive", w, wantRef, edge)
 	}
-	if observer.count != 1 || !observer.sys.Equal(edge) || observer.leap != ptime.LeapSecondPositive || observer.phc != 0 {
+	if observer.count != 2 || !observer.sys.Equal(edge) || observer.leap != ptime.LeapSecondPositive || observer.phc != 0 {
 		t.Fatalf("observer sample = count %d sys %v leap %v phc %v", observer.count, observer.sys, observer.leap, observer.phc)
 	}
 	if want := wantRef.Sub(edge).Seconds(); observer.offset != want {
