@@ -193,6 +193,9 @@ func TestPoll(t *testing.T) {
 	}
 }
 
+// TestRunTrackNoisyBoundary runs the production controller against a varying
+// required poll count and an early false miss. It must retain fast startup
+// convergence, then stabilize with one-poll adjustments around the boundary.
 func TestRunTrackNoisyBoundary(t *testing.T) {
 	type sample struct {
 		polls  int
@@ -209,7 +212,7 @@ func TestRunTrackNoisyBoundary(t *testing.T) {
 		if len(samples) == cap(samples) {
 			return trackObservation{}, done
 		}
-		caught := polls >= required[len(samples)%len(required)]
+		caught := polls >= required[len(samples)%len(required)] && len(samples) != 4
 		samples = append(samples, sample{polls: polls, caught: caught})
 		return trackObservation{caught: caught, bracket: minSpacing}, nil
 	}, func(trackEvent) {})
@@ -236,16 +239,16 @@ func TestRunTrackNoisyBoundary(t *testing.T) {
 			i+1, m.polls, m.catches, m.misses, m.minPolls, m.maxPolls, m.endPolls)
 	}
 	want := []minute{
-		{polls: 2359, catches: 55, misses: 5, minPolls: 34, maxPolls: 64, endPolls: 38},
-		{polls: 2248, catches: 56, misses: 4, minPolls: 34, maxPolls: 38, endPolls: 38},
-		{polls: 2256, catches: 56, misses: 4, minPolls: 34, maxPolls: 38, endPolls: 38},
-		{polls: 2260, catches: 57, misses: 3, minPolls: 34, maxPolls: 38, endPolls: 38},
-		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 38},
-		{polls: 2264, catches: 57, misses: 3, minPolls: 34, maxPolls: 38, endPolls: 34},
-		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 38},
-		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 38},
-		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 34},
-		{polls: 2272, catches: 59, misses: 1, minPolls: 34, maxPolls: 38, endPolls: 38},
+		{polls: 2426, catches: 55, misses: 5, minPolls: 33, maxPolls: 64, endPolls: 36},
+		{polls: 2146, catches: 56, misses: 4, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2145, catches: 57, misses: 3, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2154, catches: 57, misses: 3, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2151, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2155, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2149, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2153, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2157, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
+		{polls: 2151, catches: 58, misses: 2, minPolls: 35, maxPolls: 36, endPolls: 36},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("minute summaries = %+v, want %+v", got, want)

@@ -216,15 +216,16 @@ func (p *poller) track(spacing time.Duration) error {
 // runTrack controls CPU use directly in numbers of scheduled polls. It starts
 // with initialPolls across the acquired window. After shrinkAfter consecutive
 // catches it reduces polls by one eighth, but always by at least one, and then
-// increments shrinkAfter up to maxShrinkAfter. The first miss after a
-// reduction restores that complete reduction; further misses grow polls
-// proportionally. missLimit consecutive misses, or growth reaching maxWindow,
-// stop tracking so acquisition can restart from cold.
+// increments shrinkAfter up to maxShrinkAfter. Misses move halfway back toward
+// the last poll count validated by catches and reduce the next downward step;
+// once that step reaches one, tracking adjusts additively. missLimit
+// consecutive misses, or growth reaching maxWindow, stop tracking so
+// acquisition can restart from cold.
 func runTrack(spacing time.Duration, attempt func(int) (trackObservation, error), report func(trackEvent)) error {
 	polls := initialPolls
 	catches, misses := 0, 0
 	shrinkAfter := 1
-	lastReduction := 0
+	headroom := 0
 	reduction := max(1, polls/pollReductionDivisor)
 	reportEvent := func(kind trackEventKind) {
 		report(trackEvent{kind: kind, polls: polls, reduction: reduction,
@@ -248,11 +249,12 @@ func runTrack(spacing time.Duration, attempt func(int) (trackObservation, error)
 			// rather than a duration, remains the controller state.
 			minPolls := max(2, int((2*obs.bracket+spacing-1)/spacing))
 			nextPolls := max(minPolls, polls-reduction)
+			headroom = 0
 			if nextPolls < polls {
-				lastReduction = polls - nextPolls
+				headroom = polls - nextPolls
 				polls = nextPolls
 				shrinkAfter = min(shrinkAfter+1, maxShrinkAfter)
-				reduction = max(1, polls/pollReductionDivisor)
+				reduction = min(headroom, max(1, polls/pollReductionDivisor))
 				reportEvent(trackReduced)
 			}
 			continue
@@ -263,13 +265,13 @@ func runTrack(spacing time.Duration, attempt func(int) (trackObservation, error)
 			return nil
 		}
 		catches = 0
-		growth := lastReduction
-		if growth == 0 {
-			growth = max(1, polls/pollReductionDivisor)
+		growth := 1
+		if headroom > 0 {
+			growth = (headroom + 1) / 2
+			headroom -= growth
 		}
-		lastReduction = 0
 		polls += growth
-		reduction = max(1, polls/pollReductionDivisor)
+		reduction = min(reduction, growth)
 		if polls >= int(maxWindow/spacing) {
 			reportEvent(trackLost)
 			return nil
