@@ -23,17 +23,16 @@ type poller struct {
 }
 
 // Poll adaptively polls for the pulse described by w and sends a candidate for
-// every leading edge it catches. It repeatedly runs three phases. Acquisition
+// every leading edge it catches. It repeatedly runs two phases. Acquisition
 // ends when polling resolution is acquired, or restarts from cold after losing
-// the partly acquired signal. Narrowing ends when geometric window reduction
-// reaches its floor or observes its first miss. Tracking then adjusts the
-// window additively until signal loss restarts the cycle from acquisition.
+// the partly acquired signal. Tracking then adjusts the number of polls until
+// signal loss restarts the cycle from acquisition.
 //
 // Candidates caught during acquisition have Settled false; candidates from
-// narrowing and tracking have Settled true. Consumers decide whether an edge
-// is usable from its Uncertainty and Settled state. Every caught edge and every
-// window size change is logged to lg at debug level. If stats is non-nil, Poll
-// records timing and outcome statistics in it.
+// tracking have Settled true. Consumers decide whether an edge is usable from
+// its Uncertainty and Settled state. Every caught edge and every poll-count
+// change is logged to lg at debug level. If stats is non-nil, Poll records
+// timing and outcome statistics in it.
 func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -43,18 +42,14 @@ func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh ch
 		return err
 	}
 	for {
-		window, acquired, err := p.acquire()
+		spacing, acquired, err := p.acquire()
 		if err != nil {
 			return err
 		}
 		if !acquired {
 			continue
 		}
-		window, firstMiss, err := p.narrow(window)
-		if err != nil {
-			return err
-		}
-		if err := p.track(window, firstMiss); err != nil {
+		if err := p.track(spacing); err != nil {
 			return err
 		}
 	}
@@ -93,7 +88,7 @@ const (
 // spacings that the state queries pace the loop. A slept catch or miss resets
 // that confirmation. Misses at the full-period window sweep the poll-grid
 // phase; missLimit misses after the window narrows abandon this attempt. The
-// returned duration is the window with which narrowing should begin.
+// returned duration is the spacing with which tracking should begin.
 func (p *poller) acquire() (time.Duration, bool, error) {
 	spacing := maxWindow / initialPolls
 	misses, queryPaced := 0, 0
@@ -125,7 +120,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 				}
 			}
 			if acquired {
-				return initialPolls * spacing, true, nil
+				return spacing, true, nil
 			}
 			continue
 		}
@@ -147,56 +142,32 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 	}
 }
 
-// narrow geometrically reduces an acquired window. Each catch replaces the
-// window with the greater of half its size and two bracket widths. Narrowing
-// ends when that calculation no longer changes the window or at the first
-// miss. The returned bool reports whether narrow consumed that first miss, so
-// track can apply it without polling the same period again.
-func (p *poller) narrow(window time.Duration) (time.Duration, bool, error) {
-	for {
-		spacing := max(window/initialPolls, minSpacing)
-		caught, err := p.pollWindow(window, spacing, true)
-		if err != nil {
-			return 0, false, err
-		}
-		if !caught {
-			return window, true, nil
-		}
-		narrowed := max(window/2, 2*p.lastBracket)
-		if narrowed == window {
-			return window, false, nil
-		}
-		window = narrowed
-		p.lg.Debug("serial PPS poll window halved", "window", window)
-	}
-}
+const (
+	// pollReductionDivisor makes early reductions proportional to the number
+	// of polls, while the minimum reduction of one poll makes adjustment
+	// additive near equilibrium.
+	pollReductionDivisor = 8
+	// maxShrinkAfter is the eventual interval between attempts to use fewer
+	// polls. At one pulse per second, 300 makes such probes about five minutes
+	// apart. shrinkAfter starts at one after every acquisition and rises by one
+	// after each reduction; misses do not reset it.
+	maxShrinkAfter = 300
+)
 
-// shrinkAfter is the target miss rate: the tracking window widens by a
-// bracket width at each end on a miss and narrows by the same after this many
-// consecutive catches, so it hovers just above the observed edge scatter,
-// missing about one pulse in shrinkAfter.
-const shrinkAfter = 60
-
-// track maintains the steady-state window additively. A miss grows the window
-// by the last bracket width at each end. Every shrinkAfter-th consecutive
-// catch removes the current bracket width from each end while the window is at
-// least four bracket widths. firstMiss reports a miss already consumed by
-// narrow. missLimit consecutive misses, or growth reaching maxWindow, return
-// to Poll so acquisition can restart from cold.
-func (p *poller) track(window time.Duration, firstMiss bool) error {
+// track controls CPU use directly in numbers of scheduled polls. It starts
+// with initialPolls across the acquired window. After shrinkAfter consecutive
+// catches it reduces polls by one eighth, but always by at least one, and then
+// increments shrinkAfter up to maxShrinkAfter. The first miss after a
+// reduction restores that complete reduction; further misses grow polls
+// proportionally. missLimit consecutive misses, or growth reaching maxWindow,
+// return to Poll so acquisition can restart from cold.
+func (p *poller) track(spacing time.Duration) error {
+	polls := initialPolls
 	catches, misses := 0, 0
-	if firstMiss {
-		// narrow already polled this missed window; apply it before polling
-		// the next one.
-		misses = 1
-		var lost bool
-		window, lost = p.growWindow(window, misses)
-		if lost {
-			return nil
-		}
-	}
+	shrinkAfter := 1
+	lastReduction := 0
 	for {
-		spacing := max(window/initialPolls, minSpacing)
+		window := time.Duration(polls) * spacing
 		caught, err := p.pollWindow(window, spacing, true)
 		if err != nil {
 			return err
@@ -204,32 +175,44 @@ func (p *poller) track(window time.Duration, firstMiss bool) error {
 		if caught {
 			misses = 0
 			catches++
-			if catches >= shrinkAfter && window >= 4*p.lastBracket {
-				catches = 0
-				window -= 2 * p.lastBracket
-				p.lg.Debug("serial PPS poll window shrank", "window", window)
+			if catches < shrinkAfter {
+				continue
+			}
+			catches = 0
+			// Two bracket widths keep the edge and its uncertainty inside
+			// the window. Express that floor in scheduled polls so polls,
+			// rather than a duration, remains the controller state.
+			minPolls := max(2, int((2*p.lastBracket+spacing-1)/spacing))
+			reduction := max(1, polls/pollReductionDivisor)
+			nextPolls := max(minPolls, polls-reduction)
+			if nextPolls < polls {
+				lastReduction = polls - nextPolls
+				polls = nextPolls
+				shrinkAfter = min(shrinkAfter+1, maxShrinkAfter)
+				p.lg.Debug("serial PPS poll count reduced", "polls", polls,
+					"window", time.Duration(polls)*spacing, "shrinkAfter", shrinkAfter)
 			}
 			continue
 		}
 		misses++
-		var lost bool
-		window, lost = p.growWindow(window, misses)
-		if lost {
+		if misses >= missLimit {
+			p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", maxWindow, "misses", misses)
 			return nil
 		}
 		catches = 0
+		growth := lastReduction
+		if growth == 0 {
+			growth = max(1, polls/pollReductionDivisor)
+		}
+		lastReduction = 0
+		polls += growth
+		if polls >= int(maxWindow/spacing) {
+			p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", maxWindow, "misses", misses)
+			return nil
+		}
+		p.lg.Debug("serial PPS poll count increased", "polls", polls,
+			"window", time.Duration(polls)*spacing, "misses", misses)
 	}
-}
-
-// growWindow applies one missed tracking window and reports signal loss.
-func (p *poller) growWindow(window time.Duration, misses int) (time.Duration, bool) {
-	if misses >= missLimit || window+2*p.lastBracket >= maxWindow {
-		p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", maxWindow, "misses", misses)
-		return window, true
-	}
-	window += 2 * p.lastBracket
-	p.lg.Debug("serial PPS poll window grew", "window", window, "misses", misses, "polls", p.polls)
-	return window, false
 }
 
 // clockReading keeps adjacent readings of the clocks used by serial PPS

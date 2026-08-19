@@ -912,11 +912,8 @@ func TestPollOutageResettles(t *testing.T) {
 	})
 }
 
-// TestPollShrinksToFloor checks that the additive shrink walks the settled
-// window down until steady state costs only a handful of state queries per
-// pulse. The descent is one bracket gap per shrinkAfter catches from a
-// settled window of about initialPolls gaps, so it needs several hundred
-// simulated pulses to reach the floor.
+// TestPollShrinksToFloor checks that proportional startup reductions bring
+// tracking down to a handful of state queries per pulse within a few minutes.
 func TestPollShrinksToFloor(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
@@ -925,7 +922,7 @@ func TestPollShrinksToFloor(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
-		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 900 {
+		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 200 {
 		}
 		start := f.calls.Load()
 		for i := 0; i < 50; i++ {
@@ -1005,6 +1002,12 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 		}
 		for i, e := range got {
 			pulse := pulseIndex(e.Timestamp, f.epoch)
+			if i > 0 {
+				prev := pulseIndex(got[i-1].Timestamp, f.epoch)
+				if pulse > prev+2 {
+					t.Errorf("edge %d is pulse %d after pulse %d, want convergence misses to be isolated", i, pulse, prev)
+				}
+			}
 			if err := e.Timestamp.Sub(f.epoch) - time.Duration(pulse)*period; err < -500*time.Microsecond || err > 500*time.Microsecond {
 				t.Errorf("edge %d at pulse %d: error %v, want within 500µs of the query-time floor", i, pulse, err)
 			}
