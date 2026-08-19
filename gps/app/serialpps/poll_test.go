@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"reflect"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -189,6 +190,65 @@ func TestPoll(t *testing.T) {
 				}
 			})
 		})
+	}
+}
+
+func TestRunTrackNoisyBoundary(t *testing.T) {
+	type sample struct {
+		polls  int
+		caught bool
+	}
+	type minute struct {
+		polls, catches, misses, minPolls, maxPolls, endPolls int
+	}
+	const minutes = 10
+	required := [...]int{32, 34, 33, 35, 34, 36, 33, 35, 32, 36}
+	done := errors.New("simulation complete")
+	samples := make([]sample, 0, minutes*60)
+	err := runTrack(minSpacing, func(polls int) (trackObservation, error) {
+		if len(samples) == cap(samples) {
+			return trackObservation{}, done
+		}
+		caught := polls >= required[len(samples)%len(required)]
+		samples = append(samples, sample{polls: polls, caught: caught})
+		return trackObservation{caught: caught, bracket: minSpacing}, nil
+	}, func(trackEvent) {})
+	if !errors.Is(err, done) {
+		t.Fatalf("runTrack error = %v, want simulation completion", err)
+	}
+	got := make([]minute, minutes)
+	for i, s := range samples {
+		m := &got[i/60]
+		m.polls += s.polls
+		if s.caught {
+			m.catches++
+		} else {
+			m.misses++
+		}
+		if m.minPolls == 0 || s.polls < m.minPolls {
+			m.minPolls = s.polls
+		}
+		m.maxPolls = max(m.maxPolls, s.polls)
+		m.endPolls = s.polls
+	}
+	for i, m := range got {
+		t.Logf("minute %d: polls=%d catches=%d misses=%d min=%d max=%d end=%d",
+			i+1, m.polls, m.catches, m.misses, m.minPolls, m.maxPolls, m.endPolls)
+	}
+	want := []minute{
+		{polls: 2359, catches: 55, misses: 5, minPolls: 34, maxPolls: 64, endPolls: 38},
+		{polls: 2248, catches: 56, misses: 4, minPolls: 34, maxPolls: 38, endPolls: 38},
+		{polls: 2256, catches: 56, misses: 4, minPolls: 34, maxPolls: 38, endPolls: 38},
+		{polls: 2260, catches: 57, misses: 3, minPolls: 34, maxPolls: 38, endPolls: 38},
+		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 38},
+		{polls: 2264, catches: 57, misses: 3, minPolls: 34, maxPolls: 38, endPolls: 34},
+		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 38},
+		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 38},
+		{polls: 2268, catches: 58, misses: 2, minPolls: 34, maxPolls: 38, endPolls: 34},
+		{polls: 2272, catches: 59, misses: 1, minPolls: 34, maxPolls: 38, endPolls: 38},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("minute summaries = %+v, want %+v", got, want)
 	}
 }
 

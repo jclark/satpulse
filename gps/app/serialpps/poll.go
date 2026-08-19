@@ -156,33 +156,87 @@ const (
 	maxShrinkAfter = 300
 )
 
-// track controls CPU use directly in numbers of scheduled polls. It starts
+type trackObservation struct {
+	caught  bool
+	bracket time.Duration
+}
+
+type trackEventKind uint8
+
+const (
+	trackStarted trackEventKind = iota
+	trackReduced
+	trackMissed
+	trackLost
+)
+
+type trackEvent struct {
+	kind        trackEventKind
+	polls       int
+	reduction   int
+	shrinkAfter int
+	misses      int
+}
+
+// track adapts real polling windows and logging to the tracking controller.
+func (p *poller) track(spacing time.Duration) error {
+	reportedReduction := 0
+	logStatus := func(reason string, e trackEvent) {
+		p.lg.Info("serial PPS track status", "reason", reason,
+			"polls", e.polls, "reduction", e.reduction, "shrinkAfter", e.shrinkAfter,
+			"spacing", spacing, "window", time.Duration(e.polls)*spacing,
+			"bracket", p.lastBracket, "misses", e.misses)
+	}
+	return runTrack(spacing, func(polls int) (trackObservation, error) {
+		caught, err := p.pollWindow(time.Duration(polls)*spacing, spacing, true)
+		return trackObservation{caught: caught, bracket: p.lastBracket}, err
+	}, func(e trackEvent) {
+		switch e.kind {
+		case trackStarted:
+			reportedReduction = e.reduction
+			logStatus("start", e)
+		case trackReduced:
+			p.lg.Debug("serial PPS poll count reduced", "polls", e.polls,
+				"window", time.Duration(e.polls)*spacing, "shrinkAfter", e.shrinkAfter)
+			if e.reduction != reportedReduction {
+				reportedReduction = e.reduction
+				logStatus("reduction", e)
+			}
+		case trackMissed:
+			reportedReduction = e.reduction
+			p.lg.Debug("serial PPS poll count increased", "polls", e.polls,
+				"window", time.Duration(e.polls)*spacing, "misses", e.misses)
+			logStatus("miss", e)
+		case trackLost:
+			logStatus("lost", e)
+		}
+	})
+}
+
+// runTrack controls CPU use directly in numbers of scheduled polls. It starts
 // with initialPolls across the acquired window. After shrinkAfter consecutive
 // catches it reduces polls by one eighth, but always by at least one, and then
 // increments shrinkAfter up to maxShrinkAfter. The first miss after a
 // reduction restores that complete reduction; further misses grow polls
 // proportionally. missLimit consecutive misses, or growth reaching maxWindow,
-// return to Poll so acquisition can restart from cold.
-func (p *poller) track(spacing time.Duration) error {
+// stop tracking so acquisition can restart from cold.
+func runTrack(spacing time.Duration, attempt func(int) (trackObservation, error), report func(trackEvent)) error {
 	polls := initialPolls
 	catches, misses := 0, 0
 	shrinkAfter := 1
 	lastReduction := 0
 	reduction := max(1, polls/pollReductionDivisor)
-	logStatus := func(reason string) {
-		p.lg.Info("serial PPS track status", "reason", reason,
-			"polls", polls, "reduction", reduction, "shrinkAfter", shrinkAfter,
-			"spacing", spacing, "window", time.Duration(polls)*spacing,
-			"bracket", p.lastBracket, "misses", misses)
+	reportEvent := func(kind trackEventKind) {
+		report(trackEvent{kind: kind, polls: polls, reduction: reduction,
+			shrinkAfter: shrinkAfter, misses: misses})
 	}
-	logStatus("start")
+	reportEvent(trackStarted)
 	for {
-		window := time.Duration(polls) * spacing
-		caught, err := p.pollWindow(window, spacing, true)
+		obs, err := attempt(polls)
 		if err != nil {
 			return err
 		}
-		if caught {
+		if obs.caught {
 			misses = 0
 			catches++
 			if catches < shrinkAfter {
@@ -192,25 +246,20 @@ func (p *poller) track(spacing time.Duration) error {
 			// Two bracket widths keep the edge and its uncertainty inside
 			// the window. Express that floor in scheduled polls so polls,
 			// rather than a duration, remains the controller state.
-			minPolls := max(2, int((2*p.lastBracket+spacing-1)/spacing))
+			minPolls := max(2, int((2*obs.bracket+spacing-1)/spacing))
 			nextPolls := max(minPolls, polls-reduction)
 			if nextPolls < polls {
 				lastReduction = polls - nextPolls
 				polls = nextPolls
 				shrinkAfter = min(shrinkAfter+1, maxShrinkAfter)
-				p.lg.Debug("serial PPS poll count reduced", "polls", polls,
-					"window", time.Duration(polls)*spacing, "shrinkAfter", shrinkAfter)
-				nextReduction := max(1, polls/pollReductionDivisor)
-				if nextReduction != reduction {
-					reduction = nextReduction
-					logStatus("reduction")
-				}
+				reduction = max(1, polls/pollReductionDivisor)
+				reportEvent(trackReduced)
 			}
 			continue
 		}
 		misses++
 		if misses >= missLimit {
-			logStatus("lost")
+			reportEvent(trackLost)
 			return nil
 		}
 		catches = 0
@@ -222,12 +271,10 @@ func (p *poller) track(spacing time.Duration) error {
 		polls += growth
 		reduction = max(1, polls/pollReductionDivisor)
 		if polls >= int(maxWindow/spacing) {
-			logStatus("lost")
+			reportEvent(trackLost)
 			return nil
 		}
-		p.lg.Debug("serial PPS poll count increased", "polls", polls,
-			"window", time.Duration(polls)*spacing, "misses", misses)
-		logStatus("miss")
+		reportEvent(trackMissed)
 	}
 }
 
