@@ -192,34 +192,43 @@ func (p *poller) track(window time.Duration) error {
 // every time scale comes from observed prediction errors and brackets.
 const trackRelease = 16
 
-// shrinkAfter paces the re-testing of a window size that missed: after
-// shrinkAfter consecutive catches without a miss, minWindow steps down by a
-// bracket width at each end, so tracking tries a smaller window every five
-// minutes or so while the pulse is being caught reliably.
+// shrinkAfter is how many consecutive catches must follow a short run of
+// misses before the window may shrink again, so a size that missed is
+// re-tested only after five minutes or so of reliable catching.
 const shrinkAfter = 300
+
+// A miss can mean the window was too small or that no pulse arrived, and one
+// observation cannot tell the causes apart. A short run looks like the first:
+// on hardware with late wakeups the boundary is hit singly or in pairs, and
+// one doubling puts the window far above it. A run of absentRun or more can
+// only be an absent pulse, which says nothing about window size, so holding
+// the window after it would only delay recovery.
+const absentRun = 3
 
 // track maintains the polling window with one feedback loop. A catch shrinks
 // the window by 1/trackRelease, but never below twice the sum of its
 // prediction error and bracket (the error the prediction just showed, half a
 // bracket of edge quantization, and half a bracket keeping an equal offset
-// inside the window edge), and never below minWindow, the size remembered
-// from the last first miss. Half of each prediction error corrects the next
+// inside the window edge). Half of each prediction error corrects the next
 // prediction, so one noisy edge cannot displace the window by its full error.
-// A first miss grows the window by a bracket width at each end and sets
-// minWindow; each further consecutive miss doubles the window, since phase
-// uncertainty compounds while no edges are observed. Growth is capped at the
-// full period; missLimit consecutive misses at the full period declare the
-// pulse gone. Each attempt is told whether the window has stopped shrinking
-// (a limit, not the 1/trackRelease term, bounded the last shrink), which
-// polling uses to mark candidates settled. Misses and recovery are reported
-// as they happen; other window changes only once per doubling or halving, and
-// minWindow steps when they move the window, to keep the log quiet.
+// A first miss grows the window by a bracket width at each end; each further
+// consecutive miss doubles the window, since phase uncertainty compounds
+// while no edges are observed. After a run of misses shorter than absentRun,
+// the window holds -- expanding on demand but not shrinking -- until
+// shrinkAfter consecutive catches confirm it, since the misses may mean that
+// size was too small; after a longer run the pulse was simply absent and
+// shrinking resumes at once. Growth is capped at the full period; missLimit
+// consecutive misses at the full period declare the pulse gone. Each attempt
+// is told whether the window has stopped shrinking at its measured floor
+// (the limit, not the 1/trackRelease term, bounded the last shrink), which
+// polling uses to mark candidates settled; holding is not that. Misses and
+// recovery are reported as they happen; other window changes only once per
+// doubling or halving, to keep the log quiet.
 func track(window time.Duration, attempt func(time.Duration, bool) (trackObservation, error),
 	advance func(time.Duration), report func(trackEvent)) error {
 	report(trackEvent{kind: trackStarted, window: window})
 	logged := window
-	minWindow := time.Duration(0)
-	catches, misses, fullMisses := 0, 0, 0
+	catches, misses, fullMisses := shrinkAfter, 0, 0
 	atFloor := false
 	for {
 		obs, err := attempt(window, atFloor)
@@ -241,9 +250,6 @@ func track(window time.Duration, attempt func(time.Duration, bool) (trackObserva
 				nextWindow = 2 * window
 			}
 			nextWindow = min(nextWindow, maxWindow)
-			if misses == 1 {
-				minWindow = nextWindow
-			}
 			report(trackEvent{kind: trackMissed, window: window, nextWindow: nextWindow,
 				observation: obs, misses: misses})
 			logged = nextWindow
@@ -256,20 +262,23 @@ func track(window time.Duration, attempt func(time.Duration, bool) (trackObserva
 		if misses >= 2 {
 			report(trackEvent{kind: trackRecovered, window: window, observation: obs, misses: misses})
 		}
-		misses, fullMisses = 0, 0
-		catches++
-		stepped := false
-		if catches >= shrinkAfter {
-			catches = 0
-			if minWindow > 0 {
-				minWindow = max(minWindow-2*obs.lastBracket, 0)
-				stepped = true
-			}
+		if misses >= absentRun {
+			catches = shrinkAfter
 		}
-		floor := max(2*(obs.predictionError.Abs()+obs.lastBracket), minWindow)
-		nextWindow := min(max(window-window/trackRelease, floor), maxWindow)
-		atFloor = floor >= window-window/trackRelease
-		if nextWindow >= 2*logged || 2*nextWindow <= logged || (stepped && nextWindow < window) {
+		misses, fullMisses = 0, 0
+		if catches < shrinkAfter {
+			catches++
+		}
+		floor := 2 * (obs.predictionError.Abs() + obs.lastBracket)
+		var nextWindow time.Duration
+		if catches < shrinkAfter {
+			nextWindow = min(max(window, floor), maxWindow)
+			atFloor = false
+		} else {
+			nextWindow = min(max(window-window/trackRelease, floor), maxWindow)
+			atFloor = floor >= window-window/trackRelease
+		}
+		if nextWindow >= 2*logged || 2*nextWindow <= logged {
 			report(trackEvent{kind: trackChanged, window: window,
 				nextWindow: nextWindow, observation: obs})
 			logged = nextWindow

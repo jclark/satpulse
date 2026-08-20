@@ -202,9 +202,9 @@ func TestPoll(t *testing.T) {
 // sporadic oversleep of the window open: an edge arriving before the late
 // open cannot be observed, so the window size that misses is discovered only
 // by missing, and the window must stay above it. The last two scenarios
-// characterize the open minWindow defect (a miss is charged to window size
-// whatever its cause): their bounds document today's behavior and should
-// tighten when that rule is fixed.
+// verify that misses at a transiently large window cost at most one
+// shrinkAfter hold there: nothing is remembered, so nothing can be
+// remembered wrongly.
 func TestTrackSimulation(t *testing.T) {
 	const openLate = 900 * time.Microsecond
 	tests := []struct {
@@ -223,25 +223,25 @@ func TestTrackSimulation(t *testing.T) {
 	}{
 		{name: "prompt opens", maxMisses: 1, maxReads: 11, maxMinuteReads: 390,
 			convergeWindow: 1500 * time.Microsecond, convergeBy: 20},
-		{name: "late opens", lateEvery: 20, maxMisses: 3, maxReads: 17, maxMinuteReads: 600,
+		{name: "late opens", lateEvery: 20, maxMisses: 4, maxReads: 17, maxMinuteReads: 600,
 			convergeWindow: 2400 * time.Microsecond, convergeBy: 15},
 		{name: "outage", offFrom: 150, offTo: 158, maxMisses: 9, maxReads: 70, maxMinuteReads: 2500,
 			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
 			recoverWindow: 2 * time.Millisecond, recoverBy: 280},
-		// A single drop during the post-outage descent sets minWindow at the
-		// transiently large window and strands it there: recoverWindow only
-		// documents that behavior and should tighten when misses that carry
-		// no window-size information stop raising minWindow.
+		// A single drop during the post-outage descent freezes the window at
+		// the transiently large size it happened to hit, for shrinkAfter
+		// catches; the cost is bounded, and the descent then completes.
 		{name: "outage with drop", offFrom: 150, offTo: 158, dropAt: 170,
 			maxMisses: 9, maxReads: 70, maxMinuteReads: 2100,
 			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
-			recoverWindow: 95 * time.Millisecond, recoverBy: 280},
-		// Each flapping cycle's first miss raises minWindow again, so the
-		// window ratchets to tens of milliseconds and stays; these bounds
-		// document that defect too.
+			recoverWindow: 2 * time.Millisecond, recoverBy: 560},
+		// Flapping ratchets the window up while it lasts (each cycle is a
+		// two-miss run, so the window is frozen, growing but never
+		// shrinking); one shrinkAfter hold later it has fully recovered.
 		{name: "flapping", flapFrom: 150, flapTo: 180,
 			maxMisses: 20, maxReads: 70, maxMinuteReads: 2100,
-			convergeWindow: 1500 * time.Microsecond, convergeBy: 20},
+			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
+			recoverWindow: 2 * time.Millisecond, recoverBy: 600},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -352,10 +352,12 @@ func TestTrackSimulation(t *testing.T) {
 					t.Errorf("attempt %d after the outage missed at window %v, want the grown window to recapture the pulse immediately",
 						tc.offTo, s.window)
 				}
+			}
+			if resume := max(tc.offTo, tc.flapTo); resume > 0 && tc.recoverWindow > 0 {
 				recoveredAt := -1
-				for i, s := range samples[tc.offTo:] {
+				for i, s := range samples[resume:] {
 					if s.window <= tc.recoverWindow {
-						recoveredAt = tc.offTo + i
+						recoveredAt = resume + i
 						break
 					}
 				}
@@ -380,8 +382,8 @@ func TestTrackSimulation(t *testing.T) {
 // TestTrackFeedback pins the feedback law step by step: shrinking reported
 // only once per halving and growth once per doubling, half of each prediction
 // error advancing the prediction, a first miss growing the window by two
-// brackets and setting its minimum, a second miss doubling, and the recovery
-// being reported.
+// brackets, a second miss doubling, the recovery being reported, and the
+// window then holding, frozen, after the short run of misses.
 func TestTrackFeedback(t *testing.T) {
 	done := errors.New("simulation complete")
 	var windows, advances []time.Duration
@@ -411,7 +413,7 @@ func TestTrackFeedback(t *testing.T) {
 	}
 	if want := []time.Duration{800 * time.Microsecond, 750 * time.Microsecond,
 		1700 * time.Microsecond, 1900 * time.Microsecond, 3800 * time.Microsecond,
-		3562500 * time.Nanosecond}; !reflect.DeepEqual(windows, want) {
+		3800 * time.Microsecond}; !reflect.DeepEqual(windows, want) {
 		t.Errorf("tracking windows = %v, want %v", windows, want)
 	}
 	if want := []time.Duration{period, period + 375*time.Microsecond, period, period,
@@ -454,6 +456,36 @@ func TestTrackLoss(t *testing.T) {
 	last := events[len(events)-1]
 	if last.kind != trackLost || last.window != maxWindow {
 		t.Errorf("last event = kind %v window %v, want loss at the full-period window", last.kind, last.window)
+	}
+}
+
+// TestTrackAbsenceShrinksAtOnce pins the freeze exception: a run of absentRun
+// consecutive misses means the pulse was absent, so shrinking resumes on the
+// recovery catch instead of holding for shrinkAfter catches.
+func TestTrackAbsenceShrinksAtOnce(t *testing.T) {
+	done := errors.New("simulation complete")
+	var windows []time.Duration
+	observations := []trackObservation{
+		{caught: false, lastBracket: 100 * time.Microsecond},
+		{caught: false, lastBracket: 100 * time.Microsecond},
+		{caught: false, lastBracket: 100 * time.Microsecond},
+		{caught: true, lastBracket: 100 * time.Microsecond},
+		{caught: true, lastBracket: 100 * time.Microsecond},
+	}
+	err := track(800*time.Microsecond, func(window time.Duration, _ bool) (trackObservation, error) {
+		windows = append(windows, window)
+		if len(windows) > len(observations) {
+			return trackObservation{}, done
+		}
+		return observations[len(windows)-1], nil
+	}, func(time.Duration) {}, func(trackEvent) {})
+	if !errors.Is(err, done) {
+		t.Fatalf("track error = %v, want simulation completion", err)
+	}
+	if want := []time.Duration{800 * time.Microsecond, 1000 * time.Microsecond,
+		2000 * time.Microsecond, 4000 * time.Microsecond, 3750 * time.Microsecond,
+		3515625 * time.Nanosecond}; !reflect.DeepEqual(windows, want) {
+		t.Errorf("tracking windows = %v, want %v", windows, want)
 	}
 }
 
