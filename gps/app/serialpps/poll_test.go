@@ -14,18 +14,18 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 )
 
-// settleCapture records the window attribute of the "serial PPS settled"
+// acquireCapture records the window attribute of the "serial PPS acquired"
 // debug line, so tests can check where in the descent the latch fired. Read
 // it only after Poll has returned.
-type settleCapture struct {
+type acquireCapture struct {
 	slog.Handler
 	window time.Duration
 }
 
-func (h *settleCapture) Enabled(context.Context, slog.Level) bool { return true }
+func (h *acquireCapture) Enabled(context.Context, slog.Level) bool { return true }
 
-func (h *settleCapture) Handle(_ context.Context, r slog.Record) error {
-	if r.Message == "serial PPS settled" {
+func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
+	if r.Message == "serial PPS acquired" {
 		r.Attrs(func(a slog.Attr) bool {
 			if a.Key == "window" {
 				if d, ok := a.Value.Any().(time.Duration); ok {
@@ -129,7 +129,7 @@ func TestPoll(t *testing.T) {
 		name             string
 		epochOffset      time.Duration // pulse 0's leading edge relative to start
 		callDur          time.Duration
-		expectFirstPulse int // settling length bounds, in pulses
+		expectFirstPulse int // acquisition length bounds, in pulses
 		expectLastPulse  int
 		expectTol        time.Duration // per-edge timestamp error bound
 	}{
@@ -149,11 +149,11 @@ func TestPoll(t *testing.T) {
 				errCh := make(chan error, 1)
 				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 				var got []CandidateEdge
-				sawUnsettled := false
+				sawAcquiring := false
 				for len(got) < 3 {
 					candidate := <-candidates
-					if !candidate.Settled {
-						sawUnsettled = true
+					if !candidate.Acquired {
+						sawAcquiring = true
 						continue
 					}
 					got = append(got, candidate)
@@ -162,8 +162,8 @@ func TestPoll(t *testing.T) {
 				if err := <-errCh; err != context.Canceled {
 					t.Fatalf("Poll error = %v, want context.Canceled", err)
 				}
-				if !sawUnsettled {
-					t.Error("Poll did not report any candidates before settling")
+				if !sawAcquiring {
+					t.Error("Poll did not report any candidates before acquiring")
 				}
 				for i, e := range got {
 					if e.Uncertainty <= 0 {
@@ -178,7 +178,7 @@ func TestPoll(t *testing.T) {
 						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.Timestamp, err, pulse, tc.expectTol)
 					}
 					if i == 0 && (pulse < tc.expectFirstPulse || pulse > tc.expectLastPulse) {
-						t.Errorf("first published edge is pulse %d, want settling to end between pulses %d and %d",
+						t.Errorf("first published edge is pulse %d, want acquisition to end between pulses %d and %d",
 							pulse, tc.expectFirstPulse, tc.expectLastPulse)
 					}
 					if i > 0 {
@@ -402,11 +402,11 @@ func TestTrackFeedback(t *testing.T) {
 	}
 }
 
-// TestPollSettlesWithCoarseStateRefresh exercises the former fixed point: the
+// TestPollAcquiresWithCoarseStateRefresh exercises the former fixed point: the
 // ordinary cached query takes only 5 us, but a state refresh stretches each
 // catching bracket to about 2 ms. The old window-driven acquisition stalled
 // above minSpacing while every caught window remained sleep-paced.
-func TestPollSettlesWithCoarseStateRefresh(t *testing.T) {
+func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{
 			epoch:        time.Now().Add(350 * time.Millisecond),
@@ -420,13 +420,13 @@ func TestPollSettlesWithCoarseStateRefresh(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		deadline := time.After(20 * period)
-		settled := 0
+		acquired := 0
 		timedOut := false
-		for settled < 3 && !timedOut {
+		for acquired < 3 && !timedOut {
 			select {
 			case candidate := <-candidates:
-				if candidate.Settled {
-					settled++
+				if candidate.Acquired {
+					acquired++
 				}
 			case <-deadline:
 				timedOut = true
@@ -437,7 +437,7 @@ func TestPollSettlesWithCoarseStateRefresh(t *testing.T) {
 			t.Fatalf("Poll error = %v, want context.Canceled", err)
 		}
 		if timedOut {
-			t.Fatal("Poll did not settle with coarse modem-state refreshes")
+			t.Fatal("Poll did not acquire with coarse modem-state refreshes")
 		}
 	})
 }
@@ -454,7 +454,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		go func() { errCh <- Poll(ctx, lg, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
-			pulse = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
+			pulse = pulseIndex(nextAcquired(candidates).Timestamp, f.epoch)
 			seen[pulse] = true
 		}
 		cancel()
@@ -477,7 +477,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 	})
 }
 
-func TestPollOutageResettles(t *testing.T) {
+func TestPollOutageReacquires(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 31}
@@ -487,18 +487,18 @@ func TestPollOutageResettles(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var first int
 		for first <= 15 {
-			first = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
+			first = pulseIndex(nextAcquired(candidates).Timestamp, f.epoch)
 		}
 		cancel()
 		<-errCh
 		if first < f.offTo+9 || first > f.offTo+18 {
-			t.Errorf("first edge after outage is pulse %d, want a fresh settle between pulses %d and %d",
+			t.Errorf("first edge after outage is pulse %d, want a fresh acquisition between pulses %d and %d",
 				first, f.offTo+9, f.offTo+18)
 		}
 	})
 }
 
-// TestPollTrackingConverges checks that tracking shrinks the settled window
+// TestPollTrackingConverges checks that tracking shrinks the acquired window
 // to a handful of state queries per pulse within a small fraction of the time
 // the former additive controller needed.
 func TestPollTrackingConverges(t *testing.T) {
@@ -509,11 +509,11 @@ func TestPollTrackingConverges(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
-		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 100 {
+		for pulseIndex(nextAcquired(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
 		for i := 0; i < 50; i++ {
-			nextSettled(candidates)
+			nextAcquired(candidates)
 		}
 		perPulse := (f.calls.Load() - start) / 50
 		cancel()
@@ -525,7 +525,7 @@ func TestPollTrackingConverges(t *testing.T) {
 }
 
 // TestPollLearnsDeliveryTail checks that a recurring 1 ms delivery delay,
-// which the settled window is initially shrunk too far to cover, is learned
+// which the acquired window is initially shrunk too far to cover, is learned
 // as equilibrium growth: after the window has grown back, nearly every pulse
 // is caught again.
 func TestPollLearnsDeliveryTail(t *testing.T) {
@@ -538,7 +538,7 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
-			last = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
+			last = pulseIndex(nextAcquired(candidates).Timestamp, f.epoch)
 			seen[last] = true
 		}
 		cancel()
@@ -555,37 +555,37 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 	})
 }
 
-// TestPollSettlesDespiteSleepJitter reproduces the daemon's sleep-overshoot
+// TestPollAcquiresDespiteSleepJitter reproduces the daemon's sleep-overshoot
 // regime: wakeups after an idle gap run up to ~0.9 ms late, and one poll
-// mid-settling stalls outright, stretching its bracket -- the noise the
-// former bracket-comparison latch settled on, publishing millisecond-class
-// samples from a still-wide window. Settling must ignore bracket noise and
+// mid-acquisition stalls outright, stretching its bracket -- the noise the
+// former bracket-comparison latch latched on, publishing millisecond-class
+// samples from a still-wide window. Acquisition must ignore bracket noise and
 // wait until the queries pace the loop, where the jitter vanishes and
 // edges are located to the query time. The stall is timed to hit the
 // bracket of the pulse-4 catch, mid-halving.
-func TestPollSettlesDespiteSleepJitter(t *testing.T) {
+func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 100 * time.Microsecond, wakeJitter: 900 * time.Microsecond,
 			stallAfter: 3999 * time.Millisecond, stall: 3 * time.Millisecond}
-		capture := &settleCapture{Handler: slog.DiscardHandler}
+		capture := &acquireCapture{Handler: slog.DiscardHandler}
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 20 {
-			got = append(got, nextSettled(candidates))
+			got = append(got, nextAcquired(candidates))
 		}
 		cancel()
 		<-errCh
 		if first := pulseIndex(got[0].Timestamp, f.epoch); first > 15 {
-			t.Errorf("first edge published at pulse %d, want settling despite the jitter plateau", first)
+			t.Errorf("first edge published at pulse %d, want acquisition despite the jitter plateau", first)
 		}
-		// Settling in the jitter plateau leaves the window at 15.625ms or
+		// Acquiring in the jitter plateau leaves the window at 15.625ms or
 		// wider; the query-paced floor is reached at 3.9ms.
 		if capture.window == 0 || capture.window > 8*time.Millisecond {
-			t.Errorf("settled at window %v, want the latch to hold out until the queries pace the loop", capture.window)
+			t.Errorf("acquired at window %v, want the latch to hold out until the queries pace the loop", capture.window)
 		}
 		for i, e := range got {
 			pulse := pulseIndex(e.Timestamp, f.epoch)
@@ -605,7 +605,7 @@ func TestPollSettlesDespiteSleepJitter(t *testing.T) {
 // TestPollConfirmsQueryPacing checks that a single query slowdown does not
 // open the publishing gate. The slowdown covers the catch at the 15.625 ms
 // window, where its 400 us queries outlast the 244 us target. Normal 20 us
-// queries resume at the next pulse, so settling must continue until the
+// queries resume at the next pulse, so acquisition must continue until the
 // 50 us spacing floor is reached.
 func TestPollConfirmsQueryPacing(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
@@ -617,25 +617,25 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 			slowTo:      6*time.Second + 10*time.Millisecond,
 			slowCallDur: 400 * time.Microsecond,
 		}
-		capture := &settleCapture{Handler: slog.DiscardHandler}
+		capture := &acquireCapture{Handler: slog.DiscardHandler}
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		for range 3 {
-			nextSettled(candidates)
+			nextAcquired(candidates)
 		}
 		cancel()
 		<-errCh
 		if capture.window == 0 || capture.window >= 15*time.Millisecond {
-			t.Errorf("settled at window %v, want the one-window query slowdown suppressed", capture.window)
+			t.Errorf("acquired at window %v, want the one-window query slowdown suppressed", capture.window)
 		}
 	})
 }
 
 // TestPollNarrowPulse checks that a pulse narrower than the cold-start
 // spacing (Septentrio's 5 ms default) is acquired by the phase sweep at the
-// cap and then tracked normally, since the settled spacing is below the
+// cap and then tracked normally, since the acquired spacing is below the
 // width.
 func TestPollNarrowPulse(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
@@ -647,7 +647,7 @@ func TestPollNarrowPulse(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 3 {
-			got = append(got, nextSettled(candidates))
+			got = append(got, nextAcquired(candidates))
 		}
 		cancel()
 		<-errCh
@@ -778,10 +778,10 @@ func pulseIndex(t, epoch time.Time) int {
 	return int((t.Sub(epoch) + period/2) / period)
 }
 
-func nextSettled(candidates <-chan CandidateEdge) CandidateEdge {
+func nextAcquired(candidates <-chan CandidateEdge) CandidateEdge {
 	for {
 		candidate := <-candidates
-		if candidate.Settled {
+		if candidate.Acquired {
 			return candidate
 		}
 	}

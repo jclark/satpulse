@@ -261,11 +261,11 @@ func TestEdgePrinter(t *testing.T) {
 	}{
 		{name: "human", edge: serialpps.CandidateEdge{Edge: edge}, want: "14:23:05.123456\n"},
 		{name: "human with device", edge: serialpps.CandidateEdge{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
-		{name: "wait JSONL", edge: serialpps.CandidateEdge{Edge: edge, Settled: true}, jsonl: true,
+		{name: "wait JSONL", edge: serialpps.CandidateEdge{Edge: edge, Acquired: true}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\"}\n"},
-		{name: "settling poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settling\":true}\n"},
-		{name: "settled poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
+		{name: "acquiring poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"acquiring\":true}\n"},
+		{name: "acquired poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Acquired: true}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

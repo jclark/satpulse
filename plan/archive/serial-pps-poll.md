@@ -52,7 +52,7 @@ clock paces the loop, so a step in the system clock cannot disturb the
 schedule. Whether any scheduled read actually had to sleep is
 recorded; a window whose reads never slept is query-paced.
 
-Candidates are published with their uncertainty and a Settled flag
+Candidates are published with their uncertainty and an Acquired flag
 (false during acquisition). Consumers decide what to accept; the
 poller only reports what it measured.
 
@@ -73,7 +73,7 @@ the full period with 15.6 ms spacing.
 - After the window has narrowed, missLimit (10) consecutive misses
   abandon the attempt and restart cold.
 
-Acquisition ends (the pulse is settled) when a catch happens at the
+Acquisition ends when a catch happens at the
 spacing floor, or when two consecutive caught windows ran with no
 scheduled sleep. The second condition confirms at successively smaller
 spacings that the state queries themselves pace the loop: on such a
@@ -82,7 +82,7 @@ stall. A slept catch or a miss resets that confirmation.
 
 The bracket deliberately does not steer this descent. Brackets are
 noisy (a single slow read stretches one), and earlier designs that
-latched on bracket comparisons settled early on noise, publishing
+latched on bracket comparisons declared acquisition over early on noise, publishing
 millisecond-class samples from a still-wide window.
 
 ## Tracking: track
@@ -191,7 +191,7 @@ simulated minutes, which covers a full shrinkAfter re-test cycle.
 expected windows, prediction advances, and reported events. The
 remaining tests drive the real `Poll` against a fake pulse, covering
 acquisition (spacing floor, query-paced confirmation, sleep jitter,
-coarse state refresh), missed-pulse handling, outage resettling, and
+coarse state refresh), missed-pulse handling, outage reacquisition, and
 steady-state read cost.
 
 ## History

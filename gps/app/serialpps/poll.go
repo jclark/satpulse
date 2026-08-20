@@ -30,9 +30,9 @@ type poller struct {
 // where misses occur; consecutive misses double the window, and sustained
 // loss restarts the cycle from acquisition.
 //
-// Candidates caught during acquisition have Settled false; candidates from
-// tracking have Settled true. Consumers decide whether an edge is usable from
-// its Uncertainty and Settled state. Every caught edge is logged to lg at
+// Candidates caught during acquisition have Acquired false; candidates from
+// tracking have Acquired true. Consumers decide whether an edge is usable from
+// its Uncertainty and Acquired state. Every caught edge is logged to lg at
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
@@ -112,7 +112,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 				acquired = acquired || queryPaced >= 2
 			}
 			if acquired {
-				p.lg.Debug("serial PPS settled", "window", window, "bracket", p.lastBracket)
+				p.lg.Debug("serial PPS acquired", "window", window, "bracket", p.lastBracket)
 			}
 			if spacing > minSpacing {
 				spacing /= 2
@@ -383,7 +383,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 		prev = cur
 	}
 	if edge.stamp.IsZero() {
-		p.stats.addWindow(false, false)
+		p.stats.addWindow(false, acquired)
 		if !acquired {
 			p.nextEdge = nextEdge.Add(period)
 		}
@@ -405,7 +405,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 			TRead:     cur.poll.end.mono,
 		},
 		Uncertainty: halfCeil(p.lastBracket),
-		Settled:     acquired,
+		Acquired:    acquired,
 	}
 	select {
 	case p.ceCh <- ce:

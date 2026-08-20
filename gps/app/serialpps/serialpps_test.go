@@ -69,8 +69,8 @@ func TestWait(t *testing.T) {
 		if candidate.Uncertainty != 0 {
 			t.Errorf("Wait uncertainty = %v, want no polling-bracket uncertainty", candidate.Uncertainty)
 		}
-		if !candidate.Settled {
-			t.Error("Wait candidate is unsettled")
+		if !candidate.Acquired {
+			t.Error("Wait candidate is not acquired")
 		}
 	case <-time.After(time.Second):
 		t.Fatal("Wait did not emit the deasserting edge")
@@ -473,9 +473,6 @@ func TestPollStatsSummary(t *testing.T) {
 
 	got := stats.summary()
 	want := pollStatsSummary{
-		Windows:      3,
-		Edges:        2,
-		SettledEdges: 1,
 		PollDuration: durationStats{
 			Count: 5, Sampled: 5, Min: time.Millisecond, Median: 3 * time.Millisecond,
 			Mean: 3 * time.Millisecond, P90: 5 * time.Millisecond, Max: 5 * time.Millisecond,
@@ -485,6 +482,8 @@ func TestPollStatsSummary(t *testing.T) {
 			Mean: 25 * time.Millisecond, P90: 40 * time.Millisecond, Max: 40 * time.Millisecond,
 		},
 	}
+	want.Acquire.Windows, want.Acquire.Edges = 2, 1
+	want.Track.Windows, want.Track.Edges = 1, 1
 	if got != want {
 		t.Errorf("Summary() = %+v, want %+v", got, want)
 	}
@@ -516,7 +515,7 @@ func TestPollStatsLog(t *testing.T) {
 	var output bytes.Buffer
 	stats.Log(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	for _, want := range []string{
-		`msg="serial PPS polling statistics" windows=1 edges=1 settledEdges=0`,
+		`msg="serial PPS polling statistics" acquire.windows=1 acquire.edges=1 track.windows=0 track.edges=0`,
 		`msg="serial PPS state read times" count=1 min=2ms median=2ms mean=2ms p90=2ms max=2ms`,
 		`msg="serial PPS between-read times" count=0`,
 	} {

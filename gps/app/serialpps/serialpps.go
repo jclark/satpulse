@@ -30,16 +30,16 @@ type Edge struct {
 
 // CandidateEdge is an edge reported by a detection backend. Poll reports every
 // edge it catches so that diagnostic consumers can follow acquisition:
-// Uncertainty is half the width of the polling bracket, and Settled says that
+// Uncertainty is half the width of the polling bracket, and Acquired says that
 // scheduled sleeps no longer limit the normal resolution. Timing consumers can
 // accept acquisition candidates with sufficiently small Uncertainty, and use
-// Settled to accept the resolution the hardware can achieve. A wait or kernel
+// Acquired to accept the resolution the hardware can achieve. A wait or kernel
 // candidate carries the backend timestamp directly, has no polling uncertainty,
-// and is always settled.
+// and is always acquired.
 type CandidateEdge struct {
 	Edge
 	Uncertainty time.Duration
-	Settled     bool
+	Acquired    bool
 }
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
@@ -109,7 +109,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 	return Wait(ctx, lg, cw, w, method, ceCh)
 }
 
-// Wait sends settled candidate edges from modem-control change notifications,
+// Wait sends acquired candidate edges from modem-control change notifications,
 // using the wait or kernel method. The backend timestamps each unambiguous
 // transition, so these candidates have no polling uncertainty. The pulse's
 // electrically rising leading edge reaches the host inverted through the TTL
@@ -128,8 +128,8 @@ func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method
 		}
 		if !change.Asserted {
 			ce := CandidateEdge{
-				Edge:    Edge{Timestamp: change.Timestamp, TRead: change.TRead},
-				Settled: true,
+				Edge:     Edge{Timestamp: change.Timestamp, TRead: change.TRead},
+				Acquired: true,
 			}
 			select {
 			case ceCh <- ce:

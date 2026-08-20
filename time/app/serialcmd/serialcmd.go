@@ -634,7 +634,7 @@ type ppsEvent struct {
 	Device      string  `json:"device"`
 	T           string  `json:"t"`
 	Uncertainty float64 `json:"uncertainty,omitzero"`
-	Settling    bool    `json:"settling,omitzero"`
+	Acquiring   bool    `json:"acquiring,omitzero"`
 }
 
 func (e *ppsOutputError) Error() string {
@@ -664,7 +664,7 @@ func (p *edgePrinter) print(device string, edge serialpps.CandidateEdge) error {
 			Device:      device,
 			T:           t.Format("2006-01-02T15:04:05.000000Z"),
 			Uncertainty: edge.Uncertainty.Seconds(),
-			Settling:    !edge.Settled,
+			Acquiring:   !edge.Acquired,
 		}
 		err = json.NewEncoder(p.out).Encode(&event)
 	}

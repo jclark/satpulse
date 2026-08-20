@@ -82,7 +82,7 @@ for a port with a USB serial number a `serial` string,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
 With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
-and, when the **poll** method is used, optional fields `uncertainty` in seconds and `settling`.
+and, when the **poll** method is used, optional fields `uncertainty` in seconds and `acquiring`.
 
 # EXIT STATUS
 
