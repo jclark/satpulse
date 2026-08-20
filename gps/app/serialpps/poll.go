@@ -33,7 +33,7 @@ type poller struct {
 // Candidates caught during acquisition are unsettled, including the catch
 // that completes acquisition, whose transition the "serial PPS acquired" log
 // line marks; tracking candidates are settled once the polling schedule stops
-// limiting the measurement and the window has stopped shrinking. Consumers
+// limiting the measurement or the window has stopped shrinking. Consumers
 // decide whether an edge is usable from its Uncertainty and Settled state. Every caught edge is logged to lg at
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
