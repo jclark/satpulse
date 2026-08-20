@@ -129,18 +129,18 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 			continue
 		}
 		queryPaced = 0
+		// A miss advances the prediction by exactly one period, matching the
+		// pulse, so a locked poll grid would revisit the same phases every
+		// period and could straddle a pulse narrower than the spacing
+		// indefinitely; advancing the grid by an irregular fraction of the
+		// spacing sweeps the phase instead.
+		p.nextEdge = p.nextEdge.Add(spacing * 618 / 1000)
 		if window == maxWindow {
-			// At full size, consecutive windows tile the period exactly, so a
-			// locked poll grid would revisit the same phases every period and
-			// could straddle a pulse narrower than the spacing indefinitely;
-			// advancing the grid by an irregular fraction of the spacing
-			// sweeps the phase instead.
-			p.nextEdge = p.nextEdge.Add(spacing * 618 / 1000)
 			continue
 		}
 		misses++
 		if misses >= missLimit {
-			p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", maxWindow, "misses", misses)
+			p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window, "misses", misses)
 			return 0, false, nil
 		}
 	}
@@ -204,15 +204,16 @@ const shrinkAfter = 300
 // A first miss grows the window by a bracket width at each end and sets
 // minWindow; each further consecutive miss doubles the window, since phase
 // uncertainty compounds while no edges are observed. Growth is capped at the
-// full period; once there, missLimit consecutive misses declare the pulse
-// gone. Misses, growth, recovery, and minWindow steps are reported as they
-// happen, other shrinking once per halving, to keep the log quiet.
+// full period; missLimit consecutive misses at the full period declare the
+// pulse gone. Misses and recovery are reported as they happen; other window
+// changes only once per doubling or halving, and minWindow steps when they
+// move the window, to keep the log quiet.
 func track(window time.Duration, attempt func(time.Duration) (trackObservation, error),
 	advance func(time.Duration), report func(trackEvent)) error {
 	report(trackEvent{kind: trackStarted, window: window})
 	logged := window
 	minWindow := time.Duration(0)
-	catches, misses := 0, 0
+	catches, misses, fullMisses := 0, 0, 0
 	for {
 		obs, err := attempt(window)
 		if err != nil {
@@ -221,9 +222,12 @@ func track(window time.Duration, attempt func(time.Duration) (trackObservation, 
 		if !obs.caught {
 			advance(period)
 			misses++
-			if misses >= missLimit && window >= maxWindow {
-				report(trackEvent{kind: trackLost, window: window, observation: obs, misses: misses})
-				return nil
+			if window >= maxWindow {
+				fullMisses++
+				if fullMisses >= missLimit {
+					report(trackEvent{kind: trackLost, window: window, observation: obs, misses: misses})
+					return nil
+				}
 			}
 			nextWindow := window + 2*obs.bracket
 			if misses >= 2 {
@@ -244,7 +248,7 @@ func track(window time.Duration, attempt func(time.Duration) (trackObservation, 
 		if misses >= 2 {
 			report(trackEvent{kind: trackRecovered, window: window, observation: obs, misses: misses})
 		}
-		misses = 0
+		misses, fullMisses = 0, 0
 		catches++
 		stepped := false
 		if catches >= shrinkAfter {
@@ -255,8 +259,8 @@ func track(window time.Duration, attempt func(time.Duration) (trackObservation, 
 			}
 		}
 		nextWindow := min(max(window-window/trackRelease,
-			2*(absDuration(obs.predictionError)+obs.bracket), minWindow), maxWindow)
-		if nextWindow > window || 2*nextWindow <= logged || (stepped && nextWindow < window) {
+			2*(obs.predictionError.Abs()+obs.bracket), minWindow), maxWindow)
+		if nextWindow >= 2*logged || 2*nextWindow <= logged || (stepped && nextWindow < window) {
 			report(trackEvent{kind: trackChanged, window: window,
 				nextWindow: nextWindow, observation: obs})
 			logged = nextWindow
@@ -293,13 +297,6 @@ func (p *poller) logTrackEvent(e trackEvent) {
 			"window", e.window, "stateReads", e.observation.stateReads,
 			"bracket", e.observation.bracket, "misses", e.misses)
 	}
-}
-
-func absDuration(d time.Duration) time.Duration {
-	if d < 0 {
-		return -d
-	}
-	return d
 }
 
 // clockReading keeps adjacent readings of the clocks used by serial PPS
@@ -378,7 +375,10 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 		p.slept = p.slept || cur.slept
 		edge, missed = classify(prev, cur, p.w, deadline)
 		if !edge.stamp.IsZero() {
-			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
+			// On Windows the stamps carry no monotonic reading, so a backward
+			// clock step inside the bracket could make it negative; clamp so
+			// bad timing cannot corrupt the window arithmetic.
+			p.lastBracket = max(cur.poll.midpoint().elapsedSince(prev.poll.midpoint()), 0)
 		}
 		prev = cur
 	}

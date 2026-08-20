@@ -66,10 +66,10 @@ the full period with 15.6 ms spacing.
 - Every catch halves the spacing, down to the floor `minSpacing`
   (50 us), which bounds CPU when the state query is very fast.
 - A miss leaves the spacing unchanged.
-- At the full-period window, consecutive windows tile the period
-  exactly, so a locked poll grid could straddle a pulse narrower than
-  the spacing forever; each full-window miss therefore advances the
-  grid by an irregular 0.618 of the spacing, sweeping the phase.
+- A miss advances the prediction by exactly one period, matching the
+  pulse, so a locked poll grid could straddle a pulse narrower than
+  the spacing forever; each miss therefore advances the grid by an
+  irregular 0.618 of the spacing, sweeping the phase.
 - After the window has narrowed, missLimit (10) consecutive misses
   abandon the attempt and restart cold.
 
@@ -162,9 +162,9 @@ whole period and misses continue.
 
 ### Reporting
 
-Misses, growth beyond the window, recovery from a run of misses, and
-`minWindow` steps are reported at INFO as they happen. Ordinary 1/16
-shrinking is reported only once per halving. A quiet minute in the
+Misses and the recovery from a run of misses are reported at INFO as
+they happen; other window changes only once per doubling or halving,
+and `minWindow` steps when they move the window. A quiet minute in the
 log is a minute in which every pulse was caught and nothing changed
 by more than half.
 
