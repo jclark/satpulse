@@ -33,9 +33,11 @@ type Edge struct {
 // Uncertainty is half the width of the polling bracket, and Acquired says that
 // scheduled sleeps no longer limit the normal resolution. Timing consumers can
 // accept acquisition candidates with sufficiently small Uncertainty, and use
-// Acquired to accept the resolution the hardware can achieve. A wait or kernel
-// candidate carries the backend timestamp directly, has no polling uncertainty,
-// and is always acquired.
+// Acquired to accept the resolution the hardware can achieve. Acquired records
+// the state in which the edge was captured, so the catch that completes
+// acquisition is itself reported with Acquired false: acquisition succeeds as
+// a consequence of that catch. A wait or kernel candidate carries the backend
+// timestamp directly, has no polling uncertainty, and is always acquired.
 type CandidateEdge struct {
 	Edge
 	Uncertainty time.Duration

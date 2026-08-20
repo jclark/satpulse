@@ -53,8 +53,12 @@ schedule. Whether any scheduled read actually had to sleep is
 recorded; a window whose reads never slept is query-paced.
 
 Candidates are published with their uncertainty and an Acquired flag
-(false during acquisition). Consumers decide what to accept; the
-poller only reports what it measured.
+(false during acquisition). The flag records the state in which the
+edge was captured, so the catch that completes acquisition is itself
+published with Acquired false: acquisition succeeds as a consequence
+of that catch. The same rule attributes that window to the acquire
+phase in the statistics. Consumers decide what to accept; the poller
+only reports what it measured.
 
 ## Acquisition: acquire
 

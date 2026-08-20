@@ -30,9 +30,10 @@ type poller struct {
 // where misses occur; consecutive misses double the window, and sustained
 // loss restarts the cycle from acquisition.
 //
-// Candidates caught during acquisition have Acquired false; candidates from
-// tracking have Acquired true. Consumers decide whether an edge is usable from
-// its Uncertainty and Acquired state. Every caught edge is logged to lg at
+// Candidates caught during acquisition have Acquired false, including the
+// catch that completes acquisition, whose transition the "serial PPS acquired"
+// log line marks; candidates from tracking have Acquired true. Consumers
+// decide whether an edge is usable from its Uncertainty and Acquired state. Every caught edge is logged to lg at
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
