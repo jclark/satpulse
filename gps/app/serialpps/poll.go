@@ -378,10 +378,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (bool,
 		p.slept = p.slept || cur.slept
 		edge, missed = classify(prev, cur, p.w, deadline)
 		if !edge.stamp.IsZero() {
-			// On Windows the stamps carry no monotonic reading, so a backward
-			// clock step inside the bracket could make it negative; clamp so
-			// bad timing cannot corrupt the window arithmetic.
-			p.lastBracket = max(cur.poll.midpoint().elapsedSince(prev.poll.midpoint()), 0)
+			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
 		}
 		prev = cur
 	}
@@ -459,10 +456,13 @@ func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 // classify gives a detected transition precedence over the deadline.
 // The deadline says when to stop looking, not whether a measured edge is
 // valid. A bracket spanning a full period or more may contain several
-// leading edges, so its midpoint identifies none of them: it is a miss.
+// leading edges, so its midpoint identifies none of them, and a nonpositive
+// bracket means the measurement clock stepped backward between the reads
+// (its stamps carry no monotonic reading on Windows), so its midpoint is
+// equally meaningless: both are a miss.
 func classify(prev, cur reading, w Wiring, deadline time.Time) (clockReading, bool) {
 	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
-		if cur.poll.midpoint().elapsedSince(prev.poll.midpoint()) >= period {
+		if d := cur.poll.midpoint().elapsedSince(prev.poll.midpoint()); d >= period || d <= 0 {
 			return clockReading{}, true
 		}
 		return prev.poll.midpoint().midpoint(cur.poll.midpoint()), false
