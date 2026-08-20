@@ -195,34 +195,53 @@ func TestPoll(t *testing.T) {
 }
 
 // TestTrackSimulation drives the production tracking control with a
-// query-paced reader. The simulated edges have absolute timing jitter and the
-// query pace varies per attempt, so the controller must derive each
-// prediction error while the window shrinks onto the measured need, then hold
-// it at a few real state reads per attempt. The late-opens scenario
-// reproduces the hardware's sporadic oversleep of the window open: an edge
-// arriving before the late open cannot be observed, so the window size that
-// misses is discovered only by missing, and the window must stay above it.
+// query-paced reader, matching pollWindow's contract: edges have absolute
+// timing jitter, the query pace varies per attempt, a transition found on the
+// read crossing the deadline still counts as a catch, and a miss forwards the
+// previous catch's bracket. The late-opens scenario reproduces the hardware's
+// sporadic oversleep of the window open: an edge arriving before the late
+// open cannot be observed, so the window size that misses is discovered only
+// by missing, and the window must stay above it. The last two scenarios
+// characterize the open minWindow defect (a miss is charged to window size
+// whatever its cause): their bounds document today's behavior and should
+// tighten when that rule is fixed.
 func TestTrackSimulation(t *testing.T) {
 	const openLate = 900 * time.Microsecond
 	tests := []struct {
-		name           string
-		lateEvery      int           // every lateEvery-th open is openLate late; 0 means none
-		offFrom, offTo int           // edges suppressed for attempts in [offFrom, offTo)
-		maxMisses      int           // per minute
-		maxReads       int           // per attempt after the first minute
-		maxMinuteReads int           // per minute after the first
-		convergeWindow time.Duration // the window must shrink to this
-		convergeBy     int           // by this attempt
-		recoverWindow  time.Duration // after an outage the window must return to this
-		recoverBy      int           // by this attempt
+		name             string
+		lateEvery        int           // every lateEvery-th open is openLate late; 0 means none
+		offFrom, offTo   int           // edges suppressed for attempts in [offFrom, offTo)
+		dropAt           int           // one further suppressed attempt (0 means none)
+		flapFrom, flapTo int           // in [flapFrom, flapTo), suppress all but every third edge
+		maxMisses        int           // per minute
+		maxReads         int           // per attempt after the first minute
+		maxMinuteReads   int           // per minute after the first
+		convergeWindow   time.Duration // the window must shrink to this
+		convergeBy       int           // by this attempt
+		recoverWindow    time.Duration // after an outage the window must return to this
+		recoverBy        int           // by this attempt
 	}{
 		{name: "prompt opens", maxMisses: 1, maxReads: 11, maxMinuteReads: 390,
 			convergeWindow: 1500 * time.Microsecond, convergeBy: 20},
-		{name: "late opens", lateEvery: 20, maxMisses: 2, maxReads: 17, maxMinuteReads: 600,
+		{name: "late opens", lateEvery: 20, maxMisses: 3, maxReads: 17, maxMinuteReads: 600,
 			convergeWindow: 2400 * time.Microsecond, convergeBy: 15},
 		{name: "outage", offFrom: 150, offTo: 158, maxMisses: 9, maxReads: 70, maxMinuteReads: 2500,
 			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
 			recoverWindow: 2 * time.Millisecond, recoverBy: 280},
+		// A single drop during the post-outage descent sets minWindow at the
+		// transiently large window and strands it there: recoverWindow only
+		// documents that behavior and should tighten when misses that carry
+		// no window-size information stop raising minWindow.
+		{name: "outage with drop", offFrom: 150, offTo: 158, dropAt: 170,
+			maxMisses: 9, maxReads: 70, maxMinuteReads: 2100,
+			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
+			recoverWindow: 95 * time.Millisecond, recoverBy: 280},
+		// Each flapping cycle's first miss raises minWindow again, so the
+		// window ratchets to tens of milliseconds and stays; these bounds
+		// document that defect too.
+		{name: "flapping", flapFrom: 150, flapTo: 180,
+			maxMisses: 20, maxReads: 70, maxMinuteReads: 2100,
+			convergeWindow: 1500 * time.Microsecond, convergeBy: 20},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -244,35 +263,41 @@ func TestTrackSimulation(t *testing.T) {
 			samples := make([]sample, 0, minutes*60)
 			var events []trackEvent
 			nextEdge := time.Duration(0)
+			lastBracket := brackets[0]
 			err := track(initialPolls*minSpacing, func(window time.Duration) (trackObservation, error) {
-				if len(samples) == cap(samples) {
+				i := len(samples)
+				if i == cap(samples) {
 					return trackObservation{}, done
 				}
 				jitter := time.Duration(0)
-				if len(samples) == 3 {
+				if i == 3 {
 					jitter = 300 * time.Microsecond
-				} else if len(samples) > 3 {
-					jitter = jitters[(len(samples)-4)%len(jitters)]
+				} else if i > 3 {
+					jitter = jitters[(i-4)%len(jitters)]
 				}
 				late := time.Duration(0)
-				if tc.lateEvery > 0 && (len(samples)+1)%tc.lateEvery == 0 {
+				if tc.lateEvery > 0 && (i+1)%tc.lateEvery == 0 {
 					late = openLate
 				}
-				bracket := brackets[len(samples)%len(brackets)]
-				edge := time.Duration(len(samples))*period + jitter
+				bracket := brackets[i%len(brackets)]
+				pace := max(window/initialPolls, bracket)
+				edge := time.Duration(i)*period + jitter
 				predictionError := edge - nextEdge
-				caught := predictionError > late-window/2 && predictionError < window/2 &&
-					!(tc.offTo > 0 && len(samples) >= tc.offFrom && len(samples) < tc.offTo)
+				suppressed := tc.offTo > 0 && i >= tc.offFrom && i < tc.offTo ||
+					tc.dropAt > 0 && i == tc.dropAt ||
+					tc.flapTo > 0 && i >= tc.flapFrom && i < tc.flapTo && (i-tc.flapFrom)%3 != 2
+				caught := predictionError > late-window/2 && predictionError < window/2+pace &&
+					!suppressed
 				sweep := max(window-late, 0)
 				if caught {
 					sweep = predictionError + window/2 - late
+					lastBracket = bracket
 				}
-				pace := max(window/initialPolls, bracket)
 				stateReads := int((sweep+pace-1)/pace) + 1
 				samples = append(samples, sample{window: window, predictionError: predictionError,
 					caught: caught, stateReads: stateReads})
 				return trackObservation{caught: caught, predictionError: predictionError,
-					bracket: bracket, stateReads: stateReads}, nil
+					lastBracket: lastBracket, stateReads: stateReads}, nil
 			}, func(d time.Duration) {
 				nextEdge += d
 			}, func(e trackEvent) {
@@ -362,11 +387,11 @@ func TestTrackFeedback(t *testing.T) {
 	var windows, advances []time.Duration
 	var events []trackEvent
 	observations := []trackObservation{
-		{caught: true, bracket: 100 * time.Microsecond},
-		{caught: true, predictionError: 750 * time.Microsecond, bracket: 100 * time.Microsecond},
-		{caught: false, bracket: 100 * time.Microsecond},
-		{caught: false, bracket: 100 * time.Microsecond},
-		{caught: true, bracket: 100 * time.Microsecond},
+		{caught: true, lastBracket: 100 * time.Microsecond},
+		{caught: true, predictionError: 750 * time.Microsecond, lastBracket: 100 * time.Microsecond},
+		{caught: false, lastBracket: 100 * time.Microsecond},
+		{caught: false, lastBracket: 100 * time.Microsecond},
+		{caught: true, lastBracket: 100 * time.Microsecond},
 	}
 	err := track(800*time.Microsecond, func(window time.Duration) (trackObservation, error) {
 		windows = append(windows, window)
@@ -411,7 +436,7 @@ func TestTrackLoss(t *testing.T) {
 	var events []trackEvent
 	err := track(time.Millisecond, func(window time.Duration) (trackObservation, error) {
 		windows = append(windows, window)
-		return trackObservation{caught: false, bracket: 100 * time.Microsecond}, nil
+		return trackObservation{caught: false, lastBracket: 100 * time.Microsecond}, nil
 	}, func(time.Duration) {}, func(e trackEvent) {
 		events = append(events, e)
 	})

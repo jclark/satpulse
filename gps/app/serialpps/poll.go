@@ -150,8 +150,10 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 type trackObservation struct {
 	caught          bool
 	predictionError time.Duration
-	bracket         time.Duration
-	stateReads      int
+	// lastBracket is the most recent caught bracket: this catch's own, or on
+	// a miss the previous catch's, since a missed window measures none.
+	lastBracket time.Duration
+	stateReads  int
 }
 
 type trackEventKind uint8
@@ -178,7 +180,7 @@ func (p *poller) track(window time.Duration) error {
 		spacing := max(window/initialPolls, minSpacing)
 		caught, predictionError, err := p.pollWindow(window, spacing, true)
 		return trackObservation{caught: caught, predictionError: predictionError,
-			bracket: p.lastBracket, stateReads: p.stateReads}, err
+			lastBracket: p.lastBracket, stateReads: p.stateReads}, err
 	}
 	advance := func(d time.Duration) { p.nextEdge = p.nextEdge.Add(d) }
 	return track(window, attempt, advance, p.logTrackEvent)
@@ -230,7 +232,7 @@ func track(window time.Duration, attempt func(time.Duration) (trackObservation, 
 					return nil
 				}
 			}
-			nextWindow := window + 2*obs.bracket
+			nextWindow := window + 2*obs.lastBracket
 			if misses >= 2 {
 				nextWindow = 2 * window
 			}
@@ -255,12 +257,12 @@ func track(window time.Duration, attempt func(time.Duration) (trackObservation, 
 		if catches >= shrinkAfter {
 			catches = 0
 			if minWindow > 0 {
-				minWindow = max(minWindow-2*obs.bracket, 0)
+				minWindow = max(minWindow-2*obs.lastBracket, 0)
 				stepped = true
 			}
 		}
 		nextWindow := min(max(window-window/trackRelease,
-			2*(obs.predictionError.Abs()+obs.bracket), minWindow), maxWindow)
+			2*(obs.predictionError.Abs()+obs.lastBracket), minWindow), maxWindow)
 		if nextWindow >= 2*logged || 2*nextWindow <= logged || (stepped && nextWindow < window) {
 			report(trackEvent{kind: trackChanged, window: window,
 				nextWindow: nextWindow, observation: obs})
@@ -281,22 +283,22 @@ func (p *poller) logTrackEvent(e trackEvent) {
 		}
 		p.lg.Info("serial PPS track status", "reason", reason,
 			"window", e.window, "nextWindow", e.nextWindow,
-			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
+			"stateReads", e.observation.stateReads, "bracket", e.observation.lastBracket,
 			"predictionError", e.observation.predictionError)
 	case trackMissed:
 		p.lg.Info("serial PPS track status", "reason", "miss",
 			"window", e.window, "nextWindow", e.nextWindow,
-			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
+			"stateReads", e.observation.stateReads, "bracket", e.observation.lastBracket,
 			"misses", e.misses)
 	case trackRecovered:
 		p.lg.Info("serial PPS track status", "reason", "recovered",
 			"window", e.window, "stateReads", e.observation.stateReads,
-			"bracket", e.observation.bracket,
+			"bracket", e.observation.lastBracket,
 			"predictionError", e.observation.predictionError, "misses", e.misses)
 	case trackLost:
 		p.lg.Info("serial PPS track status", "reason", "lost",
 			"window", e.window, "stateReads", e.observation.stateReads,
-			"bracket", e.observation.bracket, "misses", e.misses)
+			"bracket", e.observation.lastBracket, "misses", e.misses)
 	}
 }
 
