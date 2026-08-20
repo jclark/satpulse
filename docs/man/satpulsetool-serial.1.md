@@ -83,6 +83,7 @@ and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
 With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
 and, when the **poll** method is used, optional fields `uncertainty` in seconds and `settling`.
+A `settling` value of true means the accuracy of subsequent edges is still expected to improve, during acquisition or while the polling window recovers from missed pulses; it is omitted once `uncertainty` reflects the resolution the hardware can achieve.
 
 # EXIT STATUS
 
