@@ -112,6 +112,9 @@ It can have the following keys:
   `"wait"` means the kernel notifies the application of a status change;
   `"poll"` means the application continually asks for the current status;
   when omitted, the best available method is used
+* `pollPreWarm` - a number of seconds to busy-wait before each poll window opens;
+  this speeds up the `poll` method on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core;
+  the default is 0, which disables it; a value between 20e-3 and 50e-3 is suggested
 
 The sum of `delayUncertainty` and `maxDelay` must be less than 1.
 

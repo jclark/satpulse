@@ -148,7 +148,7 @@ func TestPoll(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				candidates := make(chan CandidateEdge)
 				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 				var got []CandidateEdge
 				sawSettling := false
 				for len(got) < 3 {
@@ -500,7 +500,7 @@ func TestPollShortOutageKeepsTracking(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		var first CandidateEdge
 		for pulseIndex(first.Timestamp, f.epoch) <= 15 || first.Timestamp.IsZero() {
 			first = <-candidates
@@ -536,7 +536,7 @@ func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		deadline := time.After(20 * period)
 		settled := 0
 		timedOut := false
@@ -569,7 +569,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		errCh := make(chan error, 1)
 		var logs bytes.Buffer
 		lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-		go func() { errCh <- Poll(ctx, lg, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, lg, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
 			pulse = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
@@ -602,7 +602,7 @@ func TestPollOutageReacquires(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		var first int
 		for first <= 15 {
 			first = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
@@ -626,7 +626,7 @@ func TestPollTrackingConverges(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
@@ -653,7 +653,7 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
 			last = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
@@ -690,7 +690,7 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 20 {
 			got = append(got, nextSettled(candidates))
@@ -739,7 +739,7 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		for range 3 {
 			nextSettled(candidates)
 		}
@@ -773,7 +773,7 @@ func testPollNarrowPulse(t *testing.T, epochOffset time.Duration) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, 0, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 3 {
 			got = append(got, nextSettled(candidates))
@@ -899,7 +899,7 @@ func (p errPin) ModemControlPinState() (gpsio.ModemControlPinState, error) { ret
 
 func TestPollReaderError(t *testing.T) {
 	e := errors.New("query failed")
-	if err := Poll(context.Background(), testLog, errPin{err: e}, Wiring{Pin: gpsio.ModemCTS}, nil, nil); err != e {
+	if err := Poll(context.Background(), testLog, errPin{err: e}, Wiring{Pin: gpsio.ModemCTS}, 0, nil, nil); err != e {
 		t.Fatalf("Poll error = %v, want %v", err, e)
 	}
 }

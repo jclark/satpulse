@@ -26,6 +26,10 @@ type Config struct {
 	// MaxWakeupLatency optionally limits latency added when a CPU wakes from
 	// idle while serial PPS is active.
 	MaxWakeupLatency *float64 `toml:"maxWakeupLatency" comment:"Maximum CPU wakeup latency while serial PPS is active (microseconds)"`
+	// PollPreWarm is how long the poll method busy-waits before each poll
+	// window opens, countering hosts whose state queries slow down while
+	// the machine idles. Zero disables it.
+	PollPreWarm float64 `toml:"pollPreWarm" check:">=0,<1" comment:"CPU busy-wait before each poll window (s); 0 disables"`
 }
 
 // DefaultConfig returns the default serial PPS sampling configuration.

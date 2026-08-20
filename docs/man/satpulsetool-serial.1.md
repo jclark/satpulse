@@ -9,6 +9,7 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-info**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**\|**kernel**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-poll\-pre\-warm** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-max\-wakeup\-latency** *microseconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
@@ -52,6 +53,12 @@ This causes speed detection not to be performed.
 **wait** means the kernel notifies the application of a status change;
 **poll** means the application continually asks for the current status.
 When this option is omitted, the best available method is used.
+Requires **\-p**.
+
+**\-\-poll\-pre\-warm** *seconds*
+: Busy-wait for *seconds* before each poll window opens.
+This speeds up the **poll** method on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core.
+The default is 0, which disables it; a value between 0.02 and 0.05 is suggested.
 Requires **\-p**.
 
 **\-\-max\-wakeup\-latency** *microseconds*

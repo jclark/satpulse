@@ -14,6 +14,7 @@ type poller struct {
 	lg          *slog.Logger
 	r           StateReader
 	w           Wiring
+	prewarm     time.Duration
 	ceCh        chan<- CandidateEdge
 	stats       *PollStats
 	nextEdge    time.Time
@@ -30,19 +31,25 @@ type poller struct {
 // where misses occur; consecutive misses double the window, and sustained
 // loss restarts the cycle from acquisition.
 //
+// A nonzero prewarm ends the sleep to each window open that much early and
+// busy-waits the remainder. It is for hosts whose state queries slow down
+// severalfold while the machine idles, where only continuous work ending at
+// the open restores full query speed; it costs that fraction of a core.
+//
 // Candidates caught during acquisition are unsettled, including the catch
 // that completes acquisition, whose transition the "serial PPS acquired" log
 // line marks; tracking candidates are settled once the polling schedule stops
 // limiting the measurement or the window has stopped shrinking. Consumers
-// decide whether an edge is usable from its Uncertainty and Settled state. Every caught edge is logged to lg at
+// decide whether an edge is usable from its Uncertainty and Settled state.
+// Every caught edge is logged to lg at
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	stats.begin()
-	p := poller{ctx: ctx, lg: lg, r: r, w: w, ceCh: ceCh, stats: stats}
+	p := poller{ctx: ctx, lg: lg, r: r, w: w, prewarm: prewarm, ceCh: ceCh, stats: stats}
 	if err := p.init(); err != nil {
 		return err
 	}
@@ -368,7 +375,18 @@ func (p *poller) init() error {
 func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor bool) (bool, time.Duration, error) {
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
-	cur, err := readState(p.ctx, p.r, nextEdge.Add(-window/2))
+	open := nextEdge.Add(-window / 2)
+	if p.prewarm > 0 {
+		if _, err := waitUntil(p.ctx, open.Add(-p.prewarm)); err != nil {
+			return false, 0, err
+		}
+		for time.Now().Before(open) {
+			if p.ctx.Err() != nil {
+				return false, 0, p.ctx.Err()
+			}
+		}
+	}
+	cur, err := readState(p.ctx, p.r, open)
 	if err != nil {
 		return false, 0, err
 	}

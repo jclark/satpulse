@@ -73,15 +73,18 @@ type Wiring struct {
 // Detect sends candidate edges for the pulse described by w. An unspecified
 // method automatically tries kernel, then wait, then poll, moving on when a
 // method is unsupported or unavailable for the device. Other failures are
-// returned. An explicitly requested method never falls back. If stats is
-// non-nil, it records timings only when polling is selected.
-func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, ceCh chan<- CandidateEdge, stats *PollStats) error {
-	if method != 0 {
-		return detect(ctx, lg, r, w, method, ceCh, stats)
+// returned. An explicitly requested method never falls back. cfg.PollPreWarm
+// applies only to polling, the one method whose resolution the host's own
+// speed sets. If stats is non-nil, it records timings only when polling is
+// selected.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- CandidateEdge, stats *PollStats) error {
+	prewarm := seconds(cfg.PollPreWarm)
+	if cfg.Method != 0 {
+		return detect(ctx, lg, r, w, cfg.Method, prewarm, ceCh, stats)
 	}
 	if _, ok := r.(ChangeWaiter); ok {
 		for _, m := range []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait} {
-			err := detect(ctx, lg, r, w, m, ceCh, stats)
+			err := detect(ctx, lg, r, w, m, prewarm, ceCh, stats)
 			if ctx.Err() != nil {
 				return err
 			}
@@ -95,10 +98,10 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 			}
 		}
 	}
-	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, ceCh, stats)
+	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, prewarm, ceCh, stats)
 }
 
-func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	switch method {
 	case gpsio.PPSMethodPoll, gpsio.PPSMethodWait, gpsio.PPSMethodKernel:
 	default:
@@ -106,7 +109,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 	}
 	lg.Info("serial PPS method selected", "method", method)
 	if method == gpsio.PPSMethodPoll {
-		return Poll(ctx, lg, r, w, ceCh, stats)
+		return Poll(ctx, lg, r, w, prewarm, ceCh, stats)
 	}
 	cw, ok := r.(ChangeWaiter)
 	if !ok {

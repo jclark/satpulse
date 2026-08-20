@@ -203,7 +203,7 @@ func TestDetectMethodSelection(t *testing.T) {
 			stats := new(PollStats)
 			var logs bytes.Buffer
 			lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, tc.method, make(chan CandidateEdge, 1), stats)
+			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, Config{Method: tc.method}, make(chan CandidateEdge, 1), stats)
 			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("Detect error = %v, want %v", err, tc.expectErr)
 			}
@@ -239,7 +239,7 @@ func TestDetectWithoutWaiterPolls(t *testing.T) {
 	stats := new(PollStats)
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	err := Detect(ctx, lg, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, 0, make(chan CandidateEdge, 1), stats)
+	err := Detect(ctx, lg, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, Config{}, make(chan CandidateEdge, 1), stats)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Detect error = %v, want context.Canceled", err)
 	}
@@ -259,7 +259,7 @@ func TestDetectForcedWaitWithoutWaiter(t *testing.T) {
 		t.Run(method.String(), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, method, make(chan CandidateEdge, 1), nil)
+			err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, Config{Method: method}, make(chan CandidateEdge, 1), nil)
 			if !errors.Is(err, errors.ErrUnsupported) {
 				t.Errorf("Detect error = %v, want errors.ErrUnsupported", err)
 			}
