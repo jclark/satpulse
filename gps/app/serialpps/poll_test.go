@@ -150,11 +150,11 @@ func TestPoll(t *testing.T) {
 				errCh := make(chan error, 1)
 				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 				var got []CandidateEdge
-				sawAcquiring := false
+				sawSettling := false
 				for len(got) < 3 {
 					candidate := <-candidates
-					if !candidate.Acquired {
-						sawAcquiring = true
+					if !candidate.Settled {
+						sawSettling = true
 						continue
 					}
 					got = append(got, candidate)
@@ -163,8 +163,8 @@ func TestPoll(t *testing.T) {
 				if err := <-errCh; err != context.Canceled {
 					t.Fatalf("Poll error = %v, want context.Canceled", err)
 				}
-				if !sawAcquiring {
-					t.Error("Poll did not report any candidates before acquiring")
+				if !sawSettling {
+					t.Error("Poll did not report any candidates before settling")
 				}
 				for i, e := range got {
 					if e.Uncertainty <= 0 {
@@ -264,7 +264,7 @@ func TestTrackSimulation(t *testing.T) {
 			var events []trackEvent
 			nextEdge := time.Duration(0)
 			lastBracket := brackets[0]
-			err := track(initialPolls*minSpacing, func(window time.Duration) (trackObservation, error) {
+			err := track(initialPolls*minSpacing, func(window time.Duration, _ bool) (trackObservation, error) {
 				i := len(samples)
 				if i == cap(samples) {
 					return trackObservation{}, done
@@ -385,6 +385,7 @@ func TestTrackSimulation(t *testing.T) {
 func TestTrackFeedback(t *testing.T) {
 	done := errors.New("simulation complete")
 	var windows, advances []time.Duration
+	var atFloors []bool
 	var events []trackEvent
 	observations := []trackObservation{
 		{caught: true, lastBracket: 100 * time.Microsecond},
@@ -393,8 +394,9 @@ func TestTrackFeedback(t *testing.T) {
 		{caught: false, lastBracket: 100 * time.Microsecond},
 		{caught: true, lastBracket: 100 * time.Microsecond},
 	}
-	err := track(800*time.Microsecond, func(window time.Duration) (trackObservation, error) {
+	err := track(800*time.Microsecond, func(window time.Duration, atFloor bool) (trackObservation, error) {
 		windows = append(windows, window)
+		atFloors = append(atFloors, atFloor)
 		if len(windows) > len(observations) {
 			return trackObservation{}, done
 		}
@@ -416,6 +418,9 @@ func TestTrackFeedback(t *testing.T) {
 		period}; !reflect.DeepEqual(advances, want) {
 		t.Errorf("prediction advances = %v, want %v", advances, want)
 	}
+	if want := []bool{false, false, true, false, false, false}; !reflect.DeepEqual(atFloors, want) {
+		t.Errorf("atFloor per attempt = %v, want %v", atFloors, want)
+	}
 	wantEvents := []trackEventKind{trackStarted, trackChanged, trackMissed,
 		trackMissed, trackRecovered}
 	if len(events) != len(wantEvents) {
@@ -434,7 +439,7 @@ func TestTrackFeedback(t *testing.T) {
 func TestTrackLoss(t *testing.T) {
 	var windows []time.Duration
 	var events []trackEvent
-	err := track(time.Millisecond, func(window time.Duration) (trackObservation, error) {
+	err := track(time.Millisecond, func(window time.Duration, _ bool) (trackObservation, error) {
 		windows = append(windows, window)
 		return trackObservation{caught: false, lastBracket: 100 * time.Microsecond}, nil
 	}, func(time.Duration) {}, func(e trackEvent) {
@@ -454,7 +459,8 @@ func TestTrackLoss(t *testing.T) {
 
 // TestPollShortOutageKeepsTracking checks that an outage shorter than the
 // give-up horizon does not discard the phase: the grown window recaptures the
-// pulse on its first reappearance.
+// pulse on its first reappearance, publishing it unsettled while the window
+// is still shrinking back, and candidates settle again once it has.
 func TestPollShortOutageKeepsTracking(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
@@ -463,14 +469,21 @@ func TestPollShortOutageKeepsTracking(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
-		var first int
-		for first <= 15 {
-			first = pulseIndex(nextAcquired(candidates).Timestamp, f.epoch)
+		var first CandidateEdge
+		for pulseIndex(first.Timestamp, f.epoch) <= 15 || first.Timestamp.IsZero() {
+			first = <-candidates
 		}
+		resettled := pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 		cancel()
 		<-errCh
-		if first != f.offTo {
-			t.Errorf("first edge after outage is pulse %d, want recapture at pulse %d", first, f.offTo)
+		if p := pulseIndex(first.Timestamp, f.epoch); p != f.offTo {
+			t.Errorf("first edge after outage is pulse %d, want recapture at pulse %d", p, f.offTo)
+		}
+		if first.Settled {
+			t.Error("recapture candidate at the outage-grown window is settled, want unsettled while the window shrinks back")
+		}
+		if resettled > f.offTo+110 {
+			t.Errorf("candidates settled again at pulse %d, want within ~100 pulses of the recapture", resettled)
 		}
 	})
 }
@@ -493,13 +506,13 @@ func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		deadline := time.After(20 * period)
-		acquired := 0
+		settled := 0
 		timedOut := false
-		for acquired < 3 && !timedOut {
+		for settled < 3 && !timedOut {
 			select {
 			case candidate := <-candidates:
-				if candidate.Acquired {
-					acquired++
+				if candidate.Settled {
+					settled++
 				}
 			case <-deadline:
 				timedOut = true
@@ -527,7 +540,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		go func() { errCh <- Poll(ctx, lg, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
-			pulse = pulseIndex(nextAcquired(candidates).Timestamp, f.epoch)
+			pulse = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 			seen[pulse] = true
 		}
 		cancel()
@@ -560,7 +573,7 @@ func TestPollOutageReacquires(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var first int
 		for first <= 15 {
-			first = pulseIndex(nextAcquired(candidates).Timestamp, f.epoch)
+			first = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 		}
 		cancel()
 		<-errCh
@@ -582,11 +595,11 @@ func TestPollTrackingConverges(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
-		for pulseIndex(nextAcquired(candidates).Timestamp, f.epoch) < 100 {
+		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
 		for i := 0; i < 50; i++ {
-			nextAcquired(candidates)
+			nextSettled(candidates)
 		}
 		perPulse := (f.calls.Load() - start) / 50
 		cancel()
@@ -611,7 +624,7 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
-			last = pulseIndex(nextAcquired(candidates).Timestamp, f.epoch)
+			last = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 			seen[last] = true
 		}
 		cancel()
@@ -648,7 +661,7 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 20 {
-			got = append(got, nextAcquired(candidates))
+			got = append(got, nextSettled(candidates))
 		}
 		cancel()
 		<-errCh
@@ -696,7 +709,7 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		for range 3 {
-			nextAcquired(candidates)
+			nextSettled(candidates)
 		}
 		cancel()
 		<-errCh
@@ -733,7 +746,7 @@ func testPollNarrowPulse(t *testing.T, epochOffset time.Duration) {
 		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.ModemCTS}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 3 {
-			got = append(got, nextAcquired(candidates))
+			got = append(got, nextSettled(candidates))
 		}
 		cancel()
 		<-errCh
@@ -866,10 +879,10 @@ func pulseIndex(t, epoch time.Time) int {
 	return int((t.Sub(epoch) + period/2) / period)
 }
 
-func nextAcquired(candidates <-chan CandidateEdge) CandidateEdge {
+func nextSettled(candidates <-chan CandidateEdge) CandidateEdge {
 	for {
 		candidate := <-candidates
-		if candidate.Acquired {
+		if candidate.Settled {
 			return candidate
 		}
 	}

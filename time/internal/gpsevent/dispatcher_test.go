@@ -299,7 +299,7 @@ func TestDispatcherSerialPPSCandidateWritesAcceptableSamples(t *testing.T) {
 		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
 	})
 	if len(shm.writes) != 0 {
-		t.Fatalf("inaccurate acquisition candidate produced %d SHM writes, want none", len(shm.writes))
+		t.Fatalf("inaccurate unsettled candidate produced %d SHM writes, want none", len(shm.writes))
 	}
 	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
 		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
@@ -308,7 +308,7 @@ func TestDispatcherSerialPPSCandidateWritesAcceptableSamples(t *testing.T) {
 	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
 		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
 		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
-		Acquired:    true,
+		Settled:     true,
 	})
 
 	if len(shm.writes) != 2 {

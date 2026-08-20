@@ -52,13 +52,19 @@ clock paces the loop, so a step in the system clock cannot disturb the
 schedule. Whether any scheduled read actually had to sleep is
 recorded; a window whose reads never slept is query-paced.
 
-Candidates are published with their uncertainty and an Acquired flag
-(false during acquisition). The flag records the state in which the
-edge was captured, so the catch that completes acquisition is itself
-published with Acquired false: acquisition succeeds as a consequence
-of that catch. The same rule attributes that window to the acquire
-phase in the statistics. Consumers decide what to accept; the poller
-only reports what it measured.
+Candidates are published with their uncertainty and a Settled flag,
+which says no improvement in accuracy is to be expected: the polling
+schedule did not limit the measurement (its spacing was at the floor,
+or the state queries paced the window), or the window has stopped
+shrinking. Candidates are unsettled during acquisition, including the
+catch that completes it (the flag records the state in which the edge
+was captured, and acquisition succeeds as a consequence of that
+catch), and unsettled again during tracking while a window grown by
+misses is still shrinking back, since the uncertainty of a sleep-paced
+window falls as the window does. The same capture-time rule attributes
+the acquisition-ending window to the acquire phase in the statistics.
+Consumers decide what to accept; the poller only reports what it
+measured.
 
 ## Acquisition: acquire
 

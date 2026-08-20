@@ -38,7 +38,7 @@ func TestLogEventRoundTrip(t *testing.T) {
 				Data: &SysPulseEdge{
 					T:           tm.Add(-26 * time.Microsecond),
 					Uncertainty: 26 * gpsprot.Microsecond,
-					Acquired:    true,
+					Settled:     true,
 				},
 			},
 		},

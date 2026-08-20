@@ -273,7 +273,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan serialpps.CandidateEd
 			}
 		case ce, ok := <-spCh:
 			if ok {
-				// Any candidate, acquired or not, proves the pin is wired and
+				// Any candidate, settled or not, proves the pin is wired and
 				// pulsing, which is all this warning is about.
 				firstSerialPPSDeadline = nil
 				d.serialPPSCandidateEdge(ce)
@@ -319,10 +319,10 @@ func (d *Dispatcher) serialPPSCandidateEdge(ce serialpps.CandidateEdge) {
 		Data: &SysPulseEdge{
 			T:           ce.Timestamp,
 			Uncertainty: gpsprot.Duration(ce.Uncertainty),
-			Acquired:    ce.Acquired,
+			Settled:     ce.Settled,
 		},
 	})
-	if ce.Uncertainty <= serialPPSMaxUncertainty || ce.Acquired {
+	if ce.Uncertainty <= serialPPSMaxUncertainty || ce.Settled {
 		d.serialPPSEdge(ce.Edge)
 	}
 }
@@ -417,7 +417,7 @@ const sysPulseEdgeType = "sysPulseEdge"
 type SysPulseEdge struct {
 	T           time.Time        `json:"t"`
 	Uncertainty gpsprot.Duration `json:"uncertainty"`
-	Acquired    bool             `json:"acquired"`
+	Settled     bool             `json:"settled"`
 }
 
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:

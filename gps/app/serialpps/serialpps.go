@@ -28,20 +28,24 @@ type Edge struct {
 	TRead     time.Time
 }
 
-// CandidateEdge is an edge reported by a detection backend. Poll reports every
-// edge it catches so that diagnostic consumers can follow acquisition:
-// Uncertainty is half the width of the polling bracket, and Acquired says that
-// scheduled sleeps no longer limit the normal resolution. Timing consumers can
-// accept acquisition candidates with sufficiently small Uncertainty, and use
-// Acquired to accept the resolution the hardware can achieve. Acquired records
-// the state in which the edge was captured, so the catch that completes
-// acquisition is itself reported with Acquired false: acquisition succeeds as
-// a consequence of that catch. A wait or kernel candidate carries the backend
-// timestamp directly, has no polling uncertainty, and is always acquired.
+// CandidateEdge is an edge reported by a detection backend. Poll reports
+// every edge it catches so that diagnostic consumers can follow acquisition:
+// Uncertainty is half the width of the polling bracket, and Settled says no
+// improvement in accuracy is to be expected, because the polling schedule did
+// not limit this measurement (its spacing was at the floor or the state
+// queries paced the window) or the window has stopped shrinking. Candidates
+// are unsettled during acquisition, including the catch that completes it
+// (Settled records the state in which the edge was captured, and acquisition
+// succeeds as a consequence of that catch), and unsettled again during
+// tracking while a window grown by misses is still shrinking back. Timing
+// consumers can accept unsettled candidates with sufficiently small
+// Uncertainty, and use Settled to accept the resolution the hardware can
+// achieve. A wait or kernel candidate carries the backend timestamp directly,
+// has no polling uncertainty, and is always settled.
 type CandidateEdge struct {
 	Edge
 	Uncertainty time.Duration
-	Acquired    bool
+	Settled     bool
 }
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
@@ -111,7 +115,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 	return Wait(ctx, lg, cw, w, method, ceCh)
 }
 
-// Wait sends acquired candidate edges from modem-control change notifications,
+// Wait sends settled candidate edges from modem-control change notifications,
 // using the wait or kernel method. The backend timestamps each unambiguous
 // transition, so these candidates have no polling uncertainty. The pulse's
 // electrically rising leading edge reaches the host inverted through the TTL
@@ -130,8 +134,8 @@ func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method
 		}
 		if !change.Asserted {
 			ce := CandidateEdge{
-				Edge:     Edge{Timestamp: change.Timestamp, TRead: change.TRead},
-				Acquired: true,
+				Edge:    Edge{Timestamp: change.Timestamp, TRead: change.TRead},
+				Settled: true,
 			}
 			select {
 			case ceCh <- ce:
