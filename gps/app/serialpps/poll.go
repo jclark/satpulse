@@ -276,6 +276,13 @@ func track(window time.Duration, attempt func(time.Duration, bool) (trackObserva
 			atFloor = false
 		} else {
 			nextWindow = min(max(window-window/trackRelease, floor), maxWindow)
+			// atFloor deliberately includes upward corrections: the measured
+			// requirement controlled the next window either way, and calling
+			// expansions unsettled would flicker the settled state on hardware
+			// whose brackets are irreducibly coarse, costing it samples. The
+			// price is that a transient expansion marks the next candidate
+			// settled, which affects dispatch only if that candidate is itself
+			// coarser than the dispatcher's uncertainty limit.
 			atFloor = floor >= window-window/trackRelease
 		}
 		if nextWindow >= 2*logged || 2*nextWindow <= logged {

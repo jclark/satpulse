@@ -1,6 +1,7 @@
-# Serial PPS polling design
+# Serial PPS polling design (#402)
 
-This records the design of `gps/app/serialpps/poll.go` as of the
+This records the design of `gps/app/serialpps/poll.go`, the poll
+method of the user-space PPS support introduced for #402, as of the
 serial-pps-poll branch (PR #419): how the poller finds a once-per-second
 pulse on a modem-control pin, how it tracks the pulse cheaply, and why
 each rule is shaped the way it is.
@@ -185,6 +186,16 @@ the clock can have drifted, so the first pulse after the outage is
 caught, and the 1/16 shrink then walks straight back down. The
 prediction is kept through short outages; longer ones are rare enough
 that the cost of a full reacquisition does not matter.
+
+That direct recovery assumes the pulse is wide enough to intersect the
+poll grid at the recovery spacing. Tracking spacing grows with the
+window, and tracking misses do not sweep the grid phase. A narrow pulse
+can therefore fall between the same poll positions until tracking gives
+up and returns to acquisition. This is an accepted cost of narrow-pulse
+support: acquisition sweeps the grid phase and finds the pulse again,
+but recovery may be slower and may discard the tracked prediction.
+Keeping fine spacing throughout a large recovery window would instead
+make state reads unreasonably expensive.
 
 ### Reporting
 

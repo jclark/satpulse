@@ -751,15 +751,13 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 	})
 }
 
-// TestPollNarrowPulse checks that a pulse narrower than the cold-start
-// spacing (Septentrio's 5 ms default) is acquired by the phase sweep at the
-// cap and then tracked normally, since the acquired spacing is below the
-// width.
 // TestPollNarrowPulse sweeps the pulse phase across the 7.8125 ms spacing of
 // the second acquisition stage. The 2 ms pulse fits between the polls of the
 // second and third stages at most phases, and a miss repeats the
 // pulse-relative poll positions, so acquisition depends on the per-miss grid
-// sweep finding the pulse.
+// sweep finding the pulse. Tracking then holds lock normally, since the
+// acquired spacing is below the pulse width; recovery from loss can widen
+// the spacing beyond the width again and falls back to swept acquisition.
 func TestPollNarrowPulse(t *testing.T) {
 	for k := range 6 {
 		t.Run(strconv.Itoa(k), func(t *testing.T) {
