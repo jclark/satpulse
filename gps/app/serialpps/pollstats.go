@@ -12,12 +12,12 @@ const pollStatsSampleLimit = 10000
 // PollStats accumulates optional timing and outcome statistics for one run
 // of Poll. It must be read only after Poll returns.
 type PollStats struct {
-	started      bool
-	windows      int
-	edges        int
-	settledEdges int
-	durations    durationSamples
-	gaps         durationSamples
+	started        bool
+	acquire, track struct {
+		windows, edges int
+	}
+	durations durationSamples
+	gaps      durationSamples
 }
 
 func (s *PollStats) begin() {
@@ -43,9 +43,9 @@ type durationStats struct {
 }
 
 type pollStatsSummary struct {
-	Windows      int
-	Edges        int
-	SettledEdges int
+	Acquire, Track struct {
+		Windows, Edges int
+	}
 	PollDuration durationStats
 	PollGap      durationStats
 }
@@ -70,16 +70,17 @@ func (s *PollStats) addPoll(p poll, prev *poll) {
 	}
 }
 
-func (s *PollStats) addWindow(edge, settled bool) {
+func (s *PollStats) addWindow(edge, acquired bool) {
 	if s == nil {
 		return
 	}
-	s.windows++
+	phase := &s.acquire
+	if acquired {
+		phase = &s.track
+	}
+	phase.windows++
 	if edge {
-		s.edges++
-		if settled {
-			s.settledEdges++
-		}
+		phase.edges++
 	}
 }
 
@@ -87,13 +88,10 @@ func (s *PollStats) summary() pollStatsSummary {
 	if s == nil {
 		return pollStatsSummary{}
 	}
-	return pollStatsSummary{
-		Windows:      s.windows,
-		Edges:        s.edges,
-		SettledEdges: s.settledEdges,
-		PollDuration: s.durations.summary(),
-		PollGap:      s.gaps.summary(),
-	}
+	sum := pollStatsSummary{PollDuration: s.durations.summary(), PollGap: s.gaps.summary()}
+	sum.Acquire.Windows, sum.Acquire.Edges = s.acquire.windows, s.acquire.edges
+	sum.Track.Windows, sum.Track.Edges = s.track.windows, s.track.edges
+	return sum
 }
 
 func (s *durationSamples) summary() durationStats {
@@ -124,9 +122,8 @@ func (s *PollStats) Log(lg *slog.Logger) {
 	}
 	summary := s.summary()
 	lg.Info("serial PPS polling statistics",
-		"windows", summary.Windows,
-		"edges", summary.Edges,
-		"settledEdges", summary.SettledEdges)
+		slog.Group("acquire", "windows", summary.Acquire.Windows, "edges", summary.Acquire.Edges),
+		slog.Group("track", "windows", summary.Track.Windows, "edges", summary.Track.Edges))
 	logDurationStats(lg, "serial PPS state read times", summary.PollDuration)
 	logDurationStats(lg, "serial PPS between-read times", summary.PollGap)
 }

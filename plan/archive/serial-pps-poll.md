@@ -1,6 +1,7 @@
-# Serial PPS polling design
+# Serial PPS polling design (#402)
 
-This records the design of `gps/app/serialpps/poll.go` as of the
+This records the design of `gps/app/serialpps/poll.go`, the poll
+method of the user-space PPS support introduced for #402, as of the
 serial-pps-poll branch (PR #419): how the poller finds a once-per-second
 pulse on a modem-control pin, how it tracks the pulse cheaply, and why
 each rule is shaped the way it is.
@@ -52,9 +53,19 @@ clock paces the loop, so a step in the system clock cannot disturb the
 schedule. Whether any scheduled read actually had to sleep is
 recorded; a window whose reads never slept is query-paced.
 
-Candidates are published with their uncertainty and a Settled flag
-(false during acquisition). Consumers decide what to accept; the
-poller only reports what it measured.
+Candidates are published with their uncertainty and a Settled flag,
+which says no improvement in accuracy is to be expected: the polling
+schedule did not limit the measurement (its spacing was at the floor,
+or the state queries paced the window), or the window has stopped
+shrinking. Candidates are unsettled during acquisition, including the
+catch that completes it (the flag records the state in which the edge
+was captured, and acquisition succeeds as a consequence of that
+catch), and unsettled again during tracking while a window grown by
+misses is still shrinking back, since the uncertainty of a sleep-paced
+window falls as the window does. The same capture-time rule attributes
+the acquisition-ending window to the acquire phase in the statistics.
+Consumers decide what to accept; the poller only reports what it
+measured.
 
 ## Acquisition: acquire
 
@@ -66,14 +77,14 @@ the full period with 15.6 ms spacing.
 - Every catch halves the spacing, down to the floor `minSpacing`
   (50 us), which bounds CPU when the state query is very fast.
 - A miss leaves the spacing unchanged.
-- At the full-period window, consecutive windows tile the period
-  exactly, so a locked poll grid could straddle a pulse narrower than
-  the spacing forever; each full-window miss therefore advances the
-  grid by an irregular 0.618 of the spacing, sweeping the phase.
+- A miss advances the prediction by exactly one period, matching the
+  pulse, so a locked poll grid could straddle a pulse narrower than
+  the spacing forever; each miss therefore advances the grid by an
+  irregular 0.618 of the spacing, sweeping the phase.
 - After the window has narrowed, missLimit (10) consecutive misses
   abandon the attempt and restart cold.
 
-Acquisition ends (the pulse is settled) when a catch happens at the
+Acquisition ends when a catch happens at the
 spacing floor, or when two consecutive caught windows ran with no
 scheduled sleep. The second condition confirms at successively smaller
 spacings that the state queries themselves pace the loop: on such a
@@ -82,15 +93,14 @@ stall. A slept catch or a miss resets that confirmation.
 
 The bracket deliberately does not steer this descent. Brackets are
 noisy (a single slow read stretches one), and earlier designs that
-latched on bracket comparisons settled early on noise, publishing
+latched on bracket comparisons declared acquisition over early on noise, publishing
 millisecond-class samples from a still-wide window.
 
 ## Tracking: track
 
-Tracking runs one feedback loop with three variables: `window`,
-`minWindow`, and the count of consecutive misses (plus a count of
-consecutive catches). `minWindow` is the size the window may not
-shrink below, learned from misses; it starts at zero.
+Tracking runs one feedback loop over `window`, the count of
+consecutive misses, and the count of consecutive catches. There is no
+remembered floor: what a miss buys is a hold, not a value.
 
 On a catch:
 
@@ -99,20 +109,24 @@ On a catch:
   cannot displace the next window by its full error; the cost is a
   small standing lag under clock drift, which the window covers
   because the lag appears inside the measured error.
-- Shrink the window by 1/trackRelease (1/16), but never below
-  `2*(|predictionError| + bracket)` and never below `minWindow`.
-- After shrinkAfter (300) consecutive catches, step `minWindow` down
-  by two brackets and reset the count.
+- If the last run of misses was short (fewer than absentRun) and
+  fewer than shrinkAfter (300) consecutive catches have followed it,
+  the window is frozen: it holds, expanding immediately if this
+  catch's measured requirement `2*(|predictionError| + bracket)`
+  exceeds it, but never shrinking.
+- Otherwise shrink the window by 1/trackRelease (1/16), but never
+  below `2*(|predictionError| + bracket)`.
 
 On a miss:
 
 - Advance the prediction by exactly one period.
-- First miss of a run: grow the window by a bracket at each end and
-  set `minWindow` to the result.
+- First miss of a run: grow the window by a bracket at each end.
 - Each further consecutive miss: double the window, capped at the
   full period.
 - With the window at the full period, missLimit consecutive misses
   declare the pulse gone and return to acquisition.
+- A run of absentRun (3) or more misses does not freeze the window:
+  shrinking resumes on the recovery catch.
 
 ### Why these rules
 
@@ -130,23 +144,37 @@ and an equal offset next second must land at least one read inside
 the window edge, not on it. The old halving ignored the first term,
 which is why it overshot on hardware with real prediction error.
 
-`minWindow`. Some causes of misses never appear on a caught pulse.
+The freeze. Some causes of misses never appear on a caught pulse.
 The motivating case: the sleep to the window open can occasionally
 wake about 0.9 ms late (measured on the development host), so with a
 small window the edge has passed before polling starts. Every caught
 pulse still measures a tiny prediction error, so shrinking looks safe
-right up until it is not. The miss is the only evidence, and
-`minWindow` is where it is kept: the window parks just above the size
-that missed instead of shrinking back into it.
+right up until it is not. The miss is the only evidence, and the
+freeze is how it is respected: after the miss, the grown window holds
+for shrinkAfter catches instead of shrinking straight back into the
+size that failed. Nothing is remembered beyond the hold, so a
+mistaken hold costs at most five minutes; an earlier design kept a
+persistent floor learned from misses, and a miss whose real cause was
+an absent pulse (a dropout during the descent from an outage) could
+plant that floor at fifty times the right size for hours.
 
-The shrinkAfter step. Whether a smaller window works can change
-(load, kernel configuration, hardware), and the loop cannot find out
-without trying: on a caught pulse everything looks fine at any window
-size. So after five minutes of clean tracking it risks one step of
-two brackets. If the smaller window still misses, the price is a
-pulse or two and `minWindow` is restored; if it works, the descent
-continues. Requiring consecutive catches matters: it means the step
-happens only from a window size that is demonstrably reliable.
+The freeze expiring is also the re-test. Whether a smaller window
+works can change (load, kernel configuration, hardware), and the loop
+cannot find out without trying: on a caught pulse everything looks
+fine at any window size. When the hold ends, shrinking resumes and
+probes below the size that missed; if it still misses, the price is a
+pulse or two and another hold. Requiring consecutive catches matters:
+the probe happens only from a window size that is demonstrably
+reliable.
+
+The absentRun exception. A single miss, or a pair (on late-wake
+hardware the boundary is hit singly or in pairs, one doubling putting
+the window far above it), is the shape of a too-small window and
+deserves the cautious hold. Three or more consecutive misses can only
+mean the pulse was absent, which says nothing about window size;
+holding the outage-grown window would keep candidates unsettled and
+the refclock without samples for the whole hold, so shrinking resumes
+immediately on recovery.
 
 Doubling on consecutive misses. While pulses are being missed there
 are no observations and the prediction only coasts, so its
@@ -155,16 +183,25 @@ that at two brackets per second and could take four misses to
 reconnect. Doubling reconnects in one or two, and makes short outages
 cheap: after an eight-second outage the window has grown faster than
 the clock can have drifted, so the first pulse after the outage is
-caught, and the 1/16 shrink then walks back down to `minWindow`.
-Because the prediction is kept through an outage, a full return to
-acquisition is needed only when the window has already grown to the
-whole period and misses continue.
+caught, and the 1/16 shrink then walks straight back down. The
+prediction is kept through short outages; longer ones are rare enough
+that the cost of a full reacquisition does not matter.
+
+That direct recovery assumes the pulse is wide enough to intersect the
+poll grid at the recovery spacing. Tracking spacing grows with the
+window, and tracking misses do not sweep the grid phase. A narrow pulse
+can therefore fall between the same poll positions until tracking gives
+up and returns to acquisition. This is an accepted cost of narrow-pulse
+support: acquisition sweeps the grid phase and finds the pulse again,
+but recovery may be slower and may discard the tracked prediction.
+Keeping fine spacing throughout a large recovery window would instead
+make state reads unreasonably expensive.
 
 ### Reporting
 
-Misses, growth beyond the window, recovery from a run of misses, and
-`minWindow` steps are reported at INFO as they happen. Ordinary 1/16
-shrinking is reported only once per halving. A quiet minute in the
+Misses and the recovery from a run of misses are reported at INFO as
+they happen; other window changes only once per doubling or halving.
+A quiet minute in the
 log is a minute in which every pulse was caught and nothing changed
 by more than half.
 
@@ -173,9 +210,10 @@ by more than half.
 On hardware whose only disturbance is edge jitter, the window rides
 `2*(|predictionError| + bracket)`: about 1 ms and three to five reads
 per pulse on the bench FT232R receiver. On hardware with late wakes,
-the window parks on `minWindow` just above the size that misses
-(1.8-2.4 ms on the development host) and loses a pulse or two only at
-the five-minute re-test. Timestamp quality is the same either way:
+the window holds just above the size that misses (about 2 ms on the
+development host) and loses a pulse or two only when each five-minute
+hold expires and the probe re-finds the boundary. Timestamp quality
+is the same either way:
 published uncertainty comes from the bracket, not the window.
 
 ## Testing
@@ -185,13 +223,13 @@ function; polling and prediction advancement are behind function
 parameters so the tests run the exact production control flow. The
 simulation models absolute edge times (so the prediction law is
 exercised, not assumed), per-attempt query pacing, sporadically late
-window opens, and an outage, across three scenarios for twelve
-simulated minutes, which covers a full shrinkAfter re-test cycle.
+window opens, dropouts, and outages, across five scenarios for
+twelve simulated minutes, which covers a full shrinkAfter hold.
 `TestTrackFeedback` pins the update rules step by step with exact
 expected windows, prediction advances, and reported events. The
 remaining tests drive the real `Poll` against a fake pulse, covering
 acquisition (spacing floor, query-paced confirmation, sleep jitter,
-coarse state refresh), missed-pulse handling, outage resettling, and
+coarse state refresh), missed-pulse handling, outage reacquisition, and
 steady-state read cost.
 
 ## History
@@ -207,7 +245,14 @@ Three earlier designs inform the current shape:
   cadence on query-paced hosts, so the controlled quantity was
   fictional. Lesson: control the time window; state reads are an
   observed consequence.
-- A pure shrink-with-evidence-limit loop without `minWindow`: kept
-  shrinking back into the late-wake zone it could not observe,
-  missing every ~20 s. Lesson: misses carry information that catches
-  cannot, and it must be remembered somewhere.
+- A pure shrink-with-evidence-limit loop with no response to misses
+  beyond growth: kept shrinking back into the late-wake zone it could
+  not observe, missing every ~20 s. Lesson: a miss must suspend
+  shrinking for a long time, not just grow the window.
+- A persistent floor (`minWindow`) set by the first miss of every run
+  and stepped down every shrinkAfter catches: held the late-wake
+  hardware perfectly, but charged every miss to window size, so a
+  dropout during a post-outage descent could plant the floor at the
+  transiently huge window for hours. Lesson: remembered values
+  outlive their evidence; a bounded hold buys the same stability
+  without the permanence.
