@@ -191,6 +191,7 @@ func NewDispatcher(
 const (
 	tickPeriod                = time.Second / 4
 	serialPPSFirstEdgeTimeout = 30 * time.Second
+	serialPPSMaxUncertainty   = time.Millisecond
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan serialpps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -272,9 +273,9 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan serialpps.CandidateEd
 			}
 		case ce, ok := <-spCh:
 			if ok {
-				if ce.Settled {
-					firstSerialPPSDeadline = nil
-				}
+				// Any candidate, settled or not, proves the pin is wired and
+				// pulsing, which is all this warning is about.
+				firstSerialPPSDeadline = nil
 				d.serialPPSCandidateEdge(ce)
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
@@ -321,7 +322,7 @@ func (d *Dispatcher) serialPPSCandidateEdge(ce serialpps.CandidateEdge) {
 			Settled:     ce.Settled,
 		},
 	})
-	if ce.Settled {
+	if ce.Uncertainty <= serialPPSMaxUncertainty || ce.Settled {
 		d.serialPPSEdge(ce.Edge)
 	}
 }
