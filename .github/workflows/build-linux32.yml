@@ -7,7 +7,6 @@ on:
   push:
     branches: [ "master" ]
   pull_request:
-    branches: [ "master" ]
 
 jobs:
 
@@ -23,7 +22,7 @@ jobs:
         go-version: '1.25.x'
 
     - name: Build
-      run: env GOARCH=386 ./unix-build.sh
+      run: env GOARCH=386 make -f Makefile.unix bin
 
     - name: Test
       run: env GOARCH=386 go test ./...

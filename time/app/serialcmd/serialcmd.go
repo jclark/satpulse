@@ -34,6 +34,7 @@ type flagVars struct {
 	info                bool
 	ppsSet              bool
 	ppsPin              gpsio.ModemControlPin
+	invertPolarity      bool
 	ppsMethod           gpsio.PPSMethod
 	pollPreWarm         float64
 	maxWakeupLatency    time.Duration
@@ -109,7 +110,8 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 }
 
 const summary = `[-h|--help] [-a|--all | -d|--serial-device path] [-i|--info]
-              [-p|--pps-pin pin] [-m|--pps-method method] [--poll-pre-warm seconds]
+              [-p|--pps-pin pin] [-I|--invert-polarity] [-m|--pps-method method]
+              [--poll-pre-warm seconds]
               [--max-wakeup-latency microseconds] [--packet-log path]
               [-s|--device-speed bps]
               [-t|--timeout seconds] [-j|--jsonl]`
@@ -127,6 +129,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags.StringVarP(&v.device, "serial-device", "d", "", "operate on the serial port at `path`")
 	flags.BoolVarP(&v.info, "info", "i", false, "show information about serial ports without opening them")
 	flags.StringVarP(&ppsPinName, "pps-pin", "p", "", "detect PPS edges on the modem-control input `pin` (cts, dcd, dsr, or ri)")
+	flags.BoolVarP(&v.invertPolarity, "invert-polarity", "I", false, "invert the usual PPS pulse polarity, for edges that trail the start of the second by the pulse width")
 	flags.StringVarP(&ppsMethodName, "pps-method", "m", "", "force the PPS edge detection `method` (poll, wait, or kernel)")
 	flags.Float64Var(&v.pollPreWarm, "poll-pre-warm", 0, "busy-wait `seconds` before each poll window, for hosts whose reads slow down while idle")
 	flags.Float64Var(&maxWakeupLatencyMicros, "max-wakeup-latency", 0, "limit CPU wakeup latency to `microseconds` while detecting PPS")
@@ -210,12 +213,16 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("--packet-log must not be empty")
 		return
 	}
-	if v.info && (v.ppsSet || methodSet || preWarmSet || v.maxWakeupLatencySet || v.deviceSpeedSet || timeoutSet || packetLogSet) {
-		err = fmt.Errorf("--info cannot be combined with --pps-pin, --pps-method, --poll-pre-warm, --max-wakeup-latency, --device-speed, --timeout, or --packet-log")
+	if v.info && (v.ppsSet || v.invertPolarity || methodSet || preWarmSet || v.maxWakeupLatencySet || v.deviceSpeedSet || timeoutSet || packetLogSet) {
+		err = fmt.Errorf("--info cannot be combined with --pps-pin, --invert-polarity, --pps-method, --poll-pre-warm, --max-wakeup-latency, --device-speed, --timeout, or --packet-log")
 		return
 	}
 	if v.ppsSet && !deviceSet && !v.all {
 		err = fmt.Errorf("--pps-pin requires --serial-device or --all")
+		return
+	}
+	if v.invertPolarity && !v.ppsSet {
+		err = fmt.Errorf("--invert-polarity requires --pps-pin")
 		return
 	}
 	if methodSet && !v.ppsSet {
@@ -434,9 +441,9 @@ func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) error {
 	defer cancel(nil)
 	pr := &edgePrinter{out: os.Stdout, jsonl: v.jsonl, withDevice: v.all, cancel: cancel}
 	if v.all {
-		return scanPPSPorts(ctx, lg, v.ppsPin, v.ppsConfig(), pr)
+		return scanPPSPorts(ctx, lg, v.wiring(), v.ppsConfig(), pr)
 	}
-	result := monitorDevice(ctx, lg, v.device, v.deviceSpeed, v.ppsPin, v.ppsConfig(), v.packetLog, pr)
+	result := monitorDevice(ctx, lg, v.device, v.deviceSpeed, v.wiring(), v.ppsConfig(), v.packetLog, pr)
 	if code := result.exitCode(); code != 0 {
 		return commandError{msg: result.description(), code: code}
 	}
@@ -449,7 +456,16 @@ func (v flagVars) ppsConfig() serialpps.Config {
 	return serialpps.Config{Method: v.ppsMethod, PollPreWarm: v.pollPreWarm}
 }
 
-func scanPPSPorts(ctx context.Context, lg *slog.Logger, pin gpsio.ModemControlPin, ppsCfg serialpps.Config, pr *edgePrinter) error {
+// wiring is the pulse wiring the PPS flags describe.
+func (v flagVars) wiring() serialpps.Wiring {
+	w := serialpps.Wiring{Pin: v.ppsPin}
+	if v.invertPolarity {
+		w.Polarity = serialpps.PolarityAssert
+	}
+	return w
+}
+
+func scanPPSPorts(ctx context.Context, lg *slog.Logger, w serialpps.Wiring, ppsCfg serialpps.Config, pr *edgePrinter) error {
 	ports, err := serialenum.List()
 	if err != nil {
 		return err
@@ -458,7 +474,7 @@ func scanPPSPorts(ctx context.Context, lg *slog.Logger, pin gpsio.ModemControlPi
 		return commandError{msg: "no serial ports found", code: 2}
 	}
 	monitor := func(ctx context.Context, lg *slog.Logger, device string) ppsResult {
-		return monitorDevice(ctx, lg, device, 0, pin, ppsCfg, "", pr)
+		return monitorDevice(ctx, lg, device, 0, w, ppsCfg, "", pr)
 	}
 	return monitorPortList(ctx, lg, ports, monitor, os.Stderr)
 }
@@ -526,9 +542,9 @@ const (
 )
 
 // monitorDevice opens device and prints the timestamp of each PPS edge
-// detected on pin, keeping the receive side drained so receiver traffic
-// cannot stall the port.
-func monitorDevice(ctx context.Context, lg *slog.Logger, device string, speed int, pin gpsio.ModemControlPin, ppsCfg serialpps.Config, packetLogPath string, pr *edgePrinter) (result ppsResult) {
+// detected on the wired pin, keeping the receive side drained so receiver
+// traffic cannot stall the port.
+func monitorDevice(ctx context.Context, lg *slog.Logger, device string, speed int, w serialpps.Wiring, ppsCfg serialpps.Config, packetLogPath string, pr *edgePrinter) (result ppsResult) {
 	result.device = device
 	conn, _, err := gpsio.OpenSerial(device, speed)
 	if err != nil {
@@ -541,7 +557,7 @@ func monitorDevice(ctx context.Context, lg *slog.Logger, device string, speed in
 		closeDevice(lg, conn, device, &result.failure)
 		return
 	}
-	result.edges, err = detectEdges(ctx, lg, conn, pin, device, ppsCfg, pr)
+	result.edges, err = detectEdges(ctx, lg, conn, w, device, ppsCfg, pr)
 	if err != nil {
 		result.failure = serialPPS.describeError(err)
 	}
@@ -611,7 +627,7 @@ type ppsConn interface {
 	serialpps.StateReader
 }
 
-func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsio.ModemControlPin, device string, ppsCfg serialpps.Config, pr *edgePrinter) (int, error) {
+func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, w serialpps.Wiring, device string, ppsCfg serialpps.Config, pr *edgePrinter) (int, error) {
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
@@ -622,7 +638,7 @@ func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, pin gpsi
 		stats = nil
 	}
 	go func() {
-		err := serialpps.Detect(ctx, lg, conn, serialpps.Wiring{Pin: pin}, ppsCfg, edges, stats)
+		err := serialpps.Detect(ctx, lg, conn, w, ppsCfg, edges, stats)
 		stats.Log(lg)
 		errCh <- err
 	}()

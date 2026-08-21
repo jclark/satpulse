@@ -50,7 +50,7 @@ func OpenFD(fd int, name string) (*Source, error) {
 	}
 	if caps&(CaptureAssert|CaptureClear) == 0 || caps&ppsCanWait == 0 {
 		_ = f.Close()
-		return nil, fmt.Errorf("%s: PPS source cannot capture and wait for edges: %w", name, errors.ErrUnsupported)
+		return nil, fmt.Errorf("%s: PPS source cannot capture and wait for edges", name)
 	}
 	if err := s.control("ioctl(PPS_IOC_SETPARAMS)", func(fd uintptr) error {
 		return ioctlSetParams(fd, caps&(CaptureAssert|CaptureClear))

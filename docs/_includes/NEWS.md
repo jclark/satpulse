@@ -74,6 +74,7 @@ _Not yet released_
 - The JSONL event log now uses a natural event shape with a `type` discriminator and a `data` payload, replacing the previous one-field-per-type record shape. The `nanos` integer field is replaced by a `mono` field holding monotonic elapsed seconds. This matches the envelope already emitted by `satpulsetool replay`. Existing event logs in the old format can be converted with the `migrate_log.go` tool in `time/internal/gpsevent`. (#277)
 - The `pulseEdge` event type in the JSONL event log has been renamed to `phcPulseEdge`, because SatPulse now supports two different kinds of pulse edge: PHC-timestamped and system-clock-timestamped. (#402)
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
+- Building from source now uses `make` on macOS and FreeBSD as well as Linux, replacing the `unix-build.sh` script. `make install` works there too, installing under `/usr/local` by default, or under a prefix given by `prefix=`. (#420)
 
 ## Changes in 0.2
 

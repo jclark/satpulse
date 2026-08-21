@@ -82,6 +82,9 @@ It can have the following keys:
   cannot be used when `interface` in the `[phc]` table is configured;
   the pulse must be at least a few milliseconds wide, and narrow pulses can take longer to detect;
   the common receiver default of 100 ms works well, and microsecond-width pulses are not supported
+* `pps.invertPolarity` - a boolean saying whether to invert the usual PPS pulse polarity;
+  set this to `true` if detected edges trail the start of the second by the pulse width (typically 0.1 s);
+  the default is `false`
 
 Example using PPS on CTS:
 

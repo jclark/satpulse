@@ -64,10 +64,39 @@ type ChangeWaiter interface {
 	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin, gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error)
 }
 
+// Polarity identifies which flag transition is the on-time PPS edge.
+//
+// In RS-232 signalling, the voltage level that represents logic 0 on a
+// data line is the same level that asserts a control line, and drivers
+// apply the logic-to-voltage mapping uniformly to data and control
+// lines. A control line driven from a logic-level signal is therefore
+// asserted at logic 0 and deasserted at logic 1. A PPS pulse is
+// active-high, so the flag reads deasserted while the pulse is active,
+// and the on-time leading edge is the flag deasserting. This holds both
+// for native RS-232 ports and for TTL-to-USB adapters, whose flag
+// inputs are likewise active-low. PolarityDeassert names this normal
+// convention and is the zero value.
+//
+// PolarityAssert is for wiring where the pulse instead asserts the
+// flag, which shows up as detected edges trailing the start of the
+// second by the pulse width (typically 0.1 s).
+type Polarity int
+
+const (
+	PolarityDeassert Polarity = iota
+	PolarityAssert
+)
+
+// Asserted reports whether the flag is asserted while the pulse is active.
+func (p Polarity) Asserted() bool {
+	return p == PolarityAssert
+}
+
 // Wiring describes how the PPS pulse is represented on the serial port's
 // modem-control inputs.
 type Wiring struct {
-	Pin gpsio.ModemControlPin
+	Pin      gpsio.ModemControlPin
+	Polarity Polarity
 }
 
 // Detect sends candidate edges for the pulse described by w. An unspecified
@@ -120,9 +149,8 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 
 // Wait sends settled candidate edges from modem-control change notifications,
 // using the wait or kernel method. The backend timestamps each unambiguous
-// transition, so these candidates have no polling uncertainty. The pulse's
-// electrically rising leading edge reaches the host inverted through the TTL
-// driver chain, so the pin reads deasserted during the pulse.
+// transition, so these candidates have no polling uncertainty. The leading
+// edge is the transition into the pulse, as selected by w.Polarity.
 func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method gpsio.PPSMethod, ceCh chan<- CandidateEdge) error {
 	for {
 		change, missed, err := r.WaitModemControlPinChange(ctx, w.Pin, method)
@@ -135,7 +163,7 @@ func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method
 		if missed > 0 {
 			lg.Debug("serial PPS transitions not observed", "atLeast", missed)
 		}
-		if !change.Asserted {
+		if change.Asserted == w.Polarity.Asserted() {
 			ce := CandidateEdge{
 				Edge:    Edge{Timestamp: change.Timestamp, TRead: change.TRead},
 				Settled: true,
