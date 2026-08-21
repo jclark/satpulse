@@ -84,6 +84,34 @@ func TestWait(t *testing.T) {
 	}
 }
 
+func TestWaitInvertedPolarity(t *testing.T) {
+	tRead := time.Now()
+	timestamp := tRead.Add(time.Millisecond)
+	w := &testChangeWaiter{next: make(chan testWaitResult, 2)}
+	// With PolarityAssert the pulse asserts the flag, so the deasserted
+	// transition is a trailing edge and the asserted one is published.
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp.Add(-time.Second), TRead: tRead.Add(-time.Second)}}
+	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp, TRead: tRead, Asserted: true}}
+	candidates := make(chan CandidateEdge, 1)
+	ctx, cancel := context.WithCancel(context.Background())
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS, Polarity: PolarityAssert}, gpsio.PPSMethodWait, candidates)
+	}()
+	select {
+	case candidate := <-candidates:
+		if candidate.Timestamp != timestamp || candidate.TRead != tRead {
+			t.Fatalf("Wait edge = %+v, want the asserting transition", candidate.Edge)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("Wait did not emit the asserting edge")
+	}
+	cancel()
+	if err := <-errCh; !errors.Is(err, context.Canceled) {
+		t.Fatalf("Wait error = %v, want context.Canceled", err)
+	}
+}
+
 func TestWaitContextCancellation(t *testing.T) {
 	w := &testChangeWaiter{next: make(chan testWaitResult), entered: make(chan struct{}, 1)}
 	candidates := make(chan CandidateEdge, 1)

@@ -60,7 +60,8 @@ type SerialConfig struct {
 }
 
 type SerialPPSConfig struct {
-	Pin string `toml:"pin"`
+	Pin            string `toml:"pin"`
+	InvertPolarity bool   `toml:"invertPolarity"`
 }
 
 type SampleConfig struct {
@@ -251,6 +252,16 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	return nil
+}
+
+// wiring is the pulse wiring the table describes.
+func (cfg SerialPPSConfig) wiring() serialpps.Wiring {
+	pin, _ := cfg.modemControlPin() // checked by Config.Validate
+	w := serialpps.Wiring{Pin: pin}
+	if cfg.InvertPolarity {
+		w.Polarity = serialpps.PolarityAssert
+	}
+	return w
 }
 
 func (cfg SerialPPSConfig) modemControlPin() (gpsio.ModemControlPin, error) {
