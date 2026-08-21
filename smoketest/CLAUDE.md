@@ -42,16 +42,11 @@ make            # from repo root: build satpulsed + satpulsetool + satpulsewb
 make smoketest  # run all scenarios in parallel
 ```
 
-On macOS and FreeBSD:
-
-```sh
-./unix-build.sh
-python3 smoketest/run.py
-```
+This works on macOS and FreeBSD as well as Linux.
 
 The runner honours `GOOS` and `GOARCH` when set. Linux binaries live under
 `out/<arch>/`; non-Linux Unix binaries live under `out/<goos>_<arch>/`, matching
-`unix-build.sh`.
+what the build produces.
 
 For selecting scenarios, listing, or serial debugging, call `run.py` directly
 (the make target takes no args):

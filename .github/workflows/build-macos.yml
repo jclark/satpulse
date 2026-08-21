@@ -1,4 +1,4 @@
-# This workflow builds satpulsetool on macOS using bsd-build.sh
+# This workflow builds satpulsetool on macOS with make
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-go
 
 name: Build (macOS)
@@ -21,8 +21,11 @@ jobs:
       with:
         go-version: '1.25.x'
 
+    - name: Install pandoc
+      run: brew install pandoc
+
     - name: Build
-      run: ./bsd-build.sh
+      run: make bin man
 
     - name: Build find-serial
       run: make -C macos OUTDIR=../out/darwin_arm64
@@ -31,7 +34,10 @@ jobs:
       run: out/darwin_arm64/find-serial
 
     - name: Test
-      run: go test ./...
+      run: make test
+
+    - name: Install
+      run: make install-bin install-man prefix=${{ runner.temp }}/prefix
 
     - name: Smoke test
       run: python3 smoketest/run.py --sudo

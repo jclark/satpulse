@@ -183,6 +183,16 @@ func TestSerialPPSConfig(t *testing.T) {
 	}
 }
 
+func TestSerialPPSConfigInvertPolarity(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader("[serial.pps]\npin = \"cts\"\ninvertPolarity = true"))
+	if err != nil {
+		t.Fatalf("readConfig: %v", err)
+	}
+	if cfg.Serial.PPS == nil || !cfg.Serial.PPS.InvertPolarity {
+		t.Fatalf("serial PPS config = %+v, want inverted polarity", cfg.Serial.PPS)
+	}
+}
+
 func TestSerialPPSConfigRejectsPHC(t *testing.T) {
 	cfg, err := readConfig(strings.NewReader(`
 [serial.pps]

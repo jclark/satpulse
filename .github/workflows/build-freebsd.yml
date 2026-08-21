@@ -27,5 +27,6 @@ jobs:
           pkg install -y go git
         run: |
           git config --global --add safe.directory '*'
-          ./unix-build.sh
-          go test ./...
+          make bin
+          make test
+          make install-bin prefix=/tmp/prefix

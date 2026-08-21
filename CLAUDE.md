@@ -97,7 +97,17 @@ Build system uses GNU Make:
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
-It builds on Linux only. On macOS, use `unix-build.sh` instead.
+`make` works on macOS and FreeBSD too, but the `Makefile` proper is Linux-only:
+on other systems `Makefile` (GNU make) and `BSDmakefile` (bmake) both forward
+to the portable `Makefile.unix`; packaging targets are Linux-only. There the
+build (`all`) only generates and the install only copies, because the build
+runs as the user and the install as root. Each has a binaries subgoal and a man
+page subgoal: `all` runs `bin` and `man`, `install` runs `install-bin` and
+`install-man`. The subgoals are strict, so CI names them; the aggregates skip
+the man half with a warning when pandoc is missing, so a build and an install
+work without it. `Makefile.unix` is parsed by both GNU make 3.81 and bmake, so
+it must stay in the intersection of the two dialects: no parse-time shell,
+conditionals, includes or pattern rules.
 
 The web interfaces are built with npm from the `webui/` workspace. Their built
 assets are checked in and embedded into the binaries, and `make` does not

@@ -8,6 +8,7 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-a**\|**\-\-all**] [**\-d**\|**\-\-serial\-device** *path*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-info**] [**\-j**\|**\-\-jsonl**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-I**\|**\-\-invert\-polarity**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**\|**kernel**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-poll\-pre\-warm** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-max\-wakeup\-latency** *microseconds*]\
@@ -46,6 +47,11 @@ Otherwise, the default operation is to discover the available serial ports and s
 **\-p**, **\-\-pps\-pin** **cts**\|**dcd**\|**dsr**\|**ri**
 : Detect PPS edges on the specified modem-control pin.
 This causes speed detection not to be performed.
+
+**\-I**, **\-\-invert\-polarity**
+: Invert the usual PPS pulse polarity.
+Use this if detected edges trail the start of the second by the pulse width (typically 0.1 s).
+Requires **\-p**.
 
 **\-m**, **\-\-pps\-method** **poll**\|**wait**\|**kernel**
 : Controls how the operating system is used to detect modem status changes that mark pulse edges:
