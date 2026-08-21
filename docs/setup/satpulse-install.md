@@ -75,7 +75,10 @@ After this, you will have:
 
 ### macOS and FreeBSD
 
-Build using the `unix-build.sh` script, which puts the binaries under `out/`.
+Build with `make`, which puts the binaries under `out/`. You can then install
+them with `sudo make install`, which installs under `/usr/local` by default;
+pass `prefix=` to install somewhere else. Unlike on Linux, this does not install
+a service definition.
 
 ### Windows
 

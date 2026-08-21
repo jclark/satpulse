@@ -31,8 +31,8 @@ python3 smoketest/run.py -j 1        # run serially
 python3 smoketest/run.py --sudo     # use sudo -n for root-required scenarios
 ```
 
-On macOS and FreeBSD, build with `./unix-build.sh` instead of `make`; the
-runner uses `out/<goos>_<goarch>/`, matching the build script.
+`make` works on macOS and FreeBSD too; there the runner uses
+`out/<goos>_<goarch>/`, matching what the build produces.
 
 When `GOOS` or `GOARCH` is set, the runner uses those values to choose the
 binary directory. For example, `GOOS=freebsd GOARCH=amd64 python3

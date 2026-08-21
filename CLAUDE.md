@@ -97,7 +97,13 @@ Build system uses GNU Make:
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
-It builds on Linux only. On macOS, use `unix-build.sh` instead.
+`make` works on macOS and FreeBSD too, but the `Makefile` proper is Linux-only:
+on other systems `Makefile` (GNU make) and `BSDmakefile` (bmake) both forward
+to the portable `Makefile.unix`, which provides only `all`, `test`, `man`,
+`smoketest`, `install` and `clean`. Packaging targets are Linux-only.
+`Makefile.unix` is parsed by both GNU make 3.81 and bmake, so it must stay in
+the intersection of the two dialects: no parse-time shell, conditionals,
+includes or pattern rules.
 
 The web interfaces are built with npm from the `webui/` workspace. Their built
 assets are checked in and embedded into the binaries, and `make` does not

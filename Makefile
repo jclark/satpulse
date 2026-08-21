@@ -1,4 +1,14 @@
 # Makefile for satpulse: requires GNU make
+# Everything below is Linux-only (GNU date, systemd, Linux packaging tools).
+# On other Unixes, forward every goal to the portable Makefile.unix. .DEFAULT
+# supplies the recipe for any goal that has no rule; all needs naming in the
+# same rule to make a bare make work, and smoketest because .DEFAULT does not
+# apply to a goal that exists as a file (here, the smoketest directory).
+ifneq ($(shell uname -s),Linux)
+.DEFAULT all smoketest:
+	@$(MAKE) -f Makefile.unix $@
+.PHONY: all smoketest
+else
 # Where the config file will be installed by the install target.
 CONFIG_FILE=/usr/local/etc/satpulse.toml
 CMD=github.com/jclark/satpulse/gps/app/cmd
@@ -253,3 +263,4 @@ untag:
 	git tag -d "$(VERSION_TAG)"
 
 .PHONY: $(ALL_GOARCH) all windows_amd64 test smoketest install uninstall clean pkg deb rpm winzip release man man.gz gpsmsg tag untag
+endif
