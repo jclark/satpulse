@@ -2,7 +2,7 @@
 
 Guidance for working in `smoketest/`. For the user-facing overview, scenario
 list, and design rationale, read `README.md` first; the design doc is
-`plan/smoke-test.md` (repo root). This file covers what an agent needs to make
+`plan/archive/smoke-test.md` (repo root). This file covers what an agent needs to make
 changes safely.
 
 ## What this is

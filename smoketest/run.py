@@ -3,7 +3,7 @@
 
 Runs real satpulsed and satpulsewb binaries fed by a hardware-free packet
 source -- a realtime packet-log replay or the u-blox receiver simulator --
-with no root and no GPS hardware. See plan/smoke-test.md.
+with no root and no GPS hardware. See plan/archive/smoke-test.md.
 
 Each scenario has an explicit ID in SCENARIOS. For scenario ID family/name:
   - scenarios/family/name.toml.in (satpulsed) or name.args.in (satpulsewb):
