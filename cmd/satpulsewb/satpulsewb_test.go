@@ -52,8 +52,25 @@ func TestTokenLongFormOnly(t *testing.T) {
 	if strings.Contains(s, "-t, --token") {
 		t.Errorf("help contains a -t shorthand for --token:\n%s", s)
 	}
-	if _, _, err := parseFlags([]string{"-t"}); err == nil {
-		t.Error("-t unexpectedly enabled the access token")
+	if v, _, err := parseFlags([]string{"-t"}); err != nil || v.token {
+		t.Errorf("-t: err %v, token %v; want the shorthand to mean --tui, not --token", err, v != nil && v.token)
+	}
+}
+
+func TestTUIFlag(t *testing.T) {
+	for _, args := range [][]string{{"--tui"}, {"-t"}} {
+		v, _, err := parseFlags(args)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !v.tui {
+			t.Errorf("parseFlags(%q) did not enable the terminal UI", args)
+		}
+	}
+	for _, args := range [][]string{{"--tui", "-L", "localhost:0"}, {"-t", "--token"}} {
+		if _, _, err := parseFlags(args); err == nil {
+			t.Errorf("parseFlags(%q) succeeded", args)
+		}
 	}
 }
 
