@@ -50,6 +50,8 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{mode: opt.Make(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{baudRate: opt.Make(uint32(9600))}},
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600, showReceiver: true}},
+	{"ttyS0", []string{"--packet-log", "pkt.jsonl", "--capture", "10"}, flagVars{packetLogPath: "pkt.jsonl", capture: opt.Make(10 * time.Second), showReceiver: true}},
+	{"ttyS0", []string{"--json", "--packet-log", "pkt.jsonl", "--capture", "10"}, flagVars{packetLogPath: "pkt.jsonl", capture: opt.Make(10 * time.Second), showReceiver: true, jsonOut: true}},
 	{"ttyS0", []string{"--save-all", "--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll, Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--gnss", "GPS,GLO,GAL,BDS"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS),
@@ -726,10 +728,9 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
-	// Test --json cannot be combined with --msg-file or passive capture
-	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--json"},                      // can't use with --msg-file
-	{"--serial-device", "ttyS0", "--json", "--packet-log", "pkt.jsonl", "--capture", "10"}, // passive capture has no result to report
-	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-tags", "--json"},       // can't use with --msg-file even with --show-tags
+	// Test --json cannot be combined with --msg-file
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--json"},                // can't use with --msg-file
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-tags", "--json"}, // can't use with --msg-file even with --show-tags
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed
 	{"--config-file", "test.toml", "--serial-device", "ttyS0"}, // can't use with --serial-device
 	{"--config-file", "test.toml", "--device-speed", "9600"},   // can't use with --device-speed
