@@ -44,6 +44,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "pps with packet log and timeout", args: []string{"-p", "dsr", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl", "-t", "30"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDSR, packetLog: "capture.jsonl", timeout: 30 * time.Second}},
 		{name: "pps until interrupted", args: []string{"-p", "cts", "-t", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS}},
 		{name: "pps JSONL", args: []string{"-j", "-p", "cts", "-a"}, want: flagVars{jsonl: true, all: true, ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
+		{name: "pps inverted polarity", args: []string{"-p", "cts", "--invert-polarity", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, invertPolarity: true, timeout: defaultPPSTimeout}},
 		{name: "pps by polling", args: []string{"-p", "cts", "-m", "poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodPoll, timeout: defaultPPSTimeout}},
 		{name: "pps by waiting", args: []string{"-p", "cts", "--pps-method", "wait", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodWait, timeout: defaultPPSTimeout}},
 		{name: "pps with kernel timestamps", args: []string{"-p", "dcd", "--pps-method", "kernel", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDCD, ppsMethod: gpsio.PPSMethodKernel, timeout: defaultPPSTimeout}},
@@ -56,6 +57,7 @@ func TestParseFlags(t *testing.T) {
 		{name: "info and packet log", args: []string{"-i", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, wantErr: true},
 		{name: "info and timeout", args: []string{"-i", "-d", "/dev/ttyS0", "-t", "1"}, wantErr: true},
 		{name: "info and pps", args: []string{"-i", "-p", "cts", "-d", "/dev/ttyS0"}, wantErr: true},
+		{name: "invert polarity without pps", args: []string{"--invert-polarity", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "method without pps", args: []string{"-m", "poll", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "invalid method", args: []string{"-p", "cts", "-m", "sideband", "-d", "/dev/ttyS0"}, wantErr: true},
 		{name: "wakeup latency without pps", args: []string{"--max-wakeup-latency", "10", "-d", "/dev/ttyS0"}, wantErr: true},
@@ -333,7 +335,7 @@ func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 	}, 1)
 	go func() {
 		pr := &edgePrinter{out: output}
-		count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", serialpps.Config{}, pr)
+		count, err := detectEdges(ctx, lg, conn, serialpps.Wiring{Pin: gpsio.ModemCTS}, "", serialpps.Config{}, pr)
 		result <- struct {
 			count int
 			err   error
@@ -372,7 +374,7 @@ func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
-	count, err := detectEdges(ctx, lg, conn, gpsio.ModemCTS, "", serialpps.Config{Method: gpsio.PPSMethodPoll}, &edgePrinter{out: io.Discard})
+	count, err := detectEdges(ctx, lg, conn, serialpps.Wiring{Pin: gpsio.ModemCTS}, "", serialpps.Config{Method: gpsio.PPSMethodPoll}, &edgePrinter{out: io.Discard})
 	if err != nil || count != 0 {
 		t.Fatalf("detectEdges = %d, %v; want 0, nil", count, err)
 	}
