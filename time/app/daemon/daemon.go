@@ -245,6 +245,15 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}
 	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendors), gct, pCh, conn)
 	cc.logLeapSecond(lg)
+	// Static positioning (mobile = false) on a receiver whose mode
+	// changes apply only after a save and reset cannot be configured
+	// here: satpulsed never writes NVM or restarts the receiver.
+	if gcfg != nil && cfg.GPS.Config && !cfg.GPS.Mobile && gcfg.ConfigProps != nil &&
+		gcfg.ConfigSupport&gpsprot.ConfigSupportModeOnlyWithReset != 0 {
+		if m, ok := gcfg.ConfigProps.GetMode(); ok && !m.Static {
+			lg.Warn("receiver is not using static positioning mode, which satpulsed cannot change: this receiver applies mode changes only after a save and reset; configure it once with satpulsetool")
+		}
+	}
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
 			lg.Info(err.Error())

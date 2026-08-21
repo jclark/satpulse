@@ -37,7 +37,7 @@ const (
 	pvtPayload  = "PQTMPVT,1,31075000,20221225,083737.000,,3,09,18,31.12738291,117.26372910,34.212,5.267,3.212,2.928,0.238,4.346,34.12,2.16,4.38"
 	velPayload  = "PQTMVEL,1,154512.100,1.251,2.452,1.245,2.752,3.021,180.512,0.124,0.254,0.250"
 	epePayload  = "PQTMEPE,2,1.000,1.000,1.000,1.414,1.732"
-	svinPayload = "PQTMSVINSTATUS,1,1000,1,01,20,100,-2484434.3645,4875976.9741,3266161.3412,1.2415"
+	svinPayload = "PQTMSVINSTATUS,1,195574000,1,,11,48,60,-1144697.6622,6090334.0771,1504169.9462,0.1911"
 	navPayload  = "PQTMNAV,1,1,1,190423.000,20241224,212681000,2346,18,,,12,,31.45874521,117.41532415,45.1254,-6.1245,,,1.2451,2.1254,5.1242,,,290,1.0,,78,56,,,,,,,1.2101,1.2148,0.4578,1.1547,,,45.124,,"
 	// Captured from LG290P with PPP HAS enabled. DiffID=9002 (E6 HAS),
 	// SolType=6 (PPP converging), Datumid=1 (WGS84).
@@ -426,20 +426,20 @@ func TestSVINStatusBundle(t *testing.T) {
 	if sv.Valid {
 		t.Error("expected not Valid for Valid=1")
 	}
-	if sv.ObsCount != 20 {
-		t.Errorf("ObsCount = %d, want 20", sv.ObsCount)
+	if sv.ObsCount != 48 {
+		t.Errorf("ObsCount = %d, want 48", sv.ObsCount)
 	}
-	if sv.Position[0] != gpsprot.Meters(-2484434.3645) {
-		t.Errorf("MeanX = %v, want %v", sv.Position[0], gpsprot.Meters(-2484434.3645))
+	if sv.Position[0] != gpsprot.Meters(-1144697.6622) {
+		t.Errorf("MeanX = %v, want %v", sv.Position[0], gpsprot.Meters(-1144697.6622))
 	}
-	if sv.Position[1] != gpsprot.Meters(4875976.9741) {
-		t.Errorf("MeanY = %v, want %v", sv.Position[1], gpsprot.Meters(4875976.9741))
+	if sv.Position[1] != gpsprot.Meters(6090334.0771) {
+		t.Errorf("MeanY = %v, want %v", sv.Position[1], gpsprot.Meters(6090334.0771))
 	}
-	if sv.Position[2] != gpsprot.Meters(3266161.3412) {
-		t.Errorf("MeanZ = %v, want %v", sv.Position[2], gpsprot.Meters(3266161.3412))
+	if sv.Position[2] != gpsprot.Meters(1504169.9462) {
+		t.Errorf("MeanZ = %v, want %v", sv.Position[2], gpsprot.Meters(1504169.9462))
 	}
-	if sv.Accuracy != gpsprot.Meters(1.2415) {
-		t.Errorf("Accuracy = %v, want %v", sv.Accuracy, gpsprot.Meters(1.2415))
+	if sv.Accuracy != gpsprot.Meters(0.1911) {
+		t.Errorf("Accuracy = %v, want %v", sv.Accuracy, gpsprot.Meters(0.1911))
 	}
 }
 

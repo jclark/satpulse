@@ -301,6 +301,9 @@ class Analyzer:
         self.ident_error = None
         rec = s.out.get("receiver")
         self.receiver = rec if isinstance(rec, dict) else {}
+        # msgTypes records what happened to be observed during that one
+        # run, not receiver identity; it must not enter the baseline.
+        self.receiver.pop("msgTypes", None)
         sup = s.out.get("supports")
         self.supports = sup if isinstance(sup, list) else []
 

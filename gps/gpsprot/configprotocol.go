@@ -58,6 +58,34 @@ const (
 
 const ConfigSupportRTCMMSM = ConfigSupportRTCMMSM4 | ConfigSupportRTCMMSM7
 
+// Qualifier flags describe how a capability applies rather than
+// whether it exists. They grow down from the top bit so capability
+// flags can keep growing up, and are excluded from ConfigSupportFull.
+const (
+	// ConfigSupportSignalOnlyWithReset qualifies ConfigSupportSignal:
+	// signal changes are stored-only and take effect only when the
+	// target also saves the configuration and performs a reset that
+	// reloads it (a factory reset does not qualify: it restores NVM
+	// defaults, discarding the save); a target without save+reset
+	// leaves them unperformed.
+	ConfigSupportSignalOnlyWithReset ConfigSupportFlags = 1 << 31
+
+	// ConfigSupportModeOnlyWithReset is the same qualifier for the
+	// positioning mode (survey and fixed position).
+	ConfigSupportModeOnlyWithReset ConfigSupportFlags = 1 << 30
+
+	// ConfigSupportRTCMMSMOnlyWithReset is the same qualifier for the
+	// RTCM MSM type: message enables apply live, but switching between
+	// MSM4 and MSM7 takes effect only after a save and reset. An
+	// explicit MSM type request without save+reset emits the stored
+	// type; a preference (RTCMMsgLax) degrades to it silently.
+	ConfigSupportRTCMMSMOnlyWithReset ConfigSupportFlags = 1 << 29
+
+	// configSupportQualifiers is the set of all qualifier flags.
+	configSupportQualifiers = ConfigSupportSignalOnlyWithReset |
+		ConfigSupportModeOnlyWithReset | ConfigSupportRTCMMSMOnlyWithReset
+)
+
 var configSupportFlagNames = [...]struct {
 	flag ConfigSupportFlags
 	name string
@@ -76,6 +104,9 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
 	{ConfigSupportReload, "reload"},
 	{ConfigSupportPort, "port"},
+	{ConfigSupportSignalOnlyWithReset, "signalOnlyWithReset"},
+	{ConfigSupportModeOnlyWithReset, "modeOnlyWithReset"},
+	{ConfigSupportRTCMMSMOnlyWithReset, "rtcmMSMOnlyWithReset"},
 }
 
 // Items returns the supported configuration item names in stable order.
@@ -139,11 +170,12 @@ type Configurator interface {
 
 // ReceiverInfo provides static information about the GPS receiver.
 type ReceiverInfo struct {
-	Vendor         string      `json:"vendor"`        // receiver vendor (e.g., "u-blox")
-	Firmware       string      `json:"firmware"`      // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
-	Hardware       string      `json:"hardware"`      // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
-	SupportedGNSS  GNSSSet     `json:"supportedGNSS"` // supported GNSS constellations
-	VendorSpecific interface{} `json:"-"`             // vendor-specific information, excluded from JSON
+	Vendor         string           `json:"vendor"`             // receiver vendor (e.g., "u-blox")
+	Firmware       string           `json:"firmware"`           // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
+	Hardware       string           `json:"hardware"`           // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
+	SupportedGNSS  GNSSSet          `json:"supportedGNSS"`      // supported GNSS constellations
+	MsgTypes       map[Tag][]string `json:"msgTypes,omitempty"` // message types received during configuration, sorted, per protocol; filled by the caller from observed traffic, not by the Configurator
+	VendorSpecific interface{}      `json:"-"`                  // vendor-specific information, excluded from JSON
 }
 
 // ConfigRequestState represents the current state of a configuration request.

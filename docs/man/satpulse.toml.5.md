@@ -150,7 +150,10 @@ The `gps` table relates to configuration of the GPS receiver. It can have the fo
    position; on a timing receiver, time mode will be enabled, which is a mode in which a fixed position is established for the receiver,
    and thereafter the time is computed using a single satellite;
    the position can be established by having the GPS spend some time determining the position itself (called a survey)
-   or by explicitly specifying the position (using `fixedPosECEF` or `fixedPosLLH`); the default is `false`
+   or by explicitly specifying the position (using `fixedPosECEF` or `fixedPosLLH`); the default is `false`;
+   on receivers where positioning-mode changes take effect only after a save and reset (shown as `modeOnlyWithReset`
+   by `satpulsetool gps --show-receiver`), satpulsed cannot enable the stationary mode itself, since it never writes
+   the receiver's non-volatile memory; it logs a warning, and the mode must be configured once with `satpulsetool`
 * `surveyTime` - a number giving the time in seconds to perform a survey to establish the position of the GPS receiver antenna;
    SatPulse will only do a survey when `mobile` is false and no fixed position has been set; the default is 2000
 * `surveyAcc` - a number giving the accuracy in meters that the survey must achieve; the survey will continue until this accuracy

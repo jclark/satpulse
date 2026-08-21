@@ -1,0 +1,68 @@
+{
+  "limitations": {
+    "antennaCableDelay": {"unsupported": true},
+    "mode.fixedPosAcc": {"observed": [{"request": 0.12345, "result": 0}, {"request": 1.23456, "result": 0}]},
+    "mode.fixedPosECEF[0]": {
+      "observed": [{"accepted": -1132881.12345, "request": -1132881.12345, "stored": -1132881.1235}],
+      "quantum": 0.0001
+    },
+    "mode.fixedPosECEF[1]": {
+      "observed": [{"accepted": 6092270.56789, "request": 6092270.56789, "stored": 6092270.5679}],
+      "quantum": 0.0001
+    },
+    "mode.fixedPosECEF[2]": {
+      "observed": [{"accepted": 1504542.90123, "request": 1504542.90123, "stored": 1504542.9012}],
+      "quantum": 0.0001
+    },
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "pvtOut": {"missing": ["ecef", "leap", "tai", "tp"]},
+    "rawOut": {
+      "missing": [{"missing": ["obs"], "request": ["obs"]}, {"missing": ["nav"], "request": ["nav"]}]
+    },
+    "rtcmOut": {"missing": [{"missing": ["1077", "1087", "1097", "1117", "1127"], "request": ["MSM7"]}]},
+    "saveGranularity": {"groups": [["messageOutput", "minElevation", "timePulse.width"]], "unsaved": ["mode"]},
+    "signals": {
+      "signalSet": {
+        "BDS": ["B1C", "B1I", "B2I", "B2a", "B2b", "B3I"],
+        "GAL": ["E1", "E5a", "E5b", "E6"],
+        "GLO": ["L1", "L2"],
+        "GPS": ["L1", "L2C", "L5"],
+        "NAVIC": ["L5"],
+        "QZSS": ["L1", "L2C", "L5", "L6"]
+      }
+    },
+    "timeGNSS": {"unsupported": true},
+    "timePulse.width": {"quantum": 0.001}
+  },
+  "receiver": {
+    "firmware": "LG290P03AANR02A01S 2025/12/12",
+    "hardware": "LG290P03",
+    "supportedGNSS": [
+      "GPS",
+      "GAL",
+      "BDS",
+      "GLO",
+      "QZSS",
+      "NAVIC"
+    ],
+    "vendor": "Quectel"
+  },
+  "supports": [
+    "fixedPos",
+    "modeOnlyWithReset",
+    "port",
+    "rtcmBaseID",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "rtcmMSMOnlyWithReset",
+    "rtcmQZSS",
+    "signal",
+    "signalOnlyWithReset",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}

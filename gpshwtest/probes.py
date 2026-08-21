@@ -33,6 +33,11 @@ from tool import Invocation, Tool, ToolFailure, replay
 # been reliable on real hardware.
 SIGNAL_SETTLE = 2.0
 
+# Settle time after a signal-set change made with --save --reload (the
+# signalOnlyWithReset qualifier): the reset reboots the receiver, which
+# answers again within ~15 s on the LG290P; 20 s adds margin.
+SAVE_RESET_SETTLE = 20.0
+
 # Seconds of packet capture used to observe what the receiver emits;
 # the message kinds under test are all per-epoch (1 Hz), so this spans
 # several epochs.
@@ -68,9 +73,9 @@ def signal_universe(gnss: list[str]) -> SignalMap:
     return normalize_signal_map({g: SIGNAL_UNIVERSE.get(g, []) for g in gnss})
 
 
-def signals_target(sigs: SignalMap) -> list[str]:
-    """A --target-json invocation that requests an enabled-signal set."""
-    return target_arg({"Props": {"signalsEnabled": sigs}})
+def signals_target(sigs: SignalMap) -> dict[str, Any]:
+    """The ConfigTarget that requests an enabled-signal set."""
+    return {"Props": {"signalsEnabled": sigs}}
 
 
 def wire_flags(case: list[str]) -> list[str]:
@@ -263,7 +268,7 @@ class SignalCase:
     absent and let analysis derive it from the run."""
 
     name: str
-    args: list[str]
+    target: dict[str, Any]
     syntax: str
     requested: SignalMap | None
     tags: list[str]
@@ -468,7 +473,7 @@ def dedup_signal_cases(cases: list[SignalCase]) -> list[SignalCase]:
     seen: set[str] = set()
     out = []
     for c in cases:
-        k = json.dumps({"args": c.args, "request": c.requested, "syntax": c.syntax},
+        k = json.dumps({"target": c.target, "request": c.requested, "syntax": c.syntax},
                        sort_keys=True)
         if k not in seen:
             seen.add(k)
@@ -484,6 +489,20 @@ def signal_subset(supported: SignalMap, gnss: str) -> SignalMap:
 def family_map(supported: SignalMap,
                family: Callable[[list[str]], list[str]]) -> SignalMap:
     return normalize_signal_map({g: family(sigs) for g, sigs in supported.items()})
+
+
+def with_save_reset(target: dict[str, Any], enabled: bool,
+                    intent: dict[str, Any]) -> dict[str, Any]:
+    """target with the Opts making a stored-only change effective (the
+    onlyWithReset qualifiers), recorded in the step's intent. The Opts must
+    ride in the target: a --target-json request takes its Opts from the JSON
+    and ignores the --save/--reload flags entirely (createConfigTarget in
+    gpscmd.go), so a flag would be dropped without an error."""
+    if not enabled:
+        return target
+    intent["saveReset"] = True
+    return {**target, "Opts": {**target.get("Opts", {}),
+                               "Save": "minimal", "Reset": "reload"}}
 
 
 def first_signal(m: SignalMap) -> SignalMap:
@@ -504,6 +523,12 @@ class ProbeRun:
     line_dead: bool = False
     speed_msg_path: Path | None = None
     speed_msg_port: str = "com1"
+    # Signal (mode) changes need --save --reload to take effect (the
+    # signalOnlyWithReset / modeOnlyWithReset qualifiers). Set only on
+    # disruptive runs: they make every such request write NVM and
+    # reboot the receiver.
+    signal_save_reset: bool = False
+    mode_save_reset: bool = False
 
     def show_config(self, name: str, role: str,
                     prop: str | None = None) -> dict[str, Any] | None:
@@ -766,11 +791,15 @@ class ProbeRun:
     def probe_modes(self, initial: dict[str, Any]) -> None:
         """Probe each positioning-mode case, then restore the initial mode."""
         for case in MODE_CASES:
-            inv = self.tool.gps(f"set-mode-{case.name}", target_arg(case.target),
-                                {"op": "set-mode", "case": case.name,
-                                 "request": case.request})
+            intent: dict[str, Any] = {"op": "set-mode", "case": case.name,
+                                      "request": case.request}
+            inv = self.tool.gps(f"set-mode-{case.name}",
+                                target_arg(self.mode_save_reset_target(case.target, intent)),
+                                intent)
             if transient(inv.error):
                 continue
+            if inv.error is None and self.mode_save_reset:
+                time.sleep(SAVE_RESET_SETTLE)
             cfg = self.show_config(f"readback-mode-{case.name}", "readback", "mode")
             if case.name == "fixed-ecef" and inv.error is None and cfg is not None:
                 # The RTCM base station ID means something only with a fixed
@@ -782,13 +811,18 @@ class ProbeRun:
         self.restore_mode(initial)
 
     def restore_mode(self, initial: dict[str, Any]) -> None:
-        """Set the positioning mode back to its initial readback."""
+        """Set the positioning mode back to its initial readback (and, when
+        mode changes needed --save --reload, leave NVM holding it too)."""
         mode = config_value(initial, ("mode",))
         if not isinstance(mode, dict):
             return
-        inv = self.tool.gps("restore-mode", target_arg(mode_target(mode)),
-                            {"op": "restore-mode", "mode": mode})
+        intent: dict[str, Any] = {"op": "restore-mode", "mode": mode}
+        inv = self.tool.gps("restore-mode",
+                            target_arg(self.mode_save_reset_target(mode_target(mode), intent)),
+                            intent)
         if inv.error is None:
+            if self.mode_save_reset:
+                time.sleep(SAVE_RESET_SETTLE)
             self.show_config("verify-restore-mode", "verify-restore", "mode")
 
     def probe_signals(self, initial: dict[str, Any], supported: list[str]) -> None:
@@ -809,23 +843,41 @@ class ProbeRun:
                                   "request": case.requested, "tags": case.tags}
         if case.gnss is not None:
             intent["gnss"] = case.gnss
-        inv = self.tool.gps(f"set-signals-{case.name}", case.args, intent)
+        inv = self.tool.gps(f"set-signals-{case.name}",
+                            target_arg(self.signal_save_reset_target(case.target, intent)),
+                            intent)
         if transient(inv.error):
             return None
         if inv.error is None:
-            time.sleep(SIGNAL_SETTLE)
+            time.sleep(SAVE_RESET_SETTLE if self.signal_save_reset else SIGNAL_SETTLE)
         return self.show_config(f"readback-signals-{case.name}", "readback", "signals")
 
     def restore_signals(self, initial: dict[str, Any]) -> None:
-        """Re-enable the exact initial signal set."""
+        """Re-enable the exact initial signal set (and, when signal changes
+        needed --save --reload, leave NVM holding it too)."""
         want = normalize_signal_map(config_value(initial, ("signalsEnabled",)))
         if not want:
             return
-        inv = self.tool.gps("restore-signals", signals_target(want),
-                            {"op": "restore-signals", "want": want})
+        intent: dict[str, Any] = {"op": "restore-signals", "want": want}
+        inv = self.tool.gps("restore-signals",
+                            target_arg(self.signal_save_reset_target(
+                                signals_target(want), intent)),
+                            intent)
         if inv.error is None:
-            time.sleep(SIGNAL_SETTLE)
+            time.sleep(SAVE_RESET_SETTLE if self.signal_save_reset else SIGNAL_SETTLE)
             self.show_config("verify-restore-signals", "verify-restore", "signals")
+
+    def signal_save_reset_target(self, target: dict[str, Any],
+                                 intent: dict[str, Any]) -> dict[str, Any]:
+        """target made effective on a signalOnlyWithReset receiver,
+        recorded in the step's intent."""
+        return with_save_reset(target, self.signal_save_reset, intent)
+
+    def mode_save_reset_target(self, target: dict[str, Any],
+                               intent: dict[str, Any]) -> dict[str, Any]:
+        """target made effective on a modeOnlyWithReset receiver,
+        recorded in the step's intent."""
+        return with_save_reset(target, self.mode_save_reset, intent)
 
     def observe(self, name: str, intent: dict[str, Any]) -> Invocation | None:
         """Capture for a few seconds; the packet log is what the receiver

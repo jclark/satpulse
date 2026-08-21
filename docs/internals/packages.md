@@ -100,7 +100,7 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/as` provides NMEA satellite numbering configuration for Allystar GPS receivers.
 
-`gps/internal/quectel` converts PQTM NMEA messages from Quectel GPS receivers into `gps/gpsprot` message format.
+`gps/internal/quectel` implements `gps/gpsprot` abstractions for the Quectel PQTM protocol: it converts PQTM NMEA messages into `gps/gpsprot` message format and provides the high-level configuration protocol for the LG290P. It uses `gps/lib/qtmmsg` to parse and encode PQTM sentences.
 
 `gps/internal/scantest` provides utility functions for testing GPS packet format implementations. It includes functions to find packets within buffers and insert random data prefixes for robustness testing.
 
