@@ -19,6 +19,18 @@
 #device = "/dev/ttyUSB0"
 # Edit this to specify the speed in baud for the serial connection
 speed = 9600
+# Uncomment when the receiver's PPS output is connected to a modem-control
+# input pin on this serial device. One of: cts, dcd, dsr, ri
+#pps.pin = "cts"
+
+# Serial PPS samples accept inferred message delays in the interval
+# [-delayUncertainty, maxDelay). These are the defaults.
+#[sample.serial.pps]
+#delayUncertainty = 0.005
+#maxDelay = 0.8
+# Uncomment to limit CPU wakeup latency while serial PPS is active.
+# The value is in microseconds; 0 is maximally strict.
+#maxWakeupLatency = 10
 
 [gps]
 # Uncomment to configure the GPS (changes are not persistent across GPS reboots)

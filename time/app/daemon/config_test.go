@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/time/lib/pmc"
 )
 
@@ -151,6 +152,163 @@ ntrip.nmeaSend = true`
 	}
 }
 
+func TestSerialPPSConfig(t *testing.T) {
+	tests := []struct {
+		pin string
+		ok  bool
+	}{
+		{pin: "cts", ok: true},
+		{pin: "dcd", ok: true},
+		{pin: "dsr", ok: true},
+		{pin: "ri", ok: true},
+		{pin: ""},
+		{pin: "CTS"},
+		{pin: "rts"},
+	}
+	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	for _, tc := range tests {
+		t.Run(tc.pin, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader("[serial.pps]\npin = \"" + tc.pin + "\""))
+			if err != nil {
+				t.Fatalf("readConfig: %v", err)
+			}
+			if cfg.Serial.PPS == nil || cfg.Serial.PPS.Pin != tc.pin {
+				t.Fatalf("serial PPS config = %+v", cfg.Serial.PPS)
+			}
+			err = cfg.Validate(lg)
+			if (err == nil) != tc.ok {
+				t.Fatalf("Validate error = %v, want success %v", err, tc.ok)
+			}
+		})
+	}
+}
+
+func TestSerialPPSConfigInvertPolarity(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader("[serial.pps]\npin = \"cts\"\ninvertPolarity = true"))
+	if err != nil {
+		t.Fatalf("readConfig: %v", err)
+	}
+	if cfg.Serial.PPS == nil || !cfg.Serial.PPS.InvertPolarity {
+		t.Fatalf("serial PPS config = %+v, want inverted polarity", cfg.Serial.PPS)
+	}
+}
+
+func TestSerialPPSConfigRejectsPHC(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+pin = "cts"
+
+[phc]
+interface = "eth0"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface in the [phc] table") {
+		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
+	}
+}
+
+func TestSerialPPSKernelMethodRequiresDCD(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+pin = "cts"
+
+[sample.serial.pps]
+method = "kernel"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "dcd"`) {
+		t.Fatalf("Validate error = %v, want the kernel method to require DCD", err)
+	}
+	cfg.Serial.PPS.Pin = "dcd"
+	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Validate with dcd: %v", err)
+	}
+}
+
+func TestSerialPPSSampleConfig(t *testing.T) {
+	cfg := defaultConfig()
+	if got := cfg.Sample.Serial.PPS.Method; got != 0 {
+		t.Errorf("default method = %v, want automatic selection", got)
+	}
+	if got := cfg.Sample.Serial.PPS.DelayUncertainty; got != 0.005 {
+		t.Errorf("default delayUncertainty = %v, want 0.005", got)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.8 {
+		t.Errorf("default maxDelay = %v, want 0.8", got)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxWakeupLatency; got != nil {
+		t.Errorf("default maxWakeupLatency = %v, want nil", got)
+	}
+
+	cfg, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+method = "kernel"
+delayUncertainty = 0.01
+maxDelay = 0.7
+maxWakeupLatency = 10
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Sample.Serial.PPS.DelayUncertainty; got != 0.01 {
+		t.Errorf("configured delayUncertainty = %v, want 0.01", got)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxDelay; got != 0.7 {
+		t.Errorf("configured maxDelay = %v, want 0.7", got)
+	}
+	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodKernel {
+		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodKernel)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxWakeupLatency; got == nil || *got != 10 {
+		t.Errorf("configured maxWakeupLatency = %v, want 10", got)
+	}
+	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+
+	cfg, err = readConfig(strings.NewReader(`
+[sample.serial.pps]
+maxWakeupLatency = 0
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Sample.Serial.PPS.MaxWakeupLatency; got == nil || *got != 0 {
+		t.Errorf("explicit zero maxWakeupLatency = %v, want pointer to zero", got)
+	}
+}
+
+func TestSerialPPSSampleConfigRejectsInvalidMethod(t *testing.T) {
+	_, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+method = "sideband"
+`))
+	if err == nil {
+		t.Fatal("readConfig succeeded with invalid PPS method")
+	}
+}
+
+func TestSerialPPSSampleConfigRejectsWideInterval(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[sample.serial.pps]
+delayUncertainty = 0.2
+maxDelay = 0.8
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "delayUncertainty + maxDelay") {
+		t.Fatalf("Validate error = %v, want interval-width error", err)
+	}
+}
+
 func TestPTPConfig(t *testing.T) {
 	cfgStr := `[ptp]
 	ptp4l.udsAddress = "/tmp/ptp4l"
@@ -199,6 +357,12 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)
 	}
+	cfg.Serial.PPS = &SerialPPSConfig{Pin: "cts"}
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != serialPPSSHMPrecision {
+		t.Fatalf("serial-PPS SHM fixed precision = %v, want %d", got, serialPPSSHMPrecision)
+	}
+	cfg.Serial.PPS = nil
 	cfg, err := readConfig(strings.NewReader(`[ntp]
 shm.segment = 2
 shm.precision = -23`))
@@ -213,6 +377,11 @@ shm.precision = -23`))
 	got = cfg.shmFixedPrecision()
 	if got == nil || *got != -23 {
 		t.Fatalf("configured PHC-mode SHM fixed precision = %v, want -23", got)
+	}
+	cfg.NTP.SHM.Precision = nil
+	got = cfg.shmFixedPrecision()
+	if got != nil {
+		t.Fatalf("default PHC precision = %v, want nil", *got)
 	}
 }
 

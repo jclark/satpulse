@@ -348,11 +348,11 @@ export function PacketPanel({visible, connState}: Props) {
                                 <tbody class="font-mono">
                                     {snapshotEntries.map((e, i) => (
                                         <tr key={i} class="text-text-primary">
-                                            <td class="whitespace-nowrap px-2 py-0.5 tabular-nums">{formatTime(e.t)}</td>
-                                            <td class="whitespace-nowrap px-2 py-0.5">{e.tag || ''}</td>
-                                            <td class="whitespace-nowrap px-2 py-0.5">{e.msg || ''}</td>
-                                            <td class="whitespace-nowrap px-2 py-0.5">{e.out ? 'Tx' : 'Rx'}</td>
-                                            <td class="px-2 py-0.5 break-all">{entryData(e)}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5 tabular-nums">{formatTime(e.t)}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5">{e.tag || ''}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5">{e.msg || ''}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5">{e.out ? 'Tx' : 'Rx'}</td>
+                                            <td class="align-baseline px-2 py-0.5 break-all">{entryData(e)}</td>
                                         </tr>
                                     ))}
                                 </tbody>

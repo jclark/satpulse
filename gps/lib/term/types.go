@@ -3,12 +3,39 @@ package term
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
+	"time"
 )
+
+// Term is a configurable serial terminal.
+type Term interface {
+	io.ReadWriteCloser
+
+	Path() string
+	Buffered() (int, error)
+	Change(...AttrSetter) error
+	Speed() int
+	TransmitTime(int) time.Duration
+	DevKind() DevKind
+	ModemControlPinState() (ModemControlPinState, error)
+	Flush() error
+	Drain() error
+	Restore() error
+}
 
 // ErrNotATTY is returned when a device does not support termios.
 // Callers can check for it with errors.Is.
 var ErrNotATTY = errors.New("not a serial device")
+
+// ErrCancelled is returned when a pin watch has been cancelled.
+// Callers can check for it with errors.Is.
+var ErrCancelled = errors.New("pin watch cancelled")
+
+// ErrUnavailable is returned when a pin-watch facility exists on the
+// platform but is unavailable for the particular device or driver.
+// Callers can check for it with errors.Is.
+var ErrUnavailable = errors.New("pin watch unavailable")
 
 // LockedError indicates that a device is already in exclusive use.
 // Callers can check for it with errors.As and then call Locked.
@@ -43,6 +70,104 @@ const (
 	DevBT
 	DevFIFO
 )
+
+// ModemControlPin identifies a modem control pin that is an input to the
+// host.
+type ModemControlPin int
+
+const (
+	ModemCTS ModemControlPin = iota
+	ModemDCD
+	ModemDSR
+	ModemRI
+)
+
+// ModemControlPinState is the set of asserted modem control input pins.
+// Its representation is independent of the platform's native modem-status
+// bits.
+type ModemControlPinState int
+
+// Asserted reports whether l is asserted in s.
+func (s ModemControlPinState) Asserted(l ModemControlPin) bool {
+	if l < ModemCTS || l > ModemRI {
+		return false
+	}
+	return s&(1<<l) != 0
+}
+
+func modemControlPinState(asserted ...ModemControlPin) ModemControlPinState {
+	var state ModemControlPinState
+	for _, pin := range asserted {
+		state |= 1 << pin
+	}
+	return state
+}
+
+// ModemControlPinChange reports one observed transition of a modem control input.
+type ModemControlPinChange struct {
+	// Timestamp is the timestamp assigned to the edge. It always has a
+	// meaningful wall-clock reading. It also has a monotonic reading when the
+	// backend can preserve one; a kernel-provided timestamp does not.
+	Timestamp time.Time
+	// TRead is captured when the backend's wait completes, before subsequent
+	// state or counter validation. It is an ordinary time.Now reading and
+	// therefore carries both wall and monotonic readings. A backend without
+	// an independent edge timestamp uses the wakeup reading, or an adjacent
+	// precise wall-clock reading, as Timestamp.
+	TRead time.Time
+	// Asserted is the pin's sense after the transition that ended the wait,
+	// as far as the platform can determine it. Where the platform can tell
+	// that the wakeup covered more than one transition it does not report the
+	// wakeup at all; where it cannot, this is its best reading.
+	Asserted bool
+}
+
+// ModemControlPinWatch observes transitions of one modem control input. Its
+// validity is independent of the Term it came from: it stays usable after the
+// Term is closed, and an abandoned Wait touches no resource the platform
+// recycles after that close. A watch may change state that belongs to the port
+// rather than to the watch itself, as the Linux kernel PPS watch does by
+// attaching a line discipline until Close, but not state that disturbs the
+// Term's own reads and writes. The watch holds a claim on the port of its own
+// until Close, so a watch left behind by an abandoned Wait must still be
+// closed, and the port can stay unavailable to other openers until it is.
+// Close must not overlap a Wait: the caller must observe Wait's return,
+// directly or through a happens-before edge such as a channel receive,
+// before calling Close.
+type ModemControlPinWatch interface {
+	// Wait blocks until the pin changes; on some platforms it cannot be
+	// interrupted, so callers that need cancellation must run it on a
+	// goroutine they can abandon. missed counts transitions that could not
+	// be reported before this one: edges that arrived while no wait was
+	// armed, and edges that made an earlier wakeup ambiguous. It is a lower
+	// bound, not a total, and diagnostic only; classification must not depend
+	// on it.
+	Wait() (c ModemControlPinChange, missed int, err error)
+	// Cancel prevents any further reports and ends a pending Wait as soon as
+	// the platform allows. Sticky: once it has fired, every Wait, including
+	// one already parked, returns ErrCancelled.
+	Cancel()
+	// Close releases the watch's claim on the port. Calling it while a Wait
+	// is pending is a contract violation and panics.
+	Close() error
+}
+
+// ModemControlPinWatcher is implemented by terminals that can block until a
+// modem control input changes. Callers discover the capability by asserting
+// for this interface.
+type ModemControlPinWatcher interface {
+	NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
+}
+
+// KernelModemControlPinWatcher is implemented by terminals that can watch a
+// modem control input with edge timestamps taken by the OS kernel. Callers
+// discover the capability by asserting for this interface.
+type KernelModemControlPinWatcher interface {
+	// NewKernelModemControlPinWatch creates a kernel-timestamped watch. It
+	// fails with an error wrapping errors.ErrUnsupported when the selected
+	// pin can never be watched this way.
+	NewKernelModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error)
+}
 
 // Error reports one or more serial errors (framing, parity, overrun, etc.)
 // detected by Term.Read.

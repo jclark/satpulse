@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"math"
 	"os"
 	"sync"
 	"time"
@@ -13,9 +15,11 @@ import (
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/wakeup"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/gpsevent"
@@ -133,10 +137,29 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	if err != nil {
 		return err
 	}
+	if cfg.Serial.PPS != nil {
+		if _, err := conn.ModemControlPinState(); err != nil {
+			conn.Close()
+			return fmt.Errorf("serial PPS requires a TTY with modem-control pins: %w", err)
+		}
+	}
 	if speed == 0 {
 		speed = cfgSpeed
 	}
+	// The request is acquired immediately before serial PPS detection starts.
+	// Register its cleanup here so it runs after the worker-wait and serial-port
+	// cleanup registered below.
+	var wakeupLatencyLimit io.Closer
+	defer func() {
+		if wakeupLatencyLimit != nil {
+			if err := wakeupLatencyLimit.Close(); err != nil {
+				lg.Warn("cannot release CPU wakeup latency limit", "err", err)
+			}
+		}
+	}()
 
+	// During normal shutdown, the worker-wait defer registered below runs
+	// first, so the serial PPS poller stops before the connection is closed.
 	defer func() {
 		serialDev := cfg.Serial.Device
 		lg.Debug("closing the serial port", "path", serialDev)
@@ -197,6 +220,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		if sseCh != nil {
 			close(sseCh)
 		}
+		// This defer intentionally runs before the serial-port close defer,
+		// so that no goroutine still issues syscalls against the connection
+		// when it is closed. One exception is safe by construction: a
+		// serial-PPS wait abandoned by cancellation may stay parked in
+		// TIOCMIWAIT past the close, but its ModemControlPinWatch holds a private dup of
+		// the descriptor and touches nothing else. Its gpsio goroutine closes
+		// the watch when the ioctl eventually wakes.
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
@@ -306,6 +336,32 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return err
 		}
 	}
+	var spCh <-chan serialpps.CandidateEdge
+	var spGen *serialpps.Generator
+	if cfg.Serial.PPS != nil {
+		if configuredMax := cfg.Sample.Serial.PPS.MaxWakeupLatency; configuredMax != nil {
+			max := time.Duration(math.Round(*configuredMax * float64(time.Microsecond)))
+			req, err := wakeup.RequestLatencyLimit(max)
+			if err != nil {
+				lg.Warn("cannot limit CPU wakeup latency", "max", max, "err", err)
+			} else {
+				wakeupLatencyLimit = req
+				lg.Info("limited CPU wakeup latency", "max", max.Truncate(wakeup.LatencyResolution))
+			}
+		}
+		spGen = serialpps.NewGenerator(cfg.Sample.Serial.PPS)
+		ch := make(chan serialpps.CandidateEdge, 1)
+		spCh = ch
+		wg.Go(func() {
+			defer close(ch)
+			lg.Debug("serial PPS goroutine started", "pin", cfg.Serial.PPS.Pin)
+			if err := serialpps.Detect(ctx, lg, conn, cfg.Serial.PPS.wiring(), cfg.Sample.Serial.PPS, ch, nil); err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS detection failed", "pin", cfg.Serial.PPS.Pin, "err", err)
+				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Pin, err))
+			}
+			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
+		})
+	}
 	statsObs := newStatsLogObserver(cfg, lg)
 	clockObs, err := newClockLogObserver(cfg, lg, clk, cfg.LeapSecond.leapSecond())
 	if err != nil {
@@ -329,7 +385,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	obs.AddObserver(&oc, posObs)
 	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart, ggaSelector)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, spGen, observer, tStart, ggaSelector)
 	if err != nil {
 		return err
 	}
@@ -349,7 +405,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			d.LeapSecond(ls, time.Time{})
 		}
 		// Dispatcher is responsible for closing rcProxy via defer in Run()
-		d.Run(tsCh, pCh, pullPktCh)
+		d.Run(tsCh, spCh, pCh, pullPktCh)
 	})
 
 	return nil
@@ -364,6 +420,7 @@ func NewDispatcher(
 	gm *ptpgm.Grandmaster,
 	rc *refclock.ProxyRefClock,
 	shm *ntpshm.Writer,
+	spGen *serialpps.Generator,
 	obs obs.Observer,
 	tStart time.Time,
 	ggaSelector *stream.GGASelector,
@@ -393,7 +450,7 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart, gs)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, spGen, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI

@@ -26,6 +26,7 @@ func List() ([]Port, error) {
 			Device:  p.Name,
 			Display: enumeratorDisplay(p.Name, p.Product, usb.VID, usb.PID),
 			USB:     usb,
+			Serial:  p.SerialNumber,
 		})
 	}
 	return result, nil

@@ -22,7 +22,6 @@ type portInfo struct {
 	Port
 	name    string
 	product string
-	aliases []string
 }
 
 // List enumerates hardware serial ports using sysfs. It never opens a device
@@ -171,6 +170,10 @@ func readUSBDetails(dir string, port *portInfo) error {
 	if err != nil {
 		return fmt.Errorf("reading USB attribute product: %w", err)
 	}
+	port.Serial, err = readOptionalFile(filepath.Join(dir, "serial"))
+	if err != nil {
+		return fmt.Errorf("reading USB attribute serial: %w", err)
+	}
 	return nil
 }
 
@@ -221,10 +224,10 @@ func filterAndCollectAliases(ports []portInfo) ([]portInfo, error) {
 		if !ok || alias == target {
 			continue
 		}
-		ports[portIndex].aliases = append(ports[portIndex].aliases, alias)
+		ports[portIndex].Aliases = append(ports[portIndex].Aliases, alias)
 	}
 	for i := range ports {
-		sort.Strings(ports[i].aliases)
+		sort.Strings(ports[i].Aliases)
 	}
 	return ports, nil
 }
@@ -241,7 +244,7 @@ func setDisplay(port *portInfo) {
 	}
 
 	port.Display = port.Device
-	details := append([]string(nil), port.aliases...)
+	details := append([]string(nil), port.Aliases...)
 	if deviceDetail != "" {
 		details = append(details, deviceDetail)
 	}

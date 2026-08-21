@@ -6,6 +6,8 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -48,13 +50,15 @@ var baudRates = []int{
 	230400, 460800, 921600,
 }
 
-type Term struct {
+type windowsTerm struct {
 	handle        windows.Handle
 	path          string
 	attr          Attr
 	dcbSaved      windows.DCB
 	timeoutsSaved windows.CommTimeouts
 }
+
+var _ Term = (*windowsTerm)(nil)
 
 type Attr struct {
 	dcb      windows.DCB
@@ -63,28 +67,30 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-func Open(path string, opts ...AttrSetter) (*Term, error) {
-	t := new(Term)
-	err := t.Init(path, opts...)
-	if err != nil {
+// Open opens and configures a serial terminal.
+func Open(path string, opts ...AttrSetter) (Term, error) {
+	t := new(windowsTerm)
+	if err := t.init(path, opts...); err != nil {
 		return nil, err
 	}
 	return t, nil
 }
 
-func (t *Term) Init(path string, opts ...AttrSetter) (err error) {
+func (t *windowsTerm) init(path string, opts ...AttrSetter) (err error) {
 	t.path = path
 	name, err := windows.UTF16PtrFromString(normalizeCOM(path))
 	if err != nil {
 		return t.wrapErr(err, "open")
 	}
+	// WaitCommEvent must overlap the scan reader, and every operation on an
+	// overlapped handle must receive its own OVERLAPPED structure.
 	h, err := windows.CreateFile(
 		name,
 		windows.GENERIC_READ|windows.GENERIC_WRITE,
 		0, // exclusive: no sharing
 		nil,
 		windows.OPEN_EXISTING,
-		windows.FILE_ATTRIBUTE_NORMAL,
+		windows.FILE_ATTRIBUTE_NORMAL|windows.FILE_FLAG_OVERLAPPED,
 		0,
 	)
 	if err != nil {
@@ -162,7 +168,7 @@ func normalizeCOM(path string) string {
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *Term) Change(opts ...AttrSetter) error {
+func (t *windowsTerm) Change(opts ...AttrSetter) error {
 	attr := t.attr
 	for _, opt := range opts {
 		err := opt(&attr)
@@ -185,12 +191,14 @@ func (t *Term) Change(opts ...AttrSetter) error {
 	return nil
 }
 
-func (t *Term) Read(buf []byte) (int, error) {
+func (t *windowsTerm) Read(buf []byte) (int, error) {
 	if len(buf) == 0 {
 		return 0, nil
 	}
 	var n uint32
-	err := windows.ReadFile(t.handle, buf, &n, nil)
+	err := overlapped(t.handle, func(o *windows.Overlapped) error {
+		return windows.ReadFile(t.handle, buf, &n, o)
+	}, &n, nil, nil)
 	if err != nil {
 		return int(n), t.wrapErr(err, "read")
 	}
@@ -208,11 +216,13 @@ func (t *Term) Read(buf []byte) (int, error) {
 	return int(n), nil
 }
 
-func (t *Term) Write(buf []byte) (int, error) {
+func (t *windowsTerm) Write(buf []byte) (int, error) {
 	total := 0
 	for len(buf) > 0 {
 		var n uint32
-		err := windows.WriteFile(t.handle, buf, &n, nil)
+		err := overlapped(t.handle, func(o *windows.Overlapped) error {
+			return windows.WriteFile(t.handle, buf, &n, o)
+		}, &n, nil, nil)
 		if err != nil {
 			return total, t.wrapErr(err, "write")
 		}
@@ -222,7 +232,39 @@ func (t *Term) Write(buf []byte) (int, error) {
 	return total, nil
 }
 
-func (t *Term) Buffered() (int, error) {
+// overlapped runs one operation on an overlapped handle to completion. When
+// timestamp is non-nil the clocks are read the instant the operation completes,
+// before anything else the caller might do. They are two adjacent reads, not
+// one atomic reading of both clocks.
+func overlapped(h windows.Handle, op func(*windows.Overlapped) error, n *uint32, timestamp, tRead *time.Time) error {
+	event, err := windows.CreateEvent(nil, 1, 0, nil)
+	if err != nil {
+		return err
+	}
+	defer windows.CloseHandle(event)
+	o := windows.Overlapped{HEvent: event}
+	err = op(&o)
+	if errors.Is(err, windows.ERROR_IO_PENDING) {
+		err = windows.GetOverlappedResult(h, &o, n, true)
+	}
+	if timestamp != nil {
+		*timestamp = preciseNow()
+		*tRead = time.Now()
+	}
+	return err
+}
+
+// preciseNow reads the system clock via GetSystemTimePreciseAsFileTime,
+// which resolves ~100 ns where time.Now is quantized to the shared clock
+// page's update (~0.5 ms measured). The result carries no monotonic
+// reading, so it must not be used for elapsed-time arithmetic.
+func preciseNow() time.Time {
+	var ft windows.Filetime
+	windows.GetSystemTimePreciseAsFileTime(&ft)
+	return time.Unix(0, ft.Nanoseconds())
+}
+
+func (t *windowsTerm) Buffered() (int, error) {
 	var errs uint32
 	var stat windows.ComStat
 	err := windows.ClearCommError(t.handle, &errs, &stat)
@@ -232,17 +274,183 @@ func (t *Term) Buffered() (int, error) {
 	return int(stat.CBOutQue), nil
 }
 
-func (t *Term) Flush() error {
+// Win32 modem-status bits from winbase.h.
+const (
+	msCTSOn  = 0x0010
+	msDSROn  = 0x0020
+	msRingOn = 0x0040
+	msRLSDOn = 0x0080
+)
+
+// ModemControlPinState returns the asserted modem control input pins.
+func (t *windowsTerm) ModemControlPinState() (ModemControlPinState, error) {
+	state, err := readModemControlPinState(t.handle)
+	if err != nil {
+		return 0, t.wrapErr(err, "GetCommModemStatus")
+	}
+	return state, nil
+}
+
+func readModemControlPinState(h windows.Handle) (ModemControlPinState, error) {
+	var status uint32
+	if err := windows.GetCommModemStatus(h, &status); err != nil {
+		return 0, err
+	}
+	var state ModemControlPinState
+	if status&msCTSOn != 0 {
+		state |= modemControlPinState(ModemCTS)
+	}
+	if status&msRLSDOn != 0 {
+		state |= modemControlPinState(ModemDCD)
+	}
+	if status&msDSROn != 0 {
+		state |= modemControlPinState(ModemDSR)
+	}
+	if status&msRingOn != 0 {
+		state |= modemControlPinState(ModemRI)
+	}
+	return state, nil
+}
+
+var _ ModemControlPinWatcher = (*windowsTerm)(nil)
+
+type pinWatch struct {
+	handle    windows.Handle
+	pin       ModemControlPin
+	path      string
+	cancelled atomic.Bool
+	inWait    atomic.Bool
+	// mu guards handle against a Cancel racing Close. Wait is excluded from
+	// Close by the ModemControlPinWatch contract, but Cancel is not: gpsio cancels a
+	// watch from Stop while the wait goroutine that owns it may be closing
+	// it, and a syscall on a handle value already reused would reach an
+	// unrelated object.
+	mu sync.Mutex
+}
+
+// NewModemControlPinWatch creates a watch on a duplicate of the terminal's handle, so it
+// remains usable after the terminal is closed. The duplicate names the same
+// file object, which is what the driver sees, so the event mask installed
+// here is the one the watch's WaitCommEvent waits on and the one Cancel
+// clears. The mask is installed once, because SetCommMask resets the driver's
+// event history: installing it before every wait would open a window in which
+// a transition between two waits is lost, whereas with the mask left alone a
+// transition arriving while no wait is armed completes the next wait at once.
+func (t *windowsTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
+	mask, err := commEventMask(pin)
+	if err != nil {
+		return nil, err
+	}
+	proc := windows.CurrentProcess()
+	var h windows.Handle
+	if err := windows.DuplicateHandle(proc, t.handle, proc, &h, 0, false, windows.DUPLICATE_SAME_ACCESS); err != nil {
+		return nil, t.wrapErr(err, "DuplicateHandle")
+	}
+	if err := windows.SetCommMask(h, mask); err != nil {
+		windows.CloseHandle(h)
+		return nil, t.wrapErr(commWaitError(err), "SetCommMask")
+	}
+	return &pinWatch{handle: h, pin: pin, path: t.path}, nil
+}
+
+// Wait blocks in WaitCommEvent until the pin's event fires. Windows keeps no
+// transition counter, so this is the degraded mode: nothing is withheld,
+// missed is always zero, and Asserted is the best reading GetCommModemStatus
+// gives after the wakeup. A wait armed after Cancel fails with
+// ERROR_INVALID_PARAMETER because no wait events are set, so the sticky flag
+// is checked again before the error is returned.
+func (w *pinWatch) Wait() (ModemControlPinChange, int, error) {
+	w.inWait.Store(true)
+	defer w.inWait.Store(false)
+	if w.cancelled.Load() {
+		return ModemControlPinChange{}, 0, ErrCancelled
+	}
+	var events, n uint32
+	var timestamp, tRead time.Time
+	err := overlapped(w.handle, func(o *windows.Overlapped) error {
+		return windows.WaitCommEvent(w.handle, &events, o)
+	}, &n, &timestamp, &tRead)
+	if w.cancelled.Load() {
+		return ModemControlPinChange{}, 0, ErrCancelled
+	}
+	if err != nil {
+		return ModemControlPinChange{}, 0, w.wrapErr(commWaitError(err), "WaitCommEvent")
+	}
+	state, err := readModemControlPinState(w.handle)
+	if err != nil {
+		return ModemControlPinChange{}, 0, w.wrapErr(err, "GetCommModemStatus")
+	}
+	return ModemControlPinChange{Timestamp: timestamp, TRead: tRead, Asserted: state.Asserted(w.pin)}, 0, nil
+}
+
+// Cancel latches the watch closed and clears the event mask, which the serial
+// driver completes a pending wait on immediately, so a cancelled Wait returns
+// without waiting for the pin. Clearing the mask on the overlapped file object
+// is not queued behind the pending wait the way it would be on a synchronous
+// one.
+func (w *pinWatch) Cancel() {
+	if w.cancelled.Swap(true) {
+		return
+	}
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.handle != windows.InvalidHandle {
+		windows.SetCommMask(w.handle, 0)
+	}
+}
+
+func (w *pinWatch) Close() error {
+	if w.inWait.Load() {
+		panic("term: ModemControlPinWatch.Close during Wait")
+	}
+	w.mu.Lock()
+	h := w.handle
+	w.handle = windows.InvalidHandle
+	w.mu.Unlock()
+	return w.wrapErr(windows.CloseHandle(h), "close")
+}
+
+func (w *pinWatch) wrapErr(err error, op string) error {
+	if err == nil {
+		return nil
+	}
+	return &os.PathError{Op: op, Path: w.path, Err: err}
+}
+
+func commEventMask(pin ModemControlPin) (uint32, error) {
+	switch pin {
+	case ModemCTS:
+		return windows.EV_CTS, nil
+	case ModemDCD:
+		return windows.EV_RLSD, nil
+	case ModemDSR:
+		return windows.EV_DSR, nil
+	case ModemRI:
+		return windows.EV_RING, nil
+	}
+	return 0, fmt.Errorf("invalid modem control pin: %d", pin)
+}
+
+func commWaitError(err error) error {
+	if errors.Is(err, windows.ERROR_INVALID_FUNCTION) ||
+		errors.Is(err, windows.ERROR_NOT_SUPPORTED) ||
+		errors.Is(err, windows.ERROR_INVALID_PARAMETER) {
+		return fmt.Errorf("%w: %w", ErrUnavailable, err)
+	}
+	return err
+}
+
+func (t *windowsTerm) Flush() error {
 	err := windows.PurgeComm(t.handle, windows.PURGE_RXCLEAR|windows.PURGE_TXCLEAR)
 	return t.wrapErr(err, "PurgeComm")
 }
 
 // Drain blocks until all pending output has been transmitted.
-func (t *Term) Drain() error {
+func (t *windowsTerm) Drain() error {
 	return t.wrapErr(windows.FlushFileBuffers(t.handle), "FlushFileBuffers")
 }
 
-func (t *Term) Restore() error {
+func (t *windowsTerm) Restore() error {
 	err := windows.SetCommState(t.handle, &t.dcbSaved)
 	if err != nil {
 		return t.wrapErr(err, "SetCommState")
@@ -251,22 +459,22 @@ func (t *Term) Restore() error {
 	return t.wrapErr(err, "SetCommTimeouts")
 }
 
-func (t *Term) Close() error {
+func (t *windowsTerm) Close() error {
 	h := t.handle
 	t.handle = windows.InvalidHandle
 	return t.wrapErr(windows.CloseHandle(h), "close")
 }
 
-func (t *Term) Path() string {
+func (t *windowsTerm) Path() string {
 	return t.path
 }
 
-func (t *Term) Speed() int {
+func (t *windowsTerm) Speed() int {
 	return int(t.attr.dcb.BaudRate)
 }
 
 // TransmitTime returns the time it takes to send nBytes at the current speed.
-func (t *Term) TransmitTime(nBytes int) time.Duration {
+func (t *windowsTerm) TransmitTime(nBytes int) time.Duration {
 	if nBytes <= 0 {
 		return 0
 	}
@@ -290,14 +498,14 @@ func (attr *Attr) byteTransmitTime() time.Duration {
 
 // DevKind on Windows returns DevUnknown. The plan allows best-effort
 // classification via registry lookup; that is not yet implemented.
-func (t *Term) DevKind() DevKind {
+func (t *windowsTerm) DevKind() DevKind {
 	return DevUnknown
 }
 
 // readError returns a *Error describing serial errors reported by
 // ClearCommError, or nil if none. Windows does not expose per-category
 // counters, so Error.Counts is always nil.
-func (t *Term) readError() *Error {
+func (t *windowsTerm) readError() *Error {
 	var errs uint32
 	var stat windows.ComStat
 	if err := windows.ClearCommError(t.handle, &errs, &stat); err != nil {
@@ -325,7 +533,7 @@ func (t *Term) readError() *Error {
 	return &Error{Path: t.path, Flags: flags}
 }
 
-func (t *Term) wrapErr(err error, op string) error {
+func (t *windowsTerm) wrapErr(err error, op string) error {
 	if err == nil {
 		return nil
 	}
@@ -360,7 +568,7 @@ func (f *File) Buffered() (int, error) {
 
 // OpenFallback opens a non-serial GPS input, such as a named pipe used as a
 // replay sink, as an asynchronous *os.File. It skips the GetCommState/
-// SetCommState setup a COM port needs (and that fails on a pipe; see Init).
+// SetCommState setup a COM port needs (and that fails on a pipe; see init).
 // The handle is opened FILE_FLAG_OVERLAPPED so os.NewFile associates it with
 // the Go runtime poller, giving Read the SetReadDeadline support the scan loop
 // relies on (Go 1.25+). It is classified DevFIFO, so writes are rejected at

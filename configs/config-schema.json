@@ -55,6 +55,66 @@
         },
         "speed": {
           "type": "integer"
+        },
+        "pps": {
+          "type": "object",
+          "properties": {
+            "pin": {
+              "type": "string",
+              "enum": ["cts", "dcd", "dsr", "ri"]
+            },
+            "invertPolarity": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": ["pin"]
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "object",
+          "properties": {
+            "pps": {
+              "type": "object",
+              "properties": {
+                "delayUncertainty": {
+                  "description": "Uncertainty in measured pulse-to-message delay (s)",
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0.005
+                },
+                "maxDelay": {
+                  "description": "Maximum post-pulse message delay (s)",
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0.8
+                },
+                "maxWakeupLatency": {
+                  "description": "Maximum CPU wakeup latency while serial PPS is active (microseconds)",
+                  "type": "number",
+                  "minimum": 0
+                },
+                "method": {
+                  "description": "PPS edge detection method: poll, wait, or kernel; omit for automatic selection",
+                  "type": "string",
+                  "enum": ["poll", "wait", "kernel"]
+                },
+                "pollPreWarm": {
+                  "description": "CPU busy-wait before each poll window (s); 0 disables",
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                }
+              }
+            }
+          }
         }
       }
     },

@@ -71,16 +71,20 @@ Whenever you create a new package, add an entry describing it to the appropriate
 - Use ASCII only - avoid non-ASCII characters (no fancy quotes, checkmarks, emojis, etc.)
 - Exception: math symbols where truly needed (e.g., μs for microseconds)
 
-### Function ordering
-- Order code for top-to-bottom readability: readers should understand what's happening without jumping around
-- Type definitions come before the functions that use them
-- Main/exported functions come before their helper functions
-- Example ordering:
-  1. Type definitions (structs, interfaces, constants)
-  2. Constructor/factory functions
-  3. Main methods on those types
-  4. Helper functions used by the methods
-- The goal: reading from top to bottom tells a story - what the types are, what the main operations are, then how they're implemented
+### Declaration ordering
+- Order declarations to tell the story from top to bottom: start with the main operation, then follow its control flow into progressively lower-level helpers
+- Put callers before callees; put main/exported functions as early as their type dependencies allow
+- Define a type before the first non-method function that uses a value of that type, whether as a parameter, result, local variable, or composite literal
+- Do not move a type up merely because its name is mentioned, and do not collect all types at the top of the file; introduce types used only by later helpers immediately before that part of the story
+- Methods need not immediately follow their type definitions; put them where their behavior fits the top-down flow
+- Put constants and package variables near the first part of the story that uses them, before that use
+- A typical order is:
+  1. Types whose values the main/exported function uses
+  2. Main/exported function
+  3. Types and constants needed by its first helper
+  4. First helper, followed by its lower-level helpers
+  5. Subsequent operations in control-flow order
+  6. Shared low-level helpers and methods
 
 ## Development commands
 
@@ -93,7 +97,17 @@ Build system uses GNU Make:
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
-It builds on Linux only. On macOS, use `unix-build.sh` instead.
+`make` works on macOS and FreeBSD too, but the `Makefile` proper is Linux-only:
+on other systems `Makefile` (GNU make) and `BSDmakefile` (bmake) both forward
+to the portable `Makefile.unix`; packaging targets are Linux-only. There the
+build (`all`) only generates and the install only copies, because the build
+runs as the user and the install as root. Each has a binaries subgoal and a man
+page subgoal: `all` runs `bin` and `man`, `install` runs `install-bin` and
+`install-man`. The subgoals are strict, so CI names them; the aggregates skip
+the man half with a warning when pandoc is missing, so a build and an install
+work without it. `Makefile.unix` is parsed by both GNU make 3.81 and bmake, so
+it must stay in the intersection of the two dialects: no parse-time shell,
+conditionals, includes or pattern rules.
 
 The web interfaces are built with npm from the `webui/` workspace. Their built
 assets are checked in and embedded into the binaries, and `make` does not

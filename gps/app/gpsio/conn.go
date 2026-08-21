@@ -2,6 +2,7 @@ package gpsio
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"time"
@@ -18,6 +19,87 @@ import (
 // interfaces (e.g. gpscfg.SerialError) can do so via *SerialError without
 // depending on the term package directly.
 type SerialError = term.Error
+
+// ModemControlPin identifies a modem control input pin.
+type ModemControlPin = term.ModemControlPin
+
+// ModemControlPinChange reports one observed transition of a modem control input.
+type ModemControlPinChange = term.ModemControlPinChange
+
+// ErrUnavailable reports that a PPS detection method exists on the platform
+// but is unavailable for the particular device or driver.
+var ErrUnavailable = term.ErrUnavailable
+
+const (
+	// ModemCTS is clear to send.
+	ModemCTS = term.ModemCTS
+	// ModemDCD is data carrier detect.
+	ModemDCD = term.ModemDCD
+	// ModemDSR is data set ready.
+	ModemDSR = term.ModemDSR
+	// ModemRI is ring indicator.
+	ModemRI = term.ModemRI
+)
+
+// ModemControlPinState is the set of asserted modem control input pins.
+type ModemControlPinState = term.ModemControlPinState
+
+// PPSMethod identifies how serial PPS edges are detected: adaptive polling
+// of the modem control pin state, blocking on the platform's modem-status
+// wait primitive, or kernel PPS. The zero value is unspecified, which callers
+// interpret as automatic selection.
+type PPSMethod int
+
+const (
+	PPSMethodPoll PPSMethod = iota + 1
+	PPSMethodWait
+	PPSMethodKernel
+)
+
+// String returns the method's name, or a placeholder when it has none.
+func (m PPSMethod) String() string {
+	switch m {
+	case PPSMethodPoll:
+		return "poll"
+	case PPSMethodWait:
+		return "wait"
+	case PPSMethodKernel:
+		return "kernel"
+	}
+	return fmt.Sprintf("PPSMethod(%d)", int(m))
+}
+
+// ParsePPSMethod parses the name of a PPS detection method. Unspecified
+// has no name: it is expressed by omitting the option or key.
+func ParsePPSMethod(s string) (PPSMethod, error) {
+	switch s {
+	case "poll":
+		return PPSMethodPoll, nil
+	case "wait":
+		return PPSMethodWait, nil
+	case "kernel":
+		return PPSMethodKernel, nil
+	}
+	return 0, fmt.Errorf("invalid PPS method %q: must be poll, wait, or kernel", s)
+}
+
+// MarshalText implements encoding.TextMarshaler.
+func (m PPSMethod) MarshalText() ([]byte, error) {
+	if m < PPSMethodPoll || m > PPSMethodKernel {
+		return nil, fmt.Errorf("PPS method %v has no text form", m)
+	}
+	return []byte(m.String()), nil
+}
+
+// UnmarshalText implements encoding.TextUnmarshaler.
+func (m *PPSMethod) UnmarshalText(text []byte) error {
+	v, err := ParsePPSMethod(string(text))
+	if err != nil {
+		return err
+	}
+	*m = v
+	return nil
+}
 
 type OutPort interface {
 	io.Writer

@@ -72,6 +72,8 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (serial device or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
 
+`gps/app/serialpps` detects PPS edges on serial modem-control input lines and combines their system timestamps with recent receiver UTC messages to generate refclock samples.
+
 `gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
 
 ### gps/internal/
@@ -88,7 +90,7 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/septentrio` implements `gps/gpsprot` abstractions for the Septentrio SBF protocol. It uses `gps/lib/sbfbin` to frame and parse SBF blocks.
 
-`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol. It uses `gps/lib/casbin` to do this.
+`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol, including the configuration protocol for CASIC receivers. It uses `gps/lib/casbin` and `gps/lib/casmsg` to do this.
 
 `gps/internal/unc` implements `gps/gpsprot` abstractions for the Unicore protocol. It uses `gps/lib/uncmsg` to parse Unicore binary and ASCII message formats.
 
@@ -106,6 +108,10 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 These packages are reusable libraries for GPS processing. They are in the library layer.
 
+`gps/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
+
+`gps/lib/wakeup` requests operating-system limits on latency added when CPUs wake from idle. It is Linux-dependent.
+
 `gps/lib/ubxbin` translates binary packets in the UBX protocol to and from Go structs.
 
 `gps/lib/ubxcfgval` handles the 9th generation UBX format for configuration data that is payload for UBX-CFG-VALGET/VALSET messages.
@@ -113,6 +119,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/ubxcfgval/cfgschema` contains a YAML schema for configuration data handled by `gps/lib/ubxcfgval`. This is used to generate code in the `gps/lib/ubxcfgval` package.
 
 `gps/lib/casbin` translates binary packets in the CASIC protocol to and from Go structs.
+
+`gps/lib/casmsg` builds CASIC proprietary PCAS NMEA sentences and interprets their GPTXT responses.
 
 `gps/lib/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 
@@ -152,6 +160,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
+`gps/lib/kpps` provides low-level access to kernel PPS sources using the RFC 2783 data model. It is currently implemented on Linux.
+
 `gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; other platforms use go.bug.st/serial/enumerator.
 
 `gps/lib/decconv` converts between base-10 decimal strings and int64 scaled integers without floating point. It is used for exact parsing and formatting of physical quantities like angles and lengths.
@@ -181,6 +191,8 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 `time/app/daemon` implements the satpulsed daemon. It orchestrates all the parts of the satpulsed program. It also handles the TOML config file and provides HTTP endpoints for the web interface and metrics.
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
+
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `gps/app/serialpps`.
 
 ### time/internal/
 
@@ -227,8 +239,6 @@ These packages are reusable libraries for time synchronization. They are in the 
 `time/lib/sse` marshals data into the format of HTML SSE (server-sent events).
 
 `time/lib/allan` computes Allan deviations. (This is not used currently.)
-
-`time/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
 
 `time/lib/circbuf` provides a generic circular buffer that maintains a sliding window of recent samples. It supports appending with automatic overflow handling and reverse chronological iteration.
 
