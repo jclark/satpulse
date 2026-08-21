@@ -2,6 +2,7 @@
 # Works with GNU make 3.81 (as on macOS) and later, and BSD make (bmake).
 # Tested on macOS, FreeBSD and Linux.
 prefix=/usr/local
+sysconfdir=$(prefix)/etc
 CMD=github.com/jclark/satpulse/gps/app/cmd
 TAGS=netgo,osusergo
 TARGETS=./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
@@ -72,14 +73,14 @@ install-bin:
 	@set -e; \
 	[ -f out/build.dir ] || { echo "binaries not built: run make bin first" >&2; exit 1; }; \
 	outdir=`cat out/build.dir`; \
-	mkdir -p $(prefix)/sbin $(prefix)/bin $(prefix)/etc $(prefix)/share/doc/satpulse; \
+	mkdir -p $(prefix)/sbin $(prefix)/bin $(sysconfdir) $(prefix)/share/doc/satpulse; \
 	install $$outdir/satpulsed $(prefix)/sbin/satpulsed; \
 	install $$outdir/satpulsetool $(prefix)/bin/satpulsetool; \
 	install $$outdir/satpulsewb $(prefix)/bin/satpulsewb; \
 	install -m 644 configs/config-schema.json $(prefix)/share/doc/satpulse/config-schema.json; \
-	[ -f $(prefix)/etc/satpulse.toml ] || \
+	[ -f $(sysconfdir)/satpulse.toml ] || \
 	  sed -e '/^#:schema /s; \./; $(prefix)/share/doc/satpulse/;' configs/satpulse.toml \
-	    > $(prefix)/etc/satpulse.toml; \
+	    > $(sysconfdir)/satpulse.toml; \
 	for f in `cat out/gpsmsg.files`; do \
 	  mkdir -p `dirname $(prefix)/share/satpulse/gpsmsg/$$f`; \
 	  install -m 644 configs/gpsmsg/$$f $(prefix)/share/satpulse/gpsmsg/$$f; \
@@ -92,7 +93,7 @@ install-man:
 	@for f in $(MAN5); do install -m 644 out/$$f $(prefix)/share/man/man5/$$f || exit 1; done
 	@sed 's;/usr/share/satpulse/gpsmsg;$(prefix)/share/satpulse/gpsmsg;g' \
 	  out/satpulsetool-gps.1 > $(prefix)/share/man/man1/satpulsetool-gps.1
-	@sed 's;/etc/satpulse.toml;$(prefix)/etc/satpulse.toml;g' \
+	@sed 's;/etc/satpulse.toml;$(sysconfdir)/satpulse.toml;g' \
 	  out/$(MAN8) > $(prefix)/share/man/man8/$(MAN8)
 
 clean:
