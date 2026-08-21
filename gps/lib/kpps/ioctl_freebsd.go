@@ -1,6 +1,6 @@
 package kpps
 
-//go:generate sh -c "go tool cgo -godefs types_freebsd.go | gofmt > ztypes_freebsd.go && rm -rf _obj"
+//go:generate sh -c "{ echo '//go:build amd64 || arm64'; echo; go tool cgo -godefs types_freebsd.go; } | gofmt > ztypes_freebsd.go && rm -rf _obj"
 
 import (
 	"time"
