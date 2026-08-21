@@ -25,7 +25,7 @@ jobs:
       with:
         usesh: true
         prepare: |
-          pkg install -y go git
+          pkg install -y go git hs-pandoc
         run: |
           git config --global --add safe.directory '*'
           make

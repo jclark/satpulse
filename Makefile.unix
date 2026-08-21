@@ -16,12 +16,16 @@ MAN5 = satpulse.toml.5
 MAN8 = satpulsed.8
 MAN_PAGES = $(MAN1) $(MAN5) $(MAN8)
 
+# all runs as the user and install as root, so all generates everything and
+# install only copies: install needs neither the Go toolchain nor pandoc.
+all: bin man
+
 # Shell snippet setting $outdir to the out/ subdirectory holding the binaries
 # for the target platform: out/<goarch> on Linux, out/<goos>_<goarch> elsewhere.
 # go env honours GOOS and GOARCH from the environment, so cross builds work.
 OUTDIR = outdir=out/`go env GOARCH`; test "`go env GOOS`" = linux || outdir=out/`go env GOOS`_`go env GOARCH`
 
-all:
+bin:
 	@set -e; \
 	$(OUTDIR); \
 	version=`cat VERSION`; \
@@ -38,7 +42,20 @@ all:
 	go build -tags "$(TAGS)" -o $$outdir \
 	  -ldflags "-X \"$(CMD).version=$$cmd_version\" -X \"$(CMD).buildDate=$$build_date\"" \
 	  $(TARGETS); \
+	echo $$outdir > out/build.dir; \
 	echo "Built satpulsed satpulsetool satpulsewb in $$outdir"
+
+# Regenerating a page needs pandoc, so skip the ones already up to date.
+man:
+	@set -e; \
+	mkdir -p out; \
+	for f in $(MAN_PAGES); do \
+	  if [ ! out/$$f -nt docs/man/$$f.md ]; then \
+	    pandoc -s --metadata=title="`echo $$f | sed 's/\.[0-9]$$//'`" \
+	      --metadata=section="`echo $$f | sed 's/.*\.//'`" \
+	      --metadata=author="James Clark" -t man -o out/$$f docs/man/$$f.md; \
+	  fi; \
+	done
 
 test:
 	go test ./...
@@ -46,20 +63,14 @@ test:
 smoketest:
 	python3 smoketest/run.py
 
-man:
+# Copies what all built; out/build.dir names the directory it built into, so
+# this works for a cross-built tree and without go on the PATH. The systemd
+# unit is Linux-only, so unlike the Makefile's install target this one installs
+# just the binaries, config, gpsmsg files, schema and man pages.
+install:
 	@set -e; \
-	mkdir -p out; \
-	for f in $(MAN_PAGES); do \
-	  pandoc -s --metadata=title="`echo $$f | sed 's/\.[0-9]$$//'`" \
-	    --metadata=section="`echo $$f | sed 's/.*\.//'`" \
-	    --metadata=author="James Clark" -t man -o out/$$f docs/man/$$f.md; \
-	done
-
-# The systemd unit is Linux-only, so unlike the Makefile's install target this
-# one installs just the binaries, config, gpsmsg files, schema and man pages.
-install: all man
-	@set -e; \
-	$(OUTDIR); \
+	[ -f out/build.dir ] || { echo "nothing to install: run make first" >&2; exit 1; }; \
+	outdir=`cat out/build.dir`; \
 	mkdir -p $(prefix)/sbin $(prefix)/bin $(prefix)/etc \
 	  $(prefix)/share/doc/satpulse $(prefix)/share/man/man1 \
 	  $(prefix)/share/man/man5 $(prefix)/share/man/man8; \
@@ -84,4 +95,4 @@ install: all man
 clean:
 	rm -rf out
 
-.PHONY: all test smoketest man install clean
+.PHONY: all bin man test smoketest install clean

@@ -75,6 +75,9 @@ After this, you will have:
 
 ### macOS and FreeBSD
 
+The build generates the man pages, so you also need `pandoc`:
+`brew install pandoc` on macOS, `pkg install hs-pandoc` on FreeBSD.
+
 Build with `make`, which puts the binaries under `out/`. You can then install
 them with `sudo make install`, which installs under `/usr/local` by default;
 pass `prefix=` to install somewhere else. Unlike on Linux, this does not install
