@@ -62,6 +62,10 @@
             "pin": {
               "type": "string",
               "enum": ["cts", "dcd", "dsr", "ri"]
+            },
+            "invertPolarity": {
+              "type": "boolean",
+              "default": false
             }
           },
           "required": ["pin"]

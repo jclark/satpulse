@@ -1,0 +1,104 @@
+# Portable Makefile for Unix-like operating systems.
+# Works with GNU make 3.81 (as on macOS) and later, and BSD make (bmake).
+# Tested on macOS, FreeBSD and Linux.
+prefix=/usr/local
+sysconfdir=$(prefix)/etc
+CMD=github.com/jclark/satpulse/gps/app/cmd
+TAGS=netgo,osusergo
+TARGETS=./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
+MAN1=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 \
+  satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 \
+  satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1
+MAN5=satpulse.toml.5
+MAN8=satpulsed.8
+MAN_PAGES=$(MAN1) $(MAN5) $(MAN8)
+SUBMAKE=$(MAKE) -f Makefile.unix
+
+all:
+	@$(SUBMAKE) bin
+	@if command -v pandoc >/dev/null 2>&1; then $(SUBMAKE) man; else \
+	  echo "warning: pandoc not found, so not building the man pages" >&2; \
+	fi
+
+bin:
+	@set -e; \
+	goos=`go env GOOS`; \
+	goarch=`go env GOARCH`; \
+	outdir=out/$$goarch; \
+	test "$$goos" = linux || outdir=out/$${goos}_$$goarch; \
+	version=`cat VERSION`; \
+	build_date=`date -u -Iseconds | tr 'T' ' '`; \
+	git_date=`env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d`; \
+	cmd_version="$$version-pre.$$git_date.`git log -1 --format=%h`"; \
+	git update-index -q --refresh >/dev/null 2>&1 || :; \
+	if ! git diff-index --quiet HEAD 2>/dev/null; then \
+	  cmd_version="$$cmd_version.dirty"; \
+	elif [ "`git describe --tags --exact-match 2>/dev/null`" = "v$$version" ]; then \
+	  cmd_version="$$version"; \
+	fi; \
+	mkdir -p $$outdir; \
+	go build -tags "$(TAGS)" -o $$outdir \
+	  -ldflags "-X \"$(CMD).version=$$cmd_version\" -X \"$(CMD).buildDate=$$build_date\"" \
+	  $(TARGETS); \
+	echo $$outdir > out/build.dir; \
+	(cd configs/gpsmsg && git ls-files .) > out/gpsmsg.files; \
+	echo "Built satpulsed satpulsetool satpulsewb in $$outdir"
+
+man:
+	@command -v pandoc >/dev/null 2>&1 || \
+	  { echo "pandoc is required to build the man pages" >&2; exit 1; }
+	@mkdir -p out
+	@for f in $(MAN_PAGES); do \
+	  if [ ! out/$$f -nt docs/man/$$f.md ]; then \
+	    pandoc -s --metadata=title="`echo $$f | sed 's/\.[0-9]$$//'`" \
+	      --metadata=section="`echo $$f | sed 's/.*\.//'`" \
+	      --metadata=author="James Clark" -t man -o out/$$f docs/man/$$f.md \
+	      || exit 1; \
+	  fi; \
+	done
+
+test:
+	go test ./...
+
+smoketest:
+	python3 smoketest/run.py
+
+install:
+	@$(SUBMAKE) install-bin
+	@if [ -f out/$(MAN8) ]; then $(SUBMAKE) install-man; else \
+	  echo "warning: man pages not built, so not installing them" >&2; \
+	fi
+
+install-bin:
+	@set -e; \
+	[ -f out/build.dir ] || { echo "binaries not built: run make bin first" >&2; exit 1; }; \
+	outdir=`cat out/build.dir`; \
+	mkdir -p $(prefix)/sbin $(prefix)/bin $(sysconfdir) $(prefix)/share/doc/satpulse; \
+	install $$outdir/satpulsed $(prefix)/sbin/satpulsed; \
+	install $$outdir/satpulsetool $(prefix)/bin/satpulsetool; \
+	install $$outdir/satpulsewb $(prefix)/bin/satpulsewb; \
+	install -m 644 configs/config-schema.json $(prefix)/share/doc/satpulse/config-schema.json; \
+	[ -f $(sysconfdir)/satpulse.toml ] || \
+	  sed -e '/^#:schema /s; \./; $(prefix)/share/doc/satpulse/;' configs/satpulse.toml \
+	    > $(sysconfdir)/satpulse.toml; \
+	for f in `cat out/gpsmsg.files`; do \
+	  mkdir -p `dirname $(prefix)/share/satpulse/gpsmsg/$$f`; \
+	  install -m 644 configs/gpsmsg/$$f $(prefix)/share/satpulse/gpsmsg/$$f; \
+	done
+
+install-man:
+	@[ -f out/$(MAN8) ] || { echo "man pages not built: run make man first" >&2; exit 1; }
+	@mkdir -p $(prefix)/share/man/man1 $(prefix)/share/man/man5 $(prefix)/share/man/man8
+	@for f in $(MAN1); do install -m 644 out/$$f $(prefix)/share/man/man1/$$f || exit 1; done
+	@sed 's;/usr/share/satpulse/gpsmsg;$(prefix)/share/satpulse/gpsmsg;g' \
+	  out/satpulsetool-gps.1 > $(prefix)/share/man/man1/satpulsetool-gps.1
+	@sed -e 's;/usr/local/etc/satpulse.toml;$(sysconfdir)/satpulse.toml;g' \
+	  -e 's;/usr/local/share/doc/satpulse/;$(prefix)/share/doc/satpulse/;g' \
+	  out/$(MAN5) > $(prefix)/share/man/man5/$(MAN5)
+	@sed 's;/etc/satpulse.toml;$(sysconfdir)/satpulse.toml;g' \
+	  out/$(MAN8) > $(prefix)/share/man/man8/$(MAN8)
+
+clean:
+	rm -rf out
+
+.PHONY: all bin man test smoketest install install-bin install-man clean

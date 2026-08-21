@@ -188,7 +188,7 @@ def build_dir() -> str:
 
     Honour GOOS and GOARCH when set so a cross-built tree is exercised against
     its own binaries rather than the host's. Linux builds use out/<arch>;
-    other Unix builds use out/<goos>_<arch>, matching unix-build.sh.
+    other Unix builds use out/<goos>_<arch>, matching Makefile.unix.
     """
     goos = os.environ.get("GOOS") or platform.system().lower()
     goarch = os.environ.get("GOARCH")

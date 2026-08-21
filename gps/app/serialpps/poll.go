@@ -513,11 +513,10 @@ func classify(prev, cur reading, w Wiring, deadline time.Time) (clockReading, bo
 	return clockReading{}, !cur.poll.midpoint().mono.Before(deadline)
 }
 
-// inPulse reports whether the state was observed during a pulse. The pulse's
-// electrically rising leading edge reaches the host inverted through the TTL
-// driver chain, so the flag reads deasserted during the pulse.
+// inPulse reports whether the state was observed during a pulse, as
+// selected by the wiring's polarity.
 func inPulse(s gpsio.ModemControlPinState, w Wiring) bool {
-	return !s.Asserted(w.Pin)
+	return s.Asserted(w.Pin) == w.Polarity.Asserted()
 }
 
 func halfCeil(d time.Duration) time.Duration {
