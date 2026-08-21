@@ -37,6 +37,9 @@ all:
 # go env honours GOOS and GOARCH from the environment, so cross builds work.
 OUTDIR = outdir=out/`go env GOARCH`; test "`go env GOOS`" = linux || outdir=out/`go env GOOS`_`go env GOARCH`
 
+# These commands share shell variables, so they have to be one recipe line;
+# set -e restores the per-command error checking that make would otherwise do,
+# without which the recipe's status would be the final echo's.
 bin:
 	@set -e; \
 	$(OUTDIR); \
@@ -59,15 +62,15 @@ bin:
 
 # Regenerating a page needs pandoc, so skip the ones already up to date.
 man:
-	@set -e; \
-	command -v pandoc >/dev/null 2>&1 || \
-	  { echo "pandoc is required to build the man pages" >&2; exit 1; }; \
-	mkdir -p out; \
-	for f in $(MAN_PAGES); do \
+	@command -v pandoc >/dev/null 2>&1 || \
+	  { echo "pandoc is required to build the man pages" >&2; exit 1; }
+	@mkdir -p out
+	@for f in $(MAN_PAGES); do \
 	  if [ ! out/$$f -nt docs/man/$$f.md ]; then \
 	    pandoc -s --metadata=title="`echo $$f | sed 's/\.[0-9]$$//'`" \
 	      --metadata=section="`echo $$f | sed 's/.*\.//'`" \
-	      --metadata=author="James Clark" -t man -o out/$$f docs/man/$$f.md; \
+	      --metadata=author="James Clark" -t man -o out/$$f docs/man/$$f.md \
+	      || exit 1; \
 	  fi; \
 	done
 
@@ -86,7 +89,8 @@ install:
 # out/build.dir names the directory the build put the binaries in, so this
 # works for a cross-built tree and without go on the PATH. The systemd unit is
 # Linux-only, so unlike the Makefile's install target this one installs just
-# the binaries, config, gpsmsg files and schema.
+# the binaries, config, gpsmsg files and schema. One recipe line, and so set -e,
+# for the same reason as bin.
 install-bin:
 	@set -e; \
 	[ -f out/build.dir ] || { echo "binaries not built: run make bin first" >&2; exit 1; }; \
@@ -105,14 +109,13 @@ install-bin:
 	done
 
 install-man:
-	@set -e; \
-	[ -f out/$(MAN8) ] || { echo "man pages not built: run make man first" >&2; exit 1; }; \
-	mkdir -p $(prefix)/share/man/man1 $(prefix)/share/man/man5 $(prefix)/share/man/man8; \
-	for f in $(MAN1); do install -m 644 out/$$f $(prefix)/share/man/man1/$$f; done; \
-	for f in $(MAN5); do install -m 644 out/$$f $(prefix)/share/man/man5/$$f; done; \
-	sed 's;/usr/share/satpulse/gpsmsg;$(prefix)/share/satpulse/gpsmsg;g' \
-	  out/satpulsetool-gps.1 > $(prefix)/share/man/man1/satpulsetool-gps.1; \
-	sed 's;/etc/satpulse.toml;$(prefix)/etc/satpulse.toml;g' \
+	@[ -f out/$(MAN8) ] || { echo "man pages not built: run make man first" >&2; exit 1; }
+	@mkdir -p $(prefix)/share/man/man1 $(prefix)/share/man/man5 $(prefix)/share/man/man8
+	@for f in $(MAN1); do install -m 644 out/$$f $(prefix)/share/man/man1/$$f || exit 1; done
+	@for f in $(MAN5); do install -m 644 out/$$f $(prefix)/share/man/man5/$$f || exit 1; done
+	@sed 's;/usr/share/satpulse/gpsmsg;$(prefix)/share/satpulse/gpsmsg;g' \
+	  out/satpulsetool-gps.1 > $(prefix)/share/man/man1/satpulsetool-gps.1
+	@sed 's;/etc/satpulse.toml;$(prefix)/etc/satpulse.toml;g' \
 	  out/$(MAN8) > $(prefix)/share/man/man8/$(MAN8)
 
 clean:
