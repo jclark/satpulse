@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestIsCallOutName(t *testing.T) {
+func TestCallOutName(t *testing.T) {
 	tests := []struct {
 		name   string
 		expect bool
@@ -30,7 +30,7 @@ func TestIsCallOutName(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := isCallOutName(tc.name); got != tc.expect {
+			if got := callOutName.MatchString(tc.name); got != tc.expect {
 				t.Errorf("got %v want %v", got, tc.expect)
 			}
 		})

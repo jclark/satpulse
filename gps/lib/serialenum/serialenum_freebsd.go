@@ -17,6 +17,11 @@ import (
 
 var devDir = "/dev"
 
+// callOutName matches a call-out device node: cuauN for uart(4) ports, or
+// cuaUN with an optional .M subunit for multi-port devices on ucom(4). The
+// .init and .lock state nodes do not match.
+var callOutName = regexp.MustCompile(`^cua(u[0-9]+|U[0-9]+(\.[0-9]+)?)$`)
+
 // usbMeta is the USB identity a ucom(4) driver instance publishes for its
 // ports, keyed in the metadata map by its ttyname sysctl value ("U0").
 type usbMeta struct {
@@ -35,7 +40,7 @@ func List() ([]Port, error) {
 	}
 	var names []string
 	for _, entry := range entries {
-		if isCallOutName(entry.Name()) {
+		if callOutName.MatchString(entry.Name()) {
 			names = append(names, entry.Name())
 		}
 	}
@@ -44,35 +49,6 @@ func List() ([]Port, error) {
 		return nil, fmt.Errorf("enumerating serial ports: %w", err)
 	}
 	return buildPorts(names, meta), nil
-}
-
-// isCallOutName reports whether name is a call-out device node: cuauN for
-// uart(4) ports, or cuaUN with an optional .M subunit for multi-port devices
-// on ucom(4). The .init and .lock state nodes fail the digit checks.
-func isCallOutName(name string) bool {
-	rest, ok := strings.CutPrefix(name, "cua")
-	if !ok || len(rest) < 2 || (rest[0] != 'u' && rest[0] != 'U') {
-		return false
-	}
-	num := rest[1:]
-	if rest[0] == 'U' {
-		if base, sub, found := strings.Cut(num, "."); found {
-			return isDigits(base) && isDigits(sub)
-		}
-	}
-	return isDigits(num)
-}
-
-func isDigits(s string) bool {
-	if s == "" {
-		return false
-	}
-	for i := 0; i < len(s); i++ {
-		if s[i] < '0' || s[i] > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 // ucomMetadata walks the dev. sysctl subtree for driver instances that have a
@@ -142,34 +118,23 @@ func sysctlOptional(name string) (string, error) {
 	return v, err
 }
 
-// parsePnpinfo splits a %pnpinfo string into its key=value fields. A value
-// may be double-quoted to include spaces; pnpinfo defines no escape syntax,
-// so the quotes are plain delimiters.
+// pnpinfoField matches one key=value field of a %pnpinfo string. A value may
+// be double-quoted to include spaces; pnpinfo defines no escape syntax, so
+// the quotes are plain delimiters, and a truncated value may lack the
+// closing one.
+var pnpinfoField = regexp.MustCompile(`([^ =]+)=("([^"]*)"?|[^ ]*)`)
+
+// parsePnpinfo splits a %pnpinfo string into its key=value fields.
 func parsePnpinfo(s string) map[string]string {
 	m := make(map[string]string)
-	for {
-		s = strings.TrimLeft(s, " ")
-		eq := strings.IndexByte(s, '=')
-		if eq < 0 {
-			return m
+	for _, f := range pnpinfoField.FindAllStringSubmatch(s, -1) {
+		val := f[2]
+		if strings.HasPrefix(val, `"`) {
+			val = f[3]
 		}
-		key := s[:eq]
-		s = s[eq+1:]
-		var val string
-		if strings.HasPrefix(s, `"`) {
-			s = s[1:]
-			if end := strings.IndexByte(s, '"'); end >= 0 {
-				val, s = s[:end], s[end+1:]
-			} else {
-				val, s = s, ""
-			}
-		} else if end := strings.IndexByte(s, ' '); end >= 0 {
-			val, s = s[:end], s[end+1:]
-		} else {
-			val, s = s, ""
-		}
-		m[key] = val
+		m[f[1]] = val
 	}
+	return m
 }
 
 // pnpinfoUSBID converts the vendor= and product= fields, which pnpinfo
@@ -220,17 +185,12 @@ func buildPorts(names []string, meta map[string]usbMeta) []Port {
 	return ports
 }
 
-// Meta sysctl operations from sys/sysctl.h: CTL_SYSCTL_NAME2OID resolves a
-// dotted name to an OID, and CTL_SYSCTL_NEXT/CTL_SYSCTL_NAME step through the
-// OID tree and name its nodes. x/sys/unix reaches these only through by-name
-// helpers that re-resolve the name on every call, so issue the raw syscall
-// directly.
-const (
-	ctlSysctl         = 0 // CTL_SYSCTL
-	ctlSysctlName     = 1 // CTL_SYSCTL_NAME
-	ctlSysctlNext     = 2 // CTL_SYSCTL_NEXT
-	ctlSysctlName2oid = 3 // CTL_SYSCTL_NAME2OID
-)
+// The CTL_SYSCTL_* meta sysctl operations (constants generated from
+// sys/sysctl.h into ztypes_freebsd.go): NAME2OID resolves a dotted name to an
+// OID, and NEXT/NAME step through the OID tree and name its nodes. x/sys/unix
+// reaches these only through by-name helpers that re-resolve the name on
+// every call, so issue the raw syscall directly.
+//go:generate sh -c "{ echo '//go:build freebsd'; echo; go tool cgo -godefs types_freebsd.go; } | gofmt > ztypes_freebsd.go && rm -rf _obj _cgo_*.o"
 
 func name2oid(name string) ([]int32, error) {
 	b, err := unix.ByteSliceFromString(name)
