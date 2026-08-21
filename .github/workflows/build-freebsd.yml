@@ -30,3 +30,4 @@ jobs:
           git config --global --add safe.directory '*'
           make bin
           make test
+          make install-bin prefix=/tmp/prefix

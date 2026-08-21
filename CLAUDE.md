@@ -99,12 +99,15 @@ Build system uses GNU Make:
 
 `make` works on macOS and FreeBSD too, but the `Makefile` proper is Linux-only:
 on other systems `Makefile` (GNU make) and `BSDmakefile` (bmake) both forward
-to the portable `Makefile.unix`, which provides only `all` (= `bin` + `man`,
-so it needs pandoc), `test`, `smoketest`, `install` and `clean`. Packaging
-targets are Linux-only. There `install` only copies what `all` generated,
-because `all` runs as the user and `install` as root. `Makefile.unix` is parsed
-by both GNU make 3.81 and bmake, so it must stay in the intersection of the two
-dialects: no parse-time shell, conditionals, includes or pattern rules.
+to the portable `Makefile.unix`; packaging targets are Linux-only. There the
+build (`all`) only generates and the install only copies, because the build
+runs as the user and the install as root. Each has a binaries subgoal and a man
+page subgoal: `all` runs `bin` and `man`, `install` runs `install-bin` and
+`install-man`. The subgoals are strict, so CI names them; the aggregates skip
+the man half with a warning when pandoc is missing, so a build and an install
+work without it. `Makefile.unix` is parsed by both GNU make 3.81 and bmake, so
+it must stay in the intersection of the two dialects: no parse-time shell,
+conditionals, includes or pattern rules.
 
 The web interfaces are built with npm from the `webui/` workspace. Their built
 assets are checked in and embedded into the binaries, and `make` does not

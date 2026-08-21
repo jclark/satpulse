@@ -16,9 +16,21 @@ MAN5 = satpulse.toml.5
 MAN8 = satpulsed.8
 MAN_PAGES = $(MAN1) $(MAN5) $(MAN8)
 
-# all runs as the user and install as root, so all generates everything and
-# install only copies: install needs neither the Go toolchain nor pandoc.
-all: bin man
+# A sub-make must name this file: on Linux the default makefile is the GNU one,
+# which knows none of these targets.
+SUBMAKE = $(MAKE) -f Makefile.unix
+
+# The build runs as the user and the install as root, so the build generates
+# everything and the install only copies. Each half has a binaries subgoal and
+# a man-page subgoal; the aggregates run both as sub-makes rather than list
+# them as prerequisites, because the man half is conditional and this dialect
+# has no conditionals. pandoc is optional: without it everything else still
+# builds and installs, and the subgoals stay strict so CI can demand the lot.
+all:
+	@$(SUBMAKE) bin
+	@if command -v pandoc >/dev/null 2>&1; then $(SUBMAKE) man; else \
+	  echo "warning: pandoc not found, so not building the man pages" >&2; \
+	fi
 
 # Shell snippet setting $outdir to the out/ subdirectory holding the binaries
 # for the target platform: out/<goarch> on Linux, out/<goos>_<goarch> elsewhere.
@@ -48,6 +60,8 @@ bin:
 # Regenerating a page needs pandoc, so skip the ones already up to date.
 man:
 	@set -e; \
+	command -v pandoc >/dev/null 2>&1 || \
+	  { echo "pandoc is required to build the man pages" >&2; exit 1; }; \
 	mkdir -p out; \
 	for f in $(MAN_PAGES); do \
 	  if [ ! out/$$f -nt docs/man/$$f.md ]; then \
@@ -63,17 +77,21 @@ test:
 smoketest:
 	python3 smoketest/run.py
 
-# Copies what all built; out/build.dir names the directory it built into, so
-# this works for a cross-built tree and without go on the PATH. The systemd
-# unit is Linux-only, so unlike the Makefile's install target this one installs
-# just the binaries, config, gpsmsg files, schema and man pages.
 install:
+	@$(SUBMAKE) install-bin
+	@if [ -f out/$(MAN8) ]; then $(SUBMAKE) install-man; else \
+	  echo "warning: man pages not built, so not installing them" >&2; \
+	fi
+
+# out/build.dir names the directory the build put the binaries in, so this
+# works for a cross-built tree and without go on the PATH. The systemd unit is
+# Linux-only, so unlike the Makefile's install target this one installs just
+# the binaries, config, gpsmsg files and schema.
+install-bin:
 	@set -e; \
-	[ -f out/build.dir ] || { echo "nothing to install: run make first" >&2; exit 1; }; \
+	[ -f out/build.dir ] || { echo "binaries not built: run make bin first" >&2; exit 1; }; \
 	outdir=`cat out/build.dir`; \
-	mkdir -p $(prefix)/sbin $(prefix)/bin $(prefix)/etc \
-	  $(prefix)/share/doc/satpulse $(prefix)/share/man/man1 \
-	  $(prefix)/share/man/man5 $(prefix)/share/man/man8; \
+	mkdir -p $(prefix)/sbin $(prefix)/bin $(prefix)/etc $(prefix)/share/doc/satpulse; \
 	install $$outdir/satpulsed $(prefix)/sbin/satpulsed; \
 	install $$outdir/satpulsetool $(prefix)/bin/satpulsetool; \
 	install $$outdir/satpulsewb $(prefix)/bin/satpulsewb; \
@@ -84,15 +102,20 @@ install:
 	for f in `cd configs/gpsmsg && find . -type f | sed 's;^\./;;'`; do \
 	  mkdir -p `dirname $(prefix)/share/satpulse/gpsmsg/$$f`; \
 	  install -m 644 configs/gpsmsg/$$f $(prefix)/share/satpulse/gpsmsg/$$f; \
-	done; \
+	done
+
+install-man:
+	@set -e; \
+	[ -f out/$(MAN8) ] || { echo "man pages not built: run make man first" >&2; exit 1; }; \
+	mkdir -p $(prefix)/share/man/man1 $(prefix)/share/man/man5 $(prefix)/share/man/man8; \
 	for f in $(MAN1); do install -m 644 out/$$f $(prefix)/share/man/man1/$$f; done; \
 	for f in $(MAN5); do install -m 644 out/$$f $(prefix)/share/man/man5/$$f; done; \
 	sed 's;/usr/share/satpulse/gpsmsg;$(prefix)/share/satpulse/gpsmsg;g' \
 	  out/satpulsetool-gps.1 > $(prefix)/share/man/man1/satpulsetool-gps.1; \
 	sed 's;/etc/satpulse.toml;$(prefix)/etc/satpulse.toml;g' \
-	  out/satpulsed.8 > $(prefix)/share/man/man8/satpulsed.8
+	  out/$(MAN8) > $(prefix)/share/man/man8/$(MAN8)
 
 clean:
 	rm -rf out
 
-.PHONY: all bin man test smoketest install clean
+.PHONY: all bin man test smoketest install install-bin install-man clean
