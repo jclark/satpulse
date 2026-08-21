@@ -106,7 +106,7 @@ The cross-format capture (`raw-cross.jsonl`) enables three raw observation forma
 satpulsetool gps -d <device> -s <baud> --binary --pvt-out off --raw-out obs --rtcm-out MSM7
 printf '[default.line]\nresponsePattern = "unicore"\ndelay = 0.2\n[[line]]\ntext = "RANGECMPB 1"\n' | \
   satpulsetool gps -d <device> -s <baud> --vendor unicore -m -
-satpulsetool gps -d <device> -s <baud> --packet-log raw-cross.jsonl --capture 30 --vendor unicore
+satpulsetool serial -d <device> -s <baud> --packet-log raw-cross.jsonl -t 30
 ```
 
 `--pvt-out off` is essential here -- it suppresses the default high-level config behavior of adding daemon time messages.
