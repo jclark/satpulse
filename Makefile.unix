@@ -24,15 +24,15 @@ all:
 	  echo "warning: pandoc not found, so not building the man pages" >&2; \
 	fi
 
-# Sets $outdir: out/<goarch> on Linux, out/<goos>_<goarch> elsewhere. go env
-# honours GOOS and GOARCH, so cross builds work.
-OUTDIR=outdir=out/`go env GOARCH`; test "`go env GOOS`" = linux || outdir=out/`go env GOOS`_`go env GOARCH`
-
 # One recipe line because the commands share shell variables, so set -e to get
-# back the per-command error checking make would otherwise do.
+# back the per-command error checking make would otherwise do. go env honours
+# GOOS and GOARCH from the environment, so cross builds work.
 bin:
 	@set -e; \
-	$(OUTDIR); \
+	goos=`go env GOOS`; \
+	goarch=`go env GOARCH`; \
+	outdir=out/$$goarch; \
+	test "$$goos" = linux || outdir=out/$${goos}_$$goarch; \
 	version=`cat VERSION`; \
 	build_date=`date -u -Iseconds | tr 'T' ' '`; \
 	git_date=`env TZ=UTC git log -1 --format="%cd" --date=format-local:%Y%m%d`; \
