@@ -1,7 +1,6 @@
-# Portable satpulse build, for macOS, FreeBSD and the 32-bit Linux CI build.
-# GNU make 3.81 and bmake both parse it, so it must stay in the intersection of
-# the two dialects: no parse-time shell, conditionals, includes or pattern rules.
-# Where the install target puts things; override on the command line.
+# Portable Makefile for Unix-like operating systems.
+# Works with GNU make 3.81 (as on macOS) and later, and BSD make (bmake).
+# Tested on macOS, FreeBSD and Linux.
 prefix=/usr/local
 CMD=github.com/jclark/satpulse/gps/app/cmd
 TAGS=netgo,osusergo
@@ -12,21 +11,14 @@ MAN1=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 \
 MAN5=satpulse.toml.5
 MAN8=satpulsed.8
 MAN_PAGES=$(MAN1) $(MAN5) $(MAN8)
-# A sub-make must name this file; on Linux the default one is the GNU Makefile.
 SUBMAKE=$(MAKE) -f Makefile.unix
 
-# The build runs as the user and the install as root, so the build only
-# generates and the install only copies. Sub-makes, not prerequisites, because
-# pandoc is optional and this dialect has no conditionals.
 all:
 	@$(SUBMAKE) bin
 	@if command -v pandoc >/dev/null 2>&1; then $(SUBMAKE) man; else \
 	  echo "warning: pandoc not found, so not building the man pages" >&2; \
 	fi
 
-# One recipe line because the commands share shell variables, so set -e to get
-# back the per-command error checking make would otherwise do. go env honours
-# GOOS and GOARCH from the environment, so cross builds work.
 bin:
 	@set -e; \
 	goos=`go env GOOS`; \
@@ -75,8 +67,6 @@ install:
 	  echo "warning: man pages not built, so not installing them" >&2; \
 	fi
 
-# out/build.dir names the directory the build used, so this works for a cross
-# built tree and without go on the PATH. No systemd unit: that is Linux-only.
 install-bin:
 	@set -e; \
 	[ -f out/build.dir ] || { echo "binaries not built: run make bin first" >&2; exit 1; }; \
