@@ -40,6 +40,7 @@ bin:
 	  -ldflags "-X \"$(CMD).version=$$cmd_version\" -X \"$(CMD).buildDate=$$build_date\"" \
 	  $(TARGETS); \
 	echo $$outdir > out/build.dir; \
+	(cd configs/gpsmsg && git ls-files .) > out/gpsmsg.files; \
 	echo "Built satpulsed satpulsetool satpulsewb in $$outdir"
 
 man:
@@ -79,7 +80,7 @@ install-bin:
 	[ -f $(prefix)/etc/satpulse.toml ] || \
 	  sed -e '/^#:schema /s; \./; $(prefix)/share/doc/satpulse/;' configs/satpulse.toml \
 	    > $(prefix)/etc/satpulse.toml; \
-	for f in `cd configs/gpsmsg && find . -type f | sed 's;^\./;;'`; do \
+	for f in `cat out/gpsmsg.files`; do \
 	  mkdir -p `dirname $(prefix)/share/satpulse/gpsmsg/$$f`; \
 	  install -m 644 configs/gpsmsg/$$f $(prefix)/share/satpulse/gpsmsg/$$f; \
 	done
