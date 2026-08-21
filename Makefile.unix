@@ -1,45 +1,35 @@
-# Portable satpulse build, used on macOS and FreeBSD and for the 32-bit Linux
-# CI build. Both GNU make and bmake parse this file, so it must stay in the
-# intersection of the two dialects: explicit rules, plain assignments, $@ and
-# .PHONY only. No parse-time shell, conditionals, includes or pattern rules.
-# Makefile (for GNU make) and BSDmakefile (for bmake) forward every goal here.
+# Portable satpulse build, for macOS, FreeBSD and the 32-bit Linux CI build.
+# GNU make 3.81 and bmake both parse it, so it must stay in the intersection of
+# the two dialects: no parse-time shell, conditionals, includes or pattern rules.
+# Where the install target puts things; override on the command line.
+prefix=/usr/local
+CMD=github.com/jclark/satpulse/gps/app/cmd
+TAGS=netgo,osusergo
+TARGETS=./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
+MAN1=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 \
+  satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 \
+  satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1
+MAN5=satpulse.toml.5
+MAN8=satpulsed.8
+MAN_PAGES=$(MAN1) $(MAN5) $(MAN8)
+# A sub-make must name this file; on Linux the default one is the GNU Makefile.
+SUBMAKE=$(MAKE) -f Makefile.unix
 
-# Where install puts things; override on the command line, as Homebrew does.
-prefix = /usr/local
-
-CMD = github.com/jclark/satpulse/gps/app/cmd
-TAGS = netgo,osusergo
-TARGETS = ./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
-
-MAN1 = satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1
-MAN5 = satpulse.toml.5
-MAN8 = satpulsed.8
-MAN_PAGES = $(MAN1) $(MAN5) $(MAN8)
-
-# A sub-make must name this file: on Linux the default makefile is the GNU one,
-# which knows none of these targets.
-SUBMAKE = $(MAKE) -f Makefile.unix
-
-# The build runs as the user and the install as root, so the build generates
-# everything and the install only copies. Each half has a binaries subgoal and
-# a man-page subgoal; the aggregates run both as sub-makes rather than list
-# them as prerequisites, because the man half is conditional and this dialect
-# has no conditionals. pandoc is optional: without it everything else still
-# builds and installs, and the subgoals stay strict so CI can demand the lot.
+# The build runs as the user and the install as root, so the build only
+# generates and the install only copies. Sub-makes, not prerequisites, because
+# pandoc is optional and this dialect has no conditionals.
 all:
 	@$(SUBMAKE) bin
 	@if command -v pandoc >/dev/null 2>&1; then $(SUBMAKE) man; else \
 	  echo "warning: pandoc not found, so not building the man pages" >&2; \
 	fi
 
-# Shell snippet setting $outdir to the out/ subdirectory holding the binaries
-# for the target platform: out/<goarch> on Linux, out/<goos>_<goarch> elsewhere.
-# go env honours GOOS and GOARCH from the environment, so cross builds work.
-OUTDIR = outdir=out/`go env GOARCH`; test "`go env GOOS`" = linux || outdir=out/`go env GOOS`_`go env GOARCH`
+# Sets $outdir: out/<goarch> on Linux, out/<goos>_<goarch> elsewhere. go env
+# honours GOOS and GOARCH, so cross builds work.
+OUTDIR=outdir=out/`go env GOARCH`; test "`go env GOOS`" = linux || outdir=out/`go env GOOS`_`go env GOARCH`
 
-# These commands share shell variables, so they have to be one recipe line;
-# set -e restores the per-command error checking that make would otherwise do,
-# without which the recipe's status would be the final echo's.
+# One recipe line because the commands share shell variables, so set -e to get
+# back the per-command error checking make would otherwise do.
 bin:
 	@set -e; \
 	$(OUTDIR); \
@@ -60,7 +50,6 @@ bin:
 	echo $$outdir > out/build.dir; \
 	echo "Built satpulsed satpulsetool satpulsewb in $$outdir"
 
-# Regenerating a page needs pandoc, so skip the ones already up to date.
 man:
 	@command -v pandoc >/dev/null 2>&1 || \
 	  { echo "pandoc is required to build the man pages" >&2; exit 1; }
@@ -86,11 +75,8 @@ install:
 	  echo "warning: man pages not built, so not installing them" >&2; \
 	fi
 
-# out/build.dir names the directory the build put the binaries in, so this
-# works for a cross-built tree and without go on the PATH. The systemd unit is
-# Linux-only, so unlike the Makefile's install target this one installs just
-# the binaries, config, gpsmsg files and schema. One recipe line, and so set -e,
-# for the same reason as bin.
+# out/build.dir names the directory the build used, so this works for a cross
+# built tree and without go on the PATH. No systemd unit: that is Linux-only.
 install-bin:
 	@set -e; \
 	[ -f out/build.dir ] || { echo "binaries not built: run make bin first" >&2; exit 1; }; \
