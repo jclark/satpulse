@@ -1,9 +1,10 @@
 # Makefile for satpulse: requires GNU make
 # Everything below is Linux-only (GNU date, systemd, Linux packaging tools).
 # On other Unixes, forward every goal to the portable Makefile.unix. .DEFAULT
-# supplies the recipe for any goal that has no rule; all needs naming in the
-# same rule to make a bare make work, and smoketest because .DEFAULT does not
-# apply to a goal that exists as a file (here, the smoketest directory).
+# covers every goal but two: it supplies no default goal, so a bare make needs
+# all, and it does not apply to a goal that exists as a file, so the smoketest
+# directory would otherwise be reported up to date. Marking them .PHONY is not
+# enough; GNU make then has nothing to do for them rather than using .DEFAULT.
 ifneq ($(shell uname -s),Linux)
 .DEFAULT all smoketest:
 	@$(MAKE) -f Makefile.unix $@
