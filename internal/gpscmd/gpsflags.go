@@ -346,11 +346,10 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 	if err := p.resolveSave(cmdName, configChanged); err != nil {
 		return nil, nil, err
 	}
-	doConfigure, err := p.resolveConfigure(cmdName, configChanged)
-	if err != nil {
+	if err := p.resolveConfigure(cmdName, configChanged); err != nil {
 		return nil, nil, err
 	}
-	if err := p.resolveMsgFile(configChanged, doConfigure); err != nil {
+	if err := p.resolveMsgFile(configChanged); err != nil {
 		return nil, nil, err
 	}
 	return vars, nil, nil
@@ -701,25 +700,23 @@ func (p *flagParser) resolveSave(cmdName string, configChanged bool) error {
 	return nil
 }
 
-func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) (bool, error) {
+func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) error {
 	vars := &p.vars
-	// tests whether configurator needs to run
-	doConfigure := p.save || p.saveAll || p.reset || p.reload || p.showConfig || p.showPort || configChanged
+	action := p.save || p.saveAll || p.reset || p.reload || p.showConfig || p.showPort || configChanged
 	if p.factoryReset {
-		if doConfigure {
-			return false, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
+		if action {
+			return fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
 		}
-		doConfigure = true
 		vars.configOpts.Reset = gpsprot.ResetFactory
 	} else if p.reset || p.reload {
 		if configChanged && !p.save && !p.saveAll {
-			return false, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
+			return fmt.Errorf("--reset or --reload without saving would lose configuration changes")
 		}
 		if p.showConfig || p.showPort {
-			return false, fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
+			return fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
 		}
 		if p.reset && p.reload {
-			return false, fmt.Errorf("cannot use both --reset and --reload")
+			return fmt.Errorf("cannot use both --reset and --reload")
 		}
 		if p.reload {
 			vars.configSupport.require(gpsprot.ConfigSupportReload, "--reload")
@@ -727,14 +724,14 @@ func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) (bool,
 		} else {
 			vars.configOpts.Reset = gpsprot.ResetCold
 		}
-		doConfigure = true
-	} else if vars.showReceiver {
-		doConfigure = true
 	}
-	return doConfigure, nil
+	if !action && !p.factoryReset && vars.msgFilePath == "" {
+		vars.showReceiver = true
+	}
+	return nil
 }
 
-func (p *flagParser) resolveMsgFile(configChanged, doConfigure bool) error {
+func (p *flagParser) resolveMsgFile(configChanged bool) error {
 	vars := &p.vars
 	flags := p.flags
 	if vars.msgFilePath != "" {
@@ -762,12 +759,6 @@ func (p *flagParser) resolveMsgFile(configChanged, doConfigure bool) error {
 		}
 		if flags.Lookup("port").Changed {
 			return fmt.Errorf("--port requires --msg-file")
-		}
-		if !doConfigure && !vars.capture.IsSet() {
-			vars.showReceiver = true
-		}
-		if vars.jsonOut && !doConfigure && !vars.showReceiver {
-			return fmt.Errorf("--json cannot be used with passive packet capture")
 		}
 	}
 	return nil
