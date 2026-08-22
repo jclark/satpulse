@@ -1,0 +1,101 @@
+#!/bin/sh
+
+# FreeBSD rc.d service script for satpulsed. Install it as
+# /usr/local/etc/rc.d/satpulsed, mode 755:
+#
+#   install -m 755 satpulsed.rc.freebsd /usr/local/etc/rc.d/satpulsed
+#
+# and create the unprivileged user it runs as, in the dialer group so
+# that it can open the serial ports:
+#
+#   pw useradd satpulse -c "SatPulse daemon" -d /nonexistent \
+#       -s /usr/sbin/nologin -G dialer
+#
+# Then enable and start the service:
+#
+#   sysrc satpulsed_enable=YES
+#   service satpulsed start
+#
+# The plain satpulsed service reads its serial device from
+# /usr/local/etc/satpulse.toml. To run one daemon per receiver instead,
+# link the script once per serial port; the port name after "satpulsed_"
+# selects the device and the configuration file:
+#
+#   ln -s satpulsed /usr/local/etc/rc.d/satpulsed_cuaU0
+#   sysrc satpulsed_cuaU0_enable=YES
+#   service satpulsed_cuaU0 start
+#
+# runs satpulsed with --serial-device /dev/cuaU0 and the first of
+# /usr/local/etc/satpulse.d/cuaU0.toml and /usr/local/etc/satpulse.toml
+# that exists.
+#
+# rc.conf variables, where NAME is satpulsed or satpulsed_<port>:
+#
+# NAME_enable (bool):    Set to "YES" to enable the service. Default "NO".
+# NAME_user (str):       User to run satpulsed as. Default "satpulse".
+# NAME_configfile (str): Configuration files to pass with -f; satpulsed
+#                        uses the first one that exists. Default as
+#                        described above.
+# NAME_logfile (str):    Log file for satpulsed output.
+#                        Default "/var/log/NAME.log".
+
+# PROVIDE: satpulsed
+# REQUIRE: NETWORKING DAEMON cleanvar devfs
+# BEFORE: ntpd
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+case "$0" in
+/etc/rc*)
+	# During boot and shutdown $0 is the rc driver script; the name of
+	# this script, or of the symlink it was reached by, is in $_file.
+	name="$_file"
+	;;
+*)
+	name="$0"
+	;;
+esac
+name="${name##*/}"
+port="${name#satpulsed}"
+port="${port#_}"
+
+rcvar="${name}_enable"
+
+load_rc_config "$name"
+
+eval ": \${${name}_enable:=NO}"
+eval ": \${${name}_user:=satpulse}"
+eval ": \${${name}_logfile:=/var/log/${name}.log}"
+if [ -n "$port" ]; then
+	eval ": \${${name}_configfile:=\"/usr/local/etc/satpulse.d/${port}.toml /usr/local/etc/satpulse.toml\"}"
+	device_args="--serial-device /dev/${port}"
+else
+	eval ": \${${name}_configfile:=/usr/local/etc/satpulse.toml}"
+	device_args=""
+fi
+
+eval _user="\$${name}_user"
+eval _logfile="\$${name}_logfile"
+eval _configfiles="\$${name}_configfile"
+config_args=""
+for f in $_configfiles; do
+	config_args="$config_args -f $f"
+done
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-f -R 5 -P ${pidfile} -o ${_logfile} \
+    /usr/local/sbin/satpulsed --wait ${device_args} ${config_args}"
+
+start_precmd="satpulsed_precmd"
+
+# daemon(8) runs as ${name}_user, which cannot create files in /var/run
+# or /var/log, so pre-create its supervisor pidfile and log file.
+satpulsed_precmd()
+{
+	[ -e "${pidfile}" ] || install -o "${_user}" -m 644 /dev/null "${pidfile}"
+	[ -e "${_logfile}" ] || install -o "${_user}" -m 640 /dev/null "${_logfile}"
+}
+
+run_rc_command "$1"
