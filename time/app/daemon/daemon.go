@@ -355,7 +355,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		wg.Go(func() {
 			defer close(ch)
 			lg.Debug("serial PPS goroutine started", "pin", cfg.Serial.PPS.Pin)
-			if err := serialpps.Detect(ctx, lg, conn, cfg.Serial.PPS.wiring(), cfg.Sample.Serial.PPS, ch, nil); err != nil && ctx.Err() == nil {
+			if err := serialpps.Detect(ctx, lg, conn, cfg.Serial.PPS.wiring(), cfg.Sample.Serial.PPS, ch, nil, nil); err != nil && ctx.Err() == nil {
 				lg.Error("serial PPS detection failed", "pin", cfg.Serial.PPS.Pin, "err", err)
 				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Pin, err))
 			}

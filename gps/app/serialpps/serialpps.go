@@ -105,15 +105,16 @@ type Wiring struct {
 // returned. An explicitly requested method never falls back. cfg.PollPreWarm
 // applies only to polling, the one method whose resolution the host's own
 // speed sets. If stats is non-nil, it records timings only when polling is
-// selected.
-func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- CandidateEdge, stats *PollStats) error {
+// selected. If selected is non-nil, it is called with each method as it is
+// selected; a fallback selects again.
+func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- CandidateEdge, stats *PollStats, selected func(gpsio.PPSMethod)) error {
 	prewarm := seconds(cfg.PollPreWarm)
 	if cfg.Method != 0 {
-		return detect(ctx, lg, r, w, cfg.Method, prewarm, ceCh, stats)
+		return detect(ctx, lg, r, w, cfg.Method, prewarm, ceCh, stats, selected)
 	}
 	if _, ok := r.(ChangeWaiter); ok {
 		for _, m := range []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait} {
-			err := detect(ctx, lg, r, w, m, prewarm, ceCh, stats)
+			err := detect(ctx, lg, r, w, m, prewarm, ceCh, stats, selected)
 			if ctx.Err() != nil {
 				return err
 			}
@@ -127,16 +128,19 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg C
 			}
 		}
 	}
-	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, prewarm, ceCh, stats)
+	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, prewarm, ceCh, stats, selected)
 }
 
-func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats, selected func(gpsio.PPSMethod)) error {
 	switch method {
 	case gpsio.PPSMethodPoll, gpsio.PPSMethodWait, gpsio.PPSMethodKernel:
 	default:
 		panic("serialpps: invalid PPS method")
 	}
 	lg.Info("serial PPS method selected", "method", method)
+	if selected != nil {
+		selected(method)
+	}
 	if method == gpsio.PPSMethodPoll {
 		return Poll(ctx, lg, r, w, prewarm, ceCh, stats)
 	}

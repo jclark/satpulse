@@ -638,7 +638,7 @@ func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, w serial
 		stats = nil
 	}
 	go func() {
-		err := serialpps.Detect(ctx, lg, conn, w, ppsCfg, edges, stats)
+		err := serialpps.Detect(ctx, lg, conn, w, ppsCfg, edges, stats, nil)
 		stats.Log(lg)
 		errCh <- err
 	}()
