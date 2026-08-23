@@ -2,10 +2,7 @@ module github.com/jclark/satpulse
 
 go 1.25.0
 
-require (
-	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
-	golang.org/x/sys v0.45.0
-)
+require golang.org/x/sys v0.45.0
 
 require (
 	github.com/jaypipes/pcidb v1.1.1

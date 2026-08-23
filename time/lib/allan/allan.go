@@ -1,13 +1,9 @@
 package allan
 
-import (
-	"math"
-
-	"golang.org/x/exp/constraints"
-)
+import "math"
 
 type Numeric interface {
-	constraints.Integer | constraints.Float
+	~int32 | ~int64 | ~float32 | ~float64
 }
 
 // OverlapADev calculates overlapping Allan deviation of phase data.
