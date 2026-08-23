@@ -10,7 +10,7 @@ import (
 // PartialDecode parses string fields into a Go struct, similar to encoding/binary.Read.
 // Fields are processed in struct field order. Custom types should implement encoding.TextUnmarshaler.
 // Returns the number of fields consumed and an error.
-func PartialDecode(fields []string, v interface{}) (int, error) {
+func PartialDecode(fields []string, v any) (int, error) {
 	// Get reflection info
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Ptr || rv.Elem().Kind() != reflect.Struct {
@@ -63,7 +63,7 @@ func PartialDecode(fields []string, v interface{}) (int, error) {
 // Decode parses string fields into a Go struct, similar to encoding/binary.Read.
 // Fields are processed in struct field order. Custom types should implement encoding.TextUnmarshaler.
 // Returns an error if not all fields are consumed or if parsing fails.
-func Decode(fields []string, v interface{}) error {
+func Decode(fields []string, v any) error {
 	fieldsConsumed, err := PartialDecode(fields, v)
 	if err != nil {
 		return err
@@ -185,7 +185,7 @@ func setField(field reflect.Value, value string) error {
 
 // Encode converts a Go struct to string fields, similar to encoding/binary.Write.
 // Fields are processed in struct field order. Custom types should implement encoding.TextMarshaler.
-func Encode(v interface{}) ([]string, error) {
+func Encode(v any) ([]string, error) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() == reflect.Ptr {
 		rv = rv.Elem()

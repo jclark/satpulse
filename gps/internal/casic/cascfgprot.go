@@ -70,7 +70,7 @@ func NewConfigProtocol() *ConfigProtocol {
 // NativeMsg captures the probe's CFG-RATE readback until a
 // Configurator exists, then routes CASIC messages and NMEA sentences
 // (the GPTXT replies to the V5 version queries) to it.
-func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
 	if tag == nmea.Tag {
 		if s, ok := msg.(*nmea.Sentence); ok && cp.cfg != nil {
 			return cp.cfg.nativeText(s.Payload, tRead)

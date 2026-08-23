@@ -601,7 +601,7 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	}
 }
 
-func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
 	if !d.obs.NativeMsg(tag, msgID, msg, tRead) {
 		d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
 	}
