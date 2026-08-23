@@ -44,6 +44,7 @@ type flagVars struct {
 	autoConnect bool
 	vendor      gpsreg.Vendor
 	packetLog   string
+	ppsReplay   string
 	logLevel    slog.Level
 	showVersion bool
 }
@@ -85,6 +86,7 @@ func parseFlags(args []string) (*flagVars, func(string) string, error) {
 	flags.IntVarP(&v.speed, "device-speed", "s", 0, "serial device baud-rate in `bps`")
 	flags.StringVar(&vendorStr, "vendor", "", "GPS receiver `vendor` name")
 	flags.StringVar(&v.packetLog, "packet-log", "", "log packets to `path`")
+	flags.StringVar(&v.ppsReplay, "pps-replay", "", "replay serial PPS edges from a JSONL recording at `path` (testing)")
 	flags.BoolFuncP("verbose", "v", "increase logging verbosity", func(string) error {
 		verbose++
 		return nil
@@ -130,7 +132,7 @@ func run(v *flagVars) error {
 	if err != nil {
 		return err
 	}
-	opts := session.Options{}
+	opts := session.Options{PPSReplay: v.ppsReplay}
 	if v.packetLog != "" {
 		f, err := os.Create(v.packetLog)
 		if err != nil {

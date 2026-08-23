@@ -48,6 +48,7 @@ var stickyEvents = []session.EventName{
 	session.EventTime,
 	session.EventEpochPVT,
 	session.EventBaseARP,
+	session.EventPPS,
 }
 
 var stickySet = func() map[session.EventName]bool {
@@ -120,7 +121,7 @@ func (h *sseHub) Emit(ev session.Event) {
 		// joiner must not be primed with it. Corrections state carries
 		// its own lifecycle events, so it stays.
 		for _, name := range stickyEvents {
-			if name != session.EventState && name != session.EventCorrections {
+			if name != session.EventState && name != session.EventCorrections && name != session.EventPPS {
 				delete(h.cache, name)
 			}
 		}

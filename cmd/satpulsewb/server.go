@@ -87,6 +87,9 @@ func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog
 	s.mux.HandleFunc("POST /api/signals", reader(s.handleSignals))
 	s.mux.HandleFunc("POST /api/corrections/start", writer(s.handleCorrStart))
 	s.mux.HandleFunc("POST /api/corrections/stop", writer(s.handleCorrStop))
+	s.mux.HandleFunc("GET /api/pps", get(s.handlePPSState))
+	s.mux.HandleFunc("POST /api/pps/start", writer(s.handlePPSStart))
+	s.mux.HandleFunc("POST /api/pps/stop", writer(s.handlePPSStop))
 	s.mux.HandleFunc("GET /api/msgfile/catalog", get(s.handleMsgCatalog))
 	s.mux.HandleFunc("POST /api/msgfile/select", writer(s.handleMsgSelect))
 	s.mux.HandleFunc("POST /api/msgfile/send", writer(s.handleMsgSend))
@@ -493,6 +496,30 @@ func (s *server) handleCorrStart(w http.ResponseWriter, r *http.Request) {
 
 func (s *server) handleCorrStop(w http.ResponseWriter, _ *http.Request) {
 	if err := s.sess.StopCorrections(); err != nil {
+		sessionError(w, err)
+		return
+	}
+	writeJSON(w, struct{}{})
+}
+
+func (s *server) handlePPSState(w http.ResponseWriter, _ *http.Request) {
+	writeJSON(w, s.sess.PPSState())
+}
+
+func (s *server) handlePPSStart(w http.ResponseWriter, r *http.Request) {
+	var cfg session.PPSConfig
+	if !readJSON(w, r, &cfg) {
+		return
+	}
+	if err := s.sess.StartPPS(cfg); err != nil {
+		sessionError(w, err)
+		return
+	}
+	writeJSON(w, struct{}{})
+}
+
+func (s *server) handlePPSStop(w http.ResponseWriter, _ *http.Request) {
+	if err := s.sess.StopPPS(); err != nil {
 		sessionError(w, err)
 		return
 	}
