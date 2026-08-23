@@ -12,6 +12,8 @@ import type {
     MsgFileCatalog,
     MsgFileInfo,
     PortInfo,
+    PPSConfig,
+    PPSState,
     Transport,
 } from '@satpulse/workbench/src/transport';
 
@@ -109,6 +111,11 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
             },
             disconnect: async () => { await writerPost('disconnect'); },
             listPorts: () => get('ports') as Promise<PortInfo[]>,
+        },
+        pps: {
+            startPPS: async (cfg: PPSConfig) => { await writerPost('pps/start', cfg); },
+            stopPPS: async () => { await writerPost('pps/stop'); },
+            getPPSState: () => get('pps') as Promise<PPSState>,
         },
         msgFile: {
             listMsgFiles: () => get('msgfile/catalog') as Promise<MsgFileCatalog>,

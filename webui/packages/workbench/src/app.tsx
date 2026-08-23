@@ -21,6 +21,7 @@ import {SkyViewPanel, SkyViewLegend} from './sky-view-panel';
 import {SummaryPanel} from './summary-panel';
 import {ScatterPanel} from './scatter-panel';
 import {SignalsPanel} from './signals-panel';
+import {PPSPanel} from './pps-panel';
 export type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo};
 export type {ConnState, MsgFileTag};
 
@@ -92,7 +93,7 @@ export interface ResponseLine {
     bin?: string;            // binary protocols (hex)
 }
 
-type TabID = 'monitor' | 'packets' | 'corrections' | 'config' | 'messages';
+type TabID = 'monitor' | 'packets' | 'corrections' | 'pps' | 'config' | 'messages';
 
 const tabBtnBase = 'px-5 py-2 text-sm font-medium border-b-2 cursor-pointer bg-transparent';
 const tabBtnActive = tabBtnBase + ' border-accent text-accent bg-surface-1';
@@ -579,6 +580,14 @@ export function App() {
                 >
                     Corrections
                 </button>
+                {transport.pps && (
+                    <button
+                        class={activeTab === 'pps' ? tabBtnActive : tabBtnInactive}
+                        onClick={() => handleTabChange('pps')}
+                    >
+                        PPS
+                    </button>
+                )}
                 <button
                     class={configDisabled ? tabBtnDisabled : (activeTab === 'config' ? tabBtnActive : tabBtnInactive)}
                     onClick={() => { if (!configDisabled) handleTabChange('config'); }}
@@ -652,6 +661,11 @@ export function App() {
                 <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
                     <CorrectionsPanel connState={connState} readOnly={readOnly} />
                 </div>
+
+                {/* PPS tab; kept mounted so edge history spans tab changes */}
+                {transport.pps && <div class={`h-full ${activeTab === 'pps' ? '' : 'hidden'}`}>
+                    <PPSPanel connState={connState} readOnly={readOnly} device={device} ports={ports} />
+                </div>}
 
                 {/* Configuration tab */}
                 <div class={`h-full ${activeTab === 'config' ? '' : 'hidden'}`}>

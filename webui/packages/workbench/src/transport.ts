@@ -31,6 +31,8 @@ export interface ConnectionInfo {
 export interface PortInfo {
     device: string;
     display: string;
+    usb?: {vid: number; pid: number}; // present only for USB devices
+    aliases?: string[];
 }
 
 // LLH is a geodetic position: latitude and longitude in degrees,
@@ -54,6 +56,30 @@ export interface CorrectionSource {
     username: string;   // ntrip only, may be empty
     password: string;   // ntrip only, may be empty
     nmeaSend: boolean;  // ntrip only: upload position as NMEA GGA (VRS)
+}
+
+// PPSConfig is the serial PPS detection configuration sent to startPPS.
+export interface PPSConfig {
+    pin: string;            // cts, dcd, dsr, or ri
+    invertPolarity: boolean;
+    method: string;         // poll, wait, or kernel; empty for automatic
+    pollPreWarm: number;    // seconds; poll method only
+}
+
+// PPSState is the gps:pps event payload and the getPPSState snapshot.
+export interface PPSState {
+    state: 'stopped' | 'running' | 'failed';
+    config?: PPSConfig;
+    method?: string; // detection method in use; 'replay' when simulated
+    error?: string;
+    sim?: boolean;   // a replay recording is configured on the backend
+}
+
+// PulseEdge is the gps:pulseEdge event payload: one detected candidate edge.
+export interface PulseEdge {
+    t: string;            // UTC timestamp, microsecond resolution
+    uncertainty?: number; // seconds; polling bracket half-width
+    settling?: boolean;   // detection still acquiring; accuracy may improve
 }
 
 export interface MsgFileTag {
@@ -130,6 +156,7 @@ export interface Transport {
     // Optional capabilities.
     connection?: ConnectionTransport;
     msgFile?: MsgFileTransport;
+    pps?: PPSTransport;
 }
 
 // ConnectionTransport is the connection-management capability,
@@ -152,6 +179,15 @@ export interface MsgFileTransport {
     selectMsgFile?(vendor: string, file: string): Promise<MsgFileInfo>;
     sendMsgFile(tag: string, port: string, save: boolean): Promise<void>;
     cancelMsgSend(): Promise<void>;
+}
+
+// PPSTransport is the serial PPS capability, implemented by backends
+// whose session can detect PPS edges on the receiver's serial port.
+// Edges arrive as gps:pulseEdge events and state as gps:pps events.
+export interface PPSTransport {
+    startPPS(cfg: PPSConfig): Promise<void>;
+    stopPPS(): Promise<void>;
+    getPPSState(): Promise<PPSState>;
 }
 
 // transport is the backend for this app instance, installed by the
