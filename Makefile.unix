@@ -67,6 +67,38 @@ test:
 smoketest:
 	$(PYTHON) smoketest/run.py
 
+# The docker-pkg and docker-release targets run the Linux-only pkg and
+# release targets inside the project devcontainer, so that release builds
+# are moderately reproducible and can be made from non-Linux hosts. Set
+# NO_CACHE=1 to recreate the container and rebuild its image from scratch,
+# picking up the latest tools.
+docker-pkg:
+	@$(SUBMAKE) docker-up
+	devcontainer exec --workspace-folder . sh -c 'make test && make pkg'
+
+docker-release:
+	@$(SUBMAKE) docker-up
+	devcontainer exec --workspace-folder . sh -c 'make test && make release'
+
+docker-up:
+	@command -v devcontainer >/dev/null 2>&1 || \
+	  { echo "devcontainer CLI not found: install it with 'npm install -g @devcontainers/cli'" >&2; exit 1; }
+	@docker info >/dev/null 2>&1 || \
+	  { echo "Docker is not running: start it first" >&2; exit 1; }
+	@if [ "$${NO_CACHE:-0}" = 1 ]; then \
+	  DOCKER_CLI_HINTS=false devcontainer up --workspace-folder . --remove-existing-container --build-no-cache; \
+	else \
+	  DOCKER_CLI_HINTS=false devcontainer up --workspace-folder .; \
+	fi
+
+tag:
+	git update-index -q --refresh
+	git diff-index --exit-code HEAD
+	v=v`cat VERSION` && git tag -f -a "$$v" -m "Release $$v"
+
+untag:
+	git tag -d v`cat VERSION`
+
 install:
 	@$(SUBMAKE) install-bin
 	@if [ -f out/$(MAN8) ]; then $(SUBMAKE) install-man; else \
@@ -105,4 +137,5 @@ install-man:
 clean:
 	rm -rf out
 
-.PHONY: all bin man test smoketest install install-bin install-man clean
+.PHONY: all bin man test smoketest docker-pkg docker-release docker-up \
+  tag untag install install-bin install-man clean
