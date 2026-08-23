@@ -3,6 +3,7 @@ package scan_test
 import (
 	"io"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 
@@ -237,10 +238,5 @@ func randomInvalidPacket() string {
 }
 
 func isSyncByte(b byte) bool {
-	for _, sync := range packetSyncBytes {
-		if b == sync {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(packetSyncBytes, b)
 }

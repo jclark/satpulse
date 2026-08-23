@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,12 +86,8 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 		if r.structural {
 			continue
 		}
-		for idx, pkt := range r.updates {
-			allUpdates[idx] = pkt
-		}
-		for idx, pkt := range r.inputUpdates {
-			allInputUpdates[idx] = pkt
-		}
+		maps.Copy(allUpdates, r.updates)
+		maps.Copy(allInputUpdates, r.inputUpdates)
 	}
 	if len(allUpdates) == 0 && len(allInputUpdates) == 0 {
 		return
