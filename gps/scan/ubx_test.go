@@ -46,7 +46,7 @@ func randomUBXPacket() string {
 	payloadLength := rand.Intn(300)
 	packet = append(packet, byte(payloadLength), byte(payloadLength>>8))
 
-	for i := 0; i < payloadLength; i++ {
+	for range payloadLength {
 		packet = append(packet, byte(rand.Intn(256)))
 	}
 
@@ -63,7 +63,7 @@ func TestGoodUBX(t *testing.T) {
 	var packets []string
 
 	// Generate random packets and keep track of them
-	for i := 0; i < numPackets; i++ {
+	for range numPackets {
 		packet := randomUBXPacket()
 		packets = append(packets, packet)
 	}
@@ -159,7 +159,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 	// Generate packets, alternating between UBX and invalid
 	var packets []string
-	for i := 0; i < numPackets; i++ {
+	for i := range numPackets {
 		if i%2 == 0 {
 			// Generate a UBX packet
 			packets = append(packets, randomUBXPacket())

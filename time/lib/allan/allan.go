@@ -25,7 +25,7 @@ func OverlapADev[T Numeric](phase []T, tau0 T, m int) float64 {
 		return math.NaN()
 	}
 	sum := 0.0
-	for i := 0; i < nSamples; i++ {
+	for i := range nSamples {
 		v := float64(phase[i+2*m] - 2*phase[i+m] + phase[i])
 		sum += v * v
 	}

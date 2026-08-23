@@ -180,7 +180,7 @@ func TestFrameLenPrefixes(t *testing.T) {
 			t.Fatalf("test %d: Parse: %v", i, err)
 		}
 		hdrLen := len(pkt) - len(f.Payload) - f.authLen() - crcLen(pkt)
-		for n := 0; n < hdrLen; n++ {
+		for n := range hdrLen {
 			if total, ok := FrameLen(pkt[:n]); ok {
 				t.Errorf("test %d prefix %d: FrameLen = %d, true, want false", i, n, total)
 			}

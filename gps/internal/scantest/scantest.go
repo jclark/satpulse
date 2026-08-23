@@ -10,7 +10,7 @@ func FindPacket(pf gpsprot.PacketFormat, buf []byte) (startPos, endPos int, ok b
 	state := gpsprot.ScanStateSync
 	startPos = -1
 	endPos = -1
-	for i := 0; i < len(buf); i++ {
+	for i := range buf {
 		packetLen := 0
 		if startPos >= 0 {
 			packetLen = i - startPos
@@ -21,7 +21,7 @@ func FindPacket(pf gpsprot.PacketFormat, buf []byte) (startPos, endPos int, ok b
 				endPos = i
 				ok = false
 				break
-			} 
+			}
 		} else {
 			if startPos < 0 {
 				startPos = i
@@ -30,7 +30,7 @@ func FindPacket(pf gpsprot.PacketFormat, buf []byte) (startPos, endPos int, ok b
 				ok = true
 				endPos = i + 1
 				break
-			} 
+			}
 		}
 	}
 	return
@@ -38,8 +38,8 @@ func FindPacket(pf gpsprot.PacketFormat, buf []byte) (startPos, endPos int, ok b
 
 func InsertRandomPrefix(data string, except byte) ([]byte, int) {
 	nRandom := rand.IntN(100)
-	buf := make([]byte, nRandom + len(data))
-	for i := 0; i < nRandom; i++ {
+	buf := make([]byte, nRandom+len(data))
+	for i := range nRandom {
 		b := byte(rand.IntN(256))
 		if b == except {
 			b = 0xFF
@@ -67,10 +67,10 @@ func IsValidPacketBetween(pf gpsprot.PacketFormat, buf []byte, start, end int) b
 	if start < 0 || end > len(buf) || start >= end {
 		return false
 	}
-	
+
 	state := gpsprot.ScanStateSync
 	packetLen := 0
-	
+
 	for i := start; i < end; i++ {
 		state = pf.Next(state, buf, i, packetLen)
 		if state == gpsprot.ScanStateSync {
@@ -78,6 +78,6 @@ func IsValidPacketBetween(pf gpsprot.PacketFormat, buf []byte, start, end int) b
 		}
 		packetLen++
 	}
-	
+
 	return pf.IsFinal(state)
 }

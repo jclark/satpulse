@@ -190,7 +190,7 @@ func TestWindow_LongSequence(t *testing.T) {
 	// [3,4,5,6,7] → 5
 	// etc.
 
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		w.Add(int64(i))
 		if i >= 4 {
 			want := int64(i - 2) // median of [i-4, i-3, i-2, i-1, i]
@@ -499,7 +499,7 @@ func TestWindow_MaxCapacity(t *testing.T) {
 	}
 
 	// Add values and verify it works
-	for i := 0; i < MaxCapacity+100; i++ {
+	for i := range MaxCapacity + 100 {
 		w.Add(int64(i))
 	}
 
@@ -556,7 +556,7 @@ func BenchmarkWindow_Median(b *testing.B) {
 		}
 		b.Run(fmt.Sprintf("size=%d", size), func(b *testing.B) {
 			w := New[int64](size)
-			for i := 0; i < size; i++ {
+			for i := range size {
 				w.Add(int64(i))
 			}
 			b.ResetTimer()
@@ -566,4 +566,3 @@ func BenchmarkWindow_Median(b *testing.B) {
 		})
 	}
 }
-

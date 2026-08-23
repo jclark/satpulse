@@ -1011,7 +1011,7 @@ var corrKindClosure = func() [16]CorrKind {
 }()
 
 func bitIndex(mask CorrKind) int {
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if mask == 1<<i {
 			return i
 		}

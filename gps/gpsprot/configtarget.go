@@ -459,7 +459,7 @@ func (o *ConfigOptions) EnablesMsgs() bool {
 // String returns a human-readable representation of the PropIDs flags
 func (p PropIDs) String() string {
 	var names []string
-	for i := 0; i < len(propNames); i++ {
+	for i := range propNames {
 		if p&(1<<i) != 0 {
 			names = append(names, propNames[i])
 		}
