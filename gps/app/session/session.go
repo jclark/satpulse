@@ -135,6 +135,8 @@ const (
 	EventCorrPacket   EventName = "gps:corrpacket"   // CorrPacketEvent
 	EventBaseARP      EventName = "gps:basearp"      // BaseARPEvent
 	EventPacket       EventName = "gps:packet"       // PacketEvent
+	EventPPS          EventName = "gps:pps"          // PPSEvent
+	EventPulseEdge    EventName = "gps:pulseEdge"    // PulseEdgeEvent
 )
 
 // Event is a session event payload. The implementing types are exactly
@@ -209,6 +211,11 @@ func emit(sink Sink, event Event) {
 // Options configures a Session.
 type Options struct {
 	PacketLog io.Writer // optional JSONL packet log; writes are serialized (nil to disable)
+	// PPSReplay is an optional path to a JSONL edge recording made with
+	// satpulsetool serial -p -j. When set, StartPPS replays the recording
+	// instead of detecting edges on the connection, for testing without
+	// PPS hardware.
+	PPSReplay string
 }
 
 // Session is an interactive session with a GPS receiver.
@@ -265,6 +272,10 @@ type Session struct {
 	corrCancel   context.CancelFunc
 	corrWg       *sync.WaitGroup
 	corrStopping bool
+	ppsState     PPSEvent
+	ppsCancel    context.CancelFunc
+	ppsWg        *sync.WaitGroup
+	ppsStopping  bool
 	packetLogMu  sync.Mutex
 	packetLogW   io.Writer
 }
@@ -278,6 +289,7 @@ func New(lg *slog.Logger, sink Sink, opts Options) *Session {
 		packetLogW: opts.PacketLog,
 		state:      StateDisconnected,
 		corrState:  CorrEvent{State: "stopped"},
+		ppsState:   PPSEvent{State: "stopped", Sim: opts.PPSReplay != ""},
 	}
 }
 
