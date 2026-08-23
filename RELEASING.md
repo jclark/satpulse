@@ -60,7 +60,8 @@ Deploy and test on real hardware:
 ```bash
 cd systest
 ./t install  # Deploy packages to test machines
-./t check    # Run validation tests
+./t start    # Start the daemons
+./t check    # Run validation tests (repeat as often as you want)
 ```
 
 ## Release process
@@ -110,6 +111,7 @@ that the draft release holds, so what is tested is what will be shipped:
 ```bash
 cd systest
 ./t install
+./t start
 ./t check
 ```
 
