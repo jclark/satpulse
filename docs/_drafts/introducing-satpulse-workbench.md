@@ -34,8 +34,7 @@ workbench_corrections:
     title: "RTK fixed solution using the corrections"
 ---
 
-I am excited about a new program that is included in the latest SatPulse 0.3 pre-release.
-TODO: add link
+I am excited about a new program that is included in the [latest SatPulse 0.3 pre-release](https://github.com/jclark/satpulse/releases/tag/v0.3-pre-20260824).
 I call it SatPulse Workbench.
 It provides a graphical interface for GNSS receiver configuration and monitoring.
 It is an interactive tool for exploring and experimenting with a GNSS receiver.
