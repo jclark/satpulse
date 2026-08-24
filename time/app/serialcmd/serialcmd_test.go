@@ -14,6 +14,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/serialpps"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/scan"
@@ -34,21 +35,21 @@ func TestParseFlags(t *testing.T) {
 		{name: "detect all", args: []string{"-a"}, want: flagVars{all: true}},
 		{name: "detect selected", args: []string{"-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0"}},
 		{name: "detect with packet log", args: []string{"-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{device: "/dev/ttyS0", packetLog: "capture.jsonl"}},
-		{name: "capture at speed", args: []string{"-j", "-s", "38400", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{jsonl: true, device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl"}},
-		{name: "timed capture", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1.25"}, want: flagVars{device: "/dev/ttyS0", deviceSpeed: 38400, deviceSpeedSet: true, packetLog: "capture.jsonl", timeout: 1250 * time.Millisecond}},
-		{name: "capture at current speed", args: []string{"-s", "0", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{device: "/dev/ttyS0", deviceSpeedSet: true, packetLog: "capture.jsonl"}},
-		{name: "pps on cts", args: []string{"-p", "cts", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
-		{name: "pps all ports", args: []string{"--pps-pin", "dcd", "-a"}, want: flagVars{all: true, ppsSet: true, ppsPin: gpsio.ModemDCD, timeout: defaultPPSTimeout}},
-		{name: "pps at speed", args: []string{"-p", "ri", "-s", "38400", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemRI, deviceSpeed: 38400, deviceSpeedSet: true, timeout: defaultPPSTimeout}},
-		{name: "pps with packet log and timeout", args: []string{"-p", "dsr", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl", "-t", "30"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDSR, packetLog: "capture.jsonl", timeout: 30 * time.Second}},
-		{name: "pps until interrupted", args: []string{"-p", "cts", "-t", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS}},
-		{name: "pps JSONL", args: []string{"-j", "-p", "cts", "-a"}, want: flagVars{jsonl: true, all: true, ppsSet: true, ppsPin: gpsio.ModemCTS, timeout: defaultPPSTimeout}},
-		{name: "pps inverted polarity", args: []string{"-p", "cts", "--invert-polarity", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, invertPolarity: true, timeout: defaultPPSTimeout}},
-		{name: "pps by polling", args: []string{"-p", "cts", "-m", "poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodPoll, timeout: defaultPPSTimeout}},
-		{name: "pps by waiting", args: []string{"-p", "cts", "--pps-method", "wait", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, ppsMethod: gpsio.PPSMethodWait, timeout: defaultPPSTimeout}},
-		{name: "pps with kernel timestamps", args: []string{"-p", "dcd", "--pps-method", "kernel", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemDCD, ppsMethod: gpsio.PPSMethodKernel, timeout: defaultPPSTimeout}},
-		{name: "pps with wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "10.5e-6", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, maxWakeupLatency: 10.5e-6, maxWakeupLatencySet: true, timeout: defaultPPSTimeout}},
-		{name: "pps with zero wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsSet: true, ppsPin: gpsio.ModemCTS, maxWakeupLatencySet: true, timeout: defaultPPSTimeout}},
+		{name: "capture at speed", args: []string{"-j", "-s", "38400", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{jsonl: true, device: "/dev/ttyS0", deviceSpeed: opt.Make(38400), packetLog: "capture.jsonl"}},
+		{name: "timed capture", args: []string{"-d", "/dev/ttyS0", "-s", "38400", "--packet-log", "capture.jsonl", "-t", "1.25"}, want: flagVars{device: "/dev/ttyS0", deviceSpeed: opt.Make(38400), packetLog: "capture.jsonl", timeout: 1250 * time.Millisecond}},
+		{name: "capture at current speed", args: []string{"-s", "0", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl"}, want: flagVars{device: "/dev/ttyS0", deviceSpeed: opt.Make(0), packetLog: "capture.jsonl"}},
+		{name: "pps on cts", args: []string{"-p", "cts", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemCTS), timeout: defaultPPSTimeout}},
+		{name: "pps all ports", args: []string{"--pps-pin", "dcd", "-a"}, want: flagVars{all: true, ppsPin: opt.Make(gpsio.ModemDCD), timeout: defaultPPSTimeout}},
+		{name: "pps at speed", args: []string{"-p", "ri", "-s", "38400", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemRI), deviceSpeed: opt.Make(38400), timeout: defaultPPSTimeout}},
+		{name: "pps with packet log and timeout", args: []string{"-p", "dsr", "-d", "/dev/ttyS0", "--packet-log", "capture.jsonl", "-t", "30"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemDSR), packetLog: "capture.jsonl", timeout: 30 * time.Second}},
+		{name: "pps until interrupted", args: []string{"-p", "cts", "-t", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemCTS)}},
+		{name: "pps JSONL", args: []string{"-j", "-p", "cts", "-a"}, want: flagVars{jsonl: true, all: true, ppsPin: opt.Make(gpsio.ModemCTS), timeout: defaultPPSTimeout}},
+		{name: "pps inverted polarity", args: []string{"-p", "cts", "--invert-polarity", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemCTS), invertPolarity: true, timeout: defaultPPSTimeout}},
+		{name: "pps by polling", args: []string{"-p", "cts", "-m", "poll", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemCTS), ppsMethod: gpsio.PPSMethodPoll, timeout: defaultPPSTimeout}},
+		{name: "pps by waiting", args: []string{"-p", "cts", "--pps-method", "wait", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemCTS), ppsMethod: gpsio.PPSMethodWait, timeout: defaultPPSTimeout}},
+		{name: "pps with kernel timestamps", args: []string{"-p", "dcd", "--pps-method", "kernel", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemDCD), ppsMethod: gpsio.PPSMethodKernel, timeout: defaultPPSTimeout}},
+		{name: "pps with wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "10.5e-6", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemCTS), maxWakeupLatency: opt.Make(10.5e-6), timeout: defaultPPSTimeout}},
+		{name: "pps with zero wakeup latency", args: []string{"-p", "cts", "--max-wakeup-latency", "0", "-d", "/dev/ttyS0"}, want: flagVars{device: "/dev/ttyS0", ppsPin: opt.Make(gpsio.ModemCTS), maxWakeupLatency: opt.Make(0.0), timeout: defaultPPSTimeout}},
 		{name: "help", args: []string{"-h"}, wantHelp: true},
 		{name: "positional port", args: []string{"/dev/ttyS0"}, wantErr: true},
 		{name: "all and device", args: []string{"-a", "-d", "/dev/ttyS0"}, wantErr: true},

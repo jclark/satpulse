@@ -20,6 +20,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/ptime"
@@ -28,21 +29,18 @@ import (
 )
 
 type flagVars struct {
-	all                 bool
-	device              string
-	info                bool
-	ppsSet              bool
-	ppsPin              gpsio.ModemControlPin
-	invertPolarity      bool
-	ppsMethod           gpsio.PPSMethod
-	pollPreWarm         float64
-	maxWakeupLatency    float64
-	maxWakeupLatencySet bool
-	packetLog           string
-	deviceSpeed         int
-	deviceSpeedSet      bool
-	timeout             time.Duration
-	jsonl               bool
+	all              bool
+	device           string
+	info             bool
+	ppsPin           opt.Val[gpsio.ModemControlPin]
+	invertPolarity   bool
+	ppsMethod        gpsio.PPSMethod
+	pollPreWarm      float64
+	maxWakeupLatency opt.Val[float64]
+	packetLog        string
+	deviceSpeed      opt.Val[int]
+	timeout          time.Duration
+	jsonl            bool
 }
 
 type commandError struct {
@@ -84,14 +82,14 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	}
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
-	if v.ppsSet {
+	if v.ppsPin.IsSet() {
 		return "", monitorPPS(ctx, lg, v)
 	}
 	if v.all {
 		return "", scanPorts(ctx, lg, v.jsonl)
 	}
-	if v.deviceSpeedSet {
-		result := captureDevice(ctx, lg, v.device, v.deviceSpeed, v.packetLog, v.timeout)
+	if v.deviceSpeed.IsSet() {
+		result := captureDevice(ctx, lg, v.device, v.deviceSpeed.Get(), v.packetLog, v.timeout)
 		if code := result.exitCode(); code != 0 {
 			return "", commandError{msg: result.description(), code: code}
 		}
@@ -121,7 +119,8 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.SortFlags = false
 	var ppsPinName, ppsMethodName string
-	var timeoutSec float64
+	var maxWakeupLatency, timeoutSec float64
+	var deviceSpeed int
 	flags.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
 	flags.BoolVarP(&v.all, "all", "a", false, "operate on all discovered serial ports")
 	flags.StringVarP(&v.device, "serial-device", "d", "", "operate on the serial port at `path`")
@@ -130,9 +129,9 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags.BoolVarP(&v.invertPolarity, "invert-polarity", "I", false, "invert the usual PPS pulse polarity, for edges that trail the start of the second by the pulse width")
 	flags.StringVarP(&ppsMethodName, "pps-method", "m", "", "force the PPS edge detection `method` (poll, wait, or kernel)")
 	flags.Float64Var(&v.pollPreWarm, "poll-pre-warm", 0, "busy-wait `seconds` before each poll window, for hosts whose reads slow down while idle")
-	flags.Float64Var(&v.maxWakeupLatency, "max-wakeup-latency", 0, "limit CPU wakeup latency to `seconds` while detecting PPS")
+	flags.Float64Var(&maxWakeupLatency, "max-wakeup-latency", 0, "limit CPU wakeup latency to `seconds` while detecting PPS")
 	flags.StringVar(&v.packetLog, "packet-log", "", "write received packets to a JSON Lines log at `path`")
-	flags.IntVarP(&v.deviceSpeed, "device-speed", "s", 0, "set the serial port speed to `bps` (0 uses the current speed)")
+	flags.IntVarP(&deviceSpeed, "device-speed", "s", 0, "set the serial port speed to `bps` (0 uses the current speed)")
 	flags.Float64VarP(&timeoutSec, "timeout", "t", 0, "stop detecting PPS edges or capturing packets after `seconds` (0 = until interrupted)")
 	flags.BoolVarP(&v.jsonl, "jsonl", "j", false, "write output in JSON Lines format")
 	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
@@ -144,18 +143,22 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		return
 	}
 	deviceSet := flags.Lookup("serial-device").Changed
-	v.deviceSpeedSet = flags.Lookup("device-speed").Changed
+	if flags.Lookup("device-speed").Changed {
+		v.deviceSpeed.Set(deviceSpeed)
+	}
 	timeoutSet := flags.Lookup("timeout").Changed
 	packetLogSet := flags.Lookup("packet-log").Changed
 	methodSet := flags.Lookup("pps-method").Changed
 	preWarmSet := flags.Lookup("poll-pre-warm").Changed
-	v.maxWakeupLatencySet = flags.Lookup("max-wakeup-latency").Changed
-	v.ppsSet = flags.Lookup("pps-pin").Changed
-	if v.ppsSet {
-		v.ppsPin, err = parsePin(ppsPinName)
-		if err != nil {
+	if flags.Lookup("max-wakeup-latency").Changed {
+		v.maxWakeupLatency.Set(maxWakeupLatency)
+	}
+	if flags.Lookup("pps-pin").Changed {
+		var pin gpsio.ModemControlPin
+		if pin, err = parsePin(ppsPinName); err != nil {
 			return
 		}
+		v.ppsPin.Set(pin)
 	}
 	if methodSet {
 		if v.ppsMethod, err = gpsio.ParsePPSMethod(ppsMethodName); err != nil {
@@ -168,8 +171,8 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 			return
 		}
 	}
-	if v.maxWakeupLatencySet {
-		if err = checkNonNegative(v.maxWakeupLatency, 1, "--max-wakeup-latency"); err != nil {
+	if v.maxWakeupLatency.IsSet() {
+		if err = checkNonNegative(v.maxWakeupLatency.Get(), 1, "--max-wakeup-latency"); err != nil {
 			return
 		}
 	}
@@ -181,7 +184,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("--all cannot be combined with --serial-device")
 		return
 	}
-	if v.deviceSpeedSet && v.deviceSpeed < 0 {
+	if v.deviceSpeed.IsSet() && v.deviceSpeed.Get() < 0 {
 		err = fmt.Errorf("--device-speed must not be negative")
 		return
 	}
@@ -205,39 +208,39 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("--packet-log must not be empty")
 		return
 	}
-	if v.info && (v.ppsSet || v.invertPolarity || methodSet || preWarmSet || v.maxWakeupLatencySet || v.deviceSpeedSet || timeoutSet || packetLogSet) {
+	if v.info && (v.ppsPin.IsSet() || v.invertPolarity || methodSet || preWarmSet || v.maxWakeupLatency.IsSet() || v.deviceSpeed.IsSet() || timeoutSet || packetLogSet) {
 		err = fmt.Errorf("--info cannot be combined with --pps-pin, --invert-polarity, --pps-method, --poll-pre-warm, --max-wakeup-latency, --device-speed, --timeout, or --packet-log")
 		return
 	}
-	if v.ppsSet && !deviceSet && !v.all {
+	if v.ppsPin.IsSet() && !deviceSet && !v.all {
 		err = fmt.Errorf("--pps-pin requires --serial-device or --all")
 		return
 	}
-	if v.invertPolarity && !v.ppsSet {
+	if v.invertPolarity && !v.ppsPin.IsSet() {
 		err = fmt.Errorf("--invert-polarity requires --pps-pin")
 		return
 	}
-	if methodSet && !v.ppsSet {
+	if methodSet && !v.ppsPin.IsSet() {
 		err = fmt.Errorf("--pps-method requires --pps-pin")
 		return
 	}
-	if preWarmSet && !v.ppsSet {
+	if preWarmSet && !v.ppsPin.IsSet() {
 		err = fmt.Errorf("--poll-pre-warm requires --pps-pin")
 		return
 	}
-	if v.maxWakeupLatencySet && !v.ppsSet {
+	if v.maxWakeupLatency.IsSet() && !v.ppsPin.IsSet() {
 		err = fmt.Errorf("--max-wakeup-latency requires --pps-pin")
 		return
 	}
-	if timeoutSet && !v.ppsSet && !(v.deviceSpeedSet && packetLogSet) {
+	if timeoutSet && !v.ppsPin.IsSet() && !(v.deviceSpeed.IsSet() && packetLogSet) {
 		err = fmt.Errorf("--timeout requires --pps-pin, or --device-speed and --packet-log")
 		return
 	}
-	if v.deviceSpeedSet && !deviceSet {
+	if v.deviceSpeed.IsSet() && !deviceSet {
 		err = fmt.Errorf("--device-speed requires --serial-device")
 		return
 	}
-	if v.deviceSpeedSet && !v.ppsSet && !packetLogSet {
+	if v.deviceSpeed.IsSet() && !v.ppsPin.IsSet() && !packetLogSet {
 		err = fmt.Errorf("--device-speed requires --pps-pin or --packet-log")
 		return
 	}
@@ -247,7 +250,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	}
 	if timeoutSet {
 		v.timeout = ptime.Seconds(timeoutSec)
-	} else if v.ppsSet {
+	} else if v.ppsPin.IsSet() {
 		v.timeout = defaultPPSTimeout
 	}
 	if !deviceSet && !v.all {
@@ -409,7 +412,7 @@ func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) error {
 	if v.all {
 		return scanPPSPorts(ctx, lg, v.wiring(), v.ppsConfig(), pr)
 	}
-	result := monitorDevice(ctx, lg, v.device, v.deviceSpeed, v.wiring(), v.ppsConfig(), v.packetLog, pr)
+	result := monitorDevice(ctx, lg, v.device, v.deviceSpeed.Get(), v.wiring(), v.ppsConfig(), v.packetLog, pr)
 	if code := result.exitCode(); code != 0 {
 		return commandError{msg: result.description(), code: code}
 	}
@@ -420,15 +423,13 @@ func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) error {
 // Config fields matter only when edges are turned into samples.
 func (v flagVars) ppsConfig() serialpps.Config {
 	cfg := serialpps.Config{Method: v.ppsMethod, PollPreWarm: v.pollPreWarm}
-	if v.maxWakeupLatencySet {
-		cfg.MaxWakeupLatency = &v.maxWakeupLatency
-	}
+	cfg.MaxWakeupLatency = v.maxWakeupLatency.Ptr()
 	return cfg
 }
 
 // wiring is the pulse wiring the PPS flags describe.
 func (v flagVars) wiring() serialpps.Wiring {
-	w := serialpps.Wiring{Pin: v.ppsPin}
+	w := serialpps.Wiring{Pin: v.ppsPin.Get()}
 	if v.invertPolarity {
 		w.Polarity = serialpps.PolarityAssert
 	}
