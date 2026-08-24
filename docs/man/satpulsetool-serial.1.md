@@ -11,7 +11,7 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-I**\|**\-\-invert\-polarity**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**\|**kernel**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-poll\-pre\-warm** *seconds*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-max\-wakeup\-latency** *microseconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-max\-wakeup\-latency** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
 
@@ -63,12 +63,16 @@ Requires **\-p**.
 
 **\-\-poll\-pre\-warm** *seconds*
 : Busy-wait for *seconds* before each poll window opens.
-This speeds up the **poll** method on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core.
+This makes the **poll** method more precise on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core.
 The default is 0, which disables it; a value between 0.02 and 0.05 is suggested.
 Requires **\-p**.
 
-**\-\-max\-wakeup\-latency** *microseconds*
-: Limit CPU wakeup latency while detecting PPS; `0` is maximally strict. Currently supported only on Linux. Requires **\-p**.
+**\-\-max\-wakeup\-latency** *seconds*
+: Limit CPU wakeup latency to *seconds* while detecting PPS.
+This makes edge detection more precise, at the cost of power.
+0 requests the lowest latency available; a value between 10e-6 and 50e-6 is suggested.
+Currently supported only on Linux.
+Requires **\-p**.
 
 **\-\-packet\-log** *path*
 : Write a log of packets received to *path*.

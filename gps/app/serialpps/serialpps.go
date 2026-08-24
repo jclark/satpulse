@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/lib/wakeup"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -105,9 +106,23 @@ type Wiring struct {
 // returned. An explicitly requested method never falls back. cfg.PollPreWarm
 // applies only to polling, the one method whose resolution the host's own
 // speed sets. If stats is non-nil, it records timings only when polling is
-// selected.
+// selected. cfg.MaxWakeupLatency, if set, limits CPU wakeup latency for as
+// long as detection runs.
 func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- CandidateEdge, stats *PollStats) error {
-	prewarm := seconds(cfg.PollPreWarm)
+	if cfg.MaxWakeupLatency != nil {
+		max := ptime.Seconds(*cfg.MaxWakeupLatency)
+		if req, err := wakeup.RequestLatencyLimit(max); err != nil {
+			lg.Warn("cannot limit CPU wakeup latency", "max", max, "err", err)
+		} else {
+			lg.Info("limited CPU wakeup latency", "max", max.Truncate(wakeup.LatencyResolution))
+			defer func() {
+				if err := req.Close(); err != nil {
+					lg.Warn("cannot release CPU wakeup latency limit", "err", err)
+				}
+			}()
+		}
+	}
+	prewarm := ptime.Seconds(cfg.PollPreWarm)
 	if cfg.Method != 0 {
 		return detect(ctx, lg, r, w, cfg.Method, prewarm, ceCh, stats)
 	}
@@ -197,8 +212,8 @@ type Generator struct {
 // NewGenerator creates an empty sample generator using cfg.
 func NewGenerator(cfg Config) *Generator {
 	return &Generator{
-		delayUncertainty: seconds(cfg.DelayUncertainty),
-		maxDelay:         seconds(cfg.MaxDelay),
+		delayUncertainty: ptime.Seconds(cfg.DelayUncertainty),
+		maxDelay:         ptime.Seconds(cfg.MaxDelay),
 	}
 }
 

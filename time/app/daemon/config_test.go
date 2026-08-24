@@ -251,7 +251,7 @@ func TestSerialPPSSampleConfig(t *testing.T) {
 method = "kernel"
 delayUncertainty = 0.01
 maxDelay = 0.7
-maxWakeupLatency = 10
+maxWakeupLatency = 10e-6
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -265,8 +265,8 @@ maxWakeupLatency = 10
 	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodKernel {
 		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodKernel)
 	}
-	if got := cfg.Sample.Serial.PPS.MaxWakeupLatency; got == nil || *got != 10 {
-		t.Errorf("configured maxWakeupLatency = %v, want 10", got)
+	if got := cfg.Sample.Serial.PPS.MaxWakeupLatency; got == nil || *got != 10e-6 {
+		t.Errorf("configured maxWakeupLatency = %v, want 10e-6", got)
 	}
 	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("Validate: %v", err)

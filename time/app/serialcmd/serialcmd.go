@@ -22,7 +22,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 	"github.com/jclark/satpulse/gps/lib/term"
-	"github.com/jclark/satpulse/gps/lib/wakeup"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/spf13/pflag"
@@ -37,7 +36,7 @@ type flagVars struct {
 	invertPolarity      bool
 	ppsMethod           gpsio.PPSMethod
 	pollPreWarm         float64
-	maxWakeupLatency    time.Duration
+	maxWakeupLatency    float64
 	maxWakeupLatencySet bool
 	packetLog           string
 	deviceSpeed         int
@@ -112,7 +111,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 const summary = `[-h|--help] [-a|--all | -d|--serial-device path] [-i|--info]
               [-p|--pps-pin pin] [-I|--invert-polarity] [-m|--pps-method method]
               [--poll-pre-warm seconds]
-              [--max-wakeup-latency microseconds] [--packet-log path]
+              [--max-wakeup-latency seconds] [--packet-log path]
               [-s|--device-speed bps]
               [-t|--timeout seconds] [-j|--jsonl]`
 
@@ -122,7 +121,6 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.SortFlags = false
 	var ppsPinName, ppsMethodName string
-	var maxWakeupLatencyMicros float64
 	var timeoutSec float64
 	flags.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
 	flags.BoolVarP(&v.all, "all", "a", false, "operate on all discovered serial ports")
@@ -132,7 +130,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags.BoolVarP(&v.invertPolarity, "invert-polarity", "I", false, "invert the usual PPS pulse polarity, for edges that trail the start of the second by the pulse width")
 	flags.StringVarP(&ppsMethodName, "pps-method", "m", "", "force the PPS edge detection `method` (poll, wait, or kernel)")
 	flags.Float64Var(&v.pollPreWarm, "poll-pre-warm", 0, "busy-wait `seconds` before each poll window, for hosts whose reads slow down while idle")
-	flags.Float64Var(&maxWakeupLatencyMicros, "max-wakeup-latency", 0, "limit CPU wakeup latency to `microseconds` while detecting PPS")
+	flags.Float64Var(&v.maxWakeupLatency, "max-wakeup-latency", 0, "limit CPU wakeup latency to `seconds` while detecting PPS")
 	flags.StringVar(&v.packetLog, "packet-log", "", "write received packets to a JSON Lines log at `path`")
 	flags.IntVarP(&v.deviceSpeed, "device-speed", "s", 0, "set the serial port speed to `bps` (0 uses the current speed)")
 	flags.Float64VarP(&timeoutSec, "timeout", "t", 0, "stop detecting PPS edges or capturing packets after `seconds` (0 = until interrupted)")
@@ -166,18 +164,12 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		}
 	}
 	if preWarmSet {
-		switch {
-		case math.IsNaN(v.pollPreWarm) || math.IsInf(v.pollPreWarm, 0):
-			err = fmt.Errorf("--poll-pre-warm must be finite")
-			return
-		case v.pollPreWarm < 0 || v.pollPreWarm >= 1:
-			err = fmt.Errorf("--poll-pre-warm must be at least 0 and less than 1")
+		if err = checkNonNegative(v.pollPreWarm, 1, "--poll-pre-warm"); err != nil {
 			return
 		}
 	}
 	if v.maxWakeupLatencySet {
-		v.maxWakeupLatency, err = parseWakeupLatency(maxWakeupLatencyMicros)
-		if err != nil {
+		if err = checkNonNegative(v.maxWakeupLatency, 1, "--max-wakeup-latency"); err != nil {
 			return
 		}
 	}
@@ -265,25 +257,12 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	return
 }
 
-func parseWakeupLatency(microseconds float64) (time.Duration, error) {
-	if math.IsNaN(microseconds) || math.IsInf(microseconds, 0) {
-		return 0, fmt.Errorf("--max-wakeup-latency must be finite")
+// checkNonNegative rejects val outside [0, limit); NaN fails both comparisons.
+func checkNonNegative(val, limit float64, flag string) error {
+	if val >= 0 && val < limit {
+		return nil
 	}
-	if microseconds < 0 {
-		return 0, fmt.Errorf("--max-wakeup-latency must not be negative")
-	}
-	if microseconds >= float64(math.MaxInt64)/float64(time.Microsecond) {
-		return 0, fmt.Errorf("--max-wakeup-latency is too large")
-	}
-	resolution := float64(wakeup.LatencyResolution) / float64(time.Microsecond)
-	if microseconds > 0 && microseconds < resolution {
-		return 0, fmt.Errorf("--max-wakeup-latency must be 0 or at least %g microseconds on this platform", resolution)
-	}
-	d := time.Duration(math.Round(microseconds * float64(time.Microsecond)))
-	if microseconds > 0 && d == 0 {
-		return 0, fmt.Errorf("--max-wakeup-latency is too small to represent")
-	}
-	return d, nil
+	return fmt.Errorf("%s must be at least 0 and less than %g", flag, limit)
 }
 
 func parsePin(name string) (gpsio.ModemControlPin, error) {
@@ -419,19 +398,6 @@ type ppsResult struct {
 }
 
 func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) error {
-	if v.maxWakeupLatencySet {
-		req, err := wakeup.RequestLatencyLimit(v.maxWakeupLatency)
-		if err != nil {
-			lg.Warn("cannot limit CPU wakeup latency", "max", v.maxWakeupLatency, "err", err)
-		} else {
-			lg.Info("limited CPU wakeup latency", "max", v.maxWakeupLatency.Truncate(wakeup.LatencyResolution))
-			defer func() {
-				if err := req.Close(); err != nil {
-					lg.Warn("cannot release CPU wakeup latency limit", "err", err)
-				}
-			}()
-		}
-	}
 	if v.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, v.timeout)
@@ -453,7 +419,11 @@ func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) error {
 // ppsConfig is the detection configuration the PPS flags describe; the other
 // Config fields matter only when edges are turned into samples.
 func (v flagVars) ppsConfig() serialpps.Config {
-	return serialpps.Config{Method: v.ppsMethod, PollPreWarm: v.pollPreWarm}
+	cfg := serialpps.Config{Method: v.ppsMethod, PollPreWarm: v.pollPreWarm}
+	if v.maxWakeupLatencySet {
+		cfg.MaxWakeupLatency = &v.maxWakeupLatency
+	}
+	return cfg
 }
 
 // wiring is the pulse wiring the PPS flags describe.
