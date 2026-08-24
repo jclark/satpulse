@@ -38,7 +38,7 @@ type ppsResult struct {
 	failure string
 }
 
-func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) error {
+func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) (ppsResult, error) {
 	if v.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, v.timeout)
@@ -48,13 +48,10 @@ func monitorPPS(ctx context.Context, lg *slog.Logger, v flagVars) error {
 	defer cancel(nil)
 	pr := &edgePrinter{out: os.Stdout, jsonl: v.jsonl, withDevice: v.all, cancel: cancel}
 	if v.all {
-		return scanPPSPorts(ctx, lg, v.wiring(), v.ppsConfig(), pr)
+		return ppsResult{}, scanPPSPorts(ctx, lg, v.wiring(), v.ppsConfig(), pr)
 	}
 	result := monitorDevice(ctx, lg, v.device, v.deviceSpeed.Get(), v.wiring(), v.ppsConfig(), v.packetLog, pr)
-	if code := result.exitCode(); code != 0 {
-		return commandError{msg: result.description(), code: code}
-	}
-	return nil
+	return result, nil
 }
 
 func scanPPSPorts(ctx context.Context, lg *slog.Logger, w serialpps.Wiring, ppsCfg serialpps.Config, pr *edgePrinter) error {

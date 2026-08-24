@@ -40,6 +40,11 @@ type detectResult struct {
 	failure   string
 }
 
+type operationResult interface {
+	exitCode() int
+	description() string
+}
+
 type speedInfo struct {
 	Device string `json:"device"`
 	Speed  int    `json:"speed"`
@@ -62,28 +67,48 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	}
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
-	if v.ppsPin.IsSet() {
-		return "", monitorPPS(ctx, lg, v)
+	result, err := run(ctx, lg, v)
+	if err != nil {
+		return "", err
 	}
-	if v.all {
-		return "", scanPorts(ctx, lg, v.jsonl)
-	}
-	if v.deviceSpeed.IsSet() {
-		result := captureDevice(ctx, lg, v.device, v.deviceSpeed.Get(), v.packetLog, v.timeout)
-		if code := result.exitCode(); code != 0 {
-			return "", commandError{msg: result.description(), code: code}
-		}
+	if result == nil {
 		return "", nil
-	}
-	result := detectDevice(ctx, lg, v.device, v.packetLog)
-	if ctx.Err() != nil {
-		return "", commandError{msg: "interrupted", code: 1}
 	}
 	if code := result.exitCode(); code != 0 {
 		return "", commandError{msg: result.description(), code: code}
 	}
-	info := speedInfo{Device: result.device, Speed: result.detection.Speed}
+	detected, ok := result.(detectResult)
+	if !ok {
+		return "", nil
+	}
+	info := speedInfo{Device: detected.device, Speed: detected.detection.Speed}
 	return "", printInfo(os.Stdout, &info, v.jsonl)
+}
+
+// run executes the selected operation. It is the only function that converts
+// concrete result structs to operationResult. It returns either a literal nil
+// interface or a non-pointer concrete value, avoiding an interface containing
+// a typed nil pointer.
+func run(ctx context.Context, lg *slog.Logger, v flagVars) (operationResult, error) {
+	switch {
+	case v.ppsPin.IsSet():
+		result, err := monitorPPS(ctx, lg, v)
+		if err != nil || v.all {
+			return nil, err
+		}
+		return result, nil
+	case v.all:
+		return nil, scanPorts(ctx, lg, v.jsonl)
+	case v.deviceSpeed.IsSet():
+		result := captureDevice(ctx, lg, v.device, v.deviceSpeed.Get(), v.packetLog, v.timeout)
+		return result, nil
+	default:
+		result := detectDevice(ctx, lg, v.device, v.packetLog)
+		if ctx.Err() != nil {
+			result.failure = "interrupted"
+		}
+		return result, nil
+	}
 }
 
 func enumerate(f *os.File, jsonl bool, selector string) error {
