@@ -1,6 +1,7 @@
 package novmsg
 
 import (
+	"maps"
 	"testing"
 )
 
@@ -171,9 +172,7 @@ var bynavIonUTCTests = []dataTestCase[Port]{
 
 func unicoreBinRegistry() map[MsgID]func() MsgBody {
 	m := make(map[MsgID]func() MsgBody)
-	for k, v := range BinRegistry() {
-		m[k] = v
-	}
+	maps.Copy(m, BinRegistry())
 	m[UnicoreIonUTCID] = func() MsgBody { return &UnicoreIonUTC{} }
 	delete(m, IonUTCID)
 	return m

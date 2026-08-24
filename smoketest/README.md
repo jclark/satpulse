@@ -15,7 +15,7 @@ a second, orthogonal dimension: a packet-log replay by default, the u-blox
 simulator when a scenario sets `PROVIDER = "ubxsim"` (see Program under
 test and Packet provider below).
 
-See `plan/smoke-test.md` for the design, and the Delivery section of
+See `plan/archive/smoke-test.md` for the design, and the Delivery section of
 `plan/satpulseweb.md` for the workbench phase.
 
 ## Running

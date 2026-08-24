@@ -3,6 +3,10 @@
 # Tested on macOS, FreeBSD and Linux.
 prefix=/usr/local
 sysconfdir=$(prefix)/etc
+GO=go
+PANDOC=pandoc
+# PYTHON must be a Python 3 interpreter; the smoke tests need 3.11 or later.
+PYTHON=python3
 CMD=github.com/jclark/satpulse/gps/app/cmd
 TAGS=netgo,osusergo
 TARGETS=./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
@@ -16,14 +20,14 @@ SUBMAKE=$(MAKE) -f Makefile.unix
 
 all:
 	@$(SUBMAKE) bin
-	@if command -v pandoc >/dev/null 2>&1; then $(SUBMAKE) man; else \
+	@if command -v $(PANDOC) >/dev/null 2>&1; then $(SUBMAKE) man; else \
 	  echo "warning: pandoc not found, so not building the man pages" >&2; \
 	fi
 
 bin:
 	@set -e; \
-	goos=`go env GOOS`; \
-	goarch=`go env GOARCH`; \
+	goos=`$(GO) env GOOS`; \
+	goarch=`$(GO) env GOARCH`; \
 	outdir=out/$$goarch; \
 	test "$$goos" = linux || outdir=out/$${goos}_$$goarch; \
 	version=`cat VERSION`; \
@@ -37,7 +41,7 @@ bin:
 	  cmd_version="$$version"; \
 	fi; \
 	mkdir -p $$outdir; \
-	go build -tags "$(TAGS)" -o $$outdir \
+	$(GO) build -tags "$(TAGS)" -o $$outdir \
 	  -ldflags "-X \"$(CMD).version=$$cmd_version\" -X \"$(CMD).buildDate=$$build_date\"" \
 	  $(TARGETS); \
 	echo $$outdir > out/build.dir; \
@@ -45,12 +49,12 @@ bin:
 	echo "Built satpulsed satpulsetool satpulsewb in $$outdir"
 
 man:
-	@command -v pandoc >/dev/null 2>&1 || \
+	@command -v $(PANDOC) >/dev/null 2>&1 || \
 	  { echo "pandoc is required to build the man pages" >&2; exit 1; }
 	@mkdir -p out
 	@for f in $(MAN_PAGES); do \
 	  if [ ! out/$$f -nt docs/man/$$f.md ]; then \
-	    pandoc -s --metadata=title="`echo $$f | sed 's/\.[0-9]$$//'`" \
+	    $(PANDOC) -s --metadata=title="`echo $$f | sed 's/\.[0-9]$$//'`" \
 	      --metadata=section="`echo $$f | sed 's/.*\.//'`" \
 	      --metadata=author="James Clark" -t man -o out/$$f docs/man/$$f.md \
 	      || exit 1; \
@@ -58,10 +62,42 @@ man:
 	done
 
 test:
-	go test ./...
+	$(GO) test ./...
 
 smoketest:
-	python3 smoketest/run.py
+	$(PYTHON) smoketest/run.py
+
+# The docker-pkg and docker-release targets run the Linux-only pkg and
+# release targets inside the project devcontainer, so that release builds
+# are moderately reproducible and can be made from non-Linux hosts. Set
+# NO_CACHE=1 to recreate the container and rebuild its image from scratch,
+# picking up the latest tools.
+docker-pkg:
+	@$(SUBMAKE) docker-up
+	devcontainer exec --workspace-folder . sh -c 'make test && make pkg'
+
+docker-release:
+	@$(SUBMAKE) docker-up
+	devcontainer exec --workspace-folder . sh -c 'make test && make release'
+
+docker-up:
+	@command -v devcontainer >/dev/null 2>&1 || \
+	  { echo "devcontainer CLI not found: install it with 'npm install -g @devcontainers/cli'" >&2; exit 1; }
+	@docker info >/dev/null 2>&1 || \
+	  { echo "Docker is not running: start it first" >&2; exit 1; }
+	@if [ "$${NO_CACHE:-0}" = 1 ]; then \
+	  DOCKER_CLI_HINTS=false devcontainer up --workspace-folder . --remove-existing-container --build-no-cache; \
+	else \
+	  DOCKER_CLI_HINTS=false devcontainer up --workspace-folder .; \
+	fi
+
+tag:
+	git update-index -q --refresh
+	git diff-index --exit-code HEAD
+	v=v`cat VERSION` && git tag -f -a "$$v" -m "Release $$v"
+
+untag:
+	git tag -d v`cat VERSION`
 
 install:
 	@$(SUBMAKE) install-bin
@@ -101,4 +137,5 @@ install-man:
 clean:
 	rm -rf out
 
-.PHONY: all bin man test smoketest install install-bin install-man clean
+.PHONY: all bin man test smoketest docker-pkg docker-release docker-up \
+  tag untag install install-bin install-man clean

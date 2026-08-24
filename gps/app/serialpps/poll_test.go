@@ -630,7 +630,7 @@ func TestPollTrackingConverges(t *testing.T) {
 		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
-		for i := 0; i < 50; i++ {
+		for range 50 {
 			nextSettled(candidates)
 		}
 		perPulse := (f.calls.Load() - start) / 50

@@ -64,7 +64,7 @@ func qualityPVT(ne *gpsprot.NavEpochMsg, c pvtCommon, baseID opt.Val[uint16], ba
 		// in-range DGNSS/RTK ID as an RTCMv3 fallback is pragmatically more useful.
 		ne.RTCMRefBaseID.Set(c.ReferenceID)
 	}
-	for i := uint(0); i < 32; i++ {
+	for i := range uint(32) {
 		if c.SignalInfo&(1<<i) == 0 {
 			continue
 		}

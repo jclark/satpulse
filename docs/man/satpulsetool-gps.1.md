@@ -30,7 +30,6 @@ satpulsetool-gps - configure a GPS receiver
 # DESCRIPTION
 
 The **satpulsetool** **gps** command is used to configure a GPS receiver for use with satpulsed.
-It can also be used to capture packets from the receiver.
 Two kinds of configuration are supported, high-level and low-level;
 they cannot be performed simultaneously.
 
@@ -45,7 +44,7 @@ With low-level configuration, a *message file* is used.
 A message file is a file in TOML format that defines a collection of named messages.
 SatPulse provides a library of message files, which can be used to configure a wide variety of different GPS receivers.
 
-If no options other than connection options and `--packet-log` are specified,
+If no options other than connection options, `--packet-log` and `--capture` are specified,
 then it will detect the receiver and show information about it,
 as if the `--show-receiver` option had been specified.
 
@@ -101,8 +100,7 @@ The object can have the following fields, omitted when there is nothing to repor
 `packetFormats` (the packet formats detected),
 `config` (the configuration properties that were set or queried),
 and `error` (the error message when configuration fails; the exit code is unaffected).
-Applies to high-level configuration and the show options; cannot be combined with **\-\-msg\-file**
-or with passive packet capture.
+Applies to high-level configuration and the show options; cannot be combined with **\-\-msg\-file**.
 
 The following options control which satellites and signals the receiver uses.
 
@@ -448,10 +446,6 @@ Enable only NMEA RMC messages:
 
     satpulsetool gps -d /dev/ttyACM0 -s 19200 -nmea --nmea-out RMC
 
-Passively capture packets for 30 seconds without probing:
-
-    satpulsetool gps -d /dev/ttyUSB0 -s 9600 --packet-log capture.jsonl --capture 30
-
 Probe the receiver, then capture packets for 10 seconds:
 
     satpulsetool gps -d /dev/ttyACM0 -s 9600 --show-receiver --packet-log capture.jsonl --capture 10
@@ -489,4 +483,4 @@ Send an ad-hoc command from stdin using a here document:
 
 # SEE ALSO
 
-**satpulsetool(1)**, **satpulsed(8)**
+**satpulsetool(1)**, **satpulsetool-serial(1)**, **satpulsed(8)**

@@ -307,7 +307,7 @@ value = 1
 func formatHex(v uint32) string {
 	const hex = "0123456789ABCDEF"
 	buf := []byte{'0', 'x', 0, 0, 0, 0, 0, 0, 0, 0}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		buf[2+i] = hex[(v>>uint(28-4*i))&0xf]
 	}
 	return string(buf)

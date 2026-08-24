@@ -141,7 +141,7 @@ type nativeMsgRecorder struct {
 	msgID string
 }
 
-func (r *nativeMsgRecorder) NativeMsg(_ gpsprot.Tag, msgID string, _ interface{}, _ time.Time) error {
+func (r *nativeMsgRecorder) NativeMsg(_ gpsprot.Tag, msgID string, _ any, _ time.Time) error {
 	r.msgID = msgID
 	return nil
 }

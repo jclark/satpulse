@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -188,12 +189,7 @@ func defaultConfig() *Config {
 }
 
 func (cfg *Config) anyHTTP(f func(HTTPConfig) bool) bool {
-	for _, c := range cfg.HTTP {
-		if f(c) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(cfg.HTTP, f)
 }
 
 func (cfg *Config) httpWantsSatellites() bool {

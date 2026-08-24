@@ -24,9 +24,9 @@ jobs:
       with:
         usesh: true
         prepare: |
-          pkg install -y go git
+          pkg install -y go126 git
         run: |
           git config --global --add safe.directory '*'
-          make bin
-          make test
+          make bin GO=go126
+          make test GO=go126
           make install-bin prefix=/tmp/prefix

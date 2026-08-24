@@ -253,13 +253,10 @@ release: $(GH_DEBS) $(GH_RPMS) $(WIN_ZIP)
 		--draft \
 		$^
 
-tag:
-	git update-index -q --refresh
-	git diff-index --exit-code HEAD
-	git tag -f -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
+# tag, untag, and the docker-wrapped builds live in the portable
+# Makefile.unix, so they work the same on every host.
+docker-pkg docker-release docker-up tag untag:
+	@$(MAKE) -f Makefile.unix $@
 
-untag:
-	git tag -d "$(VERSION_TAG)"
-
-.PHONY: $(ALL_GOARCH) all windows_amd64 test smoketest install uninstall clean pkg deb rpm winzip release man man.gz gpsmsg tag untag
+.PHONY: $(ALL_GOARCH) all windows_amd64 test smoketest install uninstall clean pkg deb rpm winzip release man man.gz gpsmsg docker-pkg docker-release docker-up tag untag
 endif

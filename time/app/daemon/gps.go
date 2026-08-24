@@ -169,7 +169,7 @@ func (c *GPSConfig) setFixedModeECEF(cp *gpsprot.ConfigProps) error {
 		return configErrorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
 	}
 	var fixedPos gpsprot.Point3D
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
 	}
 	acc, err := c.getFixedPosAcc()

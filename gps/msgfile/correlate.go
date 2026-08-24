@@ -8,7 +8,7 @@ import (
 
 // requestAnalyzer produces a requestAnalysis from outgoing message bytes.
 // Implemented by each message type (UBXMsg, CASBINMsg, etc.).
-type requestAnalyzer interface{}
+type requestAnalyzer any
 
 // AckExpectation describes what ACK behavior a request expects.
 type AckExpectation int

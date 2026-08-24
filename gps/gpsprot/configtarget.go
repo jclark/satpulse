@@ -459,7 +459,7 @@ func (o *ConfigOptions) EnablesMsgs() bool {
 // String returns a human-readable representation of the PropIDs flags
 func (p PropIDs) String() string {
 	var names []string
-	for i := 0; i < len(propNames); i++ {
+	for i := range propNames {
 		if p&(1<<i) != 0 {
 			names = append(names, propNames[i])
 		}
@@ -1101,8 +1101,8 @@ func (cp *ConfigProps) Missing(other *ConfigProps) *ConfigProps {
 }
 
 // serializableMap converts the valid properties to a map suitable for serialization
-func (cp *ConfigProps) serializableMap() map[string]interface{} {
-	m := make(map[string]interface{})
+func (cp *ConfigProps) serializableMap() map[string]any {
+	m := make(map[string]any)
 
 	if cp.valid&PropIDSignalsEnabled != 0 {
 		m["signalsEnabled"] = cp.signalsEnabled.GNSSSignalMap()
@@ -1111,7 +1111,7 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 		m["timeGNSS"] = cp.timeGNSS
 	}
 	if cp.valid&timePulseProps != 0 {
-		tpm := make(map[string]interface{})
+		tpm := make(map[string]any)
 		if cp.valid&PropIDTimePulseWidth != 0 {
 			tpm["width"] = float64(cp.timePulse.Width) / float64(time.Second)
 		}
@@ -1130,7 +1130,7 @@ func (cp *ConfigProps) serializableMap() map[string]interface{} {
 		m["timePulse"] = tpm
 	}
 	if cp.valid&PropIDMode != 0 {
-		mm := make(map[string]interface{})
+		mm := make(map[string]any)
 		mm["static"] = cp.mode.Static
 		if cp.mode.PosType == PosTypeECEF {
 			mm["fixedPosECEF"] = []float64{

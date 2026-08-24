@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/time/lib/circbuf"
-	"github.com/jclark/satpulse/time/clocksim"
-	"github.com/jclark/satpulse/time/phctime"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/clocksim"
+	"github.com/jclark/satpulse/time/lib/circbuf"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 type genSampleTestCase struct {
@@ -239,7 +239,7 @@ func TestGenSampleForMessages(t *testing.T) {
 				baseTime := time.Now()
 				n := len(tc.customIntervals)
 				tRead = make([]time.Time, n)
-				for i := 0; i < n; i++ {
+				for i := range n {
 					tRead[i] = baseTime.Add(time.Duration(i)*time.Second + tc.msgDelay)
 				}
 				lastSec = ptime.Time(0).Add(time.Duration(n-1) * time.Second)
@@ -350,7 +350,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 
 	if edgesPerPulse == 1 {
 		// Single-edge mode
-		for i := 0; i < numEdges; i++ {
+		for i := range numEdges {
 			realTime := baseTime.Add(time.Duration(i) * interval)
 			// Multiply in time.Duration (int64) to avoid int overflow on 32-bit.
 			phcTime := basePHC.Add(time.Duration(float64(time.Duration(i)*interval) * (1.0 + phcDrift)))
@@ -393,7 +393,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		}
 		edges := make([]edgeInfo, 0, numEdges)
 
-		for edgeIndex := 0; edgeIndex < numEdges; edgeIndex++ {
+		for edgeIndex := range numEdges {
 			pulseNum := edgeIndex / 2
 			// When startWithRising=true, even indices are rising; when false, even indices are falling
 			isRising := (edgeIndex%2 == 0) == startWithRising
@@ -457,7 +457,7 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 	phcTime := basePHC
 	realTime := baseTime
 
-	for i := 0; i < len(intervals); i++ {
+	for i := range intervals {
 		if i > 0 {
 			phcTime = phcTime.Add(intervals[i])
 			realTime = realTime.Add(intervals[i])
@@ -729,7 +729,7 @@ func TestGenSampleCapturesDetectLeap(t *testing.T) {
 		// the resulting offset is well inside the alignment tolerance.
 		baseTime := time.Now()
 		tRead := make([]time.Time, numEdges)
-		for i := 0; i < numEdges; i++ {
+		for i := range numEdges {
 			tRead[i] = baseTime.Add(time.Duration(i)*interval + msgDelay)
 		}
 		lastSec := ptime.Time(0).Add(time.Duration(numEdges-1) * time.Second)
@@ -825,7 +825,7 @@ func TestLastEdgeIndexUpdated(t *testing.T) {
 			baseTime := time.Now()
 			numPulses := numEdges / 2
 			tRead := make([]time.Time, numPulses)
-			for i := 0; i < numPulses; i++ {
+			for i := range numPulses {
 				tRead[i] = baseTime.Add(time.Duration(i)*interval + msgDelay)
 			}
 			lastSec := ptime.Time(0).Add(time.Duration(numPulses-1) * time.Second)

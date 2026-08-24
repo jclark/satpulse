@@ -411,11 +411,11 @@ func TestGeneratorDelayBounds(t *testing.T) {
 		delay time.Duration
 		ok    bool
 	}{
-		{name: "at negative uncertainty bound", delay: -seconds(cfg.DelayUncertainty), ok: true},
-		{name: "below negative uncertainty bound", delay: -seconds(cfg.DelayUncertainty) - time.Nanosecond},
+		{name: "at negative uncertainty bound", delay: -ptime.Seconds(cfg.DelayUncertainty), ok: true},
+		{name: "below negative uncertainty bound", delay: -ptime.Seconds(cfg.DelayUncertainty) - time.Nanosecond},
 		{name: "zero delay", delay: 0, ok: true},
-		{name: "below maximum delay", delay: seconds(cfg.MaxDelay) - time.Nanosecond, ok: true},
-		{name: "at maximum delay", delay: seconds(cfg.MaxDelay)},
+		{name: "below maximum delay", delay: ptime.Seconds(cfg.MaxDelay) - time.Nanosecond, ok: true},
+		{name: "at maximum delay", delay: ptime.Seconds(cfg.MaxDelay)},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

@@ -96,9 +96,10 @@
                   "default": 0.8
                 },
                 "maxWakeupLatency": {
-                  "description": "Maximum CPU wakeup latency while serial PPS is active (microseconds)",
+                  "description": "Maximum CPU wakeup latency while serial PPS is active (s)",
                   "type": "number",
-                  "minimum": 0
+                  "minimum": 0,
+                  "exclusiveMaximum": 1
                 },
                 "method": {
                   "description": "PPS edge detection method: poll, wait, or kernel; omit for automatic selection",

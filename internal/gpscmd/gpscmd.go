@@ -34,10 +34,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	if err != nil {
 		return
 	}
-	target, err := createConfigTarget(v)
-	if err != nil {
-		return
-	}
+	var target *gpsprot.ConfigTarget
 	var raw []msgfile.RawMsg
 	if v.msgFilePath != "" {
 		var mf *msgfile.Parsed
@@ -69,6 +66,8 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 		if err != nil {
 			return
 		}
+	} else {
+		target = createConfigTarget(v)
 	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
@@ -85,64 +84,50 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	return
 }
 
-// createConfigTarget returns nil if msgFilePath is set (message file mode)
-// or if nothing requires the configurator (passive capture mode).
-func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
-	if v.msgFilePath != "" {
-		return nil, nil
-	}
-	if v.targetJSON != nil {
-		target := v.targetJSON
+func createConfigTarget(v *flagVars) *gpsprot.ConfigTarget {
+	target := v.targetJSON
+	if target != nil {
 		target.Get |= v.configGet
-		// Opts.Socket describes the transport, not a configuration
-		// request, so it is set from the transport regardless of what
-		// the input said.
-		target.Opts.Socket = v.socketPath != ""
-		if target.NoOp() {
-			target.Opts.ForceProbe = true
+	} else {
+		target = gpsprot.NewConfigTarget()
+		target.Opts = v.configOpts
+		target.Get = v.configGet
+		cp := &target.Props
+		if v.pps.IsSet() {
+			cp.SetPPS(v.pps.Get())
 		}
-		return target, nil
+		if v.antCableDelay.IsSet() {
+			cp.SetAntennaCableDelay(v.antCableDelay.Get())
+		}
+		if v.minElev.IsSet() {
+			cp.SetMinElevation(v.minElev.Get())
+		}
+		if v.timeGNSS != 0 {
+			cp.SetTimeGNSS(v.timeGNSS)
+		}
+		if v.enabledSignals != 0 {
+			cp.SetSignalsEnabled(v.enabledSignals)
+		}
+		if v.mode.IsSet() {
+			cp.SetMode(v.mode.Get())
+		}
+		if v.navMsgAuth.IsSet() {
+			cp.SetNavMsgAuth(v.navMsgAuth.Get())
+		}
+		if v.rtcmBaseID.IsSet() {
+			cp.SetRTCMBaseID(v.rtcmBaseID.Get())
+		}
+		if v.baudRate.IsSet() {
+			cp.SetBaudRate(v.baudRate.Get())
+		}
 	}
-	target := gpsprot.NewConfigTarget()
-	target.Opts = v.configOpts
-	target.Get = v.configGet
-	cp := &target.Props
-	if v.pps.IsSet() {
-		cp.SetPPS(v.pps.Get())
-	}
-	if v.antCableDelay.IsSet() {
-		cp.SetAntennaCableDelay(v.antCableDelay.Get())
-	}
-	if v.minElev.IsSet() {
-		cp.SetMinElevation(v.minElev.Get())
-	}
-	if v.timeGNSS != 0 {
-		cp.SetTimeGNSS(v.timeGNSS)
-	}
-	if v.enabledSignals != 0 {
-		cp.SetSignalsEnabled(v.enabledSignals)
-	}
-	if v.mode.IsSet() {
-		cp.SetMode(v.mode.Get())
-	}
-	if v.navMsgAuth.IsSet() {
-		cp.SetNavMsgAuth(v.navMsgAuth.Get())
-	}
-	if v.rtcmBaseID.IsSet() {
-		cp.SetRTCMBaseID(v.rtcmBaseID.Get())
-	}
-	if v.baudRate.IsSet() {
-		cp.SetBaudRate(v.baudRate.Get())
-	}
-	// If nothing requires the configurator, return nil (passive capture mode)
-	if !v.showReceiver && target.NoOp() {
-		return nil, nil
-	}
+	// Opts.Socket describes the transport, not a configuration request, so
+	// it is set from the transport even for a JSON target.
 	target.Opts.Socket = v.socketPath != ""
 	if target.NoOp() {
 		target.Opts.ForceProbe = true
 	}
-	return target, nil
+	return target
 }
 
 func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
@@ -157,14 +142,14 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 
 // run executes the GPS command.
 //
-// Modes based on target and raw:
-//   - target non-nil: config mode (runs GPS configuration)
+// Modes based on raw:
 //   - raw non-nil: message file mode (sends user-defined messages)
-//   - both nil: passive capture mode (just logs packets, no interaction)
+//   - raw nil: config mode (runs GPS detection/configuration)
 //
 // Parameter dependencies:
 //   - logMode: must not be testLogMode when raw is non-nil
 //   - args: only used for test log header when logMode is testLogMode
+//   - target: non-nil when raw is nil
 func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw []msgfile.RawMsg, conn gpsio.Conn, vendors []gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, jsonOut bool, support configSupportReq, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
@@ -208,13 +193,8 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 	var rslt *gpscfg.Result
 	if raw != nil {
 		err = runMsgs(ctx, lg, conn, pCh, raw, capture)
-	} else if target != nil {
-		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendors, capture, showReceiver, jsonOut, support)
 	} else {
-		// Passive capture mode: just read and log packets
-		if capture.IsSet() {
-			keepReading(ctx, lg, pCh, capture.Get(), nil)
-		}
+		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendors, capture, showReceiver, jsonOut, support)
 	}
 
 	lg.Debug("about to wait")

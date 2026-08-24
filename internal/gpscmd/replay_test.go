@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -85,12 +86,8 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 		if r.structural {
 			continue
 		}
-		for idx, pkt := range r.updates {
-			allUpdates[idx] = pkt
-		}
-		for idx, pkt := range r.inputUpdates {
-			allInputUpdates[idx] = pkt
-		}
+		maps.Copy(allUpdates, r.updates)
+		maps.Copy(allInputUpdates, r.inputUpdates)
 	}
 	if len(allUpdates) == 0 && len(allInputUpdates) == 0 {
 		return
@@ -229,10 +226,7 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 		return nil, err
 	}
 
-	target, err := createConfigTarget(v)
-	if err != nil {
-		return nil, err
-	}
+	target := createConfigTarget(v)
 
 	// Create packet processors like gpscfg does. The vendor list comes
 	// from the flags alone: replay must stay hermetic, so the
