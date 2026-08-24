@@ -1,5 +1,6 @@
 ---
 title: Introducing SatPulse Workbench
+date: 2026-08-24 20:00:00 +0700
 workbench_monitoring:
   - url: /assets/images/wb-samui-monitor.png
     image_path: /assets/images/wb-samui-monitor.png
@@ -47,7 +48,7 @@ and then interact with it from a browser running on a Mac or PC.
 But it works equally well if you have the receiver attached locally.
 
 I have made an effort to provide a good out-of-the-box experience.
-No configuration is needed.
+After [installing SatPulse]({% link setup/satpulse-install.md %}), no configuration is required.
 You can run `satpulsewb` with no arguments,
 in which case it will print a URL that you can copy and paste into your browser.
 The URL includes a unique, generated token to provide a modest level of security.
