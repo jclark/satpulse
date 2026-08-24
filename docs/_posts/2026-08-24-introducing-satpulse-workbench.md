@@ -1,11 +1,41 @@
 ---
 title: Introducing SatPulse Workbench
+date: 2026-08-24 20:00:00 +0700
+workbench_monitoring:
+  - url: /assets/images/wb-samui-monitor.png
+    image_path: /assets/images/wb-samui-monitor.png
+    alt: "SatPulse Workbench Monitor tab showing a code 3D position solution"
+    title: "Monitor tab with a code 3D solution"
+  - url: /assets/images/wb-samui-packets.png
+    image_path: /assets/images/wb-samui-packets.png
+    alt: "SatPulse Workbench Packets tab with messages grouped by type and decoded as JSON"
+    title: "Packets tab with a decoded message"
+workbench_configuration:
+  - url: /assets/images/wb-samui-config-timepulse.png
+    image_path: /assets/images/wb-samui-config-timepulse.png
+    alt: "SatPulse Workbench Configuration tab editing time pulse settings"
+    title: "High-level time pulse configuration"
+  - url: /assets/images/wb-samui-config-messages.png
+    image_path: /assets/images/wb-samui-config-messages.png
+    alt: "SatPulse Workbench Configuration tab selecting NMEA, RTCM, PVT, satellite, and raw message output"
+    title: "High-level message output configuration"
+workbench_message_file:
+  - url: /assets/images/wb-samui-msgfile.png
+    image_path: /assets/images/wb-samui-msgfile.png
+    alt: "SatPulse Workbench Message file tab showing Unicore configuration tags"
+    title: "Message file configuration with accepted responses"
+workbench_corrections:
+  - url: /assets/images/wb-samui-corrections.png
+    image_path: /assets/images/wb-samui-corrections.png
+    alt: "SatPulse Workbench Corrections tab receiving RTCM messages from an Ntrip caster"
+    title: "Corrections received from an Ntrip caster"
+  - url: /assets/images/wb-samui-monitor-rtk.png
+    image_path: /assets/images/wb-samui-monitor-rtk.png
+    alt: "SatPulse Workbench Monitor tab showing the resulting RTK fixed solution"
+    title: "RTK fixed solution using the corrections"
 ---
 
-TODO: add screenshots
-
-I am excited about a new program that is included in the latest SatPulse 0.3 pre-release.
-TODO: add link
+I am excited about a new program that is included in the [latest SatPulse 0.3 pre-release](https://github.com/jclark/satpulse/releases/tag/v0.3-pre-20260824).
 I call it SatPulse Workbench.
 It provides a graphical interface for GNSS receiver configuration and monitoring.
 It is an interactive tool for exploring and experimenting with a GNSS receiver.
@@ -18,7 +48,7 @@ and then interact with it from a browser running on a Mac or PC.
 But it works equally well if you have the receiver attached locally.
 
 I have made an effort to provide a good out-of-the-box experience.
-No configuration is needed.
+After [installing SatPulse]({% link setup/satpulse-install.md %}), no configuration is required.
 You can run `satpulsewb` with no arguments,
 in which case it will print a URL that you can copy and paste into your browser.
 The URL includes a unique, generated token to provide a modest level of security.
@@ -27,6 +57,8 @@ If you are running locally, it will also open the browser for you.
 
 SatPulse Workbench has three main areas of functionality: monitoring, configuration and corrections.
 The interface is tab-based.
+
+{% include gallery id="workbench_monitoring" %}
 
 There are two tabs devoted to monitoring.
 The first provides high-level monitoring,
@@ -37,16 +69,23 @@ it aggregates by message type and epoch,
 which I find makes it much easier to grasp what is going on.
 The packet tab also allows binary packets to be decoded into a human-readable JSON.
 
+{% include gallery id="workbench_configuration" %}
+
 There are similarly two tabs devoted to configuration.
 The first exposes a high-level configuration model,
 which is independent of any vendor protocol.
 The user describes their intended configuration in GNSS terms,
 and the implementation figures out how to achieve that for the connected receiver.
+
+{% include gallery id="workbench_message_file" %}
+
 The second configuration tab provides a low-level configuration model,
 where the user selects messages to send from a library of message files,
 organized by vendor.
 This can be used both for receivers for which high-level configuration has not been implemented,
 and for configuring things that the high-level configuration model does not cover.
+
+{% include gallery id="workbench_corrections" %}
 
 The final tab allows you to pull corrections from either an Ntrip caster or a TCP server
 and feed them to the receiver.
