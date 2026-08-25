@@ -121,5 +121,11 @@ power cycled."
   replaced. Such a page is deliberately unreferenced, not a broken
   link to fix: do not relink it, and do not delete it before the
   coverage check.
+- A page that documents the current stable release's way of doing
+  something, when the pre-release has a new way, is not superseded
+  until the next final release ships: it stays in the navigation
+  with a notice at the top framing it as the stable-release path and
+  pointing at the new page (`howtos/rtk.md` is the model), and is
+  deleted with its redirect when the release switch is made.
 - When a superseded page is finally deleted, its old URL gets a
   `redirect_from` entry on whichever page replaces it.
