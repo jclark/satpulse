@@ -9,6 +9,8 @@ Linux packages are available for:
 
 On macOS, SatPulse can be installed with Homebrew.
 
+On Windows, SatPulse is distributed as a zip file.
+
 Alternatively, you can install from source.
 
 ## Install on Linux from a package
@@ -45,6 +47,16 @@ On macOS, SatPulse builds and installs from source via the Homebrew tap
 The macOS port is still new, so use the prerelease channel;
 the tap's README gives the install commands,
 and covers running satpulsed as a service and where files are installed.
+
+## Install on Windows
+
+Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the `_windows_amd64.zip` file. {% include new-in-03.html %}
+The zip contains the executables and the documentation.
+There is no installer: unpack it into a folder of your choice and run the programs from a terminal.
+The program most useful on Windows at the moment is `satpulsewb.exe`, SatPulse Workbench,
+which is self-contained and needs nothing else from the zip.
+satpulsed does not yet have support for [running as a service](https://github.com/jclark/satpulse/pull/407) on Windows: it runs in the terminal that started it,
+and must be given its configuration file with `-f` or the `SATPULSE_CONFIG_FILE` environment variable.
 
 ## Install from source
 
