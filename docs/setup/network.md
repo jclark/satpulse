@@ -1,5 +1,5 @@
 ---
-title: Network configuration
+title: Setting static IP
 ---
 
 For a time server, you probably want a static IP address. How you configure one depends on how your operating system is managing the network.
