@@ -106,7 +106,7 @@ Note that the configuration changes made by satpulsed are never persistent;
 you can always get rid of any changes done by satpulsed by power cycling the GPS.
 
 With an unsupported receiver, you will need to configure it yourself,
-as described in [GPS configuration]({%link setup/gps-config.md %}#unsupported-gps-modules).
+as described in [GPS configuration]({% link gps-config/index.md %}).
 
 There are some kinds of changes that satpulsed will not do:
 - it will not change the serial speed of the module;
@@ -119,7 +119,7 @@ documented in [satpulsetool-gps(1)]({%link man/satpulsetool-gps.1.md %}).
 Note that satpulsed will not configure the GPS receiver to output messages about satellite positions and signals,
 unless the serial speed is at least 38400.
 
-See [GPS configuration]({%link setup/gps-config.md %}) for more information about using `satpulsetool gps`. 
+See [Using satpulsetool gps]({% link gps-config/satpulsetool.md %}) for more information.
 
 ## Running as a service
 

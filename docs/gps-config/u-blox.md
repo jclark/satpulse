@@ -1,5 +1,6 @@
 ---
 title: u-blox
+sitemap: false
 ---
 
 
@@ -82,5 +83,4 @@ SatPulse knows about how acknowledgements work on UBX, so if you send this it ca
 #### ubxval message type
 
 #### ubxvalport message types
-
 

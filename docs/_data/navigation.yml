@@ -81,10 +81,8 @@ docs:
         url: "/gps-config/high-level.html"
       - title: "Message files"
         url: "/gps-config/msg-files.html"
-      - title: "Using satpulsetool gps"
+      - title: "Using satpulsetool"
         url: "/gps-config/satpulsetool.html"
-      - title: "u-blox receivers"
-        url: "/gps-config/u-blox.html"
 
   - title: "Man pages"
     children:
