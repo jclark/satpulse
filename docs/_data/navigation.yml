@@ -57,7 +57,7 @@ docs:
         url: "/setup/fedora-rpi.html"
       - title: "RPi UARTs"
         url: "/setup/rpi-uart.html"
-      - title: "Setting static IP"
+      - title: "Set static IP"
         url: "/setup/network.html"
       - title: "Install SatPulse"
         url: "/setup/satpulse-install.html"
