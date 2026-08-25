@@ -66,11 +66,11 @@ Configuration includes such things as the speed of the serial interface,
 which constellations and bands are enabled, which messages should be emitted, and the rate at which they should be emitted.
 Sophisticated receivers have many hundreds of configurable parameters.
 
-Physically, a GNSS receiver suitable for use with a computer system is built around a module.
+Physically, a GNSS receiver suitable for use with a computer system is built around a [module]({% link hardware/gnss-modules.md %}).
 A module is a small, thin, rectangular, metal-shielded component with solder pads underneath, typically around 1-3 cm across and a few millimeters thick;
 it is built around a GNSS chip, which is the silicon that does the actual GNSS processing,
 and integrates other components such as flash memory and an oscillator.
 A GNSS module cannot be connected to a computer directly. It first needs to be integrated into a board.
 The board supports connections for serial IO to the host, for the antenna and for power.
-The board may be designed to go inside a computer's case, or it may have its own separate enclosure.
+The board may be designed to [go inside a computer's case]({% link hardware/gnss-boards.md %}), or it may have [its own separate enclosure]({% link hardware/gnss-enclosed.md %}).
 
