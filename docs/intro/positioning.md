@@ -43,12 +43,13 @@ This works because errors accumulate slowly:
 satellites drift gradually from their predicted positions;
 clocks similarly drift gradually from the correct time.
 Thus corrections remain applicable for many minutes.
-Satellite-broadcast PPP uses a separate band, commonly called the L6 band.
+Satellite-broadcast PPP typically uses the L6 band.
+Receivers that support the L6 band typically also support the L1, L2 and L5 bands, and are called all-band receivers.
 The corrections can be broadcast by the GNSS satellites themselves.
-Several constellations operate such a service:
-Galileo operates HAS (High Accuracy Service);
-BeiDou operates PPP-B2b;
-QZSS operates MADOCA.
+The most notable example of this service is the Galileo HAS (High Accuracy Service),
+which has global coverage.
+There is also MADOCA from QZSS and PPP-B2b from BeiDou, but both have only regional coverage.
+PPP-B2b uses the B2b band rather than the L6 band.
 Access to these services is free.
 It is also possible for the corrections to be broadcast by separate satellites as a commercial service,
 such as the u-blox PointPerfect Global Service.
