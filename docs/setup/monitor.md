@@ -22,6 +22,7 @@ The available log types are:
 
 * `clock` - logs PHC offsets and servo adjustments in text format
 * `packet` - logs all packets received from and sent to the GPS receiver in JSON Lines format
+* `event` - logs events in JSON Lines format; events are the device-independent model of information from the receiver; they are derived from packets and pulse edges
 
 By default, log files are written to `/var/log/satpulse/`. You can change this with the `dir` key:
 
@@ -40,6 +41,8 @@ python3 clocklog.py /var/log/satpulse/clock.eth0.log
 ```
 
 The packet log file is named e.g. `packet.ttyAMA0.jsonl` where `ttyAMA0` is the serial device name. It is in [JSON Lines](https://jsonlines.org/) format (one JSON object per line), making it easy to process with tools like `jq`.
+
+The event log file is named e.g. `event.ttyAMA0.jsonl`. Each line is one event with a `type` field such as `time`, `posGeo`, `satellites` or `phcPulseEdge` and a `data` field with structured content. `satpulsetool replay` generates the same events from a packet log, except that this does not include pulse edge events.
 
 SatPulse includes an example [logrotate configuration](https://github.com/jclark/satpulse/blob/master/configs/satpulse.logrotate) that can be installed at `/etc/logrotate.d/satpulse` to rotate these logs.
 
