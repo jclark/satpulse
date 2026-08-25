@@ -23,6 +23,7 @@ The available log types are:
 * `clock` - logs PHC offsets and servo adjustments in text format
 * `packet` - logs all packets received from and sent to the GPS receiver in JSON Lines format
 * `event` - logs events in JSON Lines format; events are the device-independent model of information from the receiver; they are derived from packets and pulse edges
+* `track` - logs trackpoints in JSON Lines format; a trackpoint represents a geographical position at a particular time
 
 By default, log files are written to `/var/log/satpulse/`. You can change this with the `dir` key:
 
@@ -39,10 +40,13 @@ There is also a Python analysis script [`clocklog.py`](https://github.com/jclark
 ```
 python3 clocklog.py /var/log/satpulse/clock.eth0.log
 ```
+Packet, event and track logs are in [JSON Lines](https://jsonlines.org/) format (one JSON object per line), making it easy to process with tools like `jq`.
 
-The packet log file is named e.g. `packet.ttyAMA0.jsonl` where `ttyAMA0` is the serial device name. It is in [JSON Lines](https://jsonlines.org/) format (one JSON object per line), making it easy to process with tools like `jq`.
+The packet log file is named e.g. `packet.ttyAMA0.jsonl` where `ttyAMA0` is the serial device name. Each line represents one packet.
 
 The event log file is named e.g. `event.ttyAMA0.jsonl`. Each line is one event with a `type` field such as `time`, `posGeo`, `satellites` or `phcPulseEdge` and a `data` field with structured content. `satpulsetool replay` generates the same events from a packet log, except that this does not include pulse edge events.
+
+The track log file is named e.g. `track.ttyAMA0.jsonl`. Each line is one trackpoint. A trackpoint is designed to have equivalent information to a [GPX](https://www.topografix.com/GPX/1/1/) `trkpt` element. GPX is an XML format widely supported by mapping applications. The Python script [`track2gpx.py`](https://github.com/jclark/satpulse/blob/master/time/internal/logobs/track2gpx.py) converts a track log to GPX, e.g. `python3 track2gpx.py track.ttyAMA0.jsonl > track.gpx`.
 
 SatPulse includes an example [logrotate configuration](https://github.com/jclark/satpulse/blob/master/configs/satpulse.logrotate) that can be installed at `/etc/logrotate.d/satpulse` to rotate these logs.
 
