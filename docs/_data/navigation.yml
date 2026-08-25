@@ -94,6 +94,8 @@ docs:
         url: "/man/satpulsetool-syncsim.1.html"
       - title: "satpulsetool-convobs(1)"
         url: "/man/satpulsetool-convobs.1.html"
+      - title: "satpulsewb(1)"
+        url: "/man/satpulsewb.1.html"
       - title: "satpulse.toml(5)"
         url: "/man/satpulse.toml.5.html"
       - title: "satpulsed(8)"
