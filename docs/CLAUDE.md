@@ -63,6 +63,18 @@ synchronize).
 - A visible TODO is acceptable; an invented or wrong claim is not.
   When information is missing, write `TODO: ...` and move on.
 
+## Version labels
+
+- The tutorial pages describe the current pre-release. The man pages
+  are generated from master and carry their own whole-page banner
+  (`man_prerelease_notice` in `_config.yml`).
+- Anything not in the latest stable release is marked "new in 0.3"
+  with `{% include new-in-03.html %}`, placed at the end of the first
+  sentence that introduces the feature, on the same line, never on a
+  heading. The label renders only while `prerelease_labels` is on in
+  `_config.yml`; when 0.3 final ships, the flag goes off and the
+  markup is removed from the pages.
+
 ## Agent tells to avoid
 
 These patterns mark text as machine-written; none of them appear on
