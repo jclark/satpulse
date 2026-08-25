@@ -11,6 +11,24 @@ of the same kind and match it:
 
 ## Voice
 
+The site reads as one engineer explaining to a capable peer what he
+has built and found out. The register is plain and declarative:
+short sentences, one point each, in the order the reader needs them,
+with the reasoning given rather than the conclusion asserted.
+Opinions are personal recommendations with their grounds ("I
+recommend Raspberry Pi OS, since it is optimized for the Raspberry Pi
+hardware"; "the NEO-F10T is a cheaper alternative to the ZED-F9T: it
+is not an upgrade"), and experience appears as concrete particulars:
+a 6-way passive splitter on a 10m cable, an antenna clamped to a tree
+with a camera mount, the Z490 that did not work. Vendors and products
+are judged frankly, drawbacks included, and prices are given in the
+currency of the shop they were bought from. Uncertainty is said
+outright ("although this could be due to limitations in my test
+equipment"; "whose status is not completely clear"). The tone is
+even throughout: no enthusiasm, no jokes, no reassurance, at most a
+dry aside. Spelling is British with -ize (modelled, neighbouring,
+synchronize).
+
 - "I" is the author's experience and opinion ("I suggest making it a
   separate file", "the only suitable model I have found"). Never
   write "I" for anything the author has not actually done or tested.
@@ -30,6 +48,12 @@ of the same kind and match it:
   it does ("This will make satpulsed send timing samples to chrony").
 - Content lives in prose paragraphs; bullets only for real
   enumerations (options, product lists), never for narrative.
+- Section boundaries: Introduction pages explain concepts and name
+  roles, not products ("an NTP daemon", "the PTP daemon"); Setup
+  pages name the software and show its configuration; Hardware pages
+  select products. When filling one, do not pull the other's
+  material across: PTM as an idea belongs in `intro/timing.md`, which
+  NICs support it in `hardware/ptm.md`.
 
 ## Correctness
 
