@@ -193,6 +193,36 @@ ntrip.password = "secret"
 
 The username and password keys are needed only if the mountpoint requires authentication.
 
+Many large-scale Ntrip services do not expose a separate mountpoint for each base station;
+rather they expect the client to send its location as an NMEA GGA sentence;
+they then use that location to either select a specific base station or synthesize RTCM corrections from other representations.
+This kind of Ntrip caster is called a VRS (Virtual Reference Station).
+An example is u-blox PointPerfect's Ntrip service.
+To enable this, specify `ntrip.nmeaSend = true`.
+
+```
+[stream.pull]
+ntrip.address = "caster.example.com"
+ntrip.mountpoint = "AUTO"
+ntrip.username = "rover"
+ntrip.password = "secret"
+ntrip.nmeaSend = true
+```
+
+This makes satpulsed send the receiver's current position after connecting and periodically thereafter.
+The default is to send every 5 seconds;
+you can change this with `ntrip.nmeaSendInterval`, which gives the interval in seconds;
+0 means upload once per connection.
+
+You can check whether a caster is working by using `satpulsetool ntrip`.
+It connects to a mountpoint
+and writes the packets it receives to standard output as a JSONL packet log.
+The `--nmea-send-pos` and `--nmea-send-interval` options have a similar effect to the corresponding configuration keys:
+
+```
+satpulsetool ntrip --user rover:secret --nmea-send-pos 13.7563,100.5018 caster.example.com AUTO
+```
+
 ### TCP client
 
 With a TCP endpoint, satpulsed acts as a TCP client, receiving from a TCP server:
