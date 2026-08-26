@@ -486,8 +486,9 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 
 // sysSample generates a sample of system time vs true time (based on PHC)
 func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision time.Duration) {
-	// Send refclock sample if in tracking mode
-	if (d.rc == nil && d.shm == nil) || ref.IsZero() || d.controller.Mode() != phcsync.ModeTracking {
+	// Send refclock sample while in sync (tracking or gap mode), so NTP
+	// outputs stay consistent with PTP clock quality during brief signal loss
+	if (d.rc == nil && d.shm == nil) || ref.IsZero() || !d.controller.Mode().InSync() {
 		return
 	}
 	if d.sps != nil {
