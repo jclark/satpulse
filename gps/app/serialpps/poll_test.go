@@ -23,6 +23,8 @@ type acquireCapture struct {
 	window time.Duration
 }
 
+var truncatesSubMillisecondSleeps = sleepDuration(time.Microsecond) == 0
+
 func (h *acquireCapture) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
@@ -127,23 +129,31 @@ func (f *fakePulse) state(since time.Duration) gpsio.ModemControlPinState {
 
 func TestPoll(t *testing.T) {
 	tests := []struct {
-		name             string
-		epochOffset      time.Duration // pulse 0's leading edge relative to start
-		callDur          time.Duration
-		expectFirstPulse int // acquisition length bounds, in pulses
-		expectLastPulse  int
-		expectTol        time.Duration // per-edge timestamp error bound
+		name                string
+		epochOffset         time.Duration // pulse 0's leading edge relative to start
+		callDur             time.Duration
+		expectFirstPulse    int // acquisition length bounds, in pulses
+		expectLastPulse     int
+		truncatedFirstPulse int // bounds when sub-millisecond sleeps are truncated
+		truncatedLastPulse  int
+		expectTol           time.Duration // per-edge timestamp error bound
 	}{
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
 			expectFirstPulse: 3, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
-		{name: "fast query (spacing floor binds)", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
-			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
+		{name: "fast query", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
+			expectFirstPulse: 9, expectLastPulse: 18,
+			truncatedFirstPulse: 6, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
 		{name: "cold start inside pulse", epochOffset: -20 * time.Millisecond, callDur: 20 * time.Microsecond,
-			expectFirstPulse: 9, expectLastPulse: 18, expectTol: 100 * time.Microsecond},
+			expectFirstPulse: 9, expectLastPulse: 18,
+			truncatedFirstPulse: 6, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			runBubble(t, func(t *testing.T) {
+				expectFirstPulse, expectLastPulse := tc.expectFirstPulse, tc.expectLastPulse
+				if truncatesSubMillisecondSleeps && tc.truncatedFirstPulse != 0 {
+					expectFirstPulse, expectLastPulse = tc.truncatedFirstPulse, tc.truncatedLastPulse
+				}
 				f := &fakePulse{epoch: time.Now().Add(tc.epochOffset), width: 100 * time.Millisecond, callDur: tc.callDur}
 				ctx, cancel := context.WithCancel(context.Background())
 				candidates := make(chan CandidateEdge)
@@ -178,9 +188,9 @@ func TestPoll(t *testing.T) {
 					if err := since - time.Duration(pulse)*period; err < -tc.expectTol || err > tc.expectTol {
 						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.Timestamp, err, pulse, tc.expectTol)
 					}
-					if i == 0 && (pulse < tc.expectFirstPulse || pulse > tc.expectLastPulse) {
+					if i == 0 && (pulse < expectFirstPulse || pulse > expectLastPulse) {
 						t.Errorf("first published edge is pulse %d, want acquisition to end between pulses %d and %d",
-							pulse, tc.expectFirstPulse, tc.expectLastPulse)
+							pulse, expectFirstPulse, expectLastPulse)
 					}
 					if i > 0 {
 						d := e.Timestamp.Sub(got[i-1].Timestamp)
@@ -609,9 +619,13 @@ func TestPollOutageReacquires(t *testing.T) {
 		}
 		cancel()
 		<-errCh
-		if first < f.offTo+9 || first > f.offTo+18 {
+		firstOffset, lastOffset := 9, 18
+		if truncatesSubMillisecondSleeps {
+			firstOffset, lastOffset = 6, 15
+		}
+		if first < f.offTo+firstOffset || first > f.offTo+lastOffset {
 			t.Errorf("first edge after outage is pulse %d, want a fresh acquisition between pulses %d and %d",
-				first, f.offTo+9, f.offTo+18)
+				first, f.offTo+firstOffset, f.offTo+lastOffset)
 		}
 	})
 }
@@ -700,10 +714,18 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 		if first := pulseIndex(got[0].Timestamp, f.epoch); first > 15 {
 			t.Errorf("first edge published at pulse %d, want acquisition despite the jitter plateau", first)
 		}
-		// Acquiring in the jitter plateau leaves the window at 15.625ms or
-		// wider; the query-paced floor is reached at 3.9ms.
-		if capture.window == 0 || capture.window > 8*time.Millisecond {
-			t.Errorf("acquired at window %v, want the latch to hold out until the queries pace the loop", capture.window)
+		if truncatesSubMillisecondSleeps {
+			// Once the spacing falls below Linux's sleep resolution, the reads
+			// pace the loop. Two catches confirm that at the 31.25 ms window.
+			if capture.window <= 16*time.Millisecond || capture.window > 32*time.Millisecond {
+				t.Errorf("acquired at window %v, want two caught windows after sub-millisecond sleeps are truncated", capture.window)
+			}
+		} else {
+			// Acquiring in the jitter plateau leaves the window at 15.625ms or
+			// wider; the query-paced floor is reached at 3.9ms.
+			if capture.window == 0 || capture.window > 8*time.Millisecond {
+				t.Errorf("acquired at window %v, want the latch to hold out until the queries pace the loop", capture.window)
+			}
 		}
 		for i, e := range got {
 			pulse := pulseIndex(e.Timestamp, f.epoch)
@@ -721,19 +743,27 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 }
 
 // TestPollConfirmsQueryPacing checks that a single query slowdown does not
-// open the publishing gate. The slowdown covers the catch at the 15.625 ms
-// window, where its 400 us queries outlast the 244 us target. Normal 20 us
-// queries resume at the next pulse, so acquisition must continue until the
-// 50 us spacing floor is reached.
+// open the publishing gate. On platforms with sub-millisecond sleeps, the
+// slowdown covers the catch at the 15.625 ms window, where its 400 us queries
+// outlast the 244 us target. On platforms that truncate those sleeps, it
+// instead covers the 250 ms window, where a 5 ms query outlasts the 3.9 ms
+// target but the following 1.95 ms spacing is still sleep-paced. Normal
+// queries resume at the next pulse, so that catch resets the confirmation.
 func TestPollConfirmsQueryPacing(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
+		slowAt := 6 * time.Second
+		slowCallDur := 400 * time.Microsecond
+		if truncatesSubMillisecondSleeps {
+			slowAt = 2 * time.Second
+			slowCallDur = 5 * time.Millisecond
+		}
 		f := &fakePulse{
 			epoch:       time.Now().Add(350 * time.Millisecond),
 			width:       100 * time.Millisecond,
 			callDur:     20 * time.Microsecond,
-			slowFrom:    6*time.Second - 10*time.Millisecond,
-			slowTo:      6*time.Second + 10*time.Millisecond,
-			slowCallDur: 400 * time.Microsecond,
+			slowFrom:    slowAt - 10*time.Millisecond,
+			slowTo:      slowAt + 10*time.Millisecond,
+			slowCallDur: slowCallDur,
 		}
 		capture := &acquireCapture{Handler: slog.DiscardHandler}
 		ctx, cancel := context.WithCancel(context.Background())
@@ -745,7 +775,11 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		}
 		cancel()
 		<-errCh
-		if capture.window == 0 || capture.window >= 15*time.Millisecond {
+		if truncatesSubMillisecondSleeps {
+			if capture.window <= 16*time.Millisecond || capture.window > 32*time.Millisecond {
+				t.Errorf("acquired at window %v, want the one-window query slowdown suppressed before truncated sleeps pace the loop", capture.window)
+			}
+		} else if capture.window == 0 || capture.window >= 15*time.Millisecond {
 			t.Errorf("acquired at window %v, want the one-window query slowdown suppressed", capture.window)
 		}
 	})

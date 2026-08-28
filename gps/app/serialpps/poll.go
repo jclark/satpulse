@@ -351,7 +351,7 @@ type reading struct {
 	poll  poll
 	start time.Time
 	sched time.Time // when this poll was scheduled to run
-	slept bool      // whether the schedule was still in the future
+	slept bool      // whether waiting for the schedule used a timer
 }
 
 func (p *poller) init() error {
@@ -475,9 +475,9 @@ func readState(ctx context.Context, r StateReader, sched time.Time) (reading, er
 
 // waitUntil reports whether it actually had to wait: false means the
 // scheduled time was already past, i.e. the previous state query outlasted
-// the poll spacing.
+// the poll spacing, or was nearer than the platform can sleep to.
 func waitUntil(ctx context.Context, t time.Time) (bool, error) {
-	d := time.Until(t)
+	d := sleepDuration(time.Until(t))
 	if d <= 0 {
 		select {
 		case <-ctx.Done():
