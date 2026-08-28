@@ -332,7 +332,10 @@ func (t *unixTerm) Read(buf []byte) (n int, err error) {
 		start := time.Now()
 		for {
 			n, err = unix.Read(t.fd, buf)
-			if err != unix.EINTR {
+			// A blocking Linux TTY can transiently return EAGAIN while
+			// TIOCSETD changes its line discipline. Treat it like EINTR so
+			// readers draining the port do not exit during the change.
+			if err != unix.EINTR && err != unix.EAGAIN && err != unix.EWOULDBLOCK {
 				break
 			}
 		}
