@@ -14,11 +14,12 @@ type USBID struct {
 
 // Port describes a serial port for display in a dropdown or CLI listing.
 type Port struct {
-	Device  string   `json:"device"`            // canonical device node to open
-	Display string   `json:"display"`           // human-readable label
-	USB     USBID    `json:"usb,omitzero"`      // USB vendor and product IDs
-	Serial  string   `json:"serial,omitempty"`  // USB serial number, empty if the device publishes none
-	Aliases []string `json:"aliases,omitempty"` // symlinks to Device, sorted (Linux only)
+	Device    string   `json:"device"`              // canonical device node to open
+	Display   string   `json:"display"`             // human-readable label
+	USB       USBID    `json:"usb,omitzero"`        // USB vendor and product IDs
+	Serial    string   `json:"serial,omitempty"`    // USB serial number, empty if the device publishes none
+	Interface string   `json:"interface,omitempty"` // USB interface number as sysfs spells it ("00", "02"), empty if unknown (Linux only)
+	Aliases   []string `json:"aliases,omitempty"`   // symlinks to Device, sorted (Linux only)
 }
 
 // enumeratorDisplay preserves the display formatting used with go.bug.st's

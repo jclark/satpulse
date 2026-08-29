@@ -85,8 +85,9 @@ func enumerate() ([]portInfo, error) {
 	if err != nil {
 		return nil, err
 	}
+	portCount := countUSBDevicePorts(ports)
 	for i := range ports {
-		setDisplay(&ports[i])
+		setDisplay(&ports[i], portCount[ports[i].usbDeviceKey()] > 1)
 	}
 	return ports, nil
 }
@@ -136,6 +137,13 @@ func readPortInfo(portPath, devicesDir string) (portInfo, error) {
 		uevent, err := readOptionalFile(filepath.Join(dir, "uevent"))
 		if err != nil {
 			return portInfo{}, err
+		}
+		if hasUeventValue(uevent, "DEVTYPE", "usb_interface") {
+			port.Interface, err = readOptionalFile(filepath.Join(dir, "bInterfaceNumber"))
+			if err != nil {
+				return portInfo{}, fmt.Errorf("reading USB attribute bInterfaceNumber: %w", err)
+			}
+			continue
 		}
 		if !hasUeventValue(uevent, "DEVTYPE", "usb_device") {
 			continue
@@ -232,7 +240,32 @@ func filterAndCollectAliases(ports []portInfo) ([]portInfo, error) {
 	return ports, nil
 }
 
-func setDisplay(port *portInfo) {
+type usbDeviceKey struct {
+	USBID
+	serial string
+}
+
+func (port *portInfo) usbDeviceKey() usbDeviceKey {
+	return usbDeviceKey{port.USB, port.Serial}
+}
+
+// countUSBDevicePorts counts the ports of each USB device, so that the ports
+// of a multi-port device, which share VID, PID and serial, can be told apart
+// by interface number.
+func countUSBDevicePorts(ports []portInfo) map[usbDeviceKey]int {
+	count := make(map[usbDeviceKey]int)
+	for i := range ports {
+		if ports[i].USB != (USBID{}) {
+			count[ports[i].usbDeviceKey()]++
+		}
+	}
+	return count
+}
+
+// setDisplay builds the display string. multiport says that other ports in
+// the list belong to the same USB device, so the interface number is needed
+// to tell them apart.
+func setDisplay(port *portInfo, multiport bool) {
 	deviceDetail := port.product
 	tag := ubloxTag(port.USB.VID, port.USB.PID)
 	if tag != "" && tag != "u-blox" {
@@ -247,6 +280,9 @@ func setDisplay(port *portInfo) {
 	details := append([]string(nil), port.Aliases...)
 	if deviceDetail != "" {
 		details = append(details, deviceDetail)
+	}
+	if multiport && port.Interface != "" {
+		details = append(details, "if"+port.Interface)
 	}
 	if len(details) != 0 {
 		port.Display += " (" + strings.Join(details, ", ") + ")"
