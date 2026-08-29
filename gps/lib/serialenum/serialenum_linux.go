@@ -20,8 +20,9 @@ var (
 
 type portInfo struct {
 	Port
-	name    string
-	product string
+	name      string
+	product   string
+	usbSysDir string // sysfs directory of the USB device, empty for a non-USB port
 }
 
 // List enumerates hardware serial ports using sysfs. It never opens a device
@@ -87,7 +88,7 @@ func enumerate() ([]portInfo, error) {
 	}
 	portCount := countUSBDevicePorts(ports)
 	for i := range ports {
-		setDisplay(&ports[i], portCount[ports[i].usbDeviceKey()] > 1)
+		setDisplay(&ports[i], portCount[ports[i].usbSysDir] > 1)
 	}
 	return ports, nil
 }
@@ -152,6 +153,7 @@ func readPortInfo(portPath, devicesDir string) (portInfo, error) {
 		if err := readUSBDetails(dir, &port); err != nil {
 			return portInfo{}, err
 		}
+		port.usbSysDir = dir
 		break
 	}
 	return port, nil
@@ -240,23 +242,15 @@ func filterAndCollectAliases(ports []portInfo) ([]portInfo, error) {
 	return ports, nil
 }
 
-type usbDeviceKey struct {
-	USBID
-	serial string
-}
-
-func (port *portInfo) usbDeviceKey() usbDeviceKey {
-	return usbDeviceKey{port.USB, port.Serial}
-}
-
 // countUSBDevicePorts counts the ports of each USB device, so that the ports
-// of a multi-port device, which share VID, PID and serial, can be told apart
-// by interface number.
-func countUSBDevicePorts(ports []portInfo) map[usbDeviceKey]int {
-	count := make(map[usbDeviceKey]int)
+// of a multi-port device can be told apart by interface number. The sysfs
+// device directory identifies the physical device; VID, PID and serial do not,
+// since many devices have no serial number or share a default one.
+func countUSBDevicePorts(ports []portInfo) map[string]int {
+	count := make(map[string]int)
 	for i := range ports {
-		if ports[i].USB != (USBID{}) {
-			count[ports[i].usbDeviceKey()]++
+		if ports[i].usbSysDir != "" {
+			count[ports[i].usbSysDir]++
 		}
 	}
 	return count
