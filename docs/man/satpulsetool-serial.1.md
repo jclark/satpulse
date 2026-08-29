@@ -96,6 +96,7 @@ Requires **\-p**, or **\-s** and **\-\-packet\-log**.
 A port description object has `device` and `display` strings,
 for a USB port a `usb` object with numeric `vid` and `pid` fields,
 for a port with a USB serial number a `serial` string,
+for a USB port an `interface` string with the interface number,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
 With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
