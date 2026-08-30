@@ -18,33 +18,36 @@ all:
     testing:
       hosts:
         abondance.lan:
-        abondance-ttyS0.lan:
+        abondance-ttySEP0.lan:
         brie.lan:
+        chaource.lan:
         gubbeen.lan:
         maasdam.lan:
         morbier.lan:
         pecorino.lan:
+        ricotta.lan:
         roquefort.lan:
         serpa.lan:
         taleggio.lan:
+        vacherin.lan:
+        valdeon.lan:
         valencay.lan:
         valtellina.lan:
+        venaco.lan:
         wensleydale.lan:
     virtual_hosts:
       hosts:
-        abondance-ttyS0.lan:
+        abondance-ttySEP0.lan:
   
   hosts:
-    # SinoGNSS K901 on USB
+    # BG7TBL CM55 on USB (PL2303)
     vacherin.lan:
-      speed: 115200
+      speed: 38400
       instance: ttyUSB0
-      config: "false"
-      vendor: '"SinoGNSS"'
 
     # ZED-X20P on USB
     roquefort.lan:
-      speed: 38400
+      speed: 230400
       instance: ttyACM0
 
     # LEA-6T
@@ -55,7 +58,7 @@ all:
     # ZED-F9T-20B in gnss.store dongle
     maasdam.lan:
       instance: ttyACM0
-      speed: 38400
+      speed: 230400
       interface: eth0
 
     toma.lan:
@@ -70,21 +73,25 @@ all:
       speed: 38400
       pin: 1
 
-    # BG7TBL CM55 (second GPS on same machine as abondance.lan)
-    abondance-ttyS0.lan:
+    # Septentrio mosaic on USB (second GPS on same machine as abondance.lan)
+    abondance-ttySEP0.lan:
       ansible_host: abondance.lan
-      instance: ttyS0
+      instance: ttySEP0
       interface: enp5s0
-      speed: 38400
-      config_file: /etc/satpulse.d/ttyS0.toml
-      http_port: 2001
-  
-    ricotta.lan: # all default
-    
-    # TAU-1201
-    venaco.local:
       speed: 115200
       config: "false"
+      vendor: '"Septentrio"'
+      config_file: /etc/satpulse.d/ttySEP0.toml
+      http_port: 2001
+  
+    # AT632-6T-30 on UART
+    ricotta.lan:
+      vendor: '"casic"'
+      speed: 115200
+    
+    # ATGM332D (URANUS5) on UART
+    venaco.lan:
+      vendor: '"zhongke"'
 
     # LEA-M8T over RS232
     caciocavallo.lan:
@@ -96,16 +103,21 @@ all:
     # MAX-F10S in Timebeat sandwich board
     valdeon.lan: # all default
 
-    # NEO-F10N on a CM5
+    # Techtotop/Taidou T303-5D on a CM5
     valtellina.lan:
-      speed: 38400
+      speed: 115200
+      config: "false"
+      vendor: '"Techtotop"'
 
     # LEA-F9T
     mascarpone.lan:
       speed: 115200
 
-    # UBX-G7020 in SR1723U7
-    chaource.lan: # all default
+    # Quectel LG290P on a CM4
+    chaource.lan:
+      speed: 460800
+      config: "false"
+      vendor: '"Quectel"'
 
     # UM960 on UART
     wensleydale.lan:
@@ -120,7 +132,7 @@ all:
     
     # UM980 on serial
     serpa.lan:
-      speed: 115200
+      speed: 230400
       vendor: '"Unicore"'
 
     # NEO-F10T EVK attached to E810-XXVDA4T
@@ -145,9 +157,12 @@ all:
       instance: ttyACM1
       speed: 115200
     
+    # Raspberry Pi 5
+    raschera.lan: # all defaults
+    
     # Raspberry Pi 3
     montasio.lan:
       interface: ""
 
-
-
+    fontina.lan:
+      interface: ""
