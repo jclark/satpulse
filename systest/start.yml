@@ -8,6 +8,13 @@
         name: "satpulse@{{ instance }}"
         state: stopped
 
+    - name: Configure GPS receiver
+      script: "gpscfg/{{ inventory_hostname_short }}.sh"
+      environment:
+        DEVICE: "/dev/{{ instance }}"
+        SPEED: "{{ speed }}"
+      when: lookup('fileglob', 'gpscfg/' + inventory_hostname_short + '.sh') | length > 0
+
     - name: Create temporary logrotate config
       copy:
         content: |
