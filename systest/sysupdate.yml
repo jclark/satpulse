@@ -1,5 +1,5 @@
 - name: Update OS packages
-  hosts: all:!virtual_hosts
+  hosts: install:!virtual_hosts
   become: yes
 
   tasks:

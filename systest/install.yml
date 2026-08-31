@@ -1,5 +1,5 @@
 - name: Install SatPulse
-  hosts: all:!virtual_hosts
+  hosts: install:!virtual_hosts
   vars:
     package_dir: "/home/jjc/satpulse-pkg"
     control_machine_package_dir: "~/src/satpulse/out/"

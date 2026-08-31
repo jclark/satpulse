@@ -36,6 +36,17 @@ all:
         valtellina.lan:
         venaco.lan:
         wensleydale.lan:
+    # Hosts that get satpulse package installs/updates (install.yml, sysupdate.yml).
+    # testing plus hosts not (yet) exercised by the test cycle; excludes mascarpone
+    # (production - upgraded deliberately, never by a fleet-wide run).
+    install:
+      children:
+        testing:
+      hosts:
+        edam.lan:
+        fontina.lan:
+        montasio.lan:
+        raschera.lan:
     virtual_hosts:
       hosts:
         abondance-ttySEP0.lan:
@@ -153,11 +164,12 @@ all:
       interface: eth1
       speed: 38400
 
-    # mini PC (no PHC)
+    # NEO-F10N on FT232R USB adapter, PPS on CTS, feeding ntpd-rs (no PHC)
     edam.lan:
       interface: ""
-      instance: ttyACM1
-      speed: 115200
+      instance: ttyUSB0
+      speed: 38400
+      sock_path: /run/ntpd-rs/satpulse.ttyUSB0.sock
     
     # Raspberry Pi 5
     raschera.lan: # all defaults
