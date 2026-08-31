@@ -20,20 +20,24 @@ type MsgID uint16
 
 const (
 	clsNav  = 0x01
+	clsRxm  = 0x02
 	clsAck  = 0x05
 	clsCfg  = 0x06
 	clsMon  = 0x0A
 	clsAid  = 0x0B
 	clsNmea = 0xF0
+	clsRtcm = 0xF8
 )
 
 var clsMap = map[byte]string{
 	clsNav:  "NAV",
+	clsRxm:  "RXM",
 	clsAck:  "ACK",
 	clsCfg:  "CFG",
 	clsMon:  "MON",
 	clsAid:  "AID",
 	clsNmea: "NMEA",
+	clsRtcm: "RTCM",
 }
 
 func makeMsgID(cls byte, id byte) MsgID {
@@ -54,9 +58,11 @@ func (mid MsgID) CfgClass() bool {
 	return cls == clsCfg
 }
 
-// Ackable reports whether mid expects an ACK/NAK response.
+// Ackable reports whether mid expects an ACK/NAK response. RXM-DUMPRAW
+// is the one acknowledged set outside the CFG class (hardware-verified
+// on TAU1201/TAU951M/TAU1302).
 func (mid MsgID) Ackable() bool {
-	return mid.CfgClass() && mid != CfgSimpleRstID
+	return (mid.CfgClass() && mid != CfgSimpleRstID) || mid == RxmDumpRawID
 }
 
 type Msg interface {
