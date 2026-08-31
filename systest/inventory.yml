@@ -12,6 +12,7 @@ all:
     vendor: '"u-blox"' # GPS receiver vendor
     config_file: /etc/satpulse.toml  # SatPulse config file path
     http_port: 2000    # HTTP monitoring port
+    sock_path: /var/run/chrony.satpulse.sock  # chrony refclock SOCK path (must match chrony.conf)
     ansible_ssh_common_args: '-o "SetEnv TERM=dumb"' # needed for Fedora 43
 
   children:
@@ -68,9 +69,9 @@ all:
 
     # ZED-F9P in M.2 slot
     abondance.lan:
-      instance: ttyACM0
+      instance: ttyUBX0
       interface: enp4s0
-      speed: 38400
+      speed: 115200
       pin: 1
 
     # Septentrio mosaic on USB (second GPS on same machine as abondance.lan)
@@ -83,6 +84,7 @@ all:
       vendor: '"Septentrio"'
       config_file: /etc/satpulse.d/ttySEP0.toml
       http_port: 2001
+      sock_path: /var/run/chrony.satpulse.ttySEP0.sock
   
     # AT632-6T-30 on UART
     ricotta.lan:
