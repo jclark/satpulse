@@ -76,6 +76,7 @@ _Not yet released_
 - The `pulseEdge` event type in the JSONL event log has been renamed to `phcPulseEdge`, because SatPulse now supports two different kinds of pulse edge: PHC-timestamped and system-clock-timestamped. (#402)
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
 - Building from source now uses `make` on macOS and FreeBSD as well as Linux, replacing the `unix-build.sh` script. `make install` works there too, installing under `/usr/local` by default, or under a prefix given by `prefix=`. (#420)
+- Serial port enumeration (`satpulsetool serial --all`/`--info` and the Workbench port list) now works on FreeBSD, including USB metadata for ucom(4) ports. (#426)
 
 ## Changes in 0.2
 
