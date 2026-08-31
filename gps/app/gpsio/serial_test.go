@@ -74,12 +74,12 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if got := c.Speed(); got != 4800 {
 		t.Errorf("Speed() = %d, want 4800", got)
 	}
-	state, err := c.ModemControlPinState()
+	state, err := c.SerialPinState()
 	if err != nil {
-		t.Fatalf("ModemControlPinState: %v", err)
+		t.Fatalf("SerialPinState: %v", err)
 	}
-	if !state.Asserted(ModemCTS) {
-		t.Error("ModemControlPinState did not report CTS asserted")
+	if !state.Asserted(SerialPinCTS) {
+		t.Error("SerialPinState did not report CTS asserted")
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)
@@ -87,8 +87,8 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if f.changeCalls != 1 {
 		t.Errorf("Change calls = %d, want 1", f.changeCalls)
 	}
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
-		t.Errorf("WaitModemControlPinChange error = %v, want ErrUnsupported for a terminal that cannot wait", err)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("WaitSerialPinChange error = %v, want ErrUnsupported for a terminal that cannot wait", err)
 	}
 	if err := c.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -192,7 +192,7 @@ func TestSerialConnWaitDoesNotBlockReadsWhileCreatingWatch(t *testing.T) {
 	c := newSerialConn(f, term.DevUART)
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait)
+		_, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait)
 		errCh <- err
 	}()
 	<-f.creating
@@ -204,7 +204,7 @@ func TestSerialConnWaitDoesNotBlockReadsWhileCreatingWatch(t *testing.T) {
 	c.Stop()
 	close(f.release)
 	if err := <-errCh; !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want net.ErrClosed", err)
+		t.Fatalf("WaitSerialPinChange error = %v, want net.ErrClosed", err)
 	}
 	select {
 	case <-f.watch.closed:
@@ -223,9 +223,9 @@ func TestSerialConnWaitCapability(t *testing.T) {
 	f := &fakeWaitTerm{watch: w}
 	c := newSerialConn(f, term.DevUSBtoUART)
 
-	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait)
+	change, missed, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait)
 	if err != nil || change.Timestamp != now || change.TRead != now || !change.Asserted || missed != 2 {
-		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 2, nil", change, missed, err)
+		t.Fatalf("WaitSerialPinChange = %+v, %d, %v; want supplied change, 2, nil", change, missed, err)
 	}
 	if got := w.waitCount(); got != 1 {
 		t.Errorf("waits = %d, want 1", got)
@@ -254,8 +254,8 @@ func TestSerialConnWaitUnsupportedClosesWatch(t *testing.T) {
 	w.result <- fakeWatchResult{err: errors.ErrUnsupported}
 	c := newSerialConn(&fakeWaitTerm{watch: w}, term.DevUSBtoUART)
 
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
 	}
 	select {
 	case <-w.closed:
@@ -273,13 +273,13 @@ func TestSerialConnWaitContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := c.WaitModemControlPinChange(ctx, ModemCTS, PPSMethodWait)
+		_, _, err := c.WaitSerialPinChange(ctx, SerialPinCTS, PPSMethodWait)
 		done <- err
 	}()
 	<-w.waitStarted
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want context.Canceled", err)
+		t.Fatalf("WaitSerialPinChange error = %v, want context.Canceled", err)
 	}
 	select {
 	case <-w.cancelled:
@@ -303,11 +303,11 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	if got := c.Speed(); got != 0 {
 		t.Errorf("Speed() = %d, want 0", got)
 	}
-	if _, err := c.ModemControlPinState(); !errors.Is(err, term.ErrNotATTY) {
-		t.Errorf("ModemControlPinState error = %v, want ErrNotATTY", err)
+	if _, err := c.SerialPinState(); !errors.Is(err, term.ErrNotATTY) {
+		t.Errorf("SerialPinState error = %v, want ErrNotATTY", err)
 	}
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
-		t.Errorf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)
@@ -342,9 +342,9 @@ func TestSerialConnKernelMethod(t *testing.T) {
 	}
 	f := &fakeKernelTerm{fakeWaitTerm: fakeWaitTerm{watch: w}}
 	c := newSerialConn(f, term.DevUART)
-	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel)
+	change, missed, err := c.WaitSerialPinChange(context.Background(), SerialPinDCD, PPSMethodKernel)
 	if err != nil || change.Timestamp != now || change.TRead != now || change.Asserted || missed != 1 {
-		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
+		t.Fatalf("WaitSerialPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
 	}
 	if f.kernelPin != term.ModemDCD {
 		t.Errorf("kernel-watched pin = %v, want DCD", f.kernelPin)
@@ -357,8 +357,8 @@ func TestSerialConnKernelMethod(t *testing.T) {
 
 func TestSerialConnKernelMethodUnsupported(t *testing.T) {
 	c := newSerialConn(&fakeWaitTerm{watch: newFakePinWatch()}, term.DevUSBtoUART)
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel); !errors.Is(err, errors.ErrUnsupported) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinDCD, PPSMethodKernel); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
 	}
 	if err := c.Close(); err != nil {
 		t.Fatalf("Close: %v", err)

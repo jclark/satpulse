@@ -61,8 +61,8 @@ type SerialConfig struct {
 }
 
 type SerialPPSConfig struct {
-	Pin            string `toml:"pin"`
-	InvertPolarity bool   `toml:"invertPolarity"`
+	Pin            gpsio.SerialPin `toml:"pin"`
+	InvertPolarity bool            `toml:"invertPolarity"`
 }
 
 type SampleConfig struct {
@@ -219,8 +219,8 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
 	if cfg.Serial.PPS != nil {
-		if _, err := cfg.Serial.PPS.modemControlPin(); err != nil {
-			return &configError{err: err}
+		if cfg.Serial.PPS.Pin == 0 {
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table must be specified")}
 		}
 		if cfg.PHC.Interface != "" {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
@@ -231,8 +231,8 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	}
 	// An explicitly selected method never falls back, and kernel PPS reports
 	// only DCD changes, so the combination could only fail at startup.
-	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != "dcd" {
-		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = "dcd" in the [serial] table, got %q`, cfg.Serial.PPS.Pin)}
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != gpsio.SerialPinDCD {
+		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = %q in the [serial] table, got %q`, gpsio.SerialPinDCD, cfg.Serial.PPS.Pin)}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
@@ -252,27 +252,11 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 
 // wiring is the pulse wiring the table describes.
 func (cfg SerialPPSConfig) wiring() serialpps.Wiring {
-	pin, _ := cfg.modemControlPin() // checked by Config.Validate
-	w := serialpps.Wiring{Pin: pin}
+	w := serialpps.Wiring{Pin: cfg.Pin}
 	if cfg.InvertPolarity {
 		w.Polarity = serialpps.PolarityAssert
 	}
 	return w
-}
-
-func (cfg SerialPPSConfig) modemControlPin() (gpsio.ModemControlPin, error) {
-	switch cfg.Pin {
-	case "cts":
-		return gpsio.ModemCTS, nil
-	case "dcd":
-		return gpsio.ModemDCD, nil
-	case "dsr":
-		return gpsio.ModemDSR, nil
-	case "ri":
-		return gpsio.ModemRI, nil
-	default:
-		return 0, fmt.Errorf("pps.pin %q in the [serial] table: must be one of cts, dcd, dsr, ri", cfg.Pin)
-	}
 }
 
 // userSet checks the top-level [[user]] table for empty or duplicate

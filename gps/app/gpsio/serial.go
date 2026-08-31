@@ -18,14 +18,14 @@ import (
 // It provides a similar interface to net.Conn.
 // It implements io.Reader, io.Writer and io.Closer.
 // It is safe to call Read, Write and Close on different goroutines.
-// ModemControlPinState can be called concurrently with Read and Write, but
-// the caller must stop all ModemControlPinState calls before calling Close.
+// SerialPinState can be called concurrently with Read and Write, but
+// the caller must stop all SerialPinState calls before calling Close.
 // However, there must not be more than one concurrent Read
 // nor more than one concurrent Write, nor more than one concurrent Close.
 // Stop can be called before Close to prevent further reads and writes.
 // Close will wait for any in-progress reads or writes to complete,
 // before restoring serial settings and closing the underlying file descriptor.
-// At most one WaitModemControlPinChange call may be in progress, and it must
+// At most one WaitSerialPinChange call may be in progress, and it must
 // have returned before Close is called. Its context cancels it, and Stop
 // prevents further waits and cancels the watch; how soon a cancelled wait
 // itself returns is up to the platform, and where the wait primitive cannot
@@ -45,7 +45,7 @@ type SerialConn struct {
 	pktLog       *PacketLog
 	lastWriteLen int // bytes of the most recent write; read by Drain
 	watch        term.ModemControlPinWatch
-	watchPin     ModemControlPin
+	watchPin     SerialPin
 	watchMethod  PPSMethod
 }
 
@@ -134,12 +134,13 @@ func (c *SerialConn) Speed() int {
 	return 0
 }
 
-// ModemControlPinState returns the asserted modem control input pins. It
+// SerialPinState returns the asserted modem control input pins. It
 // fails with term.ErrNotATTY when the connection uses a FIFO or another
 // non-TTY fallback. It must not be called concurrently with Close.
-func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
+func (c *SerialConn) SerialPinState() (SerialPinState, error) {
 	if t := c.term(); t != nil {
-		return t.ModemControlPinState()
+		s, err := t.ModemControlPinState()
+		return SerialPinState(s), err
 	}
 	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
 }
@@ -150,43 +151,43 @@ func (c *SerialConn) ModemControlPinState() (ModemControlPinState, error) {
 // available backend whose device or driver cannot provide it fails with an
 // error wrapping ErrUnavailable. Other failures retain their underlying
 // error.
-func (c *SerialConn) newPinWatch(pin ModemControlPin, method PPSMethod) (term.ModemControlPinWatch, error) {
+func (c *SerialConn) newPinWatch(pin SerialPin, method PPSMethod) (term.ModemControlPinWatch, error) {
 	switch method {
 	case PPSMethodWait:
 		watcher, ok := c.file.(term.ModemControlPinWatcher)
 		if !ok {
 			return nil, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
 		}
-		return watcher.NewModemControlPinWatch(pin)
+		return watcher.NewModemControlPinWatch(pin.termPin())
 	case PPSMethodKernel:
 		watcher, ok := c.file.(term.KernelModemControlPinWatcher)
 		if !ok {
 			return nil, fmt.Errorf("%s: kernel PPS is not available on this platform or device: %w", c.file.Path(), errors.ErrUnsupported)
 		}
-		return watcher.NewKernelModemControlPinWatch(pin)
+		return watcher.NewKernelModemControlPinWatch(pin.termPin())
 	default:
 		panic("gpsio: invalid PPS method for a pin watch")
 	}
 }
 
-// WaitModemControlPinChange blocks until a modem control input changes,
+// WaitSerialPinChange blocks until a modem control input changes,
 // watching it with the given detection method (PPSMethodWait or
 // PPSMethodKernel; anything else is a contract violation). The watch is
 // created on the first call and kept until an error or cancellation releases
 // it; every call must pass the same pin and method.
-func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemControlPin, method PPSMethod) (ModemControlPinChange, int, error) {
+func (c *SerialConn) WaitSerialPinChange(ctx context.Context, pin SerialPin, method PPSMethod) (SerialPinChange, int, error) {
 	if method != PPSMethodWait && method != PPSMethodKernel {
-		panic("gpsio: WaitModemControlPinChange requires the wait or kernel method")
+		panic("gpsio: WaitSerialPinChange requires the wait or kernel method")
 	}
 	c.mu.Lock()
 	if c.stopped {
 		c.mu.Unlock()
-		return ModemControlPinChange{}, 0, net.ErrClosed
+		return SerialPinChange{}, 0, net.ErrClosed
 	}
 	w := c.watch
 	if w != nil && (pin != c.watchPin || method != c.watchMethod) {
 		c.mu.Unlock()
-		panic("gpsio: WaitModemControlPinChange called with a different pin or method")
+		panic("gpsio: WaitSerialPinChange called with a different pin or method")
 	}
 	c.mu.Unlock()
 	if w == nil {
@@ -195,7 +196,7 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 		// device. Reads and writes take mu, so it is not held here.
 		fresh, err := c.newPinWatch(pin, method)
 		if err != nil {
-			return ModemControlPinChange{}, 0, err
+			return SerialPinChange{}, 0, err
 		}
 		c.mu.Lock()
 		// A Stop during the creation above cancelled a watch that was not
@@ -203,7 +204,7 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 		if c.stopped {
 			c.mu.Unlock()
 			_ = fresh.Close()
-			return ModemControlPinChange{}, 0, net.ErrClosed
+			return SerialPinChange{}, 0, net.ErrClosed
 		}
 		if c.watch == nil {
 			c.watch = fresh
@@ -218,7 +219,7 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 	}
 
 	type waitResult struct {
-		change ModemControlPinChange
+		change term.ModemControlPinChange
 		missed int
 		err    error
 	}
@@ -246,22 +247,22 @@ func (c *SerialConn) WaitModemControlPinChange(ctx context.Context, pin ModemCon
 			w.Cancel()
 			c.dropPinWatch(w)
 			delivered <- false
-			return ModemControlPinChange{}, 0, err
+			return SerialPinChange{}, 0, err
 		}
 		delivered <- true
 		if errors.Is(r.err, term.ErrCancelled) {
-			return ModemControlPinChange{}, 0, net.ErrClosed
+			return SerialPinChange{}, 0, net.ErrClosed
 		}
 		if r.err != nil {
 			_ = w.Close()
 			c.dropPinWatch(w)
 		}
-		return r.change, r.missed, r.err
+		return SerialPinChange(r.change), r.missed, r.err
 	case <-ctx.Done():
 		w.Cancel()
 		c.dropPinWatch(w)
 		delivered <- false
-		return ModemControlPinChange{}, 0, ctx.Err()
+		return SerialPinChange{}, 0, ctx.Err()
 	}
 }
 

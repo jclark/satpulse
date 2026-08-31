@@ -347,7 +347,7 @@ type poll struct {
 }
 
 type reading struct {
-	state gpsio.ModemControlPinState
+	state gpsio.SerialPinState
 	poll  poll
 	start time.Time
 	sched time.Time // when this poll was scheduled to run
@@ -464,7 +464,7 @@ func readState(ctx context.Context, r StateReader, sched time.Time) (reading, er
 		return reading{}, err
 	}
 	start := now()
-	state, err := r.ModemControlPinState()
+	state, err := r.SerialPinState()
 	end := now()
 	if err != nil {
 		return reading{}, err
@@ -515,7 +515,7 @@ func classify(prev, cur reading, w Wiring, deadline time.Time) (clockReading, bo
 
 // inPulse reports whether the state was observed during a pulse, as
 // selected by the wiring's polarity.
-func inPulse(s gpsio.ModemControlPinState, w Wiring) bool {
+func inPulse(s gpsio.SerialPinState, w Wiring) bool {
 	return s.Asserted(w.Pin) == w.Polarity.Asserted()
 }
 
