@@ -25,16 +25,16 @@ type testChangeWaiter struct {
 }
 
 type testWaitResult struct {
-	change gpsio.ModemControlPinChange
+	change gpsio.SerialPinChange
 	missed int
 	err    error
 }
 
-func (w *testChangeWaiter) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+func (w *testChangeWaiter) SerialPinState() (gpsio.SerialPinState, error) {
 	return 0, nil
 }
 
-func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsio.ModemControlPin, _ gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error) {
+func (w *testChangeWaiter) WaitSerialPinChange(ctx context.Context, _ gpsio.SerialPin, _ gpsio.PPSMethod) (gpsio.SerialPinChange, int, error) {
 	if w.entered != nil {
 		w.entered <- struct{}{}
 	}
@@ -42,7 +42,7 @@ func (w *testChangeWaiter) WaitModemControlPinChange(ctx context.Context, _ gpsi
 	case r := <-w.next:
 		return r.change, r.missed, r.err
 	case <-ctx.Done():
-		return gpsio.ModemControlPinChange{}, 0, ctx.Err()
+		return gpsio.SerialPinChange{}, 0, ctx.Err()
 	}
 }
 
@@ -53,14 +53,14 @@ func TestWait(t *testing.T) {
 	// An asserted transition is not a leading pulse edge and must not be
 	// published. The following deasserted transition is published even when
 	// the backend reports missed transitions.
-	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp.Add(-time.Second), TRead: tRead.Add(-time.Second), Asserted: true}}
-	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp, TRead: tRead}, missed: 2}
+	w.next <- testWaitResult{change: gpsio.SerialPinChange{Timestamp: timestamp.Add(-time.Second), TRead: tRead.Add(-time.Second), Asserted: true}}
+	w.next <- testWaitResult{change: gpsio.SerialPinChange{Timestamp: timestamp, TRead: tRead}, missed: 2}
 	candidates := make(chan CandidateEdge, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, candidates) }()
+	go func() { errCh <- Wait(ctx, lg, w, Wiring{Pin: gpsio.SerialPinCTS}, gpsio.PPSMethodWait, candidates) }()
 	select {
 	case candidate := <-candidates:
 		if candidate.Timestamp != timestamp || candidate.TRead != tRead {
@@ -90,13 +90,13 @@ func TestWaitInvertedPolarity(t *testing.T) {
 	w := &testChangeWaiter{next: make(chan testWaitResult, 2)}
 	// With PolarityAssert the pulse asserts the flag, so the deasserted
 	// transition is a trailing edge and the asserted one is published.
-	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp.Add(-time.Second), TRead: tRead.Add(-time.Second)}}
-	w.next <- testWaitResult{change: gpsio.ModemControlPinChange{Timestamp: timestamp, TRead: tRead, Asserted: true}}
+	w.next <- testWaitResult{change: gpsio.SerialPinChange{Timestamp: timestamp.Add(-time.Second), TRead: tRead.Add(-time.Second)}}
+	w.next <- testWaitResult{change: gpsio.SerialPinChange{Timestamp: timestamp, TRead: tRead, Asserted: true}}
 	candidates := make(chan CandidateEdge, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS, Polarity: PolarityAssert}, gpsio.PPSMethodWait, candidates)
+		errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.SerialPinCTS, Polarity: PolarityAssert}, gpsio.PPSMethodWait, candidates)
 	}()
 	select {
 	case candidate := <-candidates:
@@ -117,7 +117,7 @@ func TestWaitContextCancellation(t *testing.T) {
 	candidates := make(chan CandidateEdge, 1)
 	ctx, cancel := context.WithCancel(context.Background())
 	errCh := make(chan error, 1)
-	go func() { errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.ModemCTS}, gpsio.PPSMethodWait, candidates) }()
+	go func() { errCh <- Wait(ctx, testLog, w, Wiring{Pin: gpsio.SerialPinCTS}, gpsio.PPSMethodWait, candidates) }()
 	<-w.entered
 	cancel()
 	if err := <-errCh; !errors.Is(err, context.Canceled) {
@@ -138,18 +138,18 @@ type testFallbackWaiter struct {
 	cancel          context.CancelFunc
 }
 
-func (w *testFallbackWaiter) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+func (w *testFallbackWaiter) SerialPinState() (gpsio.SerialPinState, error) {
 	w.cancel()
 	return 0, nil
 }
 
-func (w *testFallbackWaiter) WaitModemControlPinChange(_ context.Context, _ gpsio.ModemControlPin, method gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error) {
+func (w *testFallbackWaiter) WaitSerialPinChange(_ context.Context, _ gpsio.SerialPin, method gpsio.PPSMethod) (gpsio.SerialPinChange, int, error) {
 	w.methods = append(w.methods, method)
 	if w.successfulWaits > 0 {
 		w.successfulWaits--
-		return gpsio.ModemControlPinChange{Asserted: true}, 0, nil
+		return gpsio.SerialPinChange{Asserted: true}, 0, nil
 	}
-	return gpsio.ModemControlPinChange{}, 0, w.err
+	return gpsio.SerialPinChange{}, 0, w.err
 }
 
 // testPoller is a StateReader without the wait capability.
@@ -157,7 +157,7 @@ type testPoller struct {
 	cancel context.CancelFunc
 }
 
-func (p *testPoller) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+func (p *testPoller) SerialPinState() (gpsio.SerialPinState, error) {
 	p.cancel()
 	return 0, nil
 }
@@ -231,7 +231,7 @@ func TestDetectMethodSelection(t *testing.T) {
 			stats := new(PollStats)
 			var logs bytes.Buffer
 			lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.ModemCTS}, Config{Method: tc.method}, make(chan CandidateEdge, 1), stats)
+			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.SerialPinCTS}, Config{Method: tc.method}, make(chan CandidateEdge, 1), stats)
 			if !errors.Is(err, tc.expectErr) {
 				t.Errorf("Detect error = %v, want %v", err, tc.expectErr)
 			}
@@ -267,7 +267,7 @@ func TestDetectWithoutWaiterPolls(t *testing.T) {
 	stats := new(PollStats)
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
-	err := Detect(ctx, lg, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, Config{}, make(chan CandidateEdge, 1), stats)
+	err := Detect(ctx, lg, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.SerialPinCTS}, Config{}, make(chan CandidateEdge, 1), stats)
 	if !errors.Is(err, context.Canceled) {
 		t.Errorf("Detect error = %v, want context.Canceled", err)
 	}
@@ -287,7 +287,7 @@ func TestDetectForcedWaitWithoutWaiter(t *testing.T) {
 		t.Run(method.String(), func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.ModemCTS}, Config{Method: method}, make(chan CandidateEdge, 1), nil)
+			err := Detect(ctx, testLog, &testPoller{cancel: cancel}, Wiring{Pin: gpsio.SerialPinCTS}, Config{Method: method}, make(chan CandidateEdge, 1), nil)
 			if !errors.Is(err, errors.ErrUnsupported) {
 				t.Errorf("Detect error = %v, want errors.ErrUnsupported", err)
 			}

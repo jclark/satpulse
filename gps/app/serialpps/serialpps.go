@@ -51,7 +51,7 @@ type CandidateEdge struct {
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
 type StateReader interface {
-	ModemControlPinState() (gpsio.ModemControlPinState, error)
+	SerialPinState() (gpsio.SerialPinState, error)
 }
 
 // ChangeWaiter is a StateReader that may be able to block until a modem
@@ -62,7 +62,7 @@ type StateReader interface {
 // gpsio.ErrUnavailable. Implemented by gpsio.SerialConn.
 type ChangeWaiter interface {
 	StateReader
-	WaitModemControlPinChange(context.Context, gpsio.ModemControlPin, gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error)
+	WaitSerialPinChange(context.Context, gpsio.SerialPin, gpsio.PPSMethod) (gpsio.SerialPinChange, int, error)
 }
 
 // Polarity identifies which flag transition is the on-time PPS edge.
@@ -96,7 +96,7 @@ func (p Polarity) Asserted() bool {
 // Wiring describes how the PPS pulse is represented on the serial port's
 // modem-control inputs.
 type Wiring struct {
-	Pin      gpsio.ModemControlPin
+	Pin      gpsio.SerialPin
 	Polarity Polarity
 }
 
@@ -168,7 +168,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 // edge is the transition into the pulse, as selected by w.Polarity.
 func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method gpsio.PPSMethod, ceCh chan<- CandidateEdge) error {
 	for {
-		change, missed, err := r.WaitModemControlPinChange(ctx, w.Pin, method)
+		change, missed, err := r.WaitSerialPinChange(ctx, w.Pin, method)
 		if err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
