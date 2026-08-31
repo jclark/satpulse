@@ -13,4 +13,4 @@ exec satpulsetool gps -d "$DEVICE" -s "$SPEED" -m "$GPSMSG_DIR/septentrio/mosaic
 sbf-pvtgeodetic-usb1,sbf-pvtcartesian-cur,sbf-dop-cur,sbf-endofpvt-cur,\
 sbf-xppsoffset-cur,sbf-gpsutc-cur,sbf-galutc-cur,sbf-bdsutc-cur,\
 sbf-diffcorrin-cur,sbf-basestation-cur,sbf-channelstatus-cur,sbf-measepoch-cur,\
-pps
+pps,antenna-cable-delay-50
