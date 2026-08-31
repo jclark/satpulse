@@ -36,8 +36,8 @@ SatPulse supports two protocols for communicating with an NTP daemon:
 - the refclock SOCK protocol used by chrony, and now also supported by ntpd-rs
 - the traditional shared memory protocol (driver type 28) used by the reference NTP implementation {% include new-in-03.html %}
 
-`satpulsetool` provides the [`serial`]({%link man/satpulsetool-serial.1.md%}) tool for examining serial ports:
-it can detect PPS pulses on a modem control line, and can also detect the speed of a connected GPS receiver. {% include new-in-03.html %}
+`satpulsetool` provides the [`serial`]({%link man/satpulsetool-serial.1.md%}) tool for working with serial ports:
+it can detect the speed of a connected GPS receiver, and can also detect PPS pulses on a modem control line. {% include new-in-03.html %}
 
 Most of SatPulse's timing functionality is designed to support use of a PHC. `satpulsed`:
 
