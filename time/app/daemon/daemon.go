@@ -135,7 +135,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		return err
 	}
 	if cfg.Serial.PPS != nil {
-		if _, err := conn.ModemControlPinState(); err != nil {
+		if _, err := conn.SerialPinState(); err != nil {
 			conn.Close()
 			return fmt.Errorf("serial PPS requires a TTY with modem-control pins: %w", err)
 		}

@@ -43,6 +43,5 @@ For timing, there are two levels, depending on your hardware:
   with a [PTP Hardware Clock]({% link intro/timing.md %}) that timestamps the GPS PPS signal in hardware.
   This supports a PTP server as well as NTP.
   It can achieve accuracy in the tens of nanoseconds, but needs very specific hardware.
+  This capability is available only on Linux.
 
-The timing pages apply to Linux only: PHC support is Linux-specific,
-and macOS does not yet have a good way to read a PPS signal.

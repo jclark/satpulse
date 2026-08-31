@@ -175,6 +175,9 @@ func (info *portInfo) Print(f *os.File) error {
 	if info.Serial != "" {
 		fmt.Fprintf(&b, " serial=%q", info.Serial)
 	}
+	if info.Interface != "" {
+		fmt.Fprintf(&b, " interface=%s", info.Interface)
+	}
 	for _, alias := range info.Aliases {
 		fmt.Fprintf(&b, " alias=%s", alias)
 	}

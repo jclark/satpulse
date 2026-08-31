@@ -420,6 +420,17 @@ Use `0` to capture indefinitely until interrupted.
 With low-level configuration (**\-m**), capture time is added after response waiting is complete.
 Requires **\-\-packet\-log** or **\-\-msg\-file**.
 
+# EXIT STATUS
+
+**0**
+: Success
+
+**1**
+: Error: the connection failed, a high-level configuration request could not be applied, or the receiver rejected a message from the message file
+
+**2**
+: Command-line usage error
+
 # EXAMPLES
 
 Show receiver information using device and speed from the satpulse configuration file:

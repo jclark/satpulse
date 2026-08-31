@@ -50,25 +50,25 @@ func TestEdgePrinter(t *testing.T) {
 }
 
 type monitorWaitConn struct {
-	state  gpsio.ModemControlPinState
-	next   chan gpsio.ModemControlPinState
+	state  gpsio.SerialPinState
+	next   chan gpsio.SerialPinState
 	waits  int
 	method gpsio.PPSMethod
 }
 
-func (c *monitorWaitConn) ModemControlPinState() (gpsio.ModemControlPinState, error) {
+func (c *monitorWaitConn) SerialPinState() (gpsio.SerialPinState, error) {
 	return c.state, nil
 }
 
-func (c *monitorWaitConn) WaitModemControlPinChange(ctx context.Context, pin gpsio.ModemControlPin, method gpsio.PPSMethod) (gpsio.ModemControlPinChange, int, error) {
+func (c *monitorWaitConn) WaitSerialPinChange(ctx context.Context, pin gpsio.SerialPin, method gpsio.PPSMethod) (gpsio.SerialPinChange, int, error) {
 	c.waits++
 	c.method = method
 	select {
 	case c.state = <-c.next:
 		t := time.Date(2026, time.August, 12, 14, 23, 5, 123_456_000, time.UTC)
-		return gpsio.ModemControlPinChange{Timestamp: t, TRead: t, Asserted: c.state.Asserted(pin)}, 0, nil
+		return gpsio.SerialPinChange{Timestamp: t, TRead: t, Asserted: c.state.Asserted(pin)}, 0, nil
 	case <-ctx.Done():
-		return gpsio.ModemControlPinChange{}, 0, ctx.Err()
+		return gpsio.SerialPinChange{}, 0, ctx.Err()
 	}
 }
 
@@ -85,10 +85,10 @@ func (w *notifyingWriter) Write(p []byte) (int, error) {
 }
 
 func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
-	asserted := gpsio.ModemControlPinState(1 << gpsio.ModemCTS)
+	asserted := gpsio.NewSerialPinState(gpsio.SerialPinCTS)
 	conn := &monitorWaitConn{
 		state: asserted,
-		next:  make(chan gpsio.ModemControlPinState, 1),
+		next:  make(chan gpsio.SerialPinState, 1),
 	}
 	conn.next <- 0
 	var logs bytes.Buffer
@@ -101,7 +101,7 @@ func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 	}, 1)
 	go func() {
 		pr := &edgePrinter{out: output}
-		count, err := detectEdges(ctx, lg, conn, serialpps.Wiring{Pin: gpsio.ModemCTS}, "", serialpps.Config{}, pr)
+		count, err := detectEdges(ctx, lg, conn, serialpps.Wiring{Pin: gpsio.SerialPinCTS}, "", serialpps.Config{}, pr)
 		result <- struct {
 			count int
 			err   error
@@ -134,13 +134,13 @@ func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 
 func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
 	conn := &monitorWaitConn{
-		next: make(chan gpsio.ModemControlPinState),
+		next: make(chan gpsio.SerialPinState),
 	}
 	var logs bytes.Buffer
 	lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	ctx, cancel := context.WithTimeout(context.Background(), time.Millisecond)
 	defer cancel()
-	count, err := detectEdges(ctx, lg, conn, serialpps.Wiring{Pin: gpsio.ModemCTS}, "", serialpps.Config{Method: gpsio.PPSMethodPoll}, &edgePrinter{out: io.Discard})
+	count, err := detectEdges(ctx, lg, conn, serialpps.Wiring{Pin: gpsio.SerialPinCTS}, "", serialpps.Config{Method: gpsio.PPSMethodPoll}, &edgePrinter{out: io.Discard})
 	if err != nil || count != 0 {
 		t.Fatalf("detectEdges = %d, %v; want 0, nil", count, err)
 	}

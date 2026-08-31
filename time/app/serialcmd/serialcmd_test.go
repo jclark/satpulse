@@ -39,11 +39,12 @@ func TestPrintPorts(t *testing.T) {
 	ports := []serialenum.Port{
 		{Device: "/dev/ttyS0", Display: "/dev/ttyS0"},
 		{
-			Device:  "/dev/ttyACM0",
-			Display: "/dev/ttyACM0 (/dev/gps0, u-blox gen 10)",
-			USB:     serialenum.USBID{VID: 0x1546, PID: 0x01a4},
-			Serial:  "BG02DBNX",
-			Aliases: []string{"/dev/gps0"},
+			Device:    "/dev/ttyACM0",
+			Display:   "/dev/ttyACM0 (/dev/gps0, u-blox gen 10)",
+			USB:       serialenum.USBID{VID: 0x1546, PID: 0x01a4},
+			Serial:    "BG02DBNX",
+			Interface: "00",
+			Aliases:   []string{"/dev/gps0"},
 		},
 	}
 	for _, tc := range []struct {
@@ -54,12 +55,12 @@ func TestPrintPorts(t *testing.T) {
 		{
 			name: "human",
 			want: "device=/dev/ttyS0 display=\"/dev/ttyS0\"\n" +
-				"device=/dev/ttyACM0 vid=1546 pid=01a4 serial=\"BG02DBNX\" alias=/dev/gps0 display=\"/dev/ttyACM0 (/dev/gps0, u-blox gen 10)\"\n",
+				"device=/dev/ttyACM0 vid=1546 pid=01a4 serial=\"BG02DBNX\" interface=00 alias=/dev/gps0 display=\"/dev/ttyACM0 (/dev/gps0, u-blox gen 10)\"\n",
 		},
 		{
 			name:  "jsonl",
 			jsonl: true,
-			want:  "{\"device\":\"/dev/ttyS0\",\"display\":\"/dev/ttyS0\"}\n{\"device\":\"/dev/ttyACM0\",\"display\":\"/dev/ttyACM0 (/dev/gps0, u-blox gen 10)\",\"usb\":{\"vid\":5446,\"pid\":420},\"serial\":\"BG02DBNX\",\"aliases\":[\"/dev/gps0\"]}\n",
+			want:  "{\"device\":\"/dev/ttyS0\",\"display\":\"/dev/ttyS0\"}\n{\"device\":\"/dev/ttyACM0\",\"display\":\"/dev/ttyACM0 (/dev/gps0, u-blox gen 10)\",\"usb\":{\"vid\":5446,\"pid\":420},\"serial\":\"BG02DBNX\",\"interface\":\"00\",\"aliases\":[\"/dev/gps0\"]}\n",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

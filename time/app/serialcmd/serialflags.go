@@ -17,7 +17,7 @@ type flagVars struct {
 	all              bool
 	device           string
 	info             bool
-	ppsPin           opt.Val[gpsio.ModemControlPin]
+	ppsPin           opt.Val[gpsio.SerialPin]
 	invertPolarity   bool
 	ppsMethod        gpsio.PPSMethod
 	pollPreWarm      float64
@@ -76,8 +76,9 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		v.maxWakeupLatency.Set(maxWakeupLatency)
 	}
 	if flags.Lookup("pps-pin").Changed {
-		var pin gpsio.ModemControlPin
-		if pin, err = parsePin(ppsPinName); err != nil {
+		var pin gpsio.SerialPin
+		if pin, err = gpsio.ParseSerialPin(ppsPinName); err != nil {
+			err = fmt.Errorf("--pps-pin must be one of cts, dcd, dsr, or ri")
 			return
 		}
 		v.ppsPin.Set(pin)
@@ -188,21 +189,6 @@ func checkNonNegative(val, limit float64, flag string) error {
 		return nil
 	}
 	return fmt.Errorf("%s must be at least 0 and less than %g", flag, limit)
-}
-
-func parsePin(name string) (gpsio.ModemControlPin, error) {
-	switch name {
-	case "cts":
-		return gpsio.ModemCTS, nil
-	case "dcd":
-		return gpsio.ModemDCD, nil
-	case "dsr":
-		return gpsio.ModemDSR, nil
-	case "ri":
-		return gpsio.ModemRI, nil
-	default:
-		return 0, fmt.Errorf("--pps-pin must be one of cts, dcd, dsr, or ri")
-	}
 }
 
 // ppsConfig is the detection configuration the PPS flags describe; the other

@@ -1,5 +1,5 @@
 - name: Install SatPulse
-  hosts: all:!virtual_hosts
+  hosts: install:!virtual_hosts
   vars:
     package_dir: "/home/jjc/satpulse-pkg"
     control_machine_package_dir: "~/src/satpulse/out/"
@@ -70,3 +70,16 @@
       command: "rpm -Uvh --oldpackage --replacepkgs {{ package_dir }}/{{ package }}"
       when: ansible_os_family == "RedHat"
 
+    - name: Check whether SatPulse service was enabled
+      become: yes
+      command: "systemctl is-enabled satpulse@{{ instance }}"
+      register: enabled_status
+      failed_when: false
+      changed_when: false
+
+    - name: Start SatPulse service if enabled
+      become: yes
+      systemd:
+        name: "satpulse@{{ instance }}"
+        state: started
+      when: enabled_status.stdout == "enabled"

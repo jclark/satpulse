@@ -1,0 +1,20 @@
+#!/bin/sh
+# Use e.g.
+#   i host1 host2
+# to run the install.yml playbook on the given hosts.
+# A host without a domain name gets .lan appended.
+if [ "$#" -lt 1 ]; then
+  echo "Usage: $0 host1 [host2 ...]" >&2
+  exit 1
+fi
+
+hosts=""
+for h in "$@"; do
+  case "$h" in
+    *.*) ;;
+    *) h="$h.lan" ;;
+  esac
+  hosts="$hosts${hosts:+,}$h"
+done
+
+ansible-playbook -K -i inventory.yml -l "$hosts" install.yml
