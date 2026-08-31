@@ -252,6 +252,14 @@ func warnMissingConfigSupport(lg *slog.Logger, req configSupportReq, supported g
 	}
 }
 
+// nakError reports that the receiver rejected a message. It is quiet:
+// the per-message rejection lines have already been printed, so main
+// adds only the non-zero exit status.
+type nakError struct{}
+
+func (nakError) Error() string { return "receiver rejected message" }
+func (nakError) Quiet() bool   { return true }
+
 func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, raw []msgfile.RawMsg, capture opt.Val[time.Duration]) error {
 	rh := newResponseHandler(os.Stdout, lg)
 	err := sendAllMsgs(ctx, lg, conn, pCh, raw, rh)
@@ -260,6 +268,9 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 	}
 	rh.reportMissing()
 	rh.Flush()
+	if err == nil && rh.nakCount > 0 {
+		return nakError{}
+	}
 	return err
 }
 

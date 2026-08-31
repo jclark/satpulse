@@ -16,11 +16,12 @@ import (
 // responseHandler handles displaying responses from the receiver,
 // using a Correlator to correlate responses to sent messages.
 type responseHandler struct {
-	w       io.Writer
-	lg      *slog.Logger
-	cor     *msgfile.Correlator
-	lineBuf []byte
-	lineEOL string
+	w        io.Writer
+	lg       *slog.Logger
+	cor      *msgfile.Correlator
+	lineBuf  []byte
+	lineEOL  string
+	nakCount int
 }
 
 func newResponseHandler(w io.Writer, lg *slog.Logger) *responseHandler {
@@ -55,6 +56,9 @@ func (rh *responseHandler) handlePacket(pkt scan.Packet) {
 	rh.flushLine()
 	cor := rh.cor.CorrelatePacket(pkt.Tag(), pkt.Data)
 	rh.lg.Debug("correlate packet", "tag", pkt.Tag(), "ack", cor.Ack, "relevance", cor.Relevance)
+	if cor.Ack == msgfile.AckNak && cor.InResponseTo != nil {
+		rh.nakCount++
+	}
 	if s := rh.formatCorrelation(cor, pkt); s != "" {
 		io.WriteString(rh.w, s)
 	}
