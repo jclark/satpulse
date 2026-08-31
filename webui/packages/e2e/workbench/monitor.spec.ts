@@ -85,7 +85,7 @@ test('packets received while Monitor is visible appear when Packets is opened', 
   // point must have been accumulated by the mounted hidden PacketPanel.
   await workbenchReplay.waitForReplay();
   await page.getByRole('button', { name: 'Packets' }).click();
-  await expect(page.getByRole('columnheader', { name: 'Last message' })).toBeVisible();
+  await expect(page.getByRole('columnheader', { name: 'First message' })).toBeVisible();
   await expect(visibleCell(page, 'NAV-PVT')).toBeVisible();
   await expect(visibleCell(page, 'NAV-SAT')).toBeVisible();
   await expect(visibleCell(page, 'UBX')).toBeVisible();
