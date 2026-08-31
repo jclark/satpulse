@@ -131,6 +131,7 @@ func TestVersionConfigSupport(t *testing.T) {
 		gpsprot.ConfigSupportReload |
 		gpsprot.ConfigSupportSurvey |
 		gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportSurveyDur |
 		gpsprot.ConfigSupportFixedPos |
 		gpsprot.ConfigSupportFixedPosAcc
 	tmode2 := tmode | gpsprot.ConfigSupportSurveyMsg
