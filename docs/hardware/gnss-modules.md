@@ -11,6 +11,7 @@ see the [GNSS basics]({% link intro/gnss-basics.md %}), [Precision timing]({% li
 
 u-blox is a Swiss company, which makes both modules and chips.
 It makes some of its chips available to other vendors to make modules.
+SatPulse has [support for u-blox modules]({% link gps-module-support/u-blox.md %}).
 Its proprietary protocol is UBX and is used by all of its products.
 However, the details of the UBX messages used varies greatly between products.
 
@@ -100,6 +101,7 @@ F20 is u-blox's triple band platform L1/L2/L5 (so like X20 but without satellite
 ## Unicore
 
 Unicore is a Chinese company, which makes both modules and chips.
+SatPulse has [support for Unicore modules]({% link gps-module-support/unicore.md %}).
 
 Unicore provide a Windows application called UPrecise for configuring their modules.
 It can work over a TCP/IP connection and so can be used with SatPulse.
@@ -124,6 +126,7 @@ which also use a different protocol.
 ## Allystar
 
 Allystar is a Chinese company, which makes both modules and chips.
+SatPulse has [support for Allystar modules]({% link gps-module-support/allystar.md %}).
 
 Allystar provides a Windows application called Satrack for configuring their modules.
 It can work over a TCP/IP connection and so can be used with SatPulse.
@@ -140,6 +143,7 @@ Allystar have their own binary protocol, which is similar in style to UBX.
 ## Quectel
 
 Quectel is Chinese company which makes modules, but not chips.
+SatPulse has [support for Quectel modules]({% link gps-module-support/quectel.md %}).
 
 Quectel provides a Windows application called QGNSS for configuring their modules.
 Unfortunately it does not support working over a TCP/IP connection.

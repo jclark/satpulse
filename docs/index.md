@@ -4,6 +4,7 @@ title: "SatPulse"
 ---
 The goal of the SatPulse project is to provide a suite of open-source software that enables precision timing and positioning using modern GPS receivers on Linux and other general-purpose operating systems.
 SatPulse has especially deep support for the Raspberry Pi, from the Pi Zero to the Pi 5.
+It supports a [wide range of GPS receivers]({% link gps-module-support/index.md %}).
 
 The initial focus of the project was on precision timing, specifically making it easy to run a time server for your local network that enables much more precise synchronization than is possible in a typical NTP-based setup.
 
