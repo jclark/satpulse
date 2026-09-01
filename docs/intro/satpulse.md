@@ -155,70 +155,13 @@ Packet logs can be captured by `satpulsed` or by the `gps` tool.
 
 ## Receiver protocol support
 
-NMEA and RTCM are vendor-independent protocols.
-SatPulse can support a broad range of functionality using just these protocols.
+All GPS receivers support the NMEA protocol, which is vendor-independent.
+SatPulse can support a broad range of functionality using just NMEA.
+SatPulse also supports RTCM, which is also vendor-independent.
 
 SatPulse also supports vendor-defined protocols.
 These protocols are used by receivers to
 - provide periodic data about the ongoing operation of the receiver; these are conceptually similar to NMEA, but provide richer information
 - allow configuration of the receiver; there are no vendor-independent protocols for this
 
-Supporting a protocol involves:
-- recognizing the protocol's packet formats; protocols differ in whether they use a single packet format for both periodic data and configuration
-- decoding the packet wire formats
-- for periodic data, mapping the decoded packets into the device-independent model that drives observability and timing
-- providing protocol-specific message types for conveniently describing protocol messages in message files
-- handling request/response correlation when sending messages defined in message files
-- providing message files to perform configuration
-- supporting high-level configuration
-- supporting conversion of raw observation messages into RINEX
-- validating the implementation with real hardware
-
-SatPulse defines two tiers of protocol support. These differ mainly as regards configuration:
-
-- for tier 1, the primary configuration mechanism is high-level configuration; the message files provide support for configuration features that are not covered by the device-independent configuration model
-- for tier 2, all configuration is handled by message files; high-level configuration is not supported
-
-Message files can provide full access to a receiver's functionality, but high-level configuration is more convenient and requires no device-specific knowledge from the user.
-The message files provided for tier 2 receivers follow device-independent tag naming conventions to reduce
-the device-specific knowledge needed to use them.
-
-In addition:
-
-- conversion of raw observation messages has currently only been implemented for the u-blox and Unicore protocols
-- more extensive hardware validation has been performed for tier 1 protocols than for tier 2
-
-There is tier 1 support for the following protocols:
-
-- u-blox UBX protocol; support covers a wide range of receivers from LEA-6T through to ZED-X20P,
-  including standard precision, high precision and timing receivers
-- Unicore protocol used by the NebulasIV family of high precision boards and receivers,
-  i.e. the UM980 series (UM980, UM981, UM982 and UM960)
-- CASIC binary protocol used by Zhongke Microelectronics; there are two generations of this protocol,
-  the first used by ATGM332D-5N and ATGM336H-5N series modules using the AT6558,
-  and the second used by subsequent modules;
-  high-level configuration is experimental: it is enabled only when a vendor is explicitly specified, for example with the `--vendor` option or the `vendor` key {% include new-in-03.html %}
-
-The protocols with tier 2 support can be grouped as follows.
-There are binary, UBX-like protocols:
-
-- Allystar; support has been validated with the TAU1201 using the Cynosure III chip,
-  and the more recent TAU951M-P200 using the Cynosure IV chip
-- SDBP protocol used by Techtotop/Taidou; support has been validated with the T303-5D, which is an L1/L5 timing module
-
-Septentrio receivers use the Septentrio Binary Format (SBF) for periodic data,
-and are configured over a line-based ASCII command interface;
-support has been validated with the mosaic-G5. {% include new-in-03.html %}
-
-There are vendors using the NovAtel OEM6/OEM7 protocol. These protocols treat periodic data, which they call *logs*, differently from configuration. The logs have a dual ASCII/binary syntax and are very similar between vendors: in particular, the packet formats are indistinguishable. Configuration follows a similar style of line-oriented ASCII commands, but is not interoperable between vendors. Unicore UM980 protocol is similar to this, but the packet format is slightly different. There is tier 2 support for:
-
-- ByNav, validated on the M10 and M20
-- SinoGNSS, validated on the K901 and K902
-
-The Unicore UM980 series also has undocumented support for emitting OEM6/OEM7 compatible logs, and SatPulse supports this as well.
-
-Finally, there are vendors using protocols that use NMEA proprietary sentences starting with `P`.
-
-- PQTM protocol defined by Quectel, which has been validated with the LG290P and LC29H
-- PAIR protocol defined by Airoha, which has been validated on the Quectel LC29H (which uses the Airoha AG3335 chipset)
-
+See [GPS module support]({% link gps-module-support/index.md %}) for details of support for vendor-defined protocols.

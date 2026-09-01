@@ -20,12 +20,17 @@ The section is built breadth first, in slices: each slice adds a small increment
 
 ## Vendor page shape
 
-The standard shape, filled in slice by slice, each part beyond the first optional:
+The standard shape, settled on the Unicore page (the model for the others), filled in slice by slice:
 
-- Support status, by dimension: high-level configuration (supported / experimental / message files only) and `satpulsetool convobs` support, each stated on the vendor page itself, not on the index.
-- Models tested, with firmware.
-- Message coverage: which native messages are decoded, and which contribute to which device-independent message of `gpsprot/msg.go` (time, posGeo, posECEF, velGeo, velECEF, leapSecond, survey, satellites, navEpoch, corReport). These device-independent messages are user-visible in the event log, so the mapping explains what the user actually sees.
-- The library message file(s) and the tags worth knowing, including explicitly the tags that set the module up for NTP use and for PHC/PTP use with satpulsed. In principle these fall out of the timing pages' device-independent requirements combined with the message mapping, but the page states them explicitly.
+- Opening paragraph: SatPulse supports GPS modules from this vendor, with a link to the vendor's site, and the supported modules qualified. The qualification says what is likely to work, not just what was tested: for u-blox a very wide range, for Unicore the NebulasIV family. It also excludes vendor ranges that use a completely different protocol (e.g. Unicore's standard precision range and the UT986).
+- Protocol paragraph: the character of the vendor protocol. Binary or ASCII, whether periodic data and configuration are split, relationships to other protocols (NovAtel-like, UBX-like). Rearranged from existing wording where possible.
+- A "For these modules, SatPulse:" bulleted list keyed to the supporting-a-protocol dimensions: decodes the packet formats, converts periodic data into the device-independent data model, supports high-level configuration (or not), supports low-level configuration (message files provided, plus the response pattern or protocol-specific message types that go with them), converts raw observations into RINEX. The tier 1/tier 2 concept is dropped: the dimension bullets state the extent of support directly.
+- Modules tested: the specific modules SatPulse is known to work on, from the packet testdata corpus and the systest fleet. No firmware versions.
+- A supported-messages table, titled in the vendor's own terminology ("Supported logs" for Unicore, "Supported messages" for u-blox): one row per native message with a real decoder (messages recognized by name only get no row). Columns: name (without any ASCII/binary suffix variant), message number, what SatPulse uses it for, and whether high-level configuration automatically enables it ("Automatically enabled"). Uses are comma-separated and use device-independent vocabulary in the style of the `--pvt-out`/`--sats-out`/`--raw-out` options and the Workbench configuration form: UTC time, TAI time, time pulse, leap second, geodetic position, geodetic velocity, ECEF position, ECEF velocity, satellites, satellite usage, solution quality, raw observations, receiver identification, decode only. "time pulse" means the decoder emits a TimeMsg with Ref PrePulse or PostPulse; that high-level configuration answers a timePulse request by enabling the log does not qualify (Unicore RECTIME is NavSolution, so no Unicore log says "time pulse"). Mined from the vendor protocol package and its message library (e.g. `gps/internal/unc` plus `gps/lib/uncmsg`). For the UBX-like protocols (u-blox UBX, CASIC, Allystar, SDBP), where configuration and data output share one packet format, the table also includes the configuration messages SatPulse uses, with configuration uses in the same style: time pulse configuration, signal configuration, time mode configuration, message configuration, etc. For these protocols the number column is instead the hex class and ID in a single column, in the style of the vendor manuals: 0x01 0x21.
+
+Later slices, still to be shaped:
+
+- The library message file tags worth knowing, including explicitly the tags that set the module up for NTP use and for PHC/PTP use with satpulsed. In principle these fall out of the timing pages' device-independent requirements combined with the message mapping, but the page states them explicitly.
 - Per-model detail, mined from the high-level configuration characterizations.
 - Vendor mechanics that affect what a user does. For u-blox, for example: how ports work, native USB having no speed, save behaviour, the constraints on signal combinations.
 - The vendor-specific message types for message files (the TODO in `gps-config/msg-files.md` resolves to these pages).
@@ -39,8 +44,8 @@ The material is mined, not written from memory:
 - `systest/gpscfg/*.sh`: each script records what a vendor without high-level configuration needs for a working timing setup (which native messages to enable, NMEA off, PPS on, plus wrinkles like the mosaic's command escape). The knowledge is the point, not the scripts themselves.
 - `gpshwtest/HW/*.md` and `gpshwtest/baselines/*.json`: the exact model and firmware combinations characterized, and receiver behaviour (signal-combination rules, save granularity, quantizations). These need filtering: receiver behaviour is page material; the probe methodology and tool-bug archaeology are internal.
 - The archived high-level configuration plans in `plan/archive/` (ubx-config, unicore, casic-config, techtotop, novatel, septentrio) for per-vendor design rationale.
-- The systest fleet host files (`~/satpulse-systest/hosts/*.md`, `gnss:` blocks) for the models in continuous use and how they are wired.
-- `~/gps-protocol-docs/` as background: the protocol landscape (generations, port model, command style) the author needs to understand to write the page at all.
+- The systest fleet host files (private repository) for the models in continuous use and how they are wired.
+- The local vendor protocol documentation (location in CLAUDE.local.md) as background: the protocol landscape (generations, port model, command style) the author needs to understand to write the page at all, and the source of the vendors' own terminology.
 
 Because the facts are mineable, a first draft of a slice can be automated from its sources across all the vendors, then edited into the site voice.
 
@@ -58,3 +63,18 @@ Because the facts are mineable, a first draft of a slice can be automated from i
 - #445 and #446 (the u-blox and Unicore configuration pages) are closed: with the section built breadth first, their material arrives as later slices of this work rather than as standalone per-vendor pages.
 
 The section should exist before the ntp/phc sections of #434 are written, so that their links have a target.
+
+## Status
+
+The first slice is done:
+
+- The nav section exists, between Setup and Man pages for now; it moves after GPS configuration when the website-gps-config branch is merged.
+- The index page lists the vendors with links. It also carries the supporting-a-protocol dimension list (moved out of `intro/satpulse.md`), so it is not the bare index sketched above.
+- All nine vendor pages have the settled shape: opening paragraph, protocol paragraph, dimension bullets, tested models, supported-message table.
+- There is additionally a NovAtel page, not in the original plan: it documents the OEM6/OEM7 protocol structure once, with the full decoded-log table; the ByNav and SinoGNSS pages link to it and state their vendor-specific differences (own logs, position type values, command syntax), as does the Unicore compatible-logs paragraph. No NovAtel receiver has been tested; the page says so.
+- There is no Airoha page; the PAIR material lives on the Quectel page.
+- The tier 1/tier 2 vocabulary is gone from the site.
+- Interaction items done: `intro/satpulse.md`'s protocol-support section shrinks to the NMEA/RTCM framing plus a pointer to the index; the home page links the section; `setup/satpulsed.md` and `setup/rtk.md` link instead of enumerating the high-level vendors; `hardware/gnss-modules.md` links each of its vendor sections to the vendor's support page.
+- `gps-config/high-level.md` is deliberately untouched on this branch; its vendor enumeration is replaced when merging with website-gps-config.
+
+Remaining: the later slices above, the ntp/phc linkage (#434), and possibly the index support matrix.

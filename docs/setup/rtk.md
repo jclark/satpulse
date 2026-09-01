@@ -20,7 +20,7 @@ as an Ntrip caster, as an Ntrip server pushing to a remote caster, or as a plain
 The receiver needs some configuration to act as a base.
 Two things are mandatory: a stationary position, either surveyed or explicitly specified, and RTCM output.
 
-If the receiver supports high-level configuration, which currently means u-blox and Unicore,
+If the receiver supports high-level configuration (see [GPS module support]({% link gps-module-support/index.md %})),
 both can be done entirely with the `[gps]` table of `/etc/satpulse.toml`:
 
 ```
