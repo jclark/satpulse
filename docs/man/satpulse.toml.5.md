@@ -80,7 +80,8 @@ It can have the following keys:
   one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`, naming the pins of the computer's own serial port or
   adapter; CTS is recommended; requires `device` to be a real TTY rather than a FIFO or socket;
   cannot be used when `interface` in the `[phc]` table is configured;
-  the pulse must be at least a few milliseconds wide, and narrow pulses can take longer to detect;
+  with the `poll` method the pulse must be at least a few milliseconds wide,
+  and narrow pulses can take longer to detect;
   the common receiver default of 100 ms works well, and microsecond-width pulses are not supported
 * `pps.invertPolarity` - a boolean saying whether to invert the usual PPS pulse polarity;
   set this to `true` if detected edges trail the start of the second by the pulse width (typically 0.1 s);
