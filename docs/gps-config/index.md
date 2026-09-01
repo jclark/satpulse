@@ -8,4 +8,6 @@ SatPulse supports two approaches to GPS receiver configuration:
   where the intended configuration is expressed in terms that are independent of any vendor protocol, and
 * low-level configuration, which uses files containing collections of named messages specific to a vendor protocol.
 
+See [GPS module support]({% link gps-module-support/index.md %}) for what kind of configuration each module supports.
+
 

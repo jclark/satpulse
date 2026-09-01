@@ -6,8 +6,6 @@ SatPulse has a high-level, device-independent model for configuring GPS receiver
 You express what you want in GNSS terms,
 such as which signals to enable, how the receiver should determine time and position, and what it should output.
 SatPulse translates that into the receiver's own protocol.
-Currently the model is implemented for u-blox receivers (from the u-blox 6 platform through to the X20 platform)
-and Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
 
 TODO: link to the full semantics specification when it is published in the Internals section.
 
