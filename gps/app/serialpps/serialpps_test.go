@@ -495,9 +495,9 @@ func TestPollStatsSummary(t *testing.T) {
 	for i := 1; i < len(polls); i++ {
 		stats.addPoll(polls[i], &polls[i-1])
 	}
-	stats.addWindow(false, false)
-	stats.addWindow(true, false)
-	stats.addWindow(true, true)
+	stats.addWindow(false, false, false)
+	stats.addWindow(true, false, false)
+	stats.addWindow(true, true, false)
 
 	got := stats.summary()
 	want := pollStatsSummary{
@@ -538,7 +538,7 @@ func TestPollStatsLog(t *testing.T) {
 	start := clockReading{stamp: time.Unix(1_700_000_000, 0), mono: time.Unix(1_700_000_000, 0)}
 	end := clockReading{stamp: start.stamp.Add(2 * time.Millisecond), mono: start.mono.Add(2 * time.Millisecond)}
 	stats.addPoll(poll{start: start, end: end}, nil)
-	stats.addWindow(true, false)
+	stats.addWindow(true, false, false)
 
 	var output bytes.Buffer
 	stats.Log(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelInfo})))

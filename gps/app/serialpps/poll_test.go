@@ -158,7 +158,7 @@ func TestPoll(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				candidates := make(chan CandidateEdge)
 				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 				var got []CandidateEdge
 				sawSettling := false
 				for len(got) < 3 {
@@ -510,7 +510,7 @@ func TestPollShortOutageKeepsTracking(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 		var first CandidateEdge
 		for pulseIndex(first.Timestamp, f.epoch) <= 15 || first.Timestamp.IsZero() {
 			first = <-candidates
@@ -546,7 +546,7 @@ func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 		deadline := time.After(20 * period)
 		settled := 0
 		timedOut := false
@@ -579,7 +579,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		errCh := make(chan error, 1)
 		var logs bytes.Buffer
 		lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-		go func() { errCh <- Poll(ctx, lg, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, lg, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
 			pulse = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
@@ -612,7 +612,7 @@ func TestPollOutageReacquires(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 		var first int
 		for first <= 15 {
 			first = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
@@ -640,7 +640,7 @@ func TestPollTrackingConverges(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
@@ -667,7 +667,7 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
 			last = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
@@ -704,7 +704,9 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() {
+			errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil)
+		}()
 		var got []CandidateEdge
 		for len(got) < 20 {
 			got = append(got, nextSettled(candidates))
@@ -769,7 +771,9 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() {
+			errCh <- Poll(ctx, slog.New(capture), f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil)
+		}()
 		for range 3 {
 			nextSettled(candidates)
 		}
@@ -807,7 +811,7 @@ func testPollNarrowPulse(t *testing.T, epochOffset time.Duration) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 3 {
 			got = append(got, nextSettled(candidates))
@@ -933,7 +937,7 @@ func (p errPin) SerialPinState() (gpsio.SerialPinState, error) { return 0, p.err
 
 func TestPollReaderError(t *testing.T) {
 	e := errors.New("query failed")
-	if err := Poll(context.Background(), testLog, errPin{err: e}, Wiring{Pin: gpsio.SerialPinCTS}, 0, nil, nil); err != e {
+	if err := Poll(context.Background(), testLog, errPin{err: e}, Wiring{Pin: gpsio.SerialPinCTS}, 0, 0, nil, nil); err != e {
 		t.Fatalf("Poll error = %v, want %v", err, e)
 	}
 }
@@ -949,5 +953,62 @@ func nextSettled(candidates <-chan CandidateEdge) CandidateEdge {
 		if candidate.Settled {
 			return candidate
 		}
+	}
+}
+
+// TestPollOutlier checks that a tracking catch whose bracket is far wider
+// than the recent settled brackets is marked an outlier, and nothing else is.
+// The fake stalls the query that catches pulse 60 by 2 ms, well after the
+// reference history has filled; the read that starts in the last 100 us
+// before the edge is the catching one, so the stall is timed there.
+func TestPollOutlier(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ratio float64
+		want  bool
+	}{
+		{name: "ratio 3", ratio: 3, want: true},
+		{name: "disabled", ratio: 0, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
+				const stallPulse = 60
+				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+					callDur: 100 * time.Microsecond, stallAfter: stallPulse*period - 100*time.Microsecond, stall: 2 * time.Millisecond}
+				ctx, cancel := context.WithCancel(context.Background())
+				candidates := make(chan CandidateEdge)
+				errCh := make(chan error, 1)
+				go func() { errCh <- Poll(ctx, testLog, f, Wiring{Pin: gpsio.SerialPinCTS}, 0, tc.ratio, candidates, nil) }()
+				var got []CandidateEdge
+				for len(got) == 0 || pulseIndex(got[len(got)-1].Timestamp, f.epoch) < stallPulse+2 {
+					got = append(got, <-candidates)
+				}
+				cancel()
+				if err := <-errCh; err != context.Canceled {
+					t.Fatalf("Poll error = %v, want context.Canceled", err)
+				}
+				stalled := 0
+				for _, e := range got {
+					if !e.Settled {
+						continue
+					}
+					pulse := pulseIndex(e.Timestamp, f.epoch)
+					if e.Uncertainty > 500*time.Microsecond {
+						stalled++
+						if pulse != stallPulse {
+							t.Errorf("wide bracket (uncertainty %v) at pulse %d, want only pulse %d", e.Uncertainty, pulse, stallPulse)
+						}
+						if e.Outlier != tc.want {
+							t.Errorf("stalled catch outlier = %v, want %v", e.Outlier, tc.want)
+						}
+					} else if e.Outlier {
+						t.Errorf("pulse %d with uncertainty %v marked an outlier", pulse, e.Uncertainty)
+					}
+				}
+				if stalled != 1 {
+					t.Errorf("%d catches with a wide bracket, want 1", stalled)
+				}
+			})
+		})
 	}
 }
