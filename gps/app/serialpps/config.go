@@ -3,6 +3,7 @@ package serialpps
 import (
 	"errors"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -51,8 +52,8 @@ func (cfg Config) Validate() error {
 		!(cfg.DelayUncertainty+cfg.MaxDelay < 1) {
 		msgs = append(msgs, fmt.Sprintf("delayUncertainty + maxDelay: must be < 1, got %g", cfg.DelayUncertainty+cfg.MaxDelay))
 	}
-	if r := cfg.PollOutlierRatio; r > 0 && r < 1 {
-		msgs = append(msgs, fmt.Sprintf("pollOutlierRatio: must be 0 or at least 1, got %g", r))
+	if r := cfg.PollOutlierRatio; r > 0 && r < 1 || math.IsInf(r, 1) {
+		msgs = append(msgs, fmt.Sprintf("pollOutlierRatio: must be 0 or a finite number at least 1, got %g", r))
 	}
 	if cfg.Method < 0 || cfg.Method > gpsio.PPSMethodKernel {
 		msgs = append(msgs, fmt.Sprintf("method: invalid value %d", int(cfg.Method)))

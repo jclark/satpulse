@@ -3,6 +3,7 @@ package serialpps
 import (
 	"context"
 	"log/slog"
+	"math"
 	"runtime"
 	"slices"
 	"time"
@@ -506,7 +507,12 @@ func (p *poller) outlierLimit() time.Duration {
 	}
 	sorted := slices.Clone(p.settledBrackets)
 	slices.Sort(sorted)
-	return time.Duration(float64(sorted[len(sorted)/4]) * p.outlierRatio)
+	// A ratio large enough to overflow means never: saturate rather than
+	// let the conversion wrap.
+	if limit := float64(sorted[len(sorted)/4]) * p.outlierRatio; limit < math.MaxInt64 {
+		return time.Duration(limit)
+	}
+	return math.MaxInt64
 }
 
 func (p *poller) recordBracket(d time.Duration) {
