@@ -25,6 +25,7 @@ type Grandmaster struct {
 type GrandmasterProps struct {
 	ptime.LeapSecondState
 	pmc.ClockQuality
+	TimeFlags pmc.TimeFlags
 }
 
 // SyncState represents the current synchronization status
@@ -63,8 +64,8 @@ func (gm *Grandmaster) Close() {
 }
 
 func (gm *Grandmaster) Update(state SyncState, leap ptime.LeapSecondState) {
-	gm.SetClockSync(state)
 	gm.target.LeapSecondState = leap
+	gm.SetClockSync(state)
 
 	gm.handleResponse()
 	// Don't update if there already is a pending update
@@ -106,6 +107,10 @@ func (gm *Grandmaster) handleResponse() {
 
 func (gm *Grandmaster) SetClockSync(syncState SyncState) {
 	gm.target.SetClock(gm.clockQuality(syncState))
+	gm.target.TimeFlags = pmc.CurrentUTCOffsetValid | pmc.PTPTimescale | pmcLeapFlags(gm.target.LeapTonight)
+	if syncState == InSync {
+		gm.target.TimeFlags |= pmc.TimeTraceable | pmc.FrequencyTraceable
+	}
 }
 
 var noSyncClockQuality = pmc.ClockQuality{
@@ -129,7 +134,7 @@ func (props *GrandmasterProps) Settings() pmc.GrandmasterSettings {
 	return pmc.GrandmasterSettings{
 		ClockQuality: props.ClockQuality,
 		UTCOffset:    props.UTCOffset,
-		TimeFlags:    pmc.CurrentUTCOffsetValid | pmc.PTPTimescale | pmc.TimeTraceable | pmcLeapFlags(props.LeapTonight),
+		TimeFlags:    props.TimeFlags,
 		TimeSource:   pmc.TimeSourceGNSS,
 	}
 }
