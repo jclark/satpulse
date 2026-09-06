@@ -1,5 +1,6 @@
 ---
 title: Measuring systematic PPS bias on the Raspberry Pi 5
+date: 2026-09-06
 ---
 
 Many enthusiasts build stratum 1 NTP servers using Raspberry Pis.
