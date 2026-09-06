@@ -41,12 +41,17 @@ type Edge struct {
 // tracking while a window grown by misses is still shrinking back. Timing
 // consumers can accept unsettled candidates with sufficiently small
 // Uncertainty, and use Settled to accept the resolution the hardware can
-// achieve. A wait or kernel candidate carries the backend timestamp directly,
-// has no polling uncertainty, and is always settled.
+// achieve. Outlier says the bracket is far wider than the hardware's recent
+// settled brackets, which is what a state read stalled by host load produces:
+// the edge is inside the bracket but its midpoint is not a useful estimate,
+// so timing consumers should withhold it even though it is settled. A wait
+// or kernel candidate carries the backend timestamp directly, has no polling
+// uncertainty, and is always settled.
 type CandidateEdge struct {
 	Edge
 	Uncertainty time.Duration
 	Settled     bool
+	Outlier     bool
 }
 
 // StateReader is implemented by a TTY-backed gpsio.SerialConn.
@@ -104,10 +109,10 @@ type Wiring struct {
 // method automatically tries kernel, then wait, then poll, moving on when a
 // method is unsupported or unavailable for the device. Other failures are
 // returned. An explicitly requested method never falls back. cfg.PollPreWarm
-// applies only to polling, the one method whose resolution the host's own
-// speed sets. If stats is non-nil, it records timings only when polling is
-// selected. cfg.MaxWakeupLatency, if set, limits CPU wakeup latency for as
-// long as detection runs.
+// and cfg.PollOutlierRatio apply only to polling, the one method whose
+// resolution the host's own speed sets. If stats is non-nil, it records
+// timings only when polling is selected. cfg.MaxWakeupLatency, if set, limits
+// CPU wakeup latency for as long as detection runs.
 func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	if cfg.MaxWakeupLatency != nil {
 		max := ptime.Seconds(*cfg.MaxWakeupLatency)
@@ -124,11 +129,11 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg C
 	}
 	prewarm := ptime.Seconds(cfg.PollPreWarm)
 	if cfg.Method != 0 {
-		return detect(ctx, lg, r, w, cfg.Method, prewarm, ceCh, stats)
+		return detect(ctx, lg, r, w, cfg.Method, prewarm, cfg.PollOutlierRatio, ceCh, stats)
 	}
 	if _, ok := r.(ChangeWaiter); ok {
 		for _, m := range []gpsio.PPSMethod{gpsio.PPSMethodKernel, gpsio.PPSMethodWait} {
-			err := detect(ctx, lg, r, w, m, prewarm, ceCh, stats)
+			err := detect(ctx, lg, r, w, m, prewarm, cfg.PollOutlierRatio, ceCh, stats)
 			if ctx.Err() != nil {
 				return err
 			}
@@ -142,10 +147,10 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg C
 			}
 		}
 	}
-	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, prewarm, ceCh, stats)
+	return detect(ctx, lg, r, w, gpsio.PPSMethodPoll, prewarm, cfg.PollOutlierRatio, ceCh, stats)
 }
 
-func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, method gpsio.PPSMethod, prewarm time.Duration, outlierRatio float64, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	switch method {
 	case gpsio.PPSMethodPoll, gpsio.PPSMethodWait, gpsio.PPSMethodKernel:
 	default:
@@ -153,7 +158,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 	}
 	lg.Info("serial PPS method selected", "method", method)
 	if method == gpsio.PPSMethodPoll {
-		return Poll(ctx, lg, r, w, prewarm, ceCh, stats)
+		return Poll(ctx, lg, r, w, prewarm, outlierRatio, ceCh, stats)
 	}
 	cw, ok := r.(ChangeWaiter)
 	if !ok {

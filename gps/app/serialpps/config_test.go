@@ -31,6 +31,11 @@ func TestConfig(t *testing.T) {
 		{name: "zero maximum", cfg: Config{DelayUncertainty: 0.005}, errText: "maxDelay"},
 		{name: "prewarm", cfg: Config{DelayUncertainty: 0.005, MaxDelay: 0.8, PollPreWarm: 0.05}},
 		{name: "negative prewarm", cfg: Config{DelayUncertainty: 0.005, MaxDelay: 0.8, PollPreWarm: -0.01}, errText: "pollPreWarm"},
+		{name: "outlier check disabled", cfg: Config{MaxDelay: 0.8}},
+		{name: "outlier ratio below one", cfg: Config{MaxDelay: 0.8, PollOutlierRatio: 0.5}, errText: "pollOutlierRatio"},
+		{name: "negative outlier ratio", cfg: Config{MaxDelay: 0.8, PollOutlierRatio: -3}, errText: "pollOutlierRatio"},
+		{name: "NaN outlier ratio", cfg: Config{MaxDelay: 0.8, PollOutlierRatio: math.NaN()}, errText: "pollOutlierRatio"},
+		{name: "infinite outlier ratio", cfg: Config{MaxDelay: 0.8, PollOutlierRatio: math.Inf(1)}, errText: "pollOutlierRatio"},
 		{name: "one-second interval", cfg: Config{DelayUncertainty: 0.2, MaxDelay: 0.8}, errText: "delayUncertainty + maxDelay"},
 		{name: "interval over one second", cfg: Config{DelayUncertainty: 0.3, MaxDelay: 0.8}, errText: "delayUncertainty + maxDelay"},
 	}

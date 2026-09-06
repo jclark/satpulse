@@ -21,6 +21,7 @@ type flagVars struct {
 	invertPolarity   bool
 	ppsMethod        gpsio.PPSMethod
 	pollPreWarm      float64
+	pollOutlierRatio opt.Val[float64]
 	maxWakeupLatency opt.Val[float64]
 	packetLog        string
 	deviceSpeed      opt.Val[int]
@@ -30,7 +31,7 @@ type flagVars struct {
 
 const summary = `[-h|--help] [-a|--all | -d|--serial-device path] [-i|--info]
               [-p|--pps-pin pin] [-I|--invert-polarity] [-m|--pps-method method]
-              [--poll-pre-warm seconds]
+              [--poll-pre-warm seconds] [--poll-outlier-ratio ratio]
               [--max-wakeup-latency seconds] [--packet-log path]
               [-s|--device-speed bps]
               [-t|--timeout seconds] [-j|--jsonl]`
@@ -41,7 +42,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.SortFlags = false
 	var ppsPinName, ppsMethodName string
-	var maxWakeupLatency, timeoutSec float64
+	var pollOutlierRatio, maxWakeupLatency, timeoutSec float64
 	var deviceSpeed int
 	flags.BoolVarP(&help, "help", "h", false, "show usage help for the serial command")
 	flags.BoolVarP(&v.all, "all", "a", false, "operate on all discovered serial ports")
@@ -51,6 +52,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags.BoolVarP(&v.invertPolarity, "invert-polarity", "I", false, "invert the usual PPS pulse polarity, for edges that trail the start of the second by the pulse width")
 	flags.StringVarP(&ppsMethodName, "pps-method", "m", "", "force the PPS edge detection `method` (poll, wait, or kernel)")
 	flags.Float64Var(&v.pollPreWarm, "poll-pre-warm", 0, "busy-wait `seconds` before each poll window, for hosts whose reads slow down while idle")
+	flags.Float64Var(&pollOutlierRatio, "poll-outlier-ratio", serialpps.DefaultConfig().PollOutlierRatio, "mark an edge an outlier when its poll bracket exceeds `ratio` times the recent lower quartile (0 disables)")
 	flags.Float64Var(&maxWakeupLatency, "max-wakeup-latency", 0, "limit CPU wakeup latency to `seconds` while detecting PPS")
 	flags.StringVar(&v.packetLog, "packet-log", "", "write received packets to a JSON Lines log at `path`")
 	flags.IntVarP(&deviceSpeed, "device-speed", "s", 0, "set the serial port speed to `bps` (0 uses the current speed)")
@@ -72,6 +74,9 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	packetLogSet := flags.Lookup("packet-log").Changed
 	methodSet := flags.Lookup("pps-method").Changed
 	preWarmSet := flags.Lookup("poll-pre-warm").Changed
+	if flags.Lookup("poll-outlier-ratio").Changed {
+		v.pollOutlierRatio.Set(pollOutlierRatio)
+	}
 	if flags.Lookup("max-wakeup-latency").Changed {
 		v.maxWakeupLatency.Set(maxWakeupLatency)
 	}
@@ -93,6 +98,10 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		if err = checkNonNegative(v.pollPreWarm, 1, "--poll-pre-warm"); err != nil {
 			return
 		}
+	}
+	if r := v.pollOutlierRatio; r.IsSet() && !(r.Get() == 0 || (r.Get() >= 1 && !math.IsInf(r.Get(), 1))) {
+		err = fmt.Errorf("--poll-outlier-ratio must be 0 or at least 1")
+		return
 	}
 	if v.maxWakeupLatency.IsSet() {
 		if err = checkNonNegative(v.maxWakeupLatency.Get(), 1, "--max-wakeup-latency"); err != nil {
@@ -131,8 +140,8 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("--packet-log must not be empty")
 		return
 	}
-	if v.info && (v.ppsPin.IsSet() || v.invertPolarity || methodSet || preWarmSet || v.maxWakeupLatency.IsSet() || v.deviceSpeed.IsSet() || timeoutSet || packetLogSet) {
-		err = fmt.Errorf("--info cannot be combined with --pps-pin, --invert-polarity, --pps-method, --poll-pre-warm, --max-wakeup-latency, --device-speed, --timeout, or --packet-log")
+	if v.info && (v.ppsPin.IsSet() || v.invertPolarity || methodSet || preWarmSet || v.pollOutlierRatio.IsSet() || v.maxWakeupLatency.IsSet() || v.deviceSpeed.IsSet() || timeoutSet || packetLogSet) {
+		err = fmt.Errorf("--info cannot be combined with --pps-pin, --invert-polarity, --pps-method, --poll-pre-warm, --poll-outlier-ratio, --max-wakeup-latency, --device-speed, --timeout, or --packet-log")
 		return
 	}
 	if v.ppsPin.IsSet() && !deviceSet && !v.all {
@@ -149,6 +158,10 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	}
 	if preWarmSet && !v.ppsPin.IsSet() {
 		err = fmt.Errorf("--poll-pre-warm requires --pps-pin")
+		return
+	}
+	if v.pollOutlierRatio.IsSet() && !v.ppsPin.IsSet() {
+		err = fmt.Errorf("--poll-outlier-ratio requires --pps-pin")
 		return
 	}
 	if v.maxWakeupLatency.IsSet() && !v.ppsPin.IsSet() {
@@ -194,7 +207,11 @@ func checkNonNegative(val, limit float64, flag string) error {
 // ppsConfig is the detection configuration the PPS flags describe; the other
 // Config fields matter only when edges are turned into samples.
 func (v flagVars) ppsConfig() serialpps.Config {
-	cfg := serialpps.Config{Method: v.ppsMethod, PollPreWarm: v.pollPreWarm}
+	cfg := serialpps.Config{Method: v.ppsMethod, PollPreWarm: v.pollPreWarm,
+		PollOutlierRatio: serialpps.DefaultConfig().PollOutlierRatio}
+	if v.pollOutlierRatio.IsSet() {
+		cfg.PollOutlierRatio = v.pollOutlierRatio.Get()
+	}
 	cfg.MaxWakeupLatency = v.maxWakeupLatency.Ptr()
 	return cfg
 }

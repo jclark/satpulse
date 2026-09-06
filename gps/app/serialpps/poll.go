@@ -3,7 +3,9 @@ package serialpps
 import (
 	"context"
 	"log/slog"
+	"math"
 	"runtime"
+	"slices"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -21,6 +23,14 @@ type poller struct {
 	lastBracket time.Duration
 	slept       bool
 	stateReads  int
+	// outlierRatio is the multiple of the settled-bracket lower quartile
+	// beyond which a tracking catch is an outlier (zero disables the check);
+	// settledBrackets is a ring of the most recent settled tracking brackets,
+	// the reference, and nextBracket the slot the next one overwrites once
+	// the ring is full.
+	outlierRatio    float64
+	settledBrackets []time.Duration
+	nextBracket     int
 }
 
 // Poll adaptively polls for the pulse described by w and sends a candidate for
@@ -36,6 +46,13 @@ type poller struct {
 // severalfold while the machine idles, where only continuous work ending at
 // the open restores full query speed; it costs that fraction of a core.
 //
+// A positive outlierRatio marks a tracking catch whose bracket exceeds that
+// multiple of the lower quartile of the recent settled brackets as an
+// outlier. A state read stalled by host load widens its bracket severalfold
+// while the reads around it stay normal, so the mark identifies edges whose
+// midpoint no longer locates the pulse; tracking still uses them, and
+// consumers decide whether to.
+//
 // Candidates caught during acquisition are unsettled, including the catch
 // that completes acquisition, whose transition the "serial PPS acquired" log
 // line marks; tracking candidates are settled once the polling schedule stops
@@ -45,11 +62,11 @@ type poller struct {
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, prewarm time.Duration, outlierRatio float64, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	stats.begin()
-	p := poller{ctx: ctx, lg: lg, r: r, w: w, prewarm: prewarm, ceCh: ceCh, stats: stats}
+	p := poller{ctx: ctx, lg: lg, r: r, w: w, prewarm: prewarm, outlierRatio: outlierRatio, ceCh: ceCh, stats: stats}
 	if err := p.init(); err != nil {
 		return err
 	}
@@ -426,19 +443,29 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 		prev = cur
 	}
 	if edge.stamp.IsZero() {
-		p.stats.addWindow(false, acquired)
+		p.stats.addWindow(false, acquired, false)
 		if !acquired {
 			p.nextEdge = nextEdge.Add(period)
 		}
 		return false, 0, nil
 	}
+	predictionError := edge.mono.Sub(nextEdge)
+	settled := acquired && (atFloor || spacing == minSpacing || !p.slept)
+	// The reference excludes this catch, so a stalled bracket is judged
+	// against the brackets before it; it then joins the ring regardless, so
+	// the reference follows hardware that has genuinely become slower.
+	limit := p.outlierLimit()
+	outlier := acquired && limit > 0 && p.lastBracket > limit
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
-	predictionError := edge.mono.Sub(nextEdge)
 	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
-		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads)
-	p.stats.addWindow(true, acquired)
+		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads,
+		"outlierLimit", limit, "outlier", outlier)
+	p.stats.addWindow(true, acquired, outlier)
+	if settled {
+		p.recordBracket(p.lastBracket)
+	}
 	if !acquired {
 		p.nextEdge = edge.mono.Add(period)
 	}
@@ -448,7 +475,8 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 			TRead:     cur.poll.end.mono,
 		},
 		Uncertainty: halfCeil(p.lastBracket),
-		Settled:     acquired && (atFloor || spacing == minSpacing || !p.slept),
+		Settled:     settled,
+		Outlier:     outlier,
 	}
 	select {
 	case p.ceCh <- ce:
@@ -456,6 +484,44 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	case <-p.ctx.Done():
 		return false, 0, p.ctx.Err()
 	}
+}
+
+// outlierHistory is how many settled brackets the outlier reference is drawn
+// from: about two minutes of catches, so a hardware change moves the
+// reference within that time. outlierMinHistory is how many it needs before
+// any catch is marked.
+const (
+	outlierHistory    = 128
+	outlierMinHistory = 16
+)
+
+// outlierLimit is the bracket beyond which a tracking catch is an outlier,
+// or zero while the check is disabled or the history is too short. The
+// reference is the lower quartile rather than the median because stalls only
+// ever widen a bracket: the quartile stays inside the normal population until
+// three quarters of the recent catches are stalled, where the median gives
+// way at half, which is the load level the check exists for.
+func (p *poller) outlierLimit() time.Duration {
+	if p.outlierRatio == 0 || len(p.settledBrackets) < outlierMinHistory {
+		return 0
+	}
+	sorted := slices.Clone(p.settledBrackets)
+	slices.Sort(sorted)
+	// A ratio large enough to overflow means never: saturate rather than
+	// let the conversion wrap.
+	if limit := float64(sorted[len(sorted)/4]) * p.outlierRatio; limit < math.MaxInt64 {
+		return time.Duration(limit)
+	}
+	return math.MaxInt64
+}
+
+func (p *poller) recordBracket(d time.Duration) {
+	if len(p.settledBrackets) < outlierHistory {
+		p.settledBrackets = append(p.settledBrackets, d)
+		return
+	}
+	p.settledBrackets[p.nextBracket] = d
+	p.nextBracket = (p.nextBracket + 1) % outlierHistory
 }
 
 func readState(ctx context.Context, r StateReader, sched time.Time) (reading, error) {

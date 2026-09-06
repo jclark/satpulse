@@ -117,6 +117,9 @@ It can have the following keys:
 * `pollPreWarm` - a number of seconds to busy-wait before each poll window opens;
   this makes the `poll` method more precise on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core;
   the default is 0, which disables it; a value between 20e-3 and 50e-3 is suggested
+* `pollOutlierRatio` - a number; with the `poll` method, an edge whose two bracketing reads are further apart than this multiple of the lower quartile of recent edges' brackets is marked an outlier and not used for timing,
+  which keeps out edges whose read was stalled by host load;
+  the default is 3; 0 disables the check
 * `maxWakeupLatency` - a number of seconds limiting CPU wakeup latency while serial PPS is active;
   this makes edge detection more precise, at the cost of power;
   omitted by default; 0 requests the lowest latency available; a value between 10e-6 and 50e-6 is suggested;
