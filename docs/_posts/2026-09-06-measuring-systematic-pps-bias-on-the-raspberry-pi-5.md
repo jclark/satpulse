@@ -160,3 +160,7 @@ On the other hand PCIe reads take about 1 µs, which implies an unquantified bia
 
 If you know the bias, you can compensate for it.
 In chrony, if the time pulse is 11 µs late, you would add an `offset 11e-6` option to the refclock line.
+
+## Update 2026-09-09
+
+I released [ppsbias](https://github.com/jclark/ppsbias), a program implementing the GPIO polling idea.
