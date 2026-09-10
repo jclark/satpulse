@@ -1,4 +1,4 @@
-package serialpps
+package pps
 
 import "testing"
 
