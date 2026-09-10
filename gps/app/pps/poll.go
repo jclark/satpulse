@@ -1,20 +1,49 @@
-package serialpps
+package pps
 
 import (
 	"context"
 	"log/slog"
 	"runtime"
 	"time"
-
-	"github.com/jclark/satpulse/gps/app/gpsio"
 )
+
+// PulseReader reads whether a pin is currently in a pulse. Its query time
+// bounds the resolution of polling, so it should be as fast as the platform
+// allows.
+type PulseReader interface {
+	InPulse() (bool, error)
+}
+
+// PollParams tunes Poll to the cost of the reader's queries. The zero value
+// suits serial modem-status queries, which take from tens of microseconds to
+// milliseconds, and sleeps on the runtime's timers.
+type PollParams struct {
+	// InitialPolls is the number of polls across the cold-start window. It
+	// determines the initial spacing, and with it the narrowest pulse
+	// acquired promptly. The spacing scales with the window, so once it
+	// falls below the query time or MinSpacing, those pace the loop instead.
+	// Zero means 64.
+	InitialPolls int
+	// MinSpacing bounds the CPU spent when the query is very fast. Zero
+	// means 50 microseconds.
+	MinSpacing time.Duration
+	// PreWarm ends the sleep to each window open that much early and
+	// busy-waits the remainder. It is for hosts whose queries slow down
+	// severalfold while the machine idles, where only continuous work
+	// ending at the open restores full query speed; it costs that fraction
+	// of a core. Zero disables it.
+	PreWarm time.Duration
+	// Wait, if non-nil, replaces the runtime timer that sleeps until a
+	// scheduled poll. It reports whether it actually waited: false means
+	// the scheduled time was already past or nearer than it can sleep to.
+	Wait func(ctx context.Context, t time.Time) (bool, error)
+}
 
 type poller struct {
 	ctx         context.Context
 	lg          *slog.Logger
-	r           StateReader
-	w           Wiring
-	prewarm     time.Duration
+	r           PulseReader
+	params      PollParams
 	ceCh        chan<- CandidateEdge
 	stats       *PollStats
 	nextEdge    time.Time
@@ -23,18 +52,13 @@ type poller struct {
 	stateReads  int
 }
 
-// Poll adaptively polls for the pulse described by w and sends a candidate for
+// Poll adaptively polls for the pulse read by r and sends a candidate for
 // every leading edge it catches. It repeatedly runs acquisition followed by
 // tracking. Acquisition ends when polling resolution is acquired, or restarts
 // from cold after losing the partly acquired signal. Tracking shrinks the
 // polling window onto the measured need and holds it just above the size
 // where misses occur; consecutive misses double the window, and sustained
 // loss restarts the cycle from acquisition.
-//
-// A nonzero prewarm ends the sleep to each window open that much early and
-// busy-waits the remainder. It is for hosts whose state queries slow down
-// severalfold while the machine idles, where only continuous work ending at
-// the open restores full query speed; it costs that fraction of a core.
 //
 // Candidates caught during acquisition are unsettled, including the catch
 // that completes acquisition, whose transition the "serial PPS acquired" log
@@ -45,11 +69,17 @@ type poller struct {
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	stats.begin()
-	p := poller{ctx: ctx, lg: lg, r: r, w: w, prewarm: prewarm, ceCh: ceCh, stats: stats}
+	if params.InitialPolls == 0 {
+		params.InitialPolls = initialPolls
+	}
+	if params.MinSpacing == 0 {
+		params.MinSpacing = minSpacing
+	}
+	p := poller{ctx: ctx, lg: lg, r: r, params: params, ceCh: ceCh, stats: stats}
 	if err := p.init(); err != nil {
 		return err
 	}
@@ -75,18 +105,15 @@ const (
 )
 
 // None of these constants encodes hardware timing; everything hardware- and
-// load-dependent is measured by the polling loop itself.
+// load-dependent is measured by the polling loop itself. initialPolls and
+// minSpacing are the PollParams defaults, suited to serial modem-status
+// queries.
 const (
-	// initialPolls is the number of polls across the cold-start window. It
-	// determines the initial spacing, and with it the narrowest pulse acquired
-	// promptly. The spacing scales with the window, so once it falls below the
-	// state-query time or minSpacing, those pace the loop instead.
 	initialPolls = 64
 	// missLimit consecutive misses declare the pulse gone: acquisition
 	// abandons its attempt, and tracking, whose window doubles toward the
 	// full period as misses accumulate, returns to acquisition.
-	missLimit = 10
-	// minSpacing bounds the CPU spent when the state query is very fast.
+	missLimit  = 10
 	minSpacing = 50 * time.Microsecond
 )
 
@@ -103,6 +130,7 @@ const (
 // phase; missLimit misses after the window narrows abandon this attempt. The
 // returned duration is the window with which tracking should begin.
 func (p *poller) acquire() (time.Duration, bool, error) {
+	initialPolls, minSpacing := time.Duration(p.params.InitialPolls), p.params.MinSpacing
 	spacing := maxWindow / initialPolls
 	misses, queryPaced := 0, 0
 	for {
@@ -185,7 +213,7 @@ type trackEvent struct {
 // control. Tests call the same track function with a simulated attempt.
 func (p *poller) track(window time.Duration) error {
 	attempt := func(window time.Duration, atFloor bool) (trackObservation, error) {
-		spacing := max(window/initialPolls, minSpacing)
+		spacing := max(window/time.Duration(p.params.InitialPolls), p.params.MinSpacing)
 		caught, predictionError, err := p.pollWindow(window, spacing, true, atFloor)
 		return trackObservation{caught: caught, predictionError: predictionError,
 			lastBracket: p.lastBracket, stateReads: p.stateReads}, err
@@ -331,7 +359,7 @@ func (p *poller) logTrackEvent(e trackEvent) {
 	}
 }
 
-// clockReading keeps adjacent readings of the clocks used by serial PPS
+// clockReading keeps adjacent readings of the clocks used by the poller
 // together. stamp is the measurement reading used for short intervals and
 // published edge timestamps; mono paces the polling loop, which must not be
 // disturbed by a step in the system clock.
@@ -347,15 +375,15 @@ type poll struct {
 }
 
 type reading struct {
-	state gpsio.SerialPinState
-	poll  poll
-	start time.Time
-	sched time.Time // when this poll was scheduled to run
-	slept bool      // whether waiting for the schedule used a timer
+	inPulse bool
+	poll    poll
+	start   time.Time
+	sched   time.Time // when this poll was scheduled to run
+	slept   bool      // whether waiting for the schedule used a timer
 }
 
 func (p *poller) init() error {
-	first, err := readState(p.ctx, p.r, time.Time{})
+	first, err := p.readState(time.Time{})
 	if err != nil {
 		return err
 	}
@@ -376,8 +404,8 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
 	open := nextEdge.Add(-window / 2)
-	if p.prewarm > 0 {
-		if _, err := waitUntil(p.ctx, open.Add(-p.prewarm)); err != nil {
+	if p.params.PreWarm > 0 {
+		if _, err := p.wait(open.Add(-p.params.PreWarm)); err != nil {
 			return false, 0, err
 		}
 		for time.Now().Before(open) {
@@ -386,7 +414,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 			}
 		}
 	}
-	cur, err := readState(p.ctx, p.r, open)
+	cur, err := p.readState(open)
 	if err != nil {
 		return false, 0, err
 	}
@@ -398,9 +426,9 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	// every period and never acquire; poll through it instead. slept accumulates
 	// over the window's scheduled polls (the wait for the window open is
 	// excluded: it always sleeps).
-	for inPulse(cur.state, p.w) && cur.poll.midpoint().mono.Before(deadline) {
+	for cur.inPulse && cur.poll.midpoint().mono.Before(deadline) {
 		prev := cur
-		cur, err = readState(p.ctx, p.r, cur.start.Add(spacing))
+		cur, err = p.readState(cur.start.Add(spacing))
 		if err != nil {
 			return false, 0, err
 		}
@@ -409,17 +437,17 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 		p.slept = p.slept || cur.slept
 	}
 	prev := cur
-	missed := inPulse(cur.state, p.w)
+	missed := cur.inPulse
 	var edge clockReading
 	for !missed && edge.stamp.IsZero() {
-		cur, err = readState(p.ctx, p.r, prev.start.Add(spacing))
+		cur, err = p.readState(prev.start.Add(spacing))
 		if err != nil {
 			return false, 0, err
 		}
 		p.stats.addPoll(cur.poll, &prev.poll)
 		p.stateReads++
 		p.slept = p.slept || cur.slept
-		edge, missed = classify(prev, cur, p.w, deadline)
+		edge, missed = classify(prev, cur, deadline)
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
 		}
@@ -448,7 +476,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 			TRead:     cur.poll.end.mono,
 		},
 		Uncertainty: halfCeil(p.lastBracket),
-		Settled:     acquired && (atFloor || spacing == minSpacing || !p.slept),
+		Settled:     acquired && (atFloor || spacing == p.params.MinSpacing || !p.slept),
 	}
 	select {
 	case p.ceCh <- ce:
@@ -458,19 +486,26 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	}
 }
 
-func readState(ctx context.Context, r StateReader, sched time.Time) (reading, error) {
-	slept, err := waitUntil(ctx, sched)
+func (p *poller) readState(sched time.Time) (reading, error) {
+	slept, err := p.wait(sched)
 	if err != nil {
 		return reading{}, err
 	}
 	start := now()
-	state, err := r.SerialPinState()
+	inPulse, err := p.r.InPulse()
 	end := now()
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, poll: poll{start: start, end: end}, start: start.mono,
+	return reading{inPulse: inPulse, poll: poll{start: start, end: end}, start: start.mono,
 		sched: sched, slept: slept}, nil
+}
+
+func (p *poller) wait(t time.Time) (bool, error) {
+	if p.params.Wait != nil {
+		return p.params.Wait(p.ctx, t)
+	}
+	return waitUntil(p.ctx, t)
 }
 
 // waitUntil reports whether it actually had to wait: false means the
@@ -503,20 +538,14 @@ func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 // bracket means the measurement clock stepped backward between the reads
 // (its stamps carry no monotonic reading on Windows), so its midpoint is
 // equally meaningless: both are a miss.
-func classify(prev, cur reading, w Wiring, deadline time.Time) (clockReading, bool) {
-	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
+func classify(prev, cur reading, deadline time.Time) (clockReading, bool) {
+	if !prev.inPulse && cur.inPulse {
 		if d := cur.poll.midpoint().elapsedSince(prev.poll.midpoint()); d >= period || d <= 0 {
 			return clockReading{}, true
 		}
 		return prev.poll.midpoint().midpoint(cur.poll.midpoint()), false
 	}
 	return clockReading{}, !cur.poll.midpoint().mono.Before(deadline)
-}
-
-// inPulse reports whether the state was observed during a pulse, as
-// selected by the wiring's polarity.
-func inPulse(s gpsio.SerialPinState, w Wiring) bool {
-	return s.Asserted(w.Pin) == w.Polarity.Asserted()
 }
 
 func halfCeil(d time.Duration) time.Duration {

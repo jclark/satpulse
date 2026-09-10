@@ -2,6 +2,7 @@ package check
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -461,5 +462,43 @@ func TestValidate_PointerField(t *testing.T) {
 	errs = Validate(s)
 	if errs == nil {
 		t.Fatal("expected error for power > 10")
+	}
+}
+
+func TestValidate_EmbeddedStruct(t *testing.T) {
+	type Inner struct {
+		Field float64 `toml:"field" check:">0"`
+	}
+	type Named struct {
+		Inner `toml:"inner"`
+	}
+	type Outer struct {
+		Inner
+		Named Named `toml:"named"`
+	}
+	errs := Validate(Outer{})
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 errors, got %v", errs)
+	}
+	if !strings.HasPrefix(errs[0], "field:") {
+		t.Errorf("embedded field named %q, want it named as the outer struct's own", errs[0])
+	}
+	if !strings.HasPrefix(errs[1], "named.inner.field:") {
+		t.Errorf("tagged embedded field named %q, want named.inner.field", errs[1])
+	}
+}
+
+func TestValidate_Embedded(t *testing.T) {
+	type Inner struct {
+		Level int `check:">0"`
+	}
+	type Count int
+	type Outer struct {
+		Inner
+		Count `check:">0"`
+	}
+	errs := Validate(Outer{})
+	if want := []string{"Level: must be > 0, got 0", "Count: must be > 0, got 0"}; !reflect.DeepEqual(errs, want) {
+		t.Errorf("Validate(Outer{}) = %q, want %q", errs, want)
 	}
 }

@@ -1,6 +1,6 @@
 //go:build !windows
 
-package serialpps
+package pps
 
 import (
 	"testing"
