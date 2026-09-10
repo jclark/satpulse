@@ -32,13 +32,20 @@ func validateStruct(val reflect.Value, prefix string) []string {
 		field := typ.Field(i)
 		fval := val.Field(i)
 
-		// Build qualified name using toml tag or field name
+		// Build qualified name using toml tag or field name. An untagged
+		// embedded struct, or pointer to one, is inlined by the TOML
+		// decoder, so its fields are named as the embedding struct's own;
+		// any other embedded field is decoded under its type name.
 		name := field.Tag.Get("toml")
-		if name == "" {
-			name = field.Name
-		}
-		if prefix != "" {
-			name = prefix + "." + name
+		if ftyp := field.Type; name == "" && field.Anonymous && derefKind(ftyp) == reflect.Struct {
+			name = prefix
+		} else {
+			if name == "" {
+				name = field.Name
+			}
+			if prefix != "" {
+				name = prefix + "." + name
+			}
 		}
 
 		// Check for validation tag
@@ -143,4 +150,11 @@ func checkRule(val reflect.Value, op, limit string) bool {
 		panic(fmt.Sprintf("unsupported type %s for check tag", val.Kind()))
 	}
 	panic(fmt.Sprintf("unknown operator %q", op))
+}
+
+func derefKind(t reflect.Type) reflect.Kind {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t.Kind()
 }

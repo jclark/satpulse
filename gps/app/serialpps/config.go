@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/lib/check"
 )
 
@@ -14,11 +15,7 @@ import (
 // UTC-labelled receiver messages. Durations are expressed in seconds in
 // TOML.
 type Config struct {
-	// DelayUncertainty is the allowed measurement uncertainty when an
-	// inferred post-pulse message delay is slightly negative.
-	DelayUncertainty float64 `toml:"delayUncertainty" check:">=0,<1" comment:"Uncertainty in measured pulse-to-message delay (s)"`
-	// MaxDelay is the maximum accepted inferred post-pulse message delay.
-	MaxDelay float64 `toml:"maxDelay" check:">0,<1" comment:"Maximum post-pulse message delay (s)"`
+	pps.GeneratorConfig
 	// Method selects how edges are detected; unspecified means automatic.
 	Method gpsio.PPSMethod `toml:"method" comment:"PPS edge detection method: poll, wait, or kernel; omit for automatic selection"`
 	// MaxWakeupLatency optionally limits latency added when a CPU wakes from
@@ -37,20 +34,15 @@ type Config struct {
 
 // DefaultConfig returns the default serial PPS sampling configuration.
 func DefaultConfig() Config {
-	return Config{
-		DelayUncertainty: 0.005,
-		MaxDelay:         0.8,
-		PollOutlierRatio: 3,
-	}
+	return Config{GeneratorConfig: pps.DefaultGeneratorConfig(), PollOutlierRatio: 3}
 }
 
 // Validate checks that the delay interval is valid and narrower than one
 // second, so at most one integral UTC label can satisfy it.
 func (cfg Config) Validate() error {
 	msgs := check.Validate(cfg)
-	if cfg.DelayUncertainty >= 0 && cfg.DelayUncertainty < 1 && cfg.MaxDelay > 0 && cfg.MaxDelay < 1 &&
-		!(cfg.DelayUncertainty+cfg.MaxDelay < 1) {
-		msgs = append(msgs, fmt.Sprintf("delayUncertainty + maxDelay: must be < 1, got %g", cfg.DelayUncertainty+cfg.MaxDelay))
+	if err := cfg.GeneratorConfig.Validate(); err != nil {
+		msgs = append(msgs, err.Error())
 	}
 	if r := cfg.PollOutlierRatio; r > 0 && r < 1 || math.IsInf(r, 1) {
 		msgs = append(msgs, fmt.Sprintf("pollOutlierRatio: must be 0 or a finite number at least 1, got %g", r))
