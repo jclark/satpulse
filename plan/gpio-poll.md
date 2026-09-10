@@ -126,7 +126,8 @@ Two stacked branches:
 barrier: `DMB ISH` when runtime goarm >= 7, else the kernel user helper at
 `0xffff0fa0`, so the GOARM=6 package works on ARMv7 boards too. Assembly
 would have to reproduce that goarm check, a further reason to avoid it.
-The Pi 3 and 4 register layouts are untested. Single-core ARMv6 boards
-have no CPU to move the PPS interrupt away from; without pps-gpio loaded
-there is no edge-coincident interrupt, but the pin must then be put into
-input mode another way. Whether they work is something to measure.
+The Pi 3 and 4 register layouts are verified, on 64-bit systems.
+Single-core ARMv6 boards have no CPU to move the PPS interrupt away
+from; without pps-gpio loaded there is no edge-coincident interrupt, but
+the pin must then be put into input mode another way. Whether they work
+is something to measure.
