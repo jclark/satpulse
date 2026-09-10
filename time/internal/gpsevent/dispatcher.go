@@ -189,9 +189,9 @@ func NewDispatcher(
 }
 
 const (
-	tickPeriod                = time.Second / 4
-	serialPPSFirstEdgeTimeout = 30 * time.Second
-	serialPPSMaxUncertainty   = time.Millisecond
+	tickPeriod               = time.Second / 4
+	sysPulseFirstEdgeTimeout = 30 * time.Second
+	sysPulseMaxUncertainty   = time.Millisecond
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -214,7 +214,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
-	var firstSerialPPSDeadline <-chan time.Time
+	var firstSysPulseDeadline <-chan time.Time
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -227,7 +227,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 	if spCh != nil {
 		// Adaptive polling can take several seconds to acquire a narrow pulse.
 		// Allow comfortably more before warning.
-		firstSerialPPSDeadline = time.After(serialPPSFirstEdgeTimeout)
+		firstSysPulseDeadline = time.After(sysPulseFirstEdgeTimeout)
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
@@ -275,12 +275,12 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 			if ok {
 				// Any candidate, settled or not, proves the pin is wired and
 				// pulsing, which is all this warning is about.
-				firstSerialPPSDeadline = nil
-				d.serialPPSCandidateEdge(ce)
+				firstSysPulseDeadline = nil
+				d.sysPulseCandidateEdge(ce)
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
 				spCh = nil
-				firstSerialPPSDeadline = nil
+				firstSysPulseDeadline = nil
 			}
 
 		case pkt, ok := <-pktCh:
@@ -302,9 +302,9 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
-		case <-firstSerialPPSDeadline:
+		case <-firstSysPulseDeadline:
 			lg.Warn("no serial PPS edges are being received; check pps.pin in the [serial] table, PPS wiring, and receiver pulse width")
-			firstSerialPPSDeadline = nil
+			firstSysPulseDeadline = nil
 		case <-sig:
 			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)
@@ -312,7 +312,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 	}
 }
 
-func (d *Dispatcher) serialPPSCandidateEdge(ce pps.CandidateEdge) {
+func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 	d.logEvent(LogEvent{
 		Type: sysPulseEdgeType,
 		T:    ce.TRead,
@@ -322,12 +322,12 @@ func (d *Dispatcher) serialPPSCandidateEdge(ce pps.CandidateEdge) {
 			Settled:     ce.Settled,
 		},
 	})
-	if ce.Uncertainty <= serialPPSMaxUncertainty || ce.Settled {
-		d.serialPPSEdge(ce.Edge)
+	if ce.Uncertainty <= sysPulseMaxUncertainty || ce.Settled {
+		d.sysPulseSample(ce.Edge)
 	}
 }
 
-func (d *Dispatcher) serialPPSEdge(edge pps.Edge) {
+func (d *Dispatcher) sysPulseSample(edge pps.Edge) {
 	if d.spGen == nil {
 		panic("serial PPS edge channel wired without a Generator")
 	}

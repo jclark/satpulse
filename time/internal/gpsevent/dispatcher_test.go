@@ -280,7 +280,7 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 	}
 }
 
-func TestDispatcherSerialPPSCandidateWritesAcceptableSamples(t *testing.T) {
+func TestDispatcherSysPulseCandidateWritesAcceptableSamples(t *testing.T) {
 	shm := &fakeSHM{precision: -9}
 	observer := &ntpSampleObserver{}
 	g := pps.NewGenerator(pps.DefaultGeneratorConfig())
@@ -294,20 +294,20 @@ func TestDispatcherSerialPPSCandidateWritesAcceptableSamples(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.serialPPSCandidateEdge(pps.CandidateEdge{
+	d.sysPulseCandidateEdge(pps.CandidateEdge{
 		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
+		Uncertainty: sysPulseMaxUncertainty + time.Nanosecond,
 	})
 	if len(shm.writes) != 0 {
 		t.Fatalf("inaccurate unsettled candidate produced %d SHM writes, want none", len(shm.writes))
 	}
-	d.serialPPSCandidateEdge(pps.CandidateEdge{
+	d.sysPulseCandidateEdge(pps.CandidateEdge{
 		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: serialPPSMaxUncertainty,
+		Uncertainty: sysPulseMaxUncertainty,
 	})
-	d.serialPPSCandidateEdge(pps.CandidateEdge{
+	d.sysPulseCandidateEdge(pps.CandidateEdge{
 		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
+		Uncertainty: sysPulseMaxUncertainty + time.Nanosecond,
 		Settled:     true,
 	})
 
