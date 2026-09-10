@@ -45,7 +45,8 @@ No option is required. The selectors choose the mode:
 - Options that mirror a `[sample.pps.gpio]` key take the key's name in
   kebab case and have no short letter, as `serial` does for its
   `[sample.serial.pps]` keys: `--cpu`, `--priority`, `--outlier-ratio`.
-  Short letters can be added if typing them proves tiresome.
+  Short letters can be added if typing them proves tiresome. `--cpu` and
+  `--priority` apply to `-g` and `--bias`; `--outlier-ratio` to `-g` only.
 - Bias estimation is named by `--bias`, the way `sdp` names its modes,
   rather than implied by giving both selectors: it runs for minutes and
   alternates polling in a way plain edge printing does not, so the user
@@ -59,11 +60,13 @@ No option is required. The selectors choose the mode:
   spacing (`-w`, `-s`) get no option: 1 ms each side, reads back to back.
 - `--echo` enables the device's echo-on-assert output while the command
   runs. Applies to `-d`.
-- `-t|--timeout` bounds how long the command runs, in seconds. The
-  default is 10, as for `serial -p` and ppsbias; 0 runs until
-  interrupted.
-- Exit status 2 when no timestamp or edge arrived, as `serial -p` and
-  `sdp -i`.
+- `-t|--timeout` bounds how long the command runs, in seconds, counted
+  from the start of the command in every mode (ppsbias counts from its
+  first synchronised pulse). The default is 10, as for `serial -p` and
+  ppsbias; 0 runs until interrupted.
+- Exit status 2 when no timestamp or edge arrived, or `--bias` produced
+  no estimate, as `serial -p` and `sdp -i`. An interrupted `--bias` run
+  prints its summary and exits 0 (ppsbias exits 128 plus the signal).
 - `-j|--jsonl` selects JSON lines output. The edge object follows
   `serial -p`: a `device` string (for `-d`) or `gpio` number (for `-g`),
   an RFC 3339 UTC timestamp `t` with nanoseconds, and for polled edges
@@ -77,9 +80,19 @@ No option is required. The selectors choose the mode:
   The text summary is the median bias alone in seconds, positive for a
   late timestamp, in ppsbias's `12.7e-6` form, so a script can take the
   last line; the JSONL summary is an object with the median, mean,
-  standard deviation, sample count, median and maximum bracket, and how
-  the run ended, all durations in seconds. The standard deviation and
-  count are the uncertainty; nothing more is derived.
+  standard deviation, sample count, median and maximum bracket, the
+  counts of polling failures, source failures and unpolled pulses without
+  an estimate, and how the run ended, all durations in seconds. The
+  standard deviation and count are the uncertainty; nothing more is
+  derived. Keys, and status values, are camelCase as in the rest of
+  SatPulse's JSON. Half-nanosecond fractions, which ppsbias carries
+  through its midpoint arithmetic, are dropped: Go's nanosecond integers
+  are far below the bracket.
+- What ppsbias prints as its first line, the configuration (device,
+  GPIO, mode, window, affinity, timer slack, PPS capabilities), goes to
+  the log at info level; its warning that the median bracket exceeds
+  1.5 us, which means the poller is sharing a CPU with the interrupt,
+  goes to the log at warn level. Neither is output.
 - Time values are float seconds.
 - Data goes to stdout, diagnostics to stderr, following `serial` and `sdp`.
 - ppsbias's `-v` is the global `satpulsetool -v`. Its `-w` window and
@@ -142,21 +155,17 @@ and a CPU busy, and they contend with the interrupt path on the bus, so
 the kernel stamps pulses differently while polling than in normal
 operation. On the Pi 5 the difference is about 5 us with L1 enabled.
 
-The estimator therefore polls only alternate seconds. Two quantities are
-formed:
-
-- **A**: mean of kernel timestamp minus polled edge over polled seconds.
-  This is the lateness while polling.
-- **B**: for each unpolled second, the kernel timestamp's phase against a
-  one-second grid minus the mean phase of its two polled neighbours,
-  averaged. Taking the neighbours' mean cancels linear clock drift. B is
-  how much later the kernel stamps when nothing is polling.
-
-The reported lateness is A + B, the value for normal operation with no
-poller present. Each of A and B carries a standard error and the result
-reports their combination. The method assumes only that the pulse source
-is periodic to well under a microsecond over two seconds and that the
-system clock's frequency is stable over the same interval.
+The estimator therefore polls only alternate seconds. With kernel
+timestamps K0, K1, K2 and polled edges P0 and P2, the RP1 is busy for K0
+and K2 but idle for K1. P1 is inferred as the midpoint of P0 and P2,
+which also cancels linear clock drift, and the estimate for that pulse
+is K1 - P1: the lateness of a timestamp taken while nothing was polling.
+The result is the median of those per-pulse estimates, with their mean
+and standard deviation alongside. With `-e` every pulse is polled and
+the estimate for each is K - P, the lateness while polling. The method
+assumes only that the pulse source is periodic to well under a
+microsecond over two seconds and that the system clock's frequency is
+stable over the same interval. This is how ppsbias computes it.
 
 ### Polling schedule
 
@@ -171,23 +180,55 @@ bracket midpoint, so the estimate is the same; the validation below was
 done with the simple loop. The two modes share `gpiomem` for the read
 and nothing else: the thread setup (affinity, SCHED_FIFO, timer slack)
 and the absolute clock_nanosleep are a few lines each and are written
-separately for each loop rather than shared. The bracket width
-rejection uses `--outlier-ratio` with the same rule and default under
-`-g` and `--bias`, so a user reads one description: a multiple of the
-lower quartile of recent brackets, as serial PPS polling uses, rather
-than ppsbias's several-times-the-median rule.
+separately for each loop rather than shared. Bias mode rejects no edge
+for its bracket width, as ppsbias does not: the median absorbs a stalled
+read, and a per-pulse line shows its bracket. `--outlier-ratio` belongs
+to `-g` alone.
 
 - Predict the next edge as the last kernel timestamp plus one period.
 - Sleep with an absolute clock_nanosleep to a fixed time before the
   prediction, with timer slack reduced to a microsecond, then poll back to
   back until the edge is seen or the window closes. A window of one
   millisecond each side costs about 0.2 percent of one core.
-- Run the loop on a locked OS thread pinned away from the CPU that takes
-  the PPS interrupt, with no allocation inside the window.
-- A pulse whose bracket is several times the median was interrupted by
-  preemption and is discarded. A second in which the pin is already high
-  when the window opens, or no edge is seen, counts as a miss. Missing or
-  duplicated kernel events are counted from the PPS sequence numbers.
+- Run the loop on a locked OS thread with the affinity and SCHED_FIFO
+  priority of `--cpu` and `--priority`, and timer slack reduced, with no
+  allocation inside the window. ppsbias sets only the slack and leaves
+  pinning to `taskset`.
+- A second in which the pin is already high when the window opens, or no
+  edge is seen, counts as a polling failure. Missing or duplicated kernel
+  events are counted from the PPS sequence numbers.
+
+### Clocks and run control
+
+The estimate compares kernel timestamps on the realtime clock with polled
+reads on the realtime clock, while the schedule runs on the monotonic
+clock. ppsbias tracks the realtime-minus-monotonic offset as an interval
+across every pair of reads, places each window through it, and ends the
+run with a `clockStep` status if the interval ever moves, since samples
+across a step are not comparable; the Go version does the same.
+
+The run waits up to 3 s for a fresh assert timestamp, then predicts each
+slot as the last good timestamp plus one second. After an event that
+does not fit its slot it resynchronises the same way. Three consecutive
+slots without an event, or a failed resynchronisation, end the run early
+with the summary of what was collected. `-t` counts from the start of
+the command, not from synchronisation.
+
+### PPS device parameters
+
+Open. The kernel PPS parameters (capture mode, assert and clear offsets)
+belong to the device, and any process with it open can change them for
+every other. chrony sets the capture mode once when it opens the device,
+to the edge it uses (assert by default, clear with its `:clear` option),
+and never sets an offset; its `offset` option is applied by chrony
+itself, as ntpd's `time1` is by ntpd. ppstest ORs assert capture into
+the mode and zeroes the assert offset on every run, so it alters the
+device under a running daemon. ppsbias changes nothing: it requires
+assert capture to be on, subtracts the assert offset from every
+timestamp, and aborts if the mode or offset changes during the run. The
+`-d` mode reads the device without looking at the parameters, and ends
+with exit 2 and a message when clear timestamps arrive but no asserts.
+Whether `--bias` needs more than that is not decided.
 
 ### Validation
 
@@ -196,10 +237,11 @@ Prototyped in C on 2026-09-05 and run on a Raspberry Pi 5 (kernel
 
 - L1 enabled: 11.9, 12.0, 12.2 and 12.6 us over runs of 60 to 1200 s.
 - L1 disabled: 7.1 and 7.3 us.
-- A + B was unchanged when the polling path changed from the GPIO
+- The estimate was unchanged when the polling path changed from the GPIO
   character device ioctl to a bare register read, and when reads were
-  spaced 4 us apart instead of back to back, while A and B individually
-  moved in opposite directions. The correction does what it claims.
+  spaced 4 us apart instead of back to back, while the lateness measured
+  on the polled pulses themselves moved with each change. The
+  interpolation does what it claims.
 - Kernel timestamps from GPIO edge events and from the pps-gpio device
   gave the same result within noise.
 - A tinyGTC counter measuring pulse-to-echo the same day gave 14.85 us
@@ -236,7 +278,17 @@ later convenience, not a requirement.
 
 ## Not yet decided
 
-- The exact field names of the bias pulse and summary objects.
+- The PPS device parameters, above.
+- The per-pulse status fields. ppsbias records a poll status (`noEdge`,
+  `late`, `initialHigh`, `invalidBracket`, `ioError`, `interrupted`), a
+  source status (`missingEvent`, `staleEvent`, `timestampMismatch`,
+  `multipleEvents`, `duplicateEvent`, `ppsSequenceGap`, `sequenceReset`,
+  `clockStep`, `error`) and an unpolled status (`missingNeighbor`,
+  `invalidNeighbor`, `invalidPairing`), and when a late extra event
+  arrives in a slot it rolls back the estimate it has already printed
+  with an `excludedTimestamp` line. Whether to adopt those sets as they
+  are, and whether to keep the rollback or only count the slot as a
+  source failure in the summary.
 - Whether other operations on the device belong here.
 - Man page text.
 
