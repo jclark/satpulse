@@ -132,17 +132,10 @@ func TestWaitContextCancellation(t *testing.T) {
 // the first poll so that a run that reaches the polling fallback returns
 // promptly.
 type testFallbackWaiter struct {
+	testPoller
 	err             error
 	successfulWaits int
 	methods         []gpsio.PPSMethod
-	polled          bool
-	cancel          context.CancelFunc
-}
-
-func (w *testFallbackWaiter) SerialPinState() (gpsio.SerialPinState, error) {
-	w.polled = true
-	w.cancel()
-	return 0, nil
 }
 
 func (w *testFallbackWaiter) WaitSerialPinChange(_ context.Context, _ gpsio.SerialPin, method gpsio.PPSMethod) (gpsio.SerialPinChange, int, error) {
@@ -231,7 +224,7 @@ func TestDetectMethodSelection(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			w := &testFallbackWaiter{err: tc.waitErr, successfulWaits: tc.successfulWaits, cancel: cancel}
+			w := &testFallbackWaiter{testPoller: testPoller{cancel: cancel}, err: tc.waitErr, successfulWaits: tc.successfulWaits}
 			var logs bytes.Buffer
 			lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelDebug}))
 			err := Detect(ctx, lg, w, Wiring{Pin: gpsio.SerialPinCTS}, Config{Method: tc.method}, make(chan pps.CandidateEdge, 1), nil)
