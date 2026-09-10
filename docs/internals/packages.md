@@ -162,6 +162,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/kpps` provides low-level access to kernel PPS sources using the RFC 2783 data model. It is currently implemented on Linux.
 
+`gps/lib/gpiomem` reads the level of a Raspberry Pi GPIO directly from the GPIO controller's registers, mapped read-only through the gpiomem device, identifying the SoC from the device tree. It is Linux-only and does not configure the pin.
+
 `gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; other platforms use go.bug.st/serial/enumerator.
 
 `gps/lib/decconv` converts between base-10 decimal strings and int64 scaled integers without floating point. It is used for exact parsing and formatting of physical quantities like angles and lengths.
