@@ -11,7 +11,7 @@ CMD=github.com/jclark/satpulse/gps/app/cmd
 TAGS=netgo,osusergo
 TARGETS=./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
 MAN1=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 \
-  satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 \
+  satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-pps.1 \
   satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1
 MAN5=satpulse.toml.5
 MAN8=satpulsed.8

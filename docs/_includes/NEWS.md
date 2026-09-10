@@ -143,6 +143,7 @@ _Released 2026-05-07_
 - `satpulsetool annotate` reads a JSONL packet log and adds decoded packet fields, such as headers, payloads and configuration data.
 - `satpulsetool replay` reads a JSONL packet log, runs incoming packets through the GPS protocol processing pipeline, and emits device-independent GPS events as JSONL.
 - `satpulsetool ntrip` fetches data from an Ntrip caster mountpoint and writes a JSONL packet log by default, or raw bytes with `--bin`.
+- `satpulsetool` has a new `pps` command, which lists the kernel PPS devices and prints the timestamps of one as they arrive, so checking a PPS signal no longer needs `ppstest`.
 
 ### Miscellaneous
 
