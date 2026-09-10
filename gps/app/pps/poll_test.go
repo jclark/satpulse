@@ -981,3 +981,60 @@ func nextSettled(candidates <-chan CandidateEdge) CandidateEdge {
 		}
 	}
 }
+
+// TestPollOutlier checks that a tracking catch whose bracket is far wider
+// than the recent settled brackets is marked an outlier, and nothing else is.
+// The fake stalls the query that catches pulse 60 by 2 ms, well after the
+// reference history has filled; the read that starts in the last 100 us
+// before the edge is the catching one, so the stall is timed there.
+func TestPollOutlier(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		ratio float64
+		want  bool
+	}{
+		{name: "ratio 3", ratio: 3, want: true},
+		{name: "disabled", ratio: 0, want: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
+				const stallPulse = 60
+				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+					callDur: 100 * time.Microsecond, stallAfter: stallPulse*period - 100*time.Microsecond, stall: 2 * time.Millisecond}
+				ctx, cancel := context.WithCancel(context.Background())
+				candidates := make(chan CandidateEdge)
+				errCh := make(chan error, 1)
+				go func() { errCh <- Poll(ctx, testLog, f, PollParams{OutlierRatio: tc.ratio}, candidates, nil) }()
+				var got []CandidateEdge
+				for len(got) == 0 || pulseIndex(got[len(got)-1].Timestamp, f.epoch) < stallPulse+2 {
+					got = append(got, <-candidates)
+				}
+				cancel()
+				if err := <-errCh; err != context.Canceled {
+					t.Fatalf("Poll error = %v, want context.Canceled", err)
+				}
+				stalled := 0
+				for _, e := range got {
+					if !e.Settled {
+						continue
+					}
+					pulse := pulseIndex(e.Timestamp, f.epoch)
+					if e.Uncertainty > 500*time.Microsecond {
+						stalled++
+						if pulse != stallPulse {
+							t.Errorf("wide bracket (uncertainty %v) at pulse %d, want only pulse %d", e.Uncertainty, pulse, stallPulse)
+						}
+						if e.Outlier != tc.want {
+							t.Errorf("stalled catch outlier = %v, want %v", e.Outlier, tc.want)
+						}
+					} else if e.Outlier {
+						t.Errorf("pulse %d with uncertainty %v marked an outlier", pulse, e.Uncertainty)
+					}
+				}
+				if stalled != 1 {
+					t.Errorf("%d catches with a wide bracket, want 1", stalled)
+				}
+			})
+		})
+	}
+}
