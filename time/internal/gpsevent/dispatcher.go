@@ -107,7 +107,7 @@ type Dispatcher struct {
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
-	spGen                 *pps.Generator
+	ppsGen                 *pps.Generator
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
@@ -127,7 +127,7 @@ func NewDispatcher(
 	controller *phcsync.Controller,
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
-	spGen *pps.Generator,
+	ppsGen *pps.Generator,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
@@ -173,9 +173,9 @@ func NewDispatcher(
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
-	if spGen != nil {
-		d.spGen = spGen
-		timeMsgBuffer.SetMsgUTCTimer(spGen)
+	if ppsGen != nil {
+		d.ppsGen = ppsGen
+		timeMsgBuffer.SetMsgUTCTimer(ppsGen)
 	} else if controller == nil && (rc != nil || shm != nil) {
 		// In serial timing mode (no PHC, but refclock configured), feed
 		// NTP samples directly from time messages.
@@ -194,7 +194,7 @@ const (
 	sysPulseMaxUncertainty   = time.Millisecond
 )
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
 	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
@@ -224,7 +224,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 		// give a warning if we haven't received a timestamp by the time this fires
 		firstTsDeadline = time.After(time.Second * 2)
 	}
-	if spCh != nil {
+	if ppsCh != nil {
 		// Adaptive polling can take several seconds to acquire a narrow pulse.
 		// Allow comfortably more before warning.
 		firstSysPulseDeadline = time.After(sysPulseFirstEdgeTimeout)
@@ -239,7 +239,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 	staleEra := ts.StaleEra
 	nSkipped := 0
 
-	for tsCh != nil || spCh != nil || pktCh != nil || pullPktCh != nil {
+	for tsCh != nil || ppsCh != nil || pktCh != nil || pullPktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if !ok {
@@ -271,7 +271,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 				}
 				d.timestamp(e)
 			}
-		case ce, ok := <-spCh:
+		case ce, ok := <-ppsCh:
 			if ok {
 				// Any candidate, settled or not, proves the pin is wired and
 				// pulsing, which is all this warning is about.
@@ -279,7 +279,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 				d.sysPulseCandidateEdge(ce)
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
-				spCh = nil
+				ppsCh = nil
 				firstSysPulseDeadline = nil
 			}
 
@@ -328,10 +328,10 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 }
 
 func (d *Dispatcher) sysPulseSample(edge pps.Edge) {
-	if d.spGen == nil {
+	if d.ppsGen == nil {
 		panic("serial PPS edge channel wired without a Generator")
 	}
-	sample, ok := d.spGen.Sample(edge)
+	sample, ok := d.ppsGen.Sample(edge)
 	if !ok {
 		return
 	}

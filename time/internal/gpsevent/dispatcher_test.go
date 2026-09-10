@@ -285,7 +285,7 @@ func TestDispatcherSysPulseCandidateWritesAcceptableSamples(t *testing.T) {
 	observer := &ntpSampleObserver{}
 	g := pps.NewGenerator(pps.DefaultGeneratorConfig())
 	d := &Dispatcher{
-		spGen: g,
+		ppsGen: g,
 		shm:   shm,
 		obs:   observer,
 		lg:    slog.New(slog.NewTextHandler(io.Discard, nil)),
