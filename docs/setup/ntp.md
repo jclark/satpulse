@@ -131,29 +131,19 @@ This disables PCIe link power management.
 
 ### Verification
 
-To verify that the PPS signal is working, install pps-tools:
+To verify that the PPS signal is working, do:
 
 ```
-sudo apt install pps-tools
+sudo satpulsetool pps -d /dev/pps0
 ```
 
-Then do:
+It should show a timestamp once per second, for 10 seconds:
 
 ```
-sudo ppstest /dev/pps0
+07:47:54.999577158
+07:47:55.999576891
+07:47:56.999577160
 ```
-
-It should show PPS events once per second:
-
-```
-trying PPS source "/dev/pps0"
-found PPS source "/dev/pps0"
-ok, found 1 source(s), now start fetching data...
-source 0 - assert 1775392263.000000336, sequence: 170178 - clear  0.000000000, sequence: 0
-source 0 - assert 1775392264.000000215, sequence: 170179 - clear  0.000000000, sequence: 0
-```
-
-Exit with Ctrl-C.
 
 ## Configure satpulsed
 

@@ -54,6 +54,7 @@ Requires **\-g**.
 
 **\-t**, **\-\-timeout** *seconds*
 : Stop printing timestamps or edges after *seconds*.
+The exit status is 2 if none arrived, however the command ended.
 A value of 0 means run until interrupted.
 The default is 10.
 Requires **\-d** or **\-g**.
@@ -61,7 +62,7 @@ Requires **\-d** or **\-g**.
 **\-j**, **\-\-jsonl**
 : Write output in JSON Lines format.
 A device object has `device` and `name` strings,
-a `path` string naming the source of the pulses when the kernel reports one,
+a `sourcePath` string naming the source of the pulses when the kernel reports one, such as the serial port of a line discipline source,
 a `capture` array of the edges the device captures (`assert`, `clear`),
 and, for a device that can echo edges to an output, an `echo` array of the edges it can echo.
 With **\-d**, a timestamp object has a `device` string, an RFC 3339 UTC timestamp `t` with nanoseconds,
@@ -80,7 +81,7 @@ A `settling` value of true means the edge is not to be relied on: the accuracy o
 : Error
 
 **2**
-: No data found: no PPS devices present, or no timestamps received or edges detected before the timeout
+: No data found: no PPS devices present, or no timestamps received or edges detected
 
 # EXAMPLES
 
