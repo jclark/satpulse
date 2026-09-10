@@ -2,12 +2,10 @@ package ppscmd
 
 import (
 	"bytes"
-	"io"
-	"log/slog"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/jclark/satpulse/gps/lib/kpps"
 )
 
 func TestParseFlags(t *testing.T) {
@@ -34,41 +32,27 @@ func TestParseFlags(t *testing.T) {
 }
 
 func TestListDevices(t *testing.T) {
-	dir := t.TempDir()
-	write := func(dev, attr, value string) {
-		if err := os.MkdirAll(filepath.Join(dir, dev), 0o755); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.WriteFile(filepath.Join(dir, dev, attr), []byte(value+"\n"), 0o644); err != nil {
-			t.Fatal(err)
-		}
+	devices := []kpps.Device{
+		{Path: "/dev/pps0", Name: "pps@.-1", Mode: 0x1151},
+		{Path: "/dev/pps1", Name: "ttyAMA0", SourcePath: "/dev/ttyAMA0", Mode: 0x1133},
 	}
-	write("pps0", "name", "pps@.-1")
-	write("pps0", "path", "")
-	write("pps0", "mode", "1151")
-	write("pps1", "name", "ttyAMA0")
-	write("pps1", "path", "/dev/ttyAMA0")
-	write("pps1", "mode", "1133")
-	write("pps2", "name", "broken")
-	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	var out bytes.Buffer
-	if err := listDevices(lg, dir, &out, false); err != nil {
+	if err := listDevices(devices, &out, false); err != nil {
 		t.Fatal(err)
 	}
-	want := "device=/dev/pps0 name=\"pps@.-1\" capture=assert echo=assert\n" +
-		"device=/dev/pps1 name=\"ttyAMA0\" path=\"/dev/ttyAMA0\" capture=assert,clear\n"
-	if out.String() != want {
-		t.Errorf("listing =\n%swant\n%s", out.String(), want)
+	expect := "device=/dev/pps0 name=\"pps@.-1\" capture=assert echo=assert\n" +
+		"device=/dev/pps1 name=\"ttyAMA0\" sourcePath=\"/dev/ttyAMA0\" capture=assert,clear\n"
+	if out.String() != expect {
+		t.Errorf("listing =\n%swant\n%s", out.String(), expect)
 	}
 	out.Reset()
-	if err := listDevices(lg, dir, &out, true); err != nil {
+	if err := listDevices(devices, &out, true); err != nil {
 		t.Fatal(err)
 	}
-	if want := `{"device":"/dev/pps1","name":"ttyAMA0","path":"/dev/ttyAMA0","capture":["assert","clear"]}`; !strings.Contains(out.String(), want+"\n") {
-		t.Errorf("JSONL listing %q does not contain %q", out.String(), want)
+	if expect := `{"device":"/dev/pps1","name":"ttyAMA0","sourcePath":"/dev/ttyAMA0","capture":["assert","clear"]}`; !strings.Contains(out.String(), expect+"\n") {
+		t.Errorf("JSONL listing %q does not contain %q", out.String(), expect)
 	}
-	err := listDevices(lg, filepath.Join(dir, "none"), &out, false)
-	if _, ok := err.(noDataError); !ok {
-		t.Errorf("listing a missing directory returned %v, want noDataError", err)
+	if err := listDevices(nil, &out, false); err == nil || err.(noDataError).msg == "" {
+		t.Errorf("listing no devices returned %v, want noDataError", err)
 	}
 }

@@ -35,7 +35,7 @@ Requires **\-d**.
 **\-j**, **\-\-jsonl**
 : Write output in JSON Lines format.
 A device object has `device` and `name` strings,
-a `path` string naming the source of the pulses when the kernel reports one,
+a `sourcePath` string naming the source of the pulses when the kernel reports one, such as the serial port of a line discipline source,
 a `capture` array of the edges the device captures (`assert`, `clear`),
 and, for a device that can echo edges to an output, an `echo` array of the edges it can echo.
 With **\-d**, a timestamp object has a `device` string, an RFC 3339 UTC timestamp `t` with nanoseconds,

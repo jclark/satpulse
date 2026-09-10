@@ -5,15 +5,11 @@ package ppscmd
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"math"
 	"os"
-	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,7 +38,11 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 	}
 	lg := cmd.NewDefaultLogger(logWriter, logLevel)
 	if v.device == "" {
-		return "", listDevices(lg, sysClassPPS, os.Stdout, v.jsonl)
+		devices, err := kpps.ListDevices()
+		if err != nil {
+			return "", err
+		}
+		return "", listDevices(devices, os.Stdout, v.jsonl)
 	}
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
@@ -96,32 +96,25 @@ type noDataError struct {
 func (e noDataError) Error() string { return e.msg }
 func (e noDataError) ExitCode() int { return 2 }
 
-const sysClassPPS = "/sys/class/pps"
-
-// deviceInfo describes a kernel PPS device from its sysfs attributes.
+// deviceInfo is the listing's description of a kernel PPS device.
 type deviceInfo struct {
-	Device  string   `json:"device"`
-	Name    string   `json:"name"`
-	Path    string   `json:"path,omitempty"`
-	Capture []string `json:"capture"`
-	Echo    []string `json:"echo,omitempty"`
+	Device     string   `json:"device"`
+	Name       string   `json:"name"`
+	SourcePath string   `json:"sourcePath,omitempty"`
+	Capture    []string `json:"capture"`
+	Echo       []string `json:"echo,omitempty"`
 }
 
-// listDevices prints every PPS device registered in sysDir. A device can be
-// unregistered during the scan, so one whose attributes cannot be read is
-// skipped with a warning.
-func listDevices(lg *slog.Logger, sysDir string, out io.Writer, jsonl bool) error {
-	entries, err := os.ReadDir(sysDir)
-	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return err
+// listDevices prints the devices.
+func listDevices(devices []kpps.Device, out io.Writer, jsonl bool) error {
+	if len(devices) == 0 {
+		return noDataError{msg: "no PPS devices found"}
 	}
-	n := 0
-	for _, e := range entries {
-		info, err := readDeviceInfo(sysDir, e.Name())
-		if err != nil {
-			lg.Warn("cannot read PPS device attributes", "device", e.Name(), "err", err)
-			continue
-		}
+	for _, d := range devices {
+		info := deviceInfo{Device: d.Path, Name: d.Name, SourcePath: d.SourcePath,
+			Capture: edgeNames(d.Mode, kpps.CaptureAssert, kpps.CaptureClear),
+			Echo:    edgeNames(d.Mode, kpps.EchoAssert, kpps.EchoClear)}
+		var err error
 		if jsonl {
 			err = json.NewEncoder(out).Encode(&info)
 		} else {
@@ -130,40 +123,8 @@ func listDevices(lg *slog.Logger, sysDir string, out io.Writer, jsonl bool) erro
 		if err != nil {
 			return err
 		}
-		n++
-	}
-	if n == 0 {
-		return noDataError{msg: "no PPS devices found"}
 	}
 	return nil
-}
-
-func readDeviceInfo(sysDir, name string) (deviceInfo, error) {
-	attr := func(a string) (string, error) {
-		b, err := os.ReadFile(filepath.Join(sysDir, name, a))
-		return strings.TrimSuffix(string(b), "\n"), err
-	}
-	info := deviceInfo{Device: "/dev/" + name}
-	var err error
-	if info.Name, err = attr("name"); err != nil {
-		return deviceInfo{}, err
-	}
-	if info.Path, err = attr("path"); err != nil {
-		return deviceInfo{}, err
-	}
-	s, err := attr("mode")
-	if err != nil {
-		return deviceInfo{}, err
-	}
-	// The mode attribute is the device's capabilities as PPS_GETCAP
-	// reports them, in hex.
-	mode, err := strconv.ParseUint(strings.TrimSpace(s), 16, 32)
-	if err != nil {
-		return deviceInfo{}, fmt.Errorf("mode attribute %q: %w", s, err)
-	}
-	info.Capture = edgeNames(kpps.Mode(mode), kpps.CaptureAssert, kpps.CaptureClear)
-	info.Echo = edgeNames(kpps.Mode(mode), kpps.EchoAssert, kpps.EchoClear)
-	return info, nil
 }
 
 func edgeNames(mode, assert, clear kpps.Mode) []string {
@@ -180,8 +141,8 @@ func edgeNames(mode, assert, clear kpps.Mode) []string {
 func (info deviceInfo) String() string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "device=%s name=%q", info.Device, info.Name)
-	if info.Path != "" {
-		fmt.Fprintf(&b, " path=%q", info.Path)
+	if info.SourcePath != "" {
+		fmt.Fprintf(&b, " sourcePath=%q", info.SourcePath)
 	}
 	fmt.Fprintf(&b, " capture=%s", strings.Join(info.Capture, ","))
 	if len(info.Echo) > 0 {
@@ -199,7 +160,9 @@ type ppsEvent struct {
 // watchDevice prints the assert timestamps of the PPS device as they arrive
 // until ctx is done. The device reports its most recently captured edge at
 // once, which may be old, so that reading only sets the baseline and the
-// first edge printed is one captured after the command started.
+// first edge printed is one captured after the command started. Clear edges
+// are counted, since a device whose capture mode another consumer has set
+// to clear only reports no asserts at all.
 func watchDevice(ctx context.Context, lg *slog.Logger, v flagVars) error {
 	src, err := kpps.Open(v.device)
 	if err != nil {
