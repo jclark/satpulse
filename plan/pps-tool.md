@@ -72,22 +72,27 @@ No option is required. The selectors choose the mode:
   an RFC 3339 UTC timestamp `t` with nanoseconds, and for polled edges
   `uncertainty` in seconds and `settling`. The text form is the time of
   day with nanoseconds.
-- `--bias` output works like the other modes: one line per pulse to
-  stdout as it is observed, then a summary as the last line. A pulse
-  line in text form is the kernel timestamp as for `-d` followed by
-  `key=value` fields (the bias in seconds, the bracket, or a status when
-  the pulse gave no estimate); in JSONL an object with the same fields.
+- `--bias` output works like the other modes: one message per second
+  to stdout, then a summary as the last line. The per-second message
+  carries the raw observations of that second and nothing derived: the
+  kernel timestamp with its sequence number as `-d` prints them, and,
+  for a polled second, the polled edge with its bracket as `-g` prints
+  them; whichever of the two the second produced. A second with no
+  kernel timestamp, or a polled second with no edge, is a message
+  without that part. In JSONL an object with the same fields. The
+  estimate is computed from the collected observations and appears only
+  in the summary, so nothing printed is ever retracted and no status
+  vocabulary is needed; whatever ppsbias's verbose statuses say is
+  recoverable from the messages.
   The text summary is the median bias alone in seconds, positive for a
   late timestamp, in ppsbias's `12.7e-6` form, so a script can take the
   last line; the JSONL summary is an object with the median, mean,
-  standard deviation, sample count, median and maximum bracket, the
-  counts of polling failures, source failures and unpolled pulses without
-  an estimate, and how the run ended, all durations in seconds. The
-  standard deviation and count are the uncertainty; nothing more is
-  derived. Keys, and status values, are camelCase as in the rest of
-  SatPulse's JSON. Half-nanosecond fractions, which ppsbias carries
-  through its midpoint arithmetic, are dropped: Go's nanosecond integers
-  are far below the bracket.
+  standard deviation, sample count, median and maximum bracket, and how
+  the run ended, all durations in seconds. The standard deviation and
+  count are the uncertainty; nothing more is derived. Keys are camelCase
+  as in the rest of SatPulse's JSON. Half-nanosecond fractions, which
+  ppsbias carries through its midpoint arithmetic, are dropped: Go's
+  nanosecond integers are far below the bracket.
 - What ppsbias prints as its first line, the configuration (device,
   GPIO, mode, window, affinity, timer slack, PPS capabilities), goes to
   the log at info level; its warning that the median bracket exceeds
@@ -279,16 +284,6 @@ later convenience, not a requirement.
 ## Not yet decided
 
 - The PPS device parameters, above.
-- The per-pulse status fields. ppsbias records a poll status (`noEdge`,
-  `late`, `initialHigh`, `invalidBracket`, `ioError`, `interrupted`), a
-  source status (`missingEvent`, `staleEvent`, `timestampMismatch`,
-  `multipleEvents`, `duplicateEvent`, `ppsSequenceGap`, `sequenceReset`,
-  `clockStep`, `error`) and an unpolled status (`missingNeighbor`,
-  `invalidNeighbor`, `invalidPairing`), and when a late extra event
-  arrives in a slot it rolls back the estimate it has already printed
-  with an `excludedTimestamp` line. Whether to adopt those sets as they
-  are, and whether to keep the rollback or only count the slot as a
-  source failure in the summary.
 - Whether other operations on the device belong here.
 - Man page text.
 
