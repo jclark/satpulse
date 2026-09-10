@@ -132,7 +132,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 	}
 	lg.Info("serial PPS method selected", "method", method)
 	if method == gpsio.PPSMethodPoll {
-		return pps.Poll(ctx, lg, pinReader{r, w}, prewarm, ceCh, stats)
+		return pps.Poll(ctx, lg, pinReader{r, w}, pps.PollParams{PreWarm: prewarm}, ceCh, stats)
 	}
 	cw, ok := r.(ChangeWaiter)
 	if !ok {
