@@ -14,20 +14,20 @@ func TestModelFor(t *testing.T) {
 	}
 }
 
-func TestLevel(t *testing.T) {
+func TestReg(t *testing.T) {
 	for _, tc := range []struct {
-		level      func(int) (int, uint)
+		reg        func(int) (int, uint)
 		gpio       int
 		wantOffset int
 		wantBit    uint
 	}{
-		{bcm283xLevel, 18, 0x34, 18},
-		{bcm283xLevel, 40, 0x38, 8},
-		{rp1Level, 18, 0x10008, 18},
-		{rp1Level, 30, 0x14008, 2},
-		{rp1Level, 40, 0x18008, 6},
+		{bcm283xReg, 18, 0x34, 18},
+		{bcm283xReg, 40, 0x38, 8},
+		{rp1Reg, 18, 0x10008, 18},
+		{rp1Reg, 30, 0x14008, 2},
+		{rp1Reg, 40, 0x18008, 6},
 	} {
-		if offset, bit := tc.level(tc.gpio); offset != tc.wantOffset || bit != tc.wantBit {
+		if offset, bit := tc.reg(tc.gpio); offset != tc.wantOffset || bit != tc.wantBit {
 			t.Errorf("level(%d) = %#x, %d; want %#x, %d", tc.gpio, offset, bit, tc.wantOffset, tc.wantBit)
 		}
 	}

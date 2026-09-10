@@ -29,27 +29,27 @@ type model struct {
 	device string
 	length int
 	count  int
-	level  func(gpio int) (offset int, bit uint)
+	reg    func(gpio int) (offset int, bit uint)
 }
 
 // models lists the supported SoCs. Only 64-bit SoCs are listed: the package
 // is used on arm64 only.
 var models = []model{
-	{soc: "brcm,bcm2712", device: "/dev/gpiomem0", length: 0x30000, count: 54, level: rp1Level},
-	{soc: "brcm,bcm2711", device: "/dev/gpiomem", length: 0x1000, count: 58, level: bcm283xLevel},
-	{soc: "brcm,bcm2837", device: "/dev/gpiomem", length: 0x1000, count: 54, level: bcm283xLevel},
+	{soc: "brcm,bcm2712", device: "/dev/gpiomem0", length: 0x30000, count: 54, reg: rp1Reg},
+	{soc: "brcm,bcm2711", device: "/dev/gpiomem", length: 0x1000, count: 58, reg: bcm283xReg},
+	{soc: "brcm,bcm2837", device: "/dev/gpiomem", length: 0x1000, count: 54, reg: bcm283xReg},
 }
 
-// bcm283xLevel locates a GPIO in the BCM2835 family's level registers: 32
+// bcm283xReg locates a GPIO in the BCM2835 family's level registers: 32
 // GPIOs per register, the first at 0x34.
-func bcm283xLevel(gpio int) (int, uint) {
+func bcm283xReg(gpio int) (int, uint) {
 	return 0x34 + 4*(gpio/32), uint(gpio % 32)
 }
 
-// rp1Level locates a GPIO in the RP1's level registers on the Raspberry Pi
+// rp1Reg locates a GPIO in the RP1's level registers on the Raspberry Pi
 // 5. The GPIOs are in three banks of 28, 6 and 20; each bank's registers are
 // 0x4000 apart, with bank 0's level register at 0x10008.
-func rp1Level(gpio int) (int, uint) {
+func rp1Reg(gpio int) (int, uint) {
 	bank, base := 0, 0
 	if gpio >= 34 {
 		bank, base = 2, 34
@@ -92,7 +92,7 @@ func Open(gpio int) (*Pin, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mapping %s: %w", m.device, err)
 	}
-	offset, bit := m.level(gpio)
+	offset, bit := m.reg(gpio)
 	return &Pin{mapping: b, level: (*uint32)(unsafe.Pointer(&b[offset])), mask: 1 << bit, device: m.device}, nil
 }
 
