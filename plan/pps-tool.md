@@ -17,7 +17,7 @@ the command-line counterpart of the daemon's GPIO source
 ```
 satpulsetool pps [-h|--help] [-d|--pps-device path] [-g|--gpio-pin N]
                  [--bias] [-e|--every-pulse]
-                 [--cpu N] [--priority N] [--max-bracket seconds]
+                 [--cpu N] [--priority N] [--outlier-ratio ratio]
                  [-t|--timeout seconds] [-j|--jsonl]
 ```
 
@@ -45,7 +45,7 @@ No option is required. The selectors choose the mode:
   a pin index in `sdp`, and `--pin` alone would invite the header number.
 - Options that mirror a `[sample.pps.gpio]` key take the key's name in
   kebab case and have no short letter, as `serial` does for its
-  `[sample.serial.pps]` keys: `--cpu`, `--priority`, `--max-bracket`.
+  `[sample.serial.pps]` keys: `--cpu`, `--priority`, `--outlier-ratio`.
   Short letters can be added if typing them proves tiresome.
 - Bias estimation is named by `--bias`, the way `sdp` names its modes,
   rather than implied by giving both selectors: it runs for minutes and
@@ -173,9 +173,10 @@ done with the simple loop. The two modes share `gpiomem` for the read
 and nothing else: the thread setup (affinity, SCHED_FIFO, timer slack)
 and the absolute clock_nanosleep are a few lines each and are written
 separately for each loop rather than shared. The bracket width
-rejection uses `--max-bracket` with the same rule and default under
-`-g` and `--bias`, so a user reads one description; ppsbias's
-several-times-the-median rule is not used.
+rejection uses `--outlier-ratio` with the same rule and default under
+`-g` and `--bias`, so a user reads one description: a multiple of the
+lower quartile of recent brackets, as serial PPS polling uses, rather
+than ppsbias's several-times-the-median rule.
 
 - Predict the next edge as the last kernel timestamp plus one period.
 - Sleep with an absolute clock_nanosleep to a fixed time before the
