@@ -1,6 +1,5 @@
-# pps subcommand for satpulsetool (issue pending)
+# pps subcommand for satpulsetool (#461)
 
-Issue not yet filed; the heading gets its number when it is.
 Related: #412 (satpulsed reading a kernel PPS device).
 
 ## Purpose
