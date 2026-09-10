@@ -260,9 +260,9 @@ func TestPollStatsLog(t *testing.T) {
 	var output bytes.Buffer
 	stats.Log(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	for _, want := range []string{
-		`msg="serial PPS polling statistics" acquire.windows=1 acquire.edges=1 track.windows=0 track.edges=0`,
-		`msg="serial PPS state read times" count=1 min=2ms median=2ms mean=2ms p90=2ms max=2ms`,
-		`msg="serial PPS between-read times" count=0`,
+		`msg="PPS polling statistics" acquire.windows=1 acquire.edges=1 track.windows=0 track.edges=0`,
+		`msg="PPS poll query times" count=1 min=2ms median=2ms mean=2ms p90=2ms max=2ms`,
+		`msg="PPS poll between-query times" count=0`,
 	} {
 		if !strings.Contains(output.String(), want) {
 			t.Errorf("log %q does not contain %q", output.String(), want)

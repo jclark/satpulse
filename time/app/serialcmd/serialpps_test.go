@@ -125,7 +125,7 @@ func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 	if got := output.String(); got != "14:23:05.123456\n" {
 		t.Errorf("output = %q, want one kernel timestamp", got)
 	}
-	if strings.Contains(logs.String(), "serial PPS polling statistics") {
+	if strings.Contains(logs.String(), "PPS polling statistics") {
 		t.Errorf("kernel run logged polling statistics: %q", logs.String())
 	}
 	if conn.method != gpsio.PPSMethodKernel {
@@ -148,7 +148,7 @@ func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
 	if conn.waits != 0 {
 		t.Errorf("wait backend called %d times, want 0", conn.waits)
 	}
-	if !strings.Contains(logs.String(), "serial PPS polling statistics") {
+	if !strings.Contains(logs.String(), "PPS polling statistics") {
 		t.Errorf("forced polling run did not log polling statistics: %q", logs.String())
 	}
 }

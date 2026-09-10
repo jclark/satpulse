@@ -32,6 +32,16 @@ speed = 9600
 # 0 requests the lowest latency available.
 #maxWakeupLatency = 10e-6
 
+# Uncomment when the receiver's PPS output is connected to a Raspberry Pi
+# GPIO pin, to have satpulsed poll the pin for PPS edges (64-bit Linux only).
+#[pps]
+#gpio.pin = 18
+# Polling needs a CPU that does not handle the pin's interrupt, and real-time
+# priority, to be reliable on a loaded system.
+#[sample.pps.gpio]
+#cpu = 3
+#priority = 40
+
 [gps]
 # Uncomment to configure the GPS (changes are not persistent across GPS reboots)
 #config = true

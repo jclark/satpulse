@@ -90,6 +90,19 @@ although this can be reduced by disabling PCIe power management.
 The NTP daemon has no knowledge of this delay and its reported statistics do not take account of it.
 If you can estimate this delay, then you can configure the NTP daemon to compensate for it.
 
+### Polling the GPIO pin with satpulsed
+
+On a 64-bit Raspberry Pi, satpulsed can instead read the GPIO pin itself.
+It polls the pin's level in a short window around each expected pulse,
+which locates the rising edge to within about a microsecond
+and is not subject to the interrupt delay described above.
+The samples it sends to the NTP daemon then include both the precise edge time and the second it belongs to,
+so the NTP daemon needs no PPS refclock of its own,
+and satpulsed's web interface shows the PPS edges.
+The boot configuration below is still needed to make the pin an input;
+the `/dev/pps0` device is simply left unused.
+See the `[pps]` and `[sample.pps.gpio]` tables in the `satpulse.toml` man page.
+
 ### Raspberry Pi boot configuration
 
 Typically, some system-dependent boot configuration is needed to enable PPS on a GPIO pin.
@@ -154,6 +167,15 @@ speed = 9600
 # fix to match the pin you are using for PPS: "cts", "dcd", "dsr", "ri"
 # comment out if you are using the GPIO approach
 pps.pin = "cts"
+
+# Uncomment these to have satpulsed poll the GPIO pin itself, instead of
+# the NTP daemon reading the kernel PPS device. Choose a CPU other than
+# the one handling the pin's interrupt.
+#[pps]
+#gpio.pin = 18
+#[sample.pps.gpio]
+#cpu = 3
+#priority = 40
 
 [gps]
 config = true

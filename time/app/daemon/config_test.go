@@ -228,6 +228,67 @@ interface = "eth0"
 	}
 }
 
+func TestPPSConfig(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[pps]
+gpio.pin = 18
+
+[sample.pps]
+delayUncertainty = 0.01
+
+[sample.pps.gpio]
+cpu = 3
+priority = 40
+`))
+	if err != nil {
+		t.Fatalf("readConfig: %v", err)
+	}
+	if cfg.PPS == nil || cfg.PPS.GPIO == nil || cfg.PPS.GPIO.Pin == nil || *cfg.PPS.GPIO.Pin != 18 {
+		t.Fatalf("PPS config = %+v, want GPIO 18", cfg.PPS)
+	}
+	gen := cfg.Sample.PPS.GeneratorConfig
+	if gen.DelayUncertainty != 0.01 || gen.MaxDelay != 0.8 {
+		t.Errorf("generator config = %+v, want delayUncertainty 0.01 with the default maxDelay", gen)
+	}
+	gpio := cfg.Sample.PPS.GPIO
+	if gpio.CPU == nil || *gpio.CPU != 3 || gpio.Priority != 40 {
+		t.Errorf("GPIO sample config = %+v, want CPU 3 priority 40", gpio)
+	}
+	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
+		t.Fatalf("Validate: %v", err)
+	}
+	if got := cfg.shmFixedPrecision(); got == nil || *got != gpioPPSSHMPrecision {
+		t.Errorf("SHM fixed precision = %v, want %d", got, gpioPPSSHMPrecision)
+	}
+}
+
+func TestPPSConfigValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name, toml, errText string
+	}{
+		{name: "missing pin", toml: "[pps]\n", errText: "gpio.pin in the [pps] table must be specified"},
+		{name: "with serial PPS", toml: "[pps]\ngpio.pin = 18\n[serial.pps]\npin = \"cts\"\n",
+			errText: "the [pps] table cannot be used with pps.pin in the [serial] table"},
+		{name: "with PHC", toml: "[pps]\ngpio.pin = 18\n[phc]\ninterface = \"eth0\"\n",
+			errText: "the [pps] table cannot be used with interface in the [phc] table"},
+		{name: "priority too high", toml: "[pps]\ngpio.pin = 18\n[sample.pps.gpio]\npriority = 100\n",
+			errText: "in sample.pps table: gpio.priority"},
+		{name: "wide interval", toml: "[pps]\ngpio.pin = 18\n[sample.pps]\ndelayUncertainty = 0.3\n",
+			errText: "delayUncertainty + maxDelay"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tc.toml))
+			if err != nil {
+				t.Fatalf("readConfig: %v", err)
+			}
+			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if err == nil || !strings.Contains(err.Error(), tc.errText) {
+				t.Fatalf("Validate error = %v, want %q", err, tc.errText)
+			}
+		})
+	}
+}
+
 func TestSerialPPSKernelMethodRequiresDCD(t *testing.T) {
 	cfg, err := readConfig(strings.NewReader(`
 [serial.pps]

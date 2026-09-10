@@ -338,6 +338,21 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
 		})
 	}
+	if cfg.PPS != nil {
+		gpio := *cfg.PPS.GPIO.Pin
+		spGen = pps.NewGenerator(cfg.Sample.PPS.GeneratorConfig)
+		ch := make(chan pps.CandidateEdge, 1)
+		spCh = ch
+		wg.Go(func() {
+			defer close(ch)
+			lg.Debug("GPIO PPS goroutine started", "gpio", gpio)
+			if err := pps.DetectGPIO(ctx, lg, gpio, cfg.Sample.PPS.GPIO, ch, nil); err != nil && ctx.Err() == nil {
+				lg.Error("GPIO PPS polling failed", "gpio", gpio, "err", err)
+				cancel(fmt.Errorf("GPIO PPS polling failed on GPIO %d: %w", gpio, err))
+			}
+			lg.Debug("GPIO PPS goroutine exited", "gpio", gpio)
+		})
+	}
 	statsObs := newStatsLogObserver(cfg, lg)
 	clockObs, err := newClockLogObserver(cfg, lg, clk, cfg.LeapSecond.leapSecond())
 	if err != nil {

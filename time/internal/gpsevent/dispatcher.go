@@ -278,7 +278,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 				firstSysPulseDeadline = nil
 				d.sysPulseCandidateEdge(ce)
 			} else {
-				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
+				lg.Debug("PPS edge channel of event dispatcher goroutine was closed")
 				spCh = nil
 				firstSysPulseDeadline = nil
 			}
@@ -303,7 +303,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pk
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
 		case <-firstSysPulseDeadline:
-			lg.Warn("no serial PPS edges are being received; check pps.pin in the [serial] table, PPS wiring, and receiver pulse width")
+			lg.Warn("no PPS edges are being received; check the PPS pin configuration, PPS wiring, and receiver pulse width")
 			firstSysPulseDeadline = nil
 		case <-sig:
 			d.obs.ReopenLog()
@@ -329,7 +329,7 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 
 func (d *Dispatcher) sysPulseSample(edge pps.Edge) {
 	if d.spGen == nil {
-		panic("serial PPS edge channel wired without a Generator")
+		panic("PPS edge channel wired without a Generator")
 	}
 	sample, ok := d.spGen.Sample(edge)
 	if !ok {
@@ -411,7 +411,7 @@ type PHCPulseEdge struct {
 }
 
 // sysPulseEdgeType is the LogEvent.Type value for system-clock-timestamped
-// pulse-edge records produced by serial PPS detection.
+// pulse-edge records produced by PPS edge detection.
 const sysPulseEdgeType = "sysPulseEdge"
 
 type SysPulseEdge struct {

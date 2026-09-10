@@ -72,9 +72,61 @@
         }
       }
     },
+    "pps": {
+      "type": "object",
+      "properties": {
+        "gpio": {
+          "type": "object",
+          "properties": {
+            "pin": {
+              "description": "GPIO number of the pin carrying the receiver's PPS pulses",
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": ["pin"]
+        }
+      }
+    },
     "sample": {
       "type": "object",
       "properties": {
+        "pps": {
+          "type": "object",
+          "properties": {
+            "delayUncertainty": {
+              "description": "Uncertainty in measured pulse-to-message delay (s)",
+              "type": "number",
+              "minimum": 0,
+              "exclusiveMaximum": 1,
+              "default": 0.005
+            },
+            "maxDelay": {
+              "description": "Maximum post-pulse message delay (s)",
+              "type": "number",
+              "exclusiveMinimum": 0,
+              "exclusiveMaximum": 1,
+              "default": 0.8
+            },
+            "gpio": {
+              "type": "object",
+              "properties": {
+                "cpu": {
+                  "description": "CPU to pin the GPIO poller to; omit to leave it unpinned",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "priority": {
+                  "description": "SCHED_FIFO priority of the GPIO poller, 1 to 99; 0 leaves normal scheduling",
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 99,
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
         "serial": {
           "type": "object",
           "properties": {

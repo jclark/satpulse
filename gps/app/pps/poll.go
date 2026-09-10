@@ -61,7 +61,7 @@ type poller struct {
 // loss restarts the cycle from acquisition.
 //
 // Candidates caught during acquisition are unsettled, including the catch
-// that completes acquisition, whose transition the "serial PPS acquired" log
+// that completes acquisition, whose transition the "PPS poll acquired" log
 // line marks; tracking candidates are settled once the polling schedule stops
 // limiting the measurement or the window has stopped shrinking. Consumers
 // decide whether an edge is usable from its Uncertainty and Settled state.
@@ -149,15 +149,15 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 				acquired = acquired || queryPaced >= 2
 			}
 			if acquired {
-				p.lg.Debug("serial PPS acquired", "window", window, "bracket", p.lastBracket)
+				p.lg.Debug("PPS poll acquired", "window", window, "bracket", p.lastBracket)
 			}
 			if spacing > minSpacing {
 				spacing /= 2
 				if spacing < minSpacing {
 					spacing = minSpacing
-					p.lg.Debug("serial PPS poll window reached spacing floor", "window", initialPolls*spacing)
+					p.lg.Debug("PPS poll window reached spacing floor", "window", initialPolls*spacing)
 				} else {
-					p.lg.Debug("serial PPS poll window halved", "window", initialPolls*spacing)
+					p.lg.Debug("PPS poll window halved", "window", initialPolls*spacing)
 				}
 			}
 			if acquired {
@@ -177,7 +177,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 		}
 		misses++
 		if misses >= missLimit {
-			p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window, "misses", misses)
+			p.lg.Debug("PPS poll pulse lost, restarting acquisition", "window", window, "misses", misses)
 			return 0, false, nil
 		}
 	}
@@ -332,28 +332,28 @@ func track(window time.Duration, attempt func(time.Duration, bool) (trackObserva
 func (p *poller) logTrackEvent(e trackEvent) {
 	switch e.kind {
 	case trackStarted:
-		p.lg.Info("serial PPS track status", "reason", "start", "window", e.window)
+		p.lg.Info("PPS poll track status", "reason", "start", "window", e.window)
 	case trackChanged:
 		reason := "shrink"
 		if e.nextWindow > e.window {
 			reason = "expand"
 		}
-		p.lg.Info("serial PPS track status", "reason", reason,
+		p.lg.Info("PPS poll track status", "reason", reason,
 			"window", e.window, "nextWindow", e.nextWindow,
 			"stateReads", e.observation.stateReads, "bracket", e.observation.lastBracket,
 			"predictionError", e.observation.predictionError)
 	case trackMissed:
-		p.lg.Info("serial PPS track status", "reason", "miss",
+		p.lg.Info("PPS poll track status", "reason", "miss",
 			"window", e.window, "nextWindow", e.nextWindow,
 			"stateReads", e.observation.stateReads, "bracket", e.observation.lastBracket,
 			"misses", e.misses)
 	case trackRecovered:
-		p.lg.Info("serial PPS track status", "reason", "recovered",
+		p.lg.Info("PPS poll track status", "reason", "recovered",
 			"window", e.window, "stateReads", e.observation.stateReads,
 			"bracket", e.observation.lastBracket,
 			"predictionError", e.observation.predictionError, "misses", e.misses)
 	case trackLost:
-		p.lg.Info("serial PPS track status", "reason", "lost",
+		p.lg.Info("PPS poll track status", "reason", "lost",
 			"window", e.window, "stateReads", e.observation.stateReads,
 			"bracket", e.observation.lastBracket, "misses", e.misses)
 	}
@@ -464,7 +464,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
 	predictionError := edge.mono.Sub(nextEdge)
-	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
+	p.lg.Debug("PPS poll caught edge", "window", window, "bracket", p.lastBracket,
 		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads)
 	p.stats.addWindow(true, acquired)
 	if !acquired {

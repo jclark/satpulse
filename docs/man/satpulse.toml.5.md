@@ -96,6 +96,24 @@ speed = 38400
 pps.pin = "cts"
 ```
 
+## `pps` table
+
+The `pps` table describes a PPS input that is not a modem-control pin of the serial port.
+It names one kind of input:
+
+* `gpio.pin` - an integer giving the GPIO number of a Raspberry Pi pin on which the receiver's PPS pulses arrive;
+  the pin's level is polled directly from the GPIO controller's registers, which locates each rising edge to within about a microsecond;
+  the pin must be configured as an input, as the `pps-gpio` device tree overlay does;
+  cannot be used with `pps.pin` in the `[serial]` table or `interface` in the `[phc]` table;
+  currently supported only on 64-bit Linux on a Raspberry Pi
+
+Example using GPIO 18:
+
+```
+[pps]
+gpio.pin = 18
+```
+
 ## `sample.serial.pps` table
 
 The `sample.serial.pps` table controls how serial PPS edges are detected and associated with UTC-labelled receiver messages.
@@ -132,6 +150,32 @@ delayUncertainty = 0.005
 maxDelay = 0.8
 ```
 
+
+## `sample.pps` table
+
+The `sample.pps` table controls how PPS edges from the input described by the `[pps]` table are associated with UTC-labelled receiver messages.
+It has the `delayUncertainty` and `maxDelay` keys of the `sample.serial.pps` table, with the same meanings and defaults.
+
+## `sample.pps.gpio` table
+
+The `sample.pps.gpio` table controls polling of the pin given by `gpio.pin` in the `[pps]` table.
+Polling reads the pin in a short window around each predicted pulse, so it needs to run promptly and without interruption;
+on a loaded system it is unreliable without the following keys.
+
+* `cpu` - an integer giving the CPU on which to run the poller;
+  choose one that does not handle the pin's interrupt (see `/proc/interrupts`);
+  omitted by default, which leaves the poller unpinned
+* `priority` - an integer from 1 to 99 giving the `SCHED_FIFO` real-time priority at which to run the poller;
+  the default is 0, which leaves it at normal priority;
+  this needs the `CAP_SYS_NICE` capability, which the packaged systemd service allows
+
+Example:
+
+```toml
+[sample.pps.gpio]
+cpu = 3
+priority = 40
+```
 
 ## `gps` table
 
@@ -243,7 +287,7 @@ It supports two protocols: the refclock SOCK protocol defined by chrony, and the
 If the `[phc]` table is not present, samples are normally based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
 The samples from SatPulse can be used to complete the PPS samples.
-When `pps.pin` in the `[serial]` table is configured, samples instead use PPS edges detected on that pin;
+When `pps.pin` in the `[serial]` table or a `[pps]` table is configured, samples instead use PPS edges detected on that pin;
 serial time messages are still used to identify the UTC second and leap indication.
 
 The following key enables use of the refclock SOCK protocol:
