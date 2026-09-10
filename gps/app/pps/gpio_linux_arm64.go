@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/gpiomem"
-	"github.com/jclark/satpulse/gps/ptime"
 	"golang.org/x/sys/unix"
 )
 
@@ -17,7 +16,8 @@ import (
 // poller runs on its own OS thread, pinned to cfg.CPU and at SCHED_FIFO
 // priority cfg.Priority when those are set; the thread is discarded when
 // polling ends, so those settings never reach the rest of the program.
-// Edges bracketed more widely than cfg.MaxBracket are reported unsettled.
+// Edges bracketed more widely than cfg.OutlierRatio allows are reported as
+// outliers.
 // Cancellation takes effect at the next poll, at most one period away. If
 // stats is non-nil, it records polling statistics.
 func DetectGPIO(ctx context.Context, lg *slog.Logger, gpio int, cfg GPIOConfig, ceCh chan<- CandidateEdge, stats *PollStats) error {
@@ -38,7 +38,7 @@ func DetectGPIO(ctx context.Context, lg *slog.Logger, gpio int, cfg GPIOConfig, 
 			return
 		}
 		params := gpioPollParams
-		params.MaxBracket = ptime.Seconds(cfg.MaxBracket)
+		params.OutlierRatio = cfg.OutlierRatio
 		errCh <- Poll(ctx, lg, gpioReader{pin}, params, ceCh, stats)
 	}()
 	return <-errCh

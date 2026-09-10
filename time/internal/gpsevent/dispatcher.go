@@ -108,7 +108,6 @@ type Dispatcher struct {
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
 	ppsGen                 *pps.Generator
-	ppsMaxUncertainty      time.Duration
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
@@ -129,7 +128,6 @@ func NewDispatcher(
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
 	ppsGen *pps.Generator,
-	ppsMaxUncertainty time.Duration,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
@@ -177,10 +175,6 @@ func NewDispatcher(
 	}
 	if ppsGen != nil {
 		d.ppsGen = ppsGen
-		d.ppsMaxUncertainty = ppsMaxUncertainty
-		if ppsMaxUncertainty == 0 {
-			d.ppsMaxUncertainty = sysPulseMaxUncertainty
-		}
 		timeMsgBuffer.SetMsgUTCTimer(ppsGen)
 	} else if controller == nil && (rc != nil || shm != nil) {
 		// In serial timing mode (no PHC, but refclock configured), feed
@@ -332,7 +326,7 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 	// An outlier's bracket is a stalled read, so its midpoint can be off by
 	// most of the bracket; the refclock protocol carries no uncertainty, so
 	// the only protection for the time consumer is not to send it.
-	if (ce.Uncertainty <= d.ppsMaxUncertainty || ce.Settled) && !ce.Outlier {
+	if (ce.Uncertainty <= sysPulseMaxUncertainty || ce.Settled) && !ce.Outlier {
 		d.sysPulseSample(ce.Edge)
 	}
 }

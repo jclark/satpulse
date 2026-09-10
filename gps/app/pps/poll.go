@@ -47,12 +47,6 @@ type PollParams struct {
 	// scheduled poll. It reports whether it actually waited: false means
 	// the scheduled time was already past or nearer than it can sleep to.
 	Wait func(ctx context.Context, t time.Time) (bool, error)
-	// MaxBracket, if nonzero, is the widest bracket that counts as the
-	// resolution the reader achieves. A caught edge with a wider bracket,
-	// which a stall between its two polls produces, is reported unsettled
-	// whatever the polling state, so that consumers gate it on its
-	// Uncertainty alone; it still feeds the tracking loop.
-	MaxBracket time.Duration
 }
 
 type poller struct {
@@ -421,8 +415,7 @@ func (p *poller) init() error {
 // excluded from slept. A candidate is settled when tracking (acquired) says
 // the window has stopped shrinking (atFloor), or when this window's own
 // polling could not have been finer: its spacing was at the floor, or the
-// state queries paced it without a scheduled sleep. A bracket wider than
-// MaxBracket is never settled.
+// state queries paced it without a scheduled sleep.
 func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor bool) (bool, time.Duration, error) {
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
@@ -509,8 +502,8 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 			TRead:     cur.poll.end.mono,
 		},
 		Uncertainty: halfCeil(p.lastBracket),
-		Settled: settled && (p.params.MaxBracket == 0 || p.lastBracket <= p.params.MaxBracket),
-		Outlier: outlier,
+		Settled:     settled,
+		Outlier:     outlier,
 	}
 	select {
 	case p.ceCh <- ce:

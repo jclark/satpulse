@@ -30,7 +30,7 @@ type flagVars struct {
 }
 
 const summary = `[-h|--help] [-d|--pps-device path] [-g|--gpio-pin N]
-              [--cpu N] [--priority N] [--max-bracket seconds]
+              [--cpu N] [--priority N] [--outlier-ratio ratio]
               [-t|--timeout seconds] [-j|--jsonl]`
 
 // Cmd executes the pps subcommand with the given arguments.
@@ -72,8 +72,8 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags.IntVarP(&gpio, "gpio-pin", "g", 0, "poll GPIO `N` for PPS edges")
 	flags.IntVar(&cpu, "cpu", 0, "pin the GPIO poller to CPU `N`")
 	flags.IntVar(&v.cfg.Priority, "priority", 0, "run the GPIO poller at SCHED_FIFO priority `N`")
-	flags.Float64Var(&v.cfg.MaxBracket, "max-bracket", pps.DefaultGPIOConfig().MaxBracket,
-		"report edges bracketed more widely than `seconds` as settling; 0 disables")
+	flags.Float64Var(&v.cfg.OutlierRatio, "outlier-ratio", pps.DefaultGPIOConfig().OutlierRatio,
+		"mark an edge an outlier when its bracket exceeds `ratio` times the lower quartile of recent brackets; 0 disables")
 	flags.Float64VarP(&timeoutSec, "timeout", "t", 10, "stop after `seconds` (0 = until interrupted)")
 	flags.BoolVarP(&v.jsonl, "jsonl", "j", false, "write output in JSON Lines format")
 	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
@@ -100,7 +100,7 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		return
 	}
 	if v.gpio == nil {
-		for _, name := range []string{"cpu", "priority", "max-bracket"} {
+		for _, name := range []string{"cpu", "priority", "outlier-ratio"} {
 			if flags.Changed(name) {
 				err = fmt.Errorf("--%s requires --gpio-pin", name)
 				return
@@ -118,8 +118,8 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("--priority must be between 0 and 99")
 		return
 	}
-	if !(v.cfg.MaxBracket >= 0 && v.cfg.MaxBracket < 1) {
-		err = fmt.Errorf("--max-bracket must be at least 0 and less than 1")
+	if r := v.cfg.OutlierRatio; !(r == 0 || (r >= 1 && !math.IsInf(r, 1))) {
+		err = fmt.Errorf("--outlier-ratio must be 0 or at least 1")
 		return
 	}
 	if v.device == "" && v.gpio == nil && flags.Changed("timeout") {
@@ -288,6 +288,7 @@ type gpioEvent struct {
 	T           string  `json:"t"`
 	Uncertainty float64 `json:"uncertainty,omitzero"`
 	Settling    bool    `json:"settling,omitzero"`
+	Outlier     bool    `json:"outlier,omitzero"`
 }
 
 // pollGPIO polls the GPIO with the daemon's poller and prints every edge it
@@ -313,7 +314,7 @@ func pollGPIO(ctx context.Context, lg *slog.Logger, v flagVars) error {
 			var err error
 			if v.jsonl {
 				err = enc.Encode(&gpioEvent{GPIO: *v.gpio, T: t.Format(rfc3339Format),
-					Uncertainty: ce.Uncertainty.Seconds(), Settling: !ce.Settled})
+					Uncertainty: ce.Uncertainty.Seconds(), Settling: !ce.Settled, Outlier: ce.Outlier})
 			} else {
 				_, err = fmt.Fprintln(os.Stdout, t.Format(timeOfDayFormat))
 			}

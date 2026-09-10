@@ -123,12 +123,11 @@
                   "maximum": 99,
                   "default": 0
                 },
-                "maxBracket": {
-                  "description": "Widest interval between the polls bracketing an edge for it to be used (s); 0 uses every edge",
+                "outlierRatio": {
+                  "description": "Bracket multiple of the recent lower quartile beyond which a polled edge is an outlier; 0 disables, otherwise at least 1",
                   "type": "number",
                   "minimum": 0,
-                  "exclusiveMaximum": 1,
-                  "default": 5e-6
+                  "default": 3
                 }
               }
             }

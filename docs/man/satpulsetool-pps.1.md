@@ -6,7 +6,7 @@ satpulsetool-pps - examine kernel PPS devices and poll GPIO pins for PPS edges
 
 **satpulsetool** [*global options*] **pps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-pps\-device** *path*] [**\-g**\|**\-\-gpio\-pin** *N*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-cpu** *N*] [**\-\-priority** *N*] [**\-\-max\-bracket** *seconds*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-cpu** *N*] [**\-\-priority** *N*] [**\-\-outlier\-ratio** *ratio*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-timeout** *seconds*] [**\-j**\|**\-\-jsonl**]
 
 # DESCRIPTION
@@ -47,9 +47,10 @@ Requires **\-g**.
 The default is 0, which leaves it at normal priority.
 Requires **\-g**.
 
-**\-\-max\-bracket** *seconds*
-: Report an edge whose two bracketing reads are more than *seconds* apart as settling rather than settled, since an interruption between the reads mislocates it.
-The default is 5e-6; 0 reports every edge as the poller finds it.
+**\-\-outlier\-ratio** *ratio*
+: Mark an edge an outlier when the two reads that bracket it are further apart than *ratio* times the lower quartile of recent edges' brackets, since an interruption between the reads mislocates it.
+*ratio* is 0, which disables the check, or at least 1.
+The default is 3.
 Requires **\-g**.
 
 **\-t**, **\-\-timeout** *seconds*
@@ -68,9 +69,10 @@ and, for a device that can echo edges to an output, an `echo` array of the edges
 With **\-d**, a timestamp object has a `device` string, an RFC 3339 UTC timestamp `t` with nanoseconds,
 and the device's sequence number `seq` for the edge.
 With **\-g**, an edge object has a numeric `gpio`, a timestamp `t` as for **\-d**,
-and optional fields `uncertainty` in seconds and `settling`.
+and optional fields `uncertainty` in seconds, `settling` and `outlier`.
 `uncertainty` is half the interval between the two reads bracketing the edge.
-A `settling` value of true means the edge is not to be relied on: the accuracy of subsequent edges is still expected to improve, during acquisition or while the polling window recovers from missed pulses, or this edge's bracket exceeded **\-\-max\-bracket**.
+A `settling` value of true means the accuracy of subsequent edges is still expected to improve, during acquisition or while the polling window recovers from missed pulses.
+An `outlier` value of true means the reads bracketing the edge were far slower than recent ones, as when a stall interrupts a read; see **\-\-outlier\-ratio**.
 
 # EXIT STATUS
 

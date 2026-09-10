@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -293,6 +294,9 @@ func (cfg PPSSampleConfig) Validate() error {
 	msgs := check.Validate(cfg)
 	if err := cfg.GeneratorConfig.Validate(); err != nil {
 		msgs = append(msgs, err.Error())
+	}
+	if r := cfg.GPIO.OutlierRatio; r > 0 && r < 1 || math.IsInf(r, 1) {
+		msgs = append(msgs, fmt.Sprintf("gpio.outlierRatio: must be 0 or a finite number at least 1, got %g", r))
 	}
 	switch len(msgs) {
 	case 0:
