@@ -229,7 +229,7 @@ func watchDevice(ctx context.Context, lg *slog.Logger, v flagVars) error {
 		}
 		assert := info.Assert
 		if assert.Sequence != prev.Assert.Sequence {
-			if missed := assert.Sequence - prev.Assert.Sequence - 1; missed > 0 && n > 0 {
+			if missed := assert.Sequence - prev.Assert.Sequence - 1; missed > 0 {
 				lg.Warn("missed PPS assert events", "device", v.device, "missed", missed)
 			}
 			if err := printEvent(enc, v, assert); err != nil {
