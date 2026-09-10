@@ -15,7 +15,7 @@ the command-line counterpart of the daemon's GPIO source
 
 ```
 satpulsetool pps [-h|--help] [-d|--pps-device path] [-g|--gpio-pin N]
-                 [--bias] [-e|--every-pulse]
+                 [--echo] [--bias] [-e|--every-pulse]
                  [--cpu N] [--priority N] [--outlier-ratio ratio]
                  [-t|--timeout seconds] [-j|--jsonl]
 ```
@@ -284,7 +284,6 @@ later convenience, not a requirement.
 ## Not yet decided
 
 - The PPS device parameters, above.
-- Whether other operations on the device belong here.
 - Man page text.
 
 ## Reference
