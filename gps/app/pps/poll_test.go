@@ -564,6 +564,43 @@ func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 	})
 }
 
+// TestPollMaxBracketUnsettles sets MaxBracket below the bracket that the
+// query time alone produces, so that every caught edge exceeds it, and
+// checks that none is settled although tracking runs.
+func TestPollMaxBracketUnsettles(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 20 * time.Microsecond}
+		ctx, cancel := context.WithCancel(context.Background())
+		candidates := make(chan CandidateEdge)
+		errCh := make(chan error, 1)
+		params := PollParams{MaxBracket: 10 * time.Microsecond}
+		go func() { errCh <- Poll(ctx, testLog, f, params, candidates, nil) }()
+		deadline := time.After(20 * period)
+		n := 0
+		for timedOut := false; !timedOut; {
+			select {
+			case candidate := <-candidates:
+				n++
+				if candidate.Uncertainty <= halfCeil(params.MaxBracket) {
+					t.Errorf("candidate %d uncertainty %v, want above half of MaxBracket %v", n, candidate.Uncertainty, params.MaxBracket)
+				}
+				if candidate.Settled {
+					t.Errorf("candidate %d with uncertainty %v is settled, want unsettled above MaxBracket %v",
+						n, candidate.Uncertainty, params.MaxBracket)
+				}
+			case <-deadline:
+				timedOut = true
+			}
+		}
+		cancel()
+		<-errCh
+		if n < 10 {
+			t.Errorf("caught %d edges in 20 periods, want at least 10", n)
+		}
+	})
+}
+
 func TestPollMissedPulseKeepsLatch(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,

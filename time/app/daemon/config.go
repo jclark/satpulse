@@ -202,6 +202,7 @@ func defaultConfig() *Config {
 	cfg.GPS = gpsDefault
 	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
 	cfg.Sample.PPS.GeneratorConfig = pps.DefaultGeneratorConfig()
+	cfg.Sample.PPS.GPIO = pps.DefaultGPIOConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"

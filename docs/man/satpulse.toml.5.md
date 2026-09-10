@@ -168,6 +168,9 @@ on a loaded system it is unreliable without the following keys.
 * `priority` - an integer from 1 to 99 giving the `SCHED_FIFO` real-time priority at which to run the poller;
   the default is 0, which leaves it at normal priority;
   this needs the `CAP_SYS_NICE` capability, which the packaged systemd service allows
+* `maxBracket` - a number of seconds giving the widest interval between the two polls bracketing an edge for the edge to be used as a sample;
+  an edge is located to the midpoint of its bracket, so a bracket stretched by an interruption between the polls mislocates it;
+  the default is 5e-6, a few times the pin read time; 0 uses every edge
 
 Example:
 

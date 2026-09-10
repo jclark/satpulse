@@ -108,6 +108,7 @@ type Dispatcher struct {
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
 	spGen                 *pps.Generator
+	spMaxUncertainty      time.Duration
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
@@ -128,6 +129,7 @@ func NewDispatcher(
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
 	spGen *pps.Generator,
+	spMaxUncertainty time.Duration,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
@@ -175,6 +177,10 @@ func NewDispatcher(
 	}
 	if spGen != nil {
 		d.spGen = spGen
+		d.spMaxUncertainty = spMaxUncertainty
+		if spMaxUncertainty == 0 {
+			d.spMaxUncertainty = sysPulseMaxUncertainty
+		}
 		timeMsgBuffer.SetMsgUTCTimer(spGen)
 	} else if controller == nil && (rc != nil || shm != nil) {
 		// In serial timing mode (no PHC, but refclock configured), feed
@@ -322,7 +328,7 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 			Settled:     ce.Settled,
 		},
 	})
-	if ce.Uncertainty <= sysPulseMaxUncertainty || ce.Settled {
+	if ce.Uncertainty <= d.spMaxUncertainty || ce.Settled {
 		d.sysPulseSample(ce.Edge)
 	}
 }

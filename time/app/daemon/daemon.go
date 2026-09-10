@@ -441,7 +441,15 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, spGen, ls, obs, eventLogPath, tStart, gs)
+	// The GPIO poller resolves edges to a microsecond or so, so a bracket
+	// wider than the configured limit is a stall, not the hardware's
+	// resolution; the dispatcher gates on the candidate's uncertainty, half
+	// the bracket. Serial PPS keeps the dispatcher's default limit.
+	var spMaxUncertainty time.Duration
+	if cfg.PPS != nil {
+		spMaxUncertainty = ptime.Seconds(cfg.Sample.PPS.GPIO.MaxBracket) / 2
+	}
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, spGen, spMaxUncertainty, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
