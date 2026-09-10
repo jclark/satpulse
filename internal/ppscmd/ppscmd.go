@@ -65,21 +65,27 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("pps command does not accept positional arguments")
 		return
 	}
+	if flags.Changed("pps-device") && v.device == "" {
+		err = fmt.Errorf("--pps-device must not be empty")
+		return
+	}
 	if v.device == "" && flags.Changed("timeout") {
 		err = fmt.Errorf("--timeout requires --pps-device")
 		return
 	}
-	switch {
-	case math.IsNaN(timeoutSec) || math.IsInf(timeoutSec, 0):
+	if math.IsNaN(timeoutSec) || math.IsInf(timeoutSec, 0) {
 		err = fmt.Errorf("--timeout must be finite")
 		return
-	case timeoutSec < 0:
+	}
+	if timeoutSec < 0 {
 		err = fmt.Errorf("--timeout must not be negative")
 		return
-	case timeoutSec >= float64(math.MaxInt64)/float64(time.Second):
+	}
+	if timeoutSec >= float64(math.MaxInt64)/float64(time.Second) {
 		err = fmt.Errorf("--timeout is too large")
 		return
-	case timeoutSec > 0 && ptime.Seconds(timeoutSec) == 0:
+	}
+	if timeoutSec > 0 && ptime.Seconds(timeoutSec) == 0 {
 		err = fmt.Errorf("--timeout is too small")
 		return
 	}
