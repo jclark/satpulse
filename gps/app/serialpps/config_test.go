@@ -33,6 +33,11 @@ func TestConfig(t *testing.T) {
 		{name: "zero maximum", cfg: Config{GeneratorConfig: pps.GeneratorConfig{DelayUncertainty: 0.005}}, errText: "maxDelay"},
 		{name: "prewarm", cfg: Config{GeneratorConfig: pps.DefaultGeneratorConfig(), PollPreWarm: 0.05}},
 		{name: "negative prewarm", cfg: Config{GeneratorConfig: pps.DefaultGeneratorConfig(), PollPreWarm: -0.01}, errText: "pollPreWarm"},
+		{name: "outlier check disabled", cfg: Config{GeneratorConfig: base}},
+		{name: "outlier ratio below one", cfg: Config{GeneratorConfig: base, PollOutlierRatio: 0.5}, errText: "pollOutlierRatio"},
+		{name: "negative outlier ratio", cfg: Config{GeneratorConfig: base, PollOutlierRatio: -3}, errText: "pollOutlierRatio"},
+		{name: "NaN outlier ratio", cfg: Config{GeneratorConfig: base, PollOutlierRatio: math.NaN()}, errText: "pollOutlierRatio"},
+		{name: "infinite outlier ratio", cfg: Config{GeneratorConfig: base, PollOutlierRatio: math.Inf(1)}, errText: "pollOutlierRatio"},
 		{name: "one-second interval", cfg: Config{GeneratorConfig: pps.GeneratorConfig{DelayUncertainty: 0.2, MaxDelay: 0.8}}, errText: "delayUncertainty + maxDelay"},
 		{name: "interval over one second", cfg: Config{GeneratorConfig: pps.GeneratorConfig{DelayUncertainty: 0.3, MaxDelay: 0.8}}, errText: "delayUncertainty + maxDelay"},
 	}
