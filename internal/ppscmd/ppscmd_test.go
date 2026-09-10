@@ -19,6 +19,9 @@ func TestParseFlags(t *testing.T) {
 		{args: []string{"-d", "/dev/pps0", "-t", "0", "-j"}},
 		{args: []string{"-t", "5"}, wantErr: "requires --pps-device"},
 		{args: []string{"-d", "/dev/pps0", "-t", "-1"}, wantErr: "not be negative"},
+		{args: []string{"-d", "/dev/pps0", "-t", "NaN"}, wantErr: "must be finite"},
+		{args: []string{"-d", "/dev/pps0", "-t", "1e-10"}, wantErr: "too small"},
+		{args: []string{"-d", "/dev/pps0", "-t", "1e300"}, wantErr: "too large"},
 		{args: []string{"/dev/pps0"}, wantErr: "positional"},
 	} {
 		_, _, _, err := parseFlags("pps", tc.args)

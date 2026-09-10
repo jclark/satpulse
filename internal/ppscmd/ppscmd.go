@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/fs"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/lib/kpps"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/spf13/pflag"
 )
 
@@ -67,11 +69,21 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("--timeout requires --pps-device")
 		return
 	}
-	if timeoutSec < 0 {
+	switch {
+	case math.IsNaN(timeoutSec) || math.IsInf(timeoutSec, 0):
+		err = fmt.Errorf("--timeout must be finite")
+		return
+	case timeoutSec < 0:
 		err = fmt.Errorf("--timeout must not be negative")
 		return
+	case timeoutSec >= float64(math.MaxInt64)/float64(time.Second):
+		err = fmt.Errorf("--timeout is too large")
+		return
+	case timeoutSec > 0 && ptime.Seconds(timeoutSec) == 0:
+		err = fmt.Errorf("--timeout is too small")
+		return
 	}
-	v.timeout = time.Duration(timeoutSec * float64(time.Second))
+	v.timeout = ptime.Seconds(timeoutSec)
 	return
 }
 
