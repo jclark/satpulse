@@ -4,8 +4,10 @@
 package pps
 
 import (
+	"fmt"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/check"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -58,6 +60,17 @@ type GeneratorConfig struct {
 // configuration.
 func DefaultGeneratorConfig() GeneratorConfig {
 	return GeneratorConfig{DelayUncertainty: 0.005, MaxDelay: 0.8}
+}
+
+// Validate checks that the delay interval is narrower than one second, so at
+// most one integral UTC label can satisfy it. The keys' own ranges are
+// expressed by check tags, so a struct embedding GeneratorConfig validates
+// them with check.Validate and calls this for the interval.
+func (cfg GeneratorConfig) Validate() error {
+	if len(check.Validate(cfg)) == 0 && !(cfg.DelayUncertainty+cfg.MaxDelay < 1) {
+		return fmt.Errorf("delayUncertainty + maxDelay: must be < 1, got %g", cfg.DelayUncertainty+cfg.MaxDelay)
+	}
+	return nil
 }
 
 // Sample is a PPS refclock sample.

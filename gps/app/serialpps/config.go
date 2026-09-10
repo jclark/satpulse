@@ -35,9 +35,8 @@ func DefaultConfig() Config {
 // second, so at most one integral UTC label can satisfy it.
 func (cfg Config) Validate() error {
 	msgs := check.Validate(cfg)
-	if cfg.DelayUncertainty >= 0 && cfg.DelayUncertainty < 1 && cfg.MaxDelay > 0 && cfg.MaxDelay < 1 &&
-		!(cfg.DelayUncertainty+cfg.MaxDelay < 1) {
-		msgs = append(msgs, fmt.Sprintf("delayUncertainty + maxDelay: must be < 1, got %g", cfg.DelayUncertainty+cfg.MaxDelay))
+	if err := cfg.GeneratorConfig.Validate(); err != nil {
+		msgs = append(msgs, err.Error())
 	}
 	if cfg.Method < 0 || cfg.Method > gpsio.PPSMethodKernel {
 		msgs = append(msgs, fmt.Sprintf("method: invalid value %d", int(cfg.Method)))
