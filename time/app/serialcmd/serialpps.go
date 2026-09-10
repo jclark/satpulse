@@ -256,6 +256,7 @@ type ppsEvent struct {
 	T           string  `json:"t"`
 	Uncertainty float64 `json:"uncertainty,omitzero"`
 	Settling    bool    `json:"settling,omitzero"`
+	Outlier     bool    `json:"outlier,omitzero"`
 }
 
 func (e *ppsOutputError) Error() string {
@@ -286,6 +287,7 @@ func (p *edgePrinter) print(device string, edge pps.CandidateEdge) error {
 			T:           t.Format("2006-01-02T15:04:05.000000Z"),
 			Uncertainty: edge.Uncertainty.Seconds(),
 			Settling:    !edge.Settled,
+			Outlier:     edge.Outlier,
 		}
 		err = json.NewEncoder(p.out).Encode(&event)
 	}

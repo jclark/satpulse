@@ -38,12 +38,17 @@ type Edge struct {
 // tracking while a window grown by misses is still shrinking back. Timing
 // consumers can accept unsettled candidates with sufficiently small
 // Uncertainty, and use Settled to accept the resolution the hardware can
-// achieve. A wait or kernel candidate carries the backend timestamp directly,
-// has no polling uncertainty, and is always settled.
+// achieve. Outlier says the bracket is far wider than the hardware's recent
+// settled brackets, which is what a query stalled by host load produces:
+// the edge is inside the bracket but its midpoint is not a useful estimate,
+// so timing consumers should withhold it even though it is settled. A wait
+// or kernel candidate carries the backend timestamp directly, has no polling
+// uncertainty, and is always settled.
 type CandidateEdge struct {
 	Edge
 	Uncertainty time.Duration
 	Settled     bool
+	Outlier     bool
 }
 
 // GeneratorConfig controls how PPS edges are associated with UTC-labelled
