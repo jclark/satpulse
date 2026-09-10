@@ -28,7 +28,7 @@ func TestReg(t *testing.T) {
 		{rp1Reg, 40, 0x18008, 6},
 	} {
 		if offset, bit := tc.reg(tc.gpio); offset != tc.wantOffset || bit != tc.wantBit {
-			t.Errorf("level(%d) = %#x, %d; want %#x, %d", tc.gpio, offset, bit, tc.wantOffset, tc.wantBit)
+			t.Errorf("reg(%d) = %#x, %d; want %#x, %d", tc.gpio, offset, bit, tc.wantOffset, tc.wantBit)
 		}
 	}
 }
