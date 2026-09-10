@@ -24,7 +24,7 @@ The *command* must be one of the following.
 : Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
 
 **pps**
-: Examine kernel PPS devices.
+: Examine kernel PPS devices and poll GPIO pins for PPS edges.
 
 **syncsim**
 : Simulate synchronizing a PHC with a GPS receiver

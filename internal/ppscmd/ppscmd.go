@@ -1,5 +1,6 @@
 // Package ppscmd implements the pps subcommand of satpulsetool, which lists
-// kernel PPS devices and prints the timestamps of one as they arrive.
+// kernel PPS devices, prints the timestamps of one as they arrive, or polls
+// a GPIO for PPS edges.
 package ppscmd
 
 import (
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/lib/kpps"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/spf13/pflag"
@@ -25,11 +27,15 @@ import (
 
 type flagVars struct {
 	device  string
+	gpio    *int // nil when not given
+	cfg     pps.GPIOConfig
 	timeout time.Duration
 	jsonl   bool
 }
 
-const summary = `[-h|--help] [-d|--pps-device path] [-t|--timeout seconds] [-j|--jsonl]`
+const summary = `[-h|--help] [-d|--pps-device path] [-g|--gpio-pin N]
+              [--cpu N] [--priority N] [--max-bracket seconds]
+              [-t|--timeout seconds] [-j|--jsonl]`
 
 // Cmd executes the pps subcommand with the given arguments.
 func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
@@ -41,11 +47,18 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return usageFunc(progName), nil
 	}
 	lg := cmd.NewDefaultLogger(logWriter, logLevel)
-	if v.device == "" {
+	if v.device == "" && v.gpio == nil {
 		return "", listDevices(lg, sysClassPPS, os.Stdout, v.jsonl)
 	}
 	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
 	defer cancel()
+	if v.timeout > 0 {
+		ctx, cancel = context.WithTimeout(ctx, v.timeout)
+		defer cancel()
+	}
+	if v.gpio != nil {
+		return "", pollGPIO(ctx, lg, v)
+	}
 	return "", watchDevice(ctx, lg, v)
 }
 
@@ -53,8 +66,14 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.SortFlags = false
 	var timeoutSec float64
+	var gpio, cpu int
 	flags.BoolVarP(&help, "help", "h", false, "show usage help for the pps command")
 	flags.StringVarP(&v.device, "pps-device", "d", "", "print the assert timestamps of the PPS device at `path`")
+	flags.IntVarP(&gpio, "gpio-pin", "g", 0, "poll GPIO `N` for PPS edges")
+	flags.IntVar(&cpu, "cpu", 0, "pin the GPIO poller to CPU `N`")
+	flags.IntVar(&v.cfg.Priority, "priority", 0, "run the GPIO poller at SCHED_FIFO priority `N`")
+	flags.Float64Var(&v.cfg.MaxBracket, "max-bracket", pps.DefaultGPIOConfig().MaxBracket,
+		"report edges bracketed more widely than `seconds` as settling; 0 disables")
 	flags.Float64VarP(&timeoutSec, "timeout", "t", 10, "stop after `seconds` (0 = until interrupted)")
 	flags.BoolVarP(&v.jsonl, "jsonl", "j", false, "write output in JSON Lines format")
 	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
@@ -65,8 +84,42 @@ func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc
 		err = fmt.Errorf("pps command does not accept positional arguments")
 		return
 	}
-	if v.device == "" && flags.Changed("timeout") {
-		err = fmt.Errorf("--timeout requires --pps-device")
+	if flags.Changed("gpio-pin") {
+		if gpio < 0 {
+			err = fmt.Errorf("--gpio-pin must not be negative")
+			return
+		}
+		v.gpio = &gpio
+	}
+	if v.device != "" && v.gpio != nil {
+		err = fmt.Errorf("--pps-device cannot be combined with --gpio-pin")
+		return
+	}
+	if v.gpio == nil {
+		for _, name := range []string{"cpu", "priority", "max-bracket"} {
+			if flags.Changed(name) {
+				err = fmt.Errorf("--%s requires --gpio-pin", name)
+				return
+			}
+		}
+	}
+	if flags.Changed("cpu") {
+		if cpu < 0 {
+			err = fmt.Errorf("--cpu must not be negative")
+			return
+		}
+		v.cfg.CPU = &cpu
+	}
+	if v.cfg.Priority < 0 || v.cfg.Priority > 99 {
+		err = fmt.Errorf("--priority must be between 0 and 99")
+		return
+	}
+	if !(v.cfg.MaxBracket >= 0 && v.cfg.MaxBracket < 1) {
+		err = fmt.Errorf("--max-bracket must be at least 0 and less than 1")
+		return
+	}
+	if v.device == "" && v.gpio == nil && flags.Changed("timeout") {
+		err = fmt.Errorf("--timeout requires --pps-device or --gpio-pin")
 		return
 	}
 	switch {
@@ -206,11 +259,6 @@ func watchDevice(ctx context.Context, lg *slog.Logger, v flagVars) error {
 		return err
 	}
 	defer src.Close()
-	if v.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, v.timeout)
-		defer cancel()
-	}
 	// Closing the source is what interrupts a waiting Fetch.
 	defer context.AfterFunc(ctx, func() { src.Close() })()
 	prev, err := src.Fetch(kpps.Info{}, 0)
@@ -245,11 +293,66 @@ func watchDevice(ctx context.Context, lg *slog.Logger, v flagVars) error {
 	return nil
 }
 
+const (
+	timeOfDayFormat = "15:04:05.000000000"
+	rfc3339Format   = "2006-01-02T15:04:05.000000000Z"
+)
+
 func printEvent(enc *json.Encoder, v flagVars, e kpps.Edge) error {
 	t := e.T.UTC()
 	if !v.jsonl {
-		_, err := fmt.Fprintln(os.Stdout, t.Format("15:04:05.000000000"))
+		_, err := fmt.Fprintln(os.Stdout, t.Format(timeOfDayFormat))
 		return err
 	}
-	return enc.Encode(&ppsEvent{Device: v.device, T: t.Format("2006-01-02T15:04:05.000000000Z"), Seq: e.Sequence})
+	return enc.Encode(&ppsEvent{Device: v.device, T: t.Format(rfc3339Format), Seq: e.Sequence})
+}
+
+type gpioEvent struct {
+	GPIO        int     `json:"gpio"`
+	T           string  `json:"t"`
+	Uncertainty float64 `json:"uncertainty,omitzero"`
+	Settling    bool    `json:"settling,omitzero"`
+}
+
+// pollGPIO polls the GPIO with the daemon's poller and prints every edge it
+// catches, settling ones included, until ctx is done.
+func pollGPIO(ctx context.Context, lg *slog.Logger, v flagVars) error {
+	edges := make(chan pps.CandidateEdge, 16)
+	errCh := make(chan error, 1)
+	stats := new(pps.PollStats)
+	if !lg.Enabled(ctx, slog.LevelInfo) {
+		stats = nil
+	}
+	go func() {
+		err := pps.DetectGPIO(ctx, lg, *v.gpio, v.cfg, edges, stats)
+		stats.Log(lg)
+		errCh <- err
+	}()
+	enc := json.NewEncoder(os.Stdout)
+	n := 0
+	for {
+		select {
+		case ce := <-edges:
+			t := ce.Timestamp.UTC()
+			var err error
+			if v.jsonl {
+				err = enc.Encode(&gpioEvent{GPIO: *v.gpio, T: t.Format(rfc3339Format),
+					Uncertainty: ce.Uncertainty.Seconds(), Settling: !ce.Settled})
+			} else {
+				_, err = fmt.Fprintln(os.Stdout, t.Format(timeOfDayFormat))
+			}
+			if err != nil {
+				return err
+			}
+			n++
+		case err := <-errCh:
+			if err != nil && ctx.Err() == nil {
+				return err
+			}
+			if n == 0 && v.timeout > 0 {
+				return noDataError{msg: "no PPS edges detected"}
+			}
+			return nil
+		}
+	}
 }

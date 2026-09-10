@@ -105,7 +105,7 @@ var descriptions = []struct {
 	{"gps", "configure a GPS device"},
 	{"serial", "examine serial ports"},
 	{"sdp", "control software-defined pins on PTP hardware clocks"},
-	{"pps", "examine kernel PPS devices"},
+	{"pps", "examine kernel PPS devices and poll GPIO pins for PPS edges"},
 	{"syncsim", "run clock synchronization simulation"},
 	{"ubxsim", "run u-blox receiver simulation"},
 	{"convobs", "convert raw and JSON observations"},
