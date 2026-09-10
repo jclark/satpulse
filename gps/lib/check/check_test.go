@@ -2,6 +2,7 @@ package check
 
 import (
 	"math"
+	"reflect"
 	"strings"
 	"testing"
 )
@@ -484,5 +485,20 @@ func TestValidate_EmbeddedStruct(t *testing.T) {
 	}
 	if !strings.HasPrefix(errs[1], "named.inner.field:") {
 		t.Errorf("tagged embedded field named %q, want named.inner.field", errs[1])
+	}
+}
+
+func TestValidate_Embedded(t *testing.T) {
+	type Inner struct {
+		Level int `check:">0"`
+	}
+	type Count int
+	type Outer struct {
+		Inner
+		Count `check:">0"`
+	}
+	errs := Validate(Outer{})
+	if want := []string{"Level: must be > 0, got 0", "Count: must be > 0, got 0"}; !reflect.DeepEqual(errs, want) {
+		t.Errorf("Validate(Outer{}) = %q, want %q", errs, want)
 	}
 }
