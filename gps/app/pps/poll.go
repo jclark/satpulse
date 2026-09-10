@@ -48,6 +48,7 @@ type poller struct {
 	stats       *PollStats
 	nextEdge    time.Time
 	lastBracket time.Duration
+	lastEnd     time.Time // monotonic end of the previous read
 	slept       bool
 	stateReads  int
 }
@@ -486,10 +487,18 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	}
 }
 
+// readState waits for the scheduled time and queries the reader. When the
+// previous read already ended after the scheduled time, it skips the wait
+// without consulting the clock or the context: with a query outlasting the
+// spacing, that is every read in the window, and the wait's own overhead
+// would widen the bracket.
 func (p *poller) readState(sched time.Time) (reading, error) {
-	slept, err := p.wait(sched)
-	if err != nil {
-		return reading{}, err
+	slept := false
+	if p.lastEnd.IsZero() || p.lastEnd.Before(sched) {
+		var err error
+		if slept, err = p.wait(sched); err != nil {
+			return reading{}, err
+		}
 	}
 	start := now()
 	inPulse, err := p.r.InPulse()
@@ -497,6 +506,7 @@ func (p *poller) readState(sched time.Time) (reading, error) {
 	if err != nil {
 		return reading{}, err
 	}
+	p.lastEnd = end.mono
 	return reading{inPulse: inPulse, poll: poll{start: start, end: end}, start: start.mono,
 		sched: sched, slept: slept}, nil
 }
