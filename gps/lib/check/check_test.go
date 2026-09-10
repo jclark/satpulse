@@ -463,3 +463,26 @@ func TestValidate_PointerField(t *testing.T) {
 		t.Fatal("expected error for power > 10")
 	}
 }
+
+func TestValidate_EmbeddedStruct(t *testing.T) {
+	type Inner struct {
+		Field float64 `toml:"field" check:">0"`
+	}
+	type Named struct {
+		Inner `toml:"inner"`
+	}
+	type Outer struct {
+		Inner
+		Named Named `toml:"named"`
+	}
+	errs := Validate(Outer{})
+	if len(errs) != 2 {
+		t.Fatalf("expected 2 errors, got %v", errs)
+	}
+	if !strings.HasPrefix(errs[0], "field:") {
+		t.Errorf("embedded field named %q, want it named as the outer struct's own", errs[0])
+	}
+	if !strings.HasPrefix(errs[1], "named.inner.field:") {
+		t.Errorf("tagged embedded field named %q, want named.inner.field", errs[1])
+	}
+}

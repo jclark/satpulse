@@ -32,13 +32,19 @@ func validateStruct(val reflect.Value, prefix string) []string {
 		field := typ.Field(i)
 		fval := val.Field(i)
 
-		// Build qualified name using toml tag or field name
+		// Build qualified name using toml tag or field name. An untagged
+		// embedded struct is inlined by the TOML decoder, so its fields
+		// are named as the embedding struct's own.
 		name := field.Tag.Get("toml")
-		if name == "" {
-			name = field.Name
-		}
-		if prefix != "" {
-			name = prefix + "." + name
+		if name == "" && field.Anonymous {
+			name = prefix
+		} else {
+			if name == "" {
+				name = field.Name
+			}
+			if prefix != "" {
+				name = prefix + "." + name
+			}
 		}
 
 		// Check for validation tag

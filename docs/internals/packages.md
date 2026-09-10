@@ -72,7 +72,9 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (serial device or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
 
-`gps/app/serialpps` detects PPS edges on serial modem-control input lines and combines their system timestamps with recent receiver UTC messages to generate refclock samples.
+`gps/app/pps` handles PPS edges timestamped by the system clock, independently of how they are detected: it combines an edge's timestamp with recent receiver UTC messages to generate a refclock sample, and provides the adaptive polling loop that detects edges on a pin whose level can only be read, predicting each pulse and polling in a window around it.
+
+`gps/app/serialpps` detects PPS edges on serial modem-control input lines, by polling through `gps/app/pps` or by waiting for line changes, and reports them as `gps/app/pps` candidate edges.
 
 `gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
 

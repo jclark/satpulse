@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
@@ -212,9 +213,9 @@ func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, w serial
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
-	edges := make(chan serialpps.CandidateEdge)
+	edges := make(chan pps.CandidateEdge)
 	errCh := make(chan error, 1)
-	stats := new(serialpps.PollStats)
+	stats := new(pps.PollStats)
 	if !lg.Enabled(ctx, slog.LevelInfo) {
 		stats = nil
 	}
@@ -265,7 +266,7 @@ func (e *ppsOutputError) Unwrap() error {
 	return e.err
 }
 
-func (p *edgePrinter) print(device string, edge serialpps.CandidateEdge) error {
+func (p *edgePrinter) print(device string, edge pps.CandidateEdge) error {
 	t := edge.Timestamp.UTC().Round(time.Microsecond)
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -13,6 +13,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -321,11 +322,11 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return err
 		}
 	}
-	var spCh <-chan serialpps.CandidateEdge
-	var spGen *serialpps.Generator
+	var spCh <-chan pps.CandidateEdge
+	var spGen *pps.Generator
 	if cfg.Serial.PPS != nil {
-		spGen = serialpps.NewGenerator(cfg.Sample.Serial.PPS)
-		ch := make(chan serialpps.CandidateEdge, 1)
+		spGen = pps.NewGenerator(cfg.Sample.Serial.PPS.GeneratorConfig)
+		ch := make(chan pps.CandidateEdge, 1)
 		spCh = ch
 		wg.Go(func() {
 			defer close(ch)
@@ -395,7 +396,7 @@ func NewDispatcher(
 	gm *ptpgm.Grandmaster,
 	rc *refclock.ProxyRefClock,
 	shm *ntpshm.Writer,
-	spGen *serialpps.Generator,
+	spGen *pps.Generator,
 	obs obs.Observer,
 	tStart time.Time,
 	ggaSelector *stream.GGASelector,

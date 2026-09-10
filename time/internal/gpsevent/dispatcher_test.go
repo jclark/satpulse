@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/gps/app/serialpps"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
@@ -283,7 +283,7 @@ func TestDispatcherMsgUTCTimeWritesBothSinks(t *testing.T) {
 func TestDispatcherSerialPPSCandidateWritesAcceptableSamples(t *testing.T) {
 	shm := &fakeSHM{precision: -9}
 	observer := &ntpSampleObserver{}
-	g := serialpps.NewGenerator(serialpps.DefaultConfig())
+	g := pps.NewGenerator(pps.DefaultGeneratorConfig())
 	d := &Dispatcher{
 		spGen: g,
 		shm:   shm,
@@ -294,19 +294,19 @@ func TestDispatcherSerialPPSCandidateWritesAcceptableSamples(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
-		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
+	d.serialPPSCandidateEdge(pps.CandidateEdge{
+		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
 		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
 	})
 	if len(shm.writes) != 0 {
 		t.Fatalf("inaccurate unsettled candidate produced %d SHM writes, want none", len(shm.writes))
 	}
-	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
-		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
+	d.serialPPSCandidateEdge(pps.CandidateEdge{
+		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
 		Uncertainty: serialPPSMaxUncertainty,
 	})
-	d.serialPPSCandidateEdge(serialpps.CandidateEdge{
-		Edge:        serialpps.Edge{Timestamp: edge, TRead: edge},
+	d.serialPPSCandidateEdge(pps.CandidateEdge{
+		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
 		Uncertainty: serialPPSMaxUncertainty + time.Nanosecond,
 		Settled:     true,
 	})

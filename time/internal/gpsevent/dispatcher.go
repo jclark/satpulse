@@ -10,7 +10,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/logfile"
-	"github.com/jclark/satpulse/gps/app/serialpps"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/nmeasyn"
@@ -107,7 +107,7 @@ type Dispatcher struct {
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
-	spGen                 *serialpps.Generator
+	spGen                 *pps.Generator
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
@@ -127,7 +127,7 @@ func NewDispatcher(
 	controller *phcsync.Controller,
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
-	spGen *serialpps.Generator,
+	spGen *pps.Generator,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
@@ -194,7 +194,7 @@ const (
 	serialPPSMaxUncertainty   = time.Millisecond
 )
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan serialpps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
 	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
@@ -312,7 +312,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, spCh <-chan serialpps.CandidateEd
 	}
 }
 
-func (d *Dispatcher) serialPPSCandidateEdge(ce serialpps.CandidateEdge) {
+func (d *Dispatcher) serialPPSCandidateEdge(ce pps.CandidateEdge) {
 	d.logEvent(LogEvent{
 		Type: sysPulseEdgeType,
 		T:    ce.TRead,
@@ -327,7 +327,7 @@ func (d *Dispatcher) serialPPSCandidateEdge(ce serialpps.CandidateEdge) {
 	}
 }
 
-func (d *Dispatcher) serialPPSEdge(edge serialpps.Edge) {
+func (d *Dispatcher) serialPPSEdge(edge pps.Edge) {
 	if d.spGen == nil {
 		panic("serial PPS edge channel wired without a Generator")
 	}

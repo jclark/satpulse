@@ -1,19 +1,23 @@
-package serialpps
+package pps
 
 import (
 	"context"
 	"log/slog"
 	"runtime"
 	"time"
-
-	"github.com/jclark/satpulse/gps/app/gpsio"
 )
+
+// PulseReader reads whether a pin is currently in a pulse. Its query time
+// bounds the resolution of polling, so it should be as fast as the platform
+// allows.
+type PulseReader interface {
+	InPulse() (bool, error)
+}
 
 type poller struct {
 	ctx         context.Context
 	lg          *slog.Logger
-	r           StateReader
-	w           Wiring
+	r           PulseReader
 	prewarm     time.Duration
 	ceCh        chan<- CandidateEdge
 	stats       *PollStats
@@ -23,7 +27,7 @@ type poller struct {
 	stateReads  int
 }
 
-// Poll adaptively polls for the pulse described by w and sends a candidate for
+// Poll adaptively polls for the pulse read by r and sends a candidate for
 // every leading edge it catches. It repeatedly runs acquisition followed by
 // tracking. Acquisition ends when polling resolution is acquired, or restarts
 // from cold after losing the partly acquired signal. Tracking shrinks the
@@ -45,11 +49,11 @@ type poller struct {
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	stats.begin()
-	p := poller{ctx: ctx, lg: lg, r: r, w: w, prewarm: prewarm, ceCh: ceCh, stats: stats}
+	p := poller{ctx: ctx, lg: lg, r: r, prewarm: prewarm, ceCh: ceCh, stats: stats}
 	if err := p.init(); err != nil {
 		return err
 	}
@@ -347,11 +351,11 @@ type poll struct {
 }
 
 type reading struct {
-	state gpsio.SerialPinState
-	poll  poll
-	start time.Time
-	sched time.Time // when this poll was scheduled to run
-	slept bool      // whether waiting for the schedule used a timer
+	inPulse bool
+	poll    poll
+	start   time.Time
+	sched   time.Time // when this poll was scheduled to run
+	slept   bool      // whether waiting for the schedule used a timer
 }
 
 func (p *poller) init() error {
@@ -398,7 +402,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	// every period and never acquire; poll through it instead. slept accumulates
 	// over the window's scheduled polls (the wait for the window open is
 	// excluded: it always sleeps).
-	for inPulse(cur.state, p.w) && cur.poll.midpoint().mono.Before(deadline) {
+	for cur.inPulse && cur.poll.midpoint().mono.Before(deadline) {
 		prev := cur
 		cur, err = readState(p.ctx, p.r, cur.start.Add(spacing))
 		if err != nil {
@@ -409,7 +413,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 		p.slept = p.slept || cur.slept
 	}
 	prev := cur
-	missed := inPulse(cur.state, p.w)
+	missed := cur.inPulse
 	var edge clockReading
 	for !missed && edge.stamp.IsZero() {
 		cur, err = readState(p.ctx, p.r, prev.start.Add(spacing))
@@ -419,7 +423,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 		p.stats.addPoll(cur.poll, &prev.poll)
 		p.stateReads++
 		p.slept = p.slept || cur.slept
-		edge, missed = classify(prev, cur, p.w, deadline)
+		edge, missed = classify(prev, cur, deadline)
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
 		}
@@ -458,18 +462,18 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	}
 }
 
-func readState(ctx context.Context, r StateReader, sched time.Time) (reading, error) {
+func readState(ctx context.Context, r PulseReader, sched time.Time) (reading, error) {
 	slept, err := waitUntil(ctx, sched)
 	if err != nil {
 		return reading{}, err
 	}
 	start := now()
-	state, err := r.SerialPinState()
+	inPulse, err := r.InPulse()
 	end := now()
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, poll: poll{start: start, end: end}, start: start.mono,
+	return reading{inPulse: inPulse, poll: poll{start: start, end: end}, start: start.mono,
 		sched: sched, slept: slept}, nil
 }
 
@@ -503,20 +507,14 @@ func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 // bracket means the measurement clock stepped backward between the reads
 // (its stamps carry no monotonic reading on Windows), so its midpoint is
 // equally meaningless: both are a miss.
-func classify(prev, cur reading, w Wiring, deadline time.Time) (clockReading, bool) {
-	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
+func classify(prev, cur reading, deadline time.Time) (clockReading, bool) {
+	if !prev.inPulse && cur.inPulse {
 		if d := cur.poll.midpoint().elapsedSince(prev.poll.midpoint()); d >= period || d <= 0 {
 			return clockReading{}, true
 		}
 		return prev.poll.midpoint().midpoint(cur.poll.midpoint()), false
 	}
 	return clockReading{}, !cur.poll.midpoint().mono.Before(deadline)
-}
-
-// inPulse reports whether the state was observed during a pulse, as
-// selected by the wiring's polarity.
-func inPulse(s gpsio.SerialPinState, w Wiring) bool {
-	return s.Asserted(w.Pin) == w.Polarity.Asserted()
 }
 
 func halfCeil(d time.Duration) time.Duration {
