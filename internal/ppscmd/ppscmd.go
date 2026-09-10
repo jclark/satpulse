@@ -143,7 +143,7 @@ func readDeviceInfo(sysDir, name string) (deviceInfo, error) {
 		b, err := os.ReadFile(filepath.Join(sysDir, name, a))
 		return strings.TrimSuffix(string(b), "\n"), err
 	}
-	info := deviceInfo{Device: filepath.Join("/dev", name)}
+	info := deviceInfo{Device: "/dev/" + name}
 	var err error
 	if info.Name, err = attr("name"); err != nil {
 		return deviceInfo{}, err
