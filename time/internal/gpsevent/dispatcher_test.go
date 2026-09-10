@@ -285,10 +285,10 @@ func TestDispatcherSysPulseCandidateWritesAcceptableSamples(t *testing.T) {
 	observer := &ntpSampleObserver{}
 	g := pps.NewGenerator(pps.DefaultGeneratorConfig())
 	d := &Dispatcher{
-		ppsGen: g,
-		shm:   shm,
-		obs:   observer,
-		lg:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		ppsGen:            g,
+		shm:              shm,
+		obs:              observer,
+		lg:               slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	msgUTC := time.Unix(1_000, 0).UTC()
 	msgRead := time.Unix(900, 125_000_000)

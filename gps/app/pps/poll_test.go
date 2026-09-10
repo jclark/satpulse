@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// acquireCapture records the window attribute of the "serial PPS acquired"
+// acquireCapture records the window attribute of the "PPS poll acquired"
 // debug line, so tests can check where in the descent the latch fired. Read
 // it only after Poll has returned.
 type acquireCapture struct {
@@ -26,7 +26,7 @@ var truncatesSubMillisecondSleeps = sleepDuration(time.Microsecond) == 0
 func (h *acquireCapture) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
-	if r.Message == "serial PPS acquired" {
+	if r.Message == "PPS poll acquired" {
 		r.Attrs(func(a slog.Attr) bool {
 			if a.Key == "window" {
 				if d, ok := a.Value.Any().(time.Duration); ok {
@@ -588,7 +588,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 			t.Errorf("pulses seen = %v, want 15 and 17 published around the missed pulse", seen)
 		}
 		status := logs.String()
-		if !strings.Contains(status, `msg="serial PPS track status" reason=miss`) {
+		if !strings.Contains(status, `msg="PPS poll track status" reason=miss`) {
 			t.Errorf("logs %q do not report the missed pulse at info level", status)
 		}
 		for _, field := range []string{"window=", "nextWindow=", "stateReads=", "bracket=", "misses=1"} {

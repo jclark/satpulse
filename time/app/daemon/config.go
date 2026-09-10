@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,8 +15,10 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
+	"github.com/jclark/satpulse/gps/lib/check"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -31,6 +34,7 @@ const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
+	PPS        *PPSConfig `toml:"pps"`
 	Sample     SampleConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
@@ -65,12 +69,30 @@ type SerialPPSConfig struct {
 	InvertPolarity bool            `toml:"invertPolarity"`
 }
 
+// PPSConfig describes a PPS input that is not a serial modem-control line.
+// It names one kind of input.
+type PPSConfig struct {
+	GPIO *GPIOPPSConfig `toml:"gpio"`
+}
+
+type GPIOPPSConfig struct {
+	Pin *int `toml:"pin"`
+}
+
 type SampleConfig struct {
 	Serial SerialSampleConfig `toml:"serial"`
+	PPS    PPSSampleConfig    `toml:"pps"`
 }
 
 type SerialSampleConfig struct {
 	PPS serialpps.Config `toml:"pps"`
+}
+
+// PPSSampleConfig controls how edges from the [pps] table's input are
+// detected and associated with UTC-labelled receiver messages.
+type PPSSampleConfig struct {
+	pps.GeneratorConfig
+	GPIO pps.GPIOConfig `toml:"gpio"`
 }
 
 type PHCConfig struct {
@@ -117,6 +139,7 @@ type NTPSHMConfig struct {
 const (
 	serialSHMPrecision    int8 = -1
 	serialPPSSHMPrecision int8 = -11
+	gpioPPSSHMPrecision   int8 = -19
 )
 
 type LogConfig struct {
@@ -179,6 +202,8 @@ func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
 	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
+	cfg.Sample.PPS.GeneratorConfig = pps.DefaultGeneratorConfig()
+	cfg.Sample.PPS.GPIO = pps.DefaultGPIOConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
@@ -226,7 +251,21 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
 		}
 	}
+	if cfg.PPS != nil {
+		if cfg.PPS.GPIO == nil || cfg.PPS.GPIO.Pin == nil {
+			return &configError{err: fmt.Errorf("gpio.pin in the [pps] table must be specified")}
+		}
+		if cfg.Serial.PPS != nil {
+			return &configError{err: fmt.Errorf("the [pps] table cannot be used with pps.pin in the [serial] table")}
+		}
+		if cfg.PHC.Interface != "" {
+			return &configError{err: fmt.Errorf("the [pps] table cannot be used with interface in the [phc] table")}
+		}
+	}
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.Sample.PPS.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	// An explicitly selected method never falls back, and kernel PPS reports
@@ -248,6 +287,26 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	return nil
+}
+
+// Validate checks the [sample.pps] table.
+func (cfg PPSSampleConfig) Validate() error {
+	msgs := check.Validate(cfg)
+	if err := cfg.GeneratorConfig.Validate(); err != nil {
+		msgs = append(msgs, err.Error())
+	}
+	if r := cfg.GPIO.OutlierRatio; r > 0 && r < 1 || math.IsInf(r, 1) {
+		msgs = append(msgs, fmt.Sprintf("gpio.outlierRatio: must be 0 or a finite number at least 1, got %g", r))
+	}
+	switch len(msgs) {
+	case 0:
+		return nil
+	case 1:
+		return fmt.Errorf("in sample.pps table: %s", msgs[0])
+	default:
+		msgs = append([]string{"errors in sample.pps table:"}, msgs...)
+		return errors.New(strings.Join(msgs, "\n\t"))
+	}
 }
 
 // wiring is the pulse wiring the table describes.
@@ -334,6 +393,10 @@ func (cfg *Config) shmFixedPrecision() *int8 {
 	}
 	if cfg.Serial.PPS != nil {
 		p := serialPPSSHMPrecision
+		return &p
+	}
+	if cfg.PPS != nil {
+		p := gpioPPSSHMPrecision
 		return &p
 	}
 	if cfg.PHC.Interface == "" {
