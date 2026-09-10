@@ -16,6 +16,7 @@ the command-line counterpart of the daemon's GPIO source
 
 ```
 satpulsetool pps [-h|--help] [-d|--pps-device path] [-g|--gpio-pin N]
+                 [--bias] [-e|--every-pulse]
                  [--cpu N] [--priority N] [--max-bracket seconds]
                  [-t|--timeout seconds] [-j|--jsonl]
 ```
@@ -28,8 +29,9 @@ No option is required. The selectors choose the mode:
 - `-d`: print the device's assert timestamps as they arrive.
 - `-g`: poll the GPIO and print the edges it catches, with the daemon's
   poller and the same options as `[sample.pps.gpio]`.
-- `-d` with `-g`, under an explicit `--bias` option: estimate the kernel
-  timestamp bias. See the section below.
+- `--bias`, which requires both `-d` and `-g`: estimate the kernel
+  timestamp bias by comparing the device's timestamps with polled edges
+  of the same pulses. See the section below.
 
 ## Decided
 
@@ -48,7 +50,14 @@ No option is required. The selectors choose the mode:
 - Bias estimation is named by `--bias`, the way `sdp` names its modes,
   rather than implied by giving both selectors: it runs for minutes and
   alternates polling in a way plain edge printing does not, so the user
-  asks for it by name.
+  asks for it by name. `--bias` rather than `--offset`: it names what is
+  measured, as ppsbias and the blog post do, and an option that measures
+  should not be named after the chrony option the result is typed into;
+  the man page says the value is for chrony's `offset`.
+- `-e|--every-pulse` is ppsbias's `-e`: poll every pulse instead of
+  alternate ones. It keeps ppsbias's letter, since unlike the config-key
+  options it has no config counterpart to mirror. ppsbias's window and
+  spacing (`-w`, `-s`) get no option: 1 ms each side, reads back to back.
 - `--echo` enables the device's echo-on-assert output while the command
   runs. Applies to `-d`.
 - `-t|--timeout` bounds how long the command runs, in seconds. The
@@ -61,6 +70,17 @@ No option is required. The selectors choose the mode:
   an RFC 3339 UTC timestamp `t` with nanoseconds, and for polled edges
   `uncertainty` in seconds and `settling`. The text form is the time of
   day with nanoseconds.
+- `--bias` output works like the other modes: one line per pulse to
+  stdout as it is observed, then a summary as the last line. A pulse
+  line in text form is the kernel timestamp as for `-d` followed by
+  `key=value` fields (the bias in seconds, the bracket, or a status when
+  the pulse gave no estimate); in JSONL an object with the same fields.
+  The text summary is the median bias alone in seconds, positive for a
+  late timestamp, in ppsbias's `12.7e-6` form, so a script can take the
+  last line; the JSONL summary is an object with the median, mean,
+  standard deviation, sample count, median and maximum bracket, and how
+  the run ended, all durations in seconds. The standard deviation and
+  count are the uncertainty; nothing more is derived.
 - Time values are float seconds.
 - Data goes to stdout, diagnostics to stderr, following `serial` and `sdp`.
 - ppsbias's `-v` is the global `satpulsetool -v`. Its `-w` window and
@@ -77,7 +97,11 @@ daemon's GPIO source does not carry the tool:
 3. `pps-package` off master: the source-neutral `gps/app/pps` package.
 4. `gpio-poll` on all three: the daemon source, and the `-g` mode with
    its options added to `ppscmd`.
-5. Bias mode on `gpiomem` and `pps-tool`; it does not need the poller.
+5. Bias mode on `gpiomem` and `pps-tool`. It has its own polling loop and
+   its own thread setup and sleep (about 40 lines that the daemon's GPIO
+   source also has, each tuned to its loop), so it does not depend on
+   `pps-package` or `gpio-poll`. Built for `linux && arm64` like the
+   source, with a stub elsewhere.
 
 ## Bias estimation
 
@@ -145,10 +169,13 @@ timestamps to predict from, wants every other second skipped, which the
 poller's tracking would count as misses, and runs for minutes, so a
 fixed window's CPU cost is irrelevant. Both loops place the edge at the
 bracket midpoint, so the estimate is the same; the validation below was
-done with the simple loop. What the two modes share is the platform
-layer: the register read, the pinned real-time thread, the absolute
-sleep, and the bracket width rejection, whose rule and default should
-be the same under `-g` and `--bias`.
+done with the simple loop. The two modes share `gpiomem` for the read
+and nothing else: the thread setup (affinity, SCHED_FIFO, timer slack)
+and the absolute clock_nanosleep are a few lines each and are written
+separately for each loop rather than shared. The bracket width
+rejection uses `--max-bracket` with the same rule and default under
+`-g` and `--bias`, so a user reads one description; ppsbias's
+several-times-the-median rule is not used.
 
 - Predict the next edge as the last kernel timestamp plus one period.
 - Sleep with an absolute clock_nanosleep to a fixed time before the
@@ -185,9 +212,13 @@ Prototyped in C on 2026-09-05 and run on a Raspberry Pi 5 (kernel
 ### Reading the pin
 
 The polled reads need access to the pin's level. Two paths were
-prototyped. The tool offers the gpiomem register read, which the `-g`
-mode uses anyway, with the GPIO given by `-g`; the device-tree lookup
-below is a possible later convenience, not a requirement.
+prototyped. The tool offers only the gpiomem register read, which the
+`-g` mode uses anyway, with the GPIO given by `-g`; `gpiomem` finds the
+SoC from `/proc/device-tree/compatible`, so there is no model option.
+The character-device path is not offered: it needs the line free, so
+pps-gpio would have to be unbound, which destroys the device node under
+any process holding it. The device-tree lookup below is a possible
+later convenience, not a requirement.
 
 - **GPIO character device.** Portable to any Linux board, no cgo, but a
   line request fails while pps-gpio owns the line, so the driver would
@@ -205,13 +236,7 @@ below is a possible later convenience, not a requirement.
 
 ## Not yet decided
 
-- Bias options beyond `--bias` and `--echo`, such as ppsbias's `-e` for
-  polling every pulse.
-- Whether the character-device path is ever offered, and if so whether
-  the tool unbinds the pps-gpio driver for the user. Unbinding destroys
-  the device node, so any process holding it open, such as an NTP
-  daemon, keeps a dead handle until restarted.
-- What the bias output reports and how its uncertainty is expressed.
+- The exact field names of the bias pulse and summary objects.
 - Whether other operations on the device belong here.
 - Man page text.
 
