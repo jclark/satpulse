@@ -16,7 +16,7 @@ the command-line counterpart of the daemon's GPIO source
 
 ```
 satpulsetool pps [-h|--help] [-d|--pps-device path] [-g|--gpio-pin N]
-                 [--bias] [--every-pulse]
+                 [--bias] [-e|--every-pulse]
                  [--cpu N] [--priority N] [--max-bracket seconds]
                  [-t|--timeout seconds] [-j|--jsonl]
 ```
@@ -54,10 +54,10 @@ No option is required. The selectors choose the mode:
   measured, as ppsbias and the blog post do, and an option that measures
   should not be named after the chrony option the result is typed into;
   the man page says the value is for chrony's `offset`.
-- `--every-pulse` is ppsbias's `-e`: poll every pulse instead of
-  alternate ones. Long only, like the other tuning options. ppsbias's
-  window and spacing (`-w`, `-s`) get no option: 1 ms each side, reads
-  back to back.
+- `-e|--every-pulse` is ppsbias's `-e`: poll every pulse instead of
+  alternate ones. It keeps ppsbias's letter, since unlike the config-key
+  options it has no config counterpart to mirror. ppsbias's window and
+  spacing (`-w`, `-s`) get no option: 1 ms each side, reads back to back.
 - `--echo` enables the device's echo-on-assert output while the command
   runs. Applies to `-d`.
 - `-t|--timeout` bounds how long the command runs, in seconds. The
