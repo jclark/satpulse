@@ -28,6 +28,7 @@ Opening the device usually requires root privileges.
 
 **\-t**, **\-\-timeout** *seconds*
 : Stop printing timestamps after *seconds*.
+The exit status is 2 if none arrived, however the command ended.
 A value of 0 means run until interrupted.
 The default is 10.
 Requires **\-d**.
@@ -50,7 +51,7 @@ and the device's sequence number `seq` for the edge.
 : Error
 
 **2**
-: No data found: no PPS devices present, or no timestamps received before the timeout
+: No data found: no PPS devices present, or no timestamps received
 
 # EXAMPLES
 

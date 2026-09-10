@@ -174,14 +174,15 @@ func watchDevice(ctx context.Context, lg *slog.Logger, v flagVars) error {
 		ctx, cancel = context.WithTimeout(ctx, v.timeout)
 		defer cancel()
 	}
-	// Closing the source is what interrupts a waiting Fetch.
-	defer context.AfterFunc(ctx, func() { src.Close() })()
 	prev, err := src.Fetch(kpps.Info{}, 0)
 	if err != nil {
 		return err
 	}
+	// Closing the source is what interrupts a waiting Fetch; the baseline
+	// fetch above does not wait, so it is armed only now.
+	defer context.AfterFunc(ctx, func() { src.Close() })()
 	enc := json.NewEncoder(os.Stdout)
-	n := 0
+	asserts, clears := 0, 0
 	for {
 		info, err := src.Fetch(prev, -1)
 		if err != nil {
@@ -189,6 +190,9 @@ func watchDevice(ctx context.Context, lg *slog.Logger, v flagVars) error {
 				break
 			}
 			return err
+		}
+		if info.Clear.Sequence != prev.Clear.Sequence {
+			clears++
 		}
 		assert := info.Assert
 		if assert.Sequence != prev.Assert.Sequence {
@@ -198,11 +202,14 @@ func watchDevice(ctx context.Context, lg *slog.Logger, v flagVars) error {
 			if err := printEvent(enc, v, assert); err != nil {
 				return err
 			}
-			n++
+			asserts++
 		}
 		prev = info
 	}
-	if n == 0 && v.timeout > 0 {
+	if asserts == 0 {
+		if clears > 0 {
+			return noDataError{msg: fmt.Sprintf("no PPS assert timestamps received, but %d clear timestamps; the device may be capturing clear edges only", clears)}
+		}
 		return noDataError{msg: "no PPS timestamps received"}
 	}
 	return nil
