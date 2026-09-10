@@ -114,6 +114,8 @@ docs:
         url: "/man/satpulsetool-scan.1.html"
       - title: "satpulsetool-sdp(1)"
         url: "/man/satpulsetool-sdp.1.html"
+      - title: "satpulsetool-pps(1)"
+        url: "/man/satpulsetool-pps.1.html"
       - title: "satpulsetool-syncsim(1)"
         url: "/man/satpulsetool-syncsim.1.html"
       - title: "satpulsetool-convobs(1)"
