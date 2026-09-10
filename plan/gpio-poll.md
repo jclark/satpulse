@@ -1,6 +1,5 @@
-# GPIO PPS polling as a pulse source (issue pending)
+# GPIO PPS polling as a pulse source (#460)
 
-Issue not yet filed; the heading gets its number when it is.
 Related: #412 (kernel PPS device as a pulse source).
 
 ## Overview
