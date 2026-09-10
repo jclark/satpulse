@@ -320,9 +320,13 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 			T:           ce.Timestamp,
 			Uncertainty: gpsprot.Duration(ce.Uncertainty),
 			Settled:     ce.Settled,
+			Outlier:     ce.Outlier,
 		},
 	})
-	if ce.Uncertainty <= sysPulseMaxUncertainty || ce.Settled {
+	// An outlier's bracket is a stalled read, so its midpoint can be off by
+	// most of the bracket; the refclock protocol carries no uncertainty, so
+	// the only protection for the time consumer is not to send it.
+	if (ce.Uncertainty <= sysPulseMaxUncertainty || ce.Settled) && !ce.Outlier {
 		d.sysPulseSample(ce.Edge)
 	}
 }
@@ -418,6 +422,7 @@ type SysPulseEdge struct {
 	T           time.Time        `json:"t"`
 	Uncertainty gpsprot.Duration `json:"uncertainty"`
 	Settled     bool             `json:"settled"`
+	Outlier     bool             `json:"outlier"`
 }
 
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:
