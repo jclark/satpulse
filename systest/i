@@ -3,10 +3,7 @@
 #   i host1 host2
 # to run the install.yml playbook on the given hosts.
 # A host without a domain name gets .lan appended.
-if [ "$#" -lt 1 ]; then
-  echo "Usage: $0 host1 [host2 ...]" >&2
-  exit 1
-fi
+# With no arguments, runs on the playbook's default target (the install group).
 
 hosts=""
 for h in "$@"; do
@@ -17,4 +14,4 @@ for h in "$@"; do
   hosts="$hosts${hosts:+,}$h"
 done
 
-ansible-playbook -K -i inventory.yml -l "$hosts" install.yml
+exec ansible-playbook -K -i inventory.yml ${hosts:+-l "$hosts"} install.yml

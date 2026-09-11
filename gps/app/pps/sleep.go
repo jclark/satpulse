@@ -1,6 +1,6 @@
 //go:build !linux
 
-package serialpps
+package pps
 
 import "time"
 

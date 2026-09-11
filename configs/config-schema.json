@@ -112,6 +112,12 @@
                   "minimum": 0,
                   "exclusiveMaximum": 1,
                   "default": 0
+                },
+                "pollOutlierRatio": {
+                  "description": "Bracket multiple of the recent lower quartile beyond which a poll catch is an outlier; 0 disables, otherwise at least 1",
+                  "type": "number",
+                  "minimum": 0,
+                  "default": 3
                 }
               }
             }

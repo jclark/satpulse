@@ -1,40 +1,79 @@
-package serialpps
+package pps
 
 import (
 	"context"
 	"log/slog"
+	"math"
 	"runtime"
+	"slices"
 	"time"
-
-	"github.com/jclark/satpulse/gps/app/gpsio"
 )
+
+// PulseReader reads whether a pin is currently in a pulse. Its query time
+// bounds the resolution of polling, so it should be as fast as the platform
+// allows.
+type PulseReader interface {
+	InPulse() (bool, error)
+}
+
+// PollParams tunes Poll to the cost of the reader's queries. The zero value
+// suits serial modem-status queries, which take from tens of microseconds to
+// milliseconds, and sleeps on the runtime's timers.
+type PollParams struct {
+	// InitialPolls is the number of polls across the cold-start window. It
+	// determines the initial spacing, and with it the narrowest pulse
+	// acquired promptly. The spacing scales with the window, so once it
+	// falls below the query time or MinSpacing, those pace the loop instead.
+	// Zero means 64.
+	InitialPolls int
+	// MinSpacing bounds the CPU spent when the query is very fast. Zero
+	// means 50 microseconds.
+	MinSpacing time.Duration
+	// PreWarm ends the sleep to each window open that much early and
+	// busy-waits the remainder. It is for hosts whose queries slow down
+	// severalfold while the machine idles, where only continuous work
+	// ending at the open restores full query speed; it costs that fraction
+	// of a core. Zero disables it.
+	PreWarm time.Duration
+	// OutlierRatio, if positive, marks a tracking catch whose bracket
+	// exceeds that multiple of the lower quartile of the recent settled
+	// brackets as an outlier. A query stalled by host load widens its
+	// bracket severalfold while the queries around it stay normal, so the
+	// mark identifies edges whose midpoint no longer locates the pulse;
+	// tracking still uses them, and consumers decide whether to. Zero
+	// disables the check.
+	OutlierRatio float64
+	// Wait, if non-nil, replaces the runtime timer that sleeps until a
+	// scheduled poll. It reports whether it actually waited: false means
+	// the scheduled time was already past or nearer than it can sleep to.
+	Wait func(ctx context.Context, t time.Time) (bool, error)
+}
 
 type poller struct {
 	ctx         context.Context
 	lg          *slog.Logger
-	r           StateReader
-	w           Wiring
-	prewarm     time.Duration
+	r           PulseReader
+	params      PollParams
 	ceCh        chan<- CandidateEdge
 	stats       *PollStats
 	nextEdge    time.Time
 	lastBracket time.Duration
 	slept       bool
 	stateReads  int
+	// settledBrackets is a ring of the most recent settled tracking
+	// brackets, the outlier reference, and nextBracket the slot the next one
+	// overwrites once the ring is full.
+	settledBrackets []time.Duration
+	nextBracket     int
 }
 
-// Poll adaptively polls for the pulse described by w and sends a candidate for
+// Poll adaptively polls for the pulse read by r and sends a candidate for
 // every leading edge it catches. It repeatedly runs acquisition followed by
 // tracking. Acquisition ends when polling resolution is acquired, or restarts
 // from cold after losing the partly acquired signal. Tracking shrinks the
 // polling window onto the measured need and holds it just above the size
 // where misses occur; consecutive misses double the window, and sustained
 // loss restarts the cycle from acquisition.
-//
-// A nonzero prewarm ends the sleep to each window open that much early and
-// busy-waits the remainder. It is for hosts whose state queries slow down
-// severalfold while the machine idles, where only continuous work ending at
-// the open restores full query speed; it costs that fraction of a core.
 //
 // Candidates caught during acquisition are unsettled, including the catch
 // that completes acquisition, whose transition the "serial PPS acquired" log
@@ -45,11 +84,17 @@ type poller struct {
 // debug level. Tracking starts, significant window changes, misses, and loss
 // are logged at info level with actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
-func Poll(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, prewarm time.Duration, ceCh chan<- CandidateEdge, stats *PollStats) error {
+func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 	stats.begin()
-	p := poller{ctx: ctx, lg: lg, r: r, w: w, prewarm: prewarm, ceCh: ceCh, stats: stats}
+	if params.InitialPolls == 0 {
+		params.InitialPolls = initialPolls
+	}
+	if params.MinSpacing == 0 {
+		params.MinSpacing = minSpacing
+	}
+	p := poller{ctx: ctx, lg: lg, r: r, params: params, ceCh: ceCh, stats: stats}
 	if err := p.init(); err != nil {
 		return err
 	}
@@ -75,18 +120,15 @@ const (
 )
 
 // None of these constants encodes hardware timing; everything hardware- and
-// load-dependent is measured by the polling loop itself.
+// load-dependent is measured by the polling loop itself. initialPolls and
+// minSpacing are the PollParams defaults, suited to serial modem-status
+// queries.
 const (
-	// initialPolls is the number of polls across the cold-start window. It
-	// determines the initial spacing, and with it the narrowest pulse acquired
-	// promptly. The spacing scales with the window, so once it falls below the
-	// state-query time or minSpacing, those pace the loop instead.
 	initialPolls = 64
 	// missLimit consecutive misses declare the pulse gone: acquisition
 	// abandons its attempt, and tracking, whose window doubles toward the
 	// full period as misses accumulate, returns to acquisition.
-	missLimit = 10
-	// minSpacing bounds the CPU spent when the state query is very fast.
+	missLimit  = 10
 	minSpacing = 50 * time.Microsecond
 )
 
@@ -103,6 +145,7 @@ const (
 // phase; missLimit misses after the window narrows abandon this attempt. The
 // returned duration is the window with which tracking should begin.
 func (p *poller) acquire() (time.Duration, bool, error) {
+	initialPolls, minSpacing := time.Duration(p.params.InitialPolls), p.params.MinSpacing
 	spacing := maxWindow / initialPolls
 	misses, queryPaced := 0, 0
 	for {
@@ -185,7 +228,7 @@ type trackEvent struct {
 // control. Tests call the same track function with a simulated attempt.
 func (p *poller) track(window time.Duration) error {
 	attempt := func(window time.Duration, atFloor bool) (trackObservation, error) {
-		spacing := max(window/initialPolls, minSpacing)
+		spacing := max(window/time.Duration(p.params.InitialPolls), p.params.MinSpacing)
 		caught, predictionError, err := p.pollWindow(window, spacing, true, atFloor)
 		return trackObservation{caught: caught, predictionError: predictionError,
 			lastBracket: p.lastBracket, stateReads: p.stateReads}, err
@@ -331,7 +374,7 @@ func (p *poller) logTrackEvent(e trackEvent) {
 	}
 }
 
-// clockReading keeps adjacent readings of the clocks used by serial PPS
+// clockReading keeps adjacent readings of the clocks used by the poller
 // together. stamp is the measurement reading used for short intervals and
 // published edge timestamps; mono paces the polling loop, which must not be
 // disturbed by a step in the system clock.
@@ -347,15 +390,15 @@ type poll struct {
 }
 
 type reading struct {
-	state gpsio.SerialPinState
-	poll  poll
-	start time.Time
-	sched time.Time // when this poll was scheduled to run
-	slept bool      // whether waiting for the schedule used a timer
+	inPulse bool
+	poll    poll
+	start   time.Time
+	sched   time.Time // when this poll was scheduled to run
+	slept   bool      // whether waiting for the schedule used a timer
 }
 
 func (p *poller) init() error {
-	first, err := readState(p.ctx, p.r, time.Time{})
+	first, err := p.readState(time.Time{})
 	if err != nil {
 		return err
 	}
@@ -376,8 +419,8 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
 	open := nextEdge.Add(-window / 2)
-	if p.prewarm > 0 {
-		if _, err := waitUntil(p.ctx, open.Add(-p.prewarm)); err != nil {
+	if p.params.PreWarm > 0 {
+		if _, err := p.wait(open.Add(-p.params.PreWarm)); err != nil {
 			return false, 0, err
 		}
 		for time.Now().Before(open) {
@@ -386,7 +429,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 			}
 		}
 	}
-	cur, err := readState(p.ctx, p.r, open)
+	cur, err := p.readState(open)
 	if err != nil {
 		return false, 0, err
 	}
@@ -398,9 +441,9 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	// every period and never acquire; poll through it instead. slept accumulates
 	// over the window's scheduled polls (the wait for the window open is
 	// excluded: it always sleeps).
-	for inPulse(cur.state, p.w) && cur.poll.midpoint().mono.Before(deadline) {
+	for cur.inPulse && cur.poll.midpoint().mono.Before(deadline) {
 		prev := cur
-		cur, err = readState(p.ctx, p.r, cur.start.Add(spacing))
+		cur, err = p.readState(cur.start.Add(spacing))
 		if err != nil {
 			return false, 0, err
 		}
@@ -409,36 +452,46 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 		p.slept = p.slept || cur.slept
 	}
 	prev := cur
-	missed := inPulse(cur.state, p.w)
+	missed := cur.inPulse
 	var edge clockReading
 	for !missed && edge.stamp.IsZero() {
-		cur, err = readState(p.ctx, p.r, prev.start.Add(spacing))
+		cur, err = p.readState(prev.start.Add(spacing))
 		if err != nil {
 			return false, 0, err
 		}
 		p.stats.addPoll(cur.poll, &prev.poll)
 		p.stateReads++
 		p.slept = p.slept || cur.slept
-		edge, missed = classify(prev, cur, p.w, deadline)
+		edge, missed = classify(prev, cur, deadline)
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
 		}
 		prev = cur
 	}
 	if edge.stamp.IsZero() {
-		p.stats.addWindow(false, acquired)
+		p.stats.addWindow(false, acquired, false)
 		if !acquired {
 			p.nextEdge = nextEdge.Add(period)
 		}
 		return false, 0, nil
 	}
+	predictionError := edge.mono.Sub(nextEdge)
+	settled := acquired && (atFloor || spacing == p.params.MinSpacing || !p.slept)
+	// The reference excludes this catch, so a stalled bracket is judged
+	// against the brackets before it; it then joins the ring regardless, so
+	// the reference follows hardware that has genuinely become slower.
+	limit := p.outlierLimit()
+	outlier := acquired && limit > 0 && p.lastBracket > limit
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
-	predictionError := edge.mono.Sub(nextEdge)
 	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
-		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads)
-	p.stats.addWindow(true, acquired)
+		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads,
+		"outlierLimit", limit, "outlier", outlier)
+	p.stats.addWindow(true, acquired, outlier)
+	if settled {
+		p.recordBracket(p.lastBracket)
+	}
 	if !acquired {
 		p.nextEdge = edge.mono.Add(period)
 	}
@@ -448,7 +501,8 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 			TRead:     cur.poll.end.mono,
 		},
 		Uncertainty: halfCeil(p.lastBracket),
-		Settled:     acquired && (atFloor || spacing == minSpacing || !p.slept),
+		Settled:     settled,
+		Outlier:     outlier,
 	}
 	select {
 	case p.ceCh <- ce:
@@ -458,19 +512,64 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired, atFloor boo
 	}
 }
 
-func readState(ctx context.Context, r StateReader, sched time.Time) (reading, error) {
-	slept, err := waitUntil(ctx, sched)
+// outlierHistory is how many settled brackets the outlier reference is drawn
+// from: about two minutes of catches, so a hardware change moves the
+// reference within that time. outlierMinHistory is how many it needs before
+// any catch is marked.
+const (
+	outlierHistory    = 128
+	outlierMinHistory = 16
+)
+
+// outlierLimit is the bracket beyond which a tracking catch is an outlier,
+// or zero while the check is disabled or the history is too short. The
+// reference is the lower quartile rather than the median because stalls only
+// ever widen a bracket: the quartile stays inside the normal population until
+// three quarters of the recent catches are stalled, where the median gives
+// way at half, which is the load level the check exists for.
+func (p *poller) outlierLimit() time.Duration {
+	if p.params.OutlierRatio == 0 || len(p.settledBrackets) < outlierMinHistory {
+		return 0
+	}
+	sorted := slices.Clone(p.settledBrackets)
+	slices.Sort(sorted)
+	// A ratio large enough to overflow means never: saturate rather than
+	// let the conversion wrap.
+	if limit := float64(sorted[len(sorted)/4]) * p.params.OutlierRatio; limit < math.MaxInt64 {
+		return time.Duration(limit)
+	}
+	return math.MaxInt64
+}
+
+func (p *poller) recordBracket(d time.Duration) {
+	if len(p.settledBrackets) < outlierHistory {
+		p.settledBrackets = append(p.settledBrackets, d)
+		return
+	}
+	p.settledBrackets[p.nextBracket] = d
+	p.nextBracket = (p.nextBracket + 1) % outlierHistory
+}
+
+func (p *poller) readState(sched time.Time) (reading, error) {
+	slept, err := p.wait(sched)
 	if err != nil {
 		return reading{}, err
 	}
 	start := now()
-	state, err := r.SerialPinState()
+	inPulse, err := p.r.InPulse()
 	end := now()
 	if err != nil {
 		return reading{}, err
 	}
-	return reading{state: state, poll: poll{start: start, end: end}, start: start.mono,
+	return reading{inPulse: inPulse, poll: poll{start: start, end: end}, start: start.mono,
 		sched: sched, slept: slept}, nil
+}
+
+func (p *poller) wait(t time.Time) (bool, error) {
+	if p.params.Wait != nil {
+		return p.params.Wait(p.ctx, t)
+	}
+	return waitUntil(p.ctx, t)
 }
 
 // waitUntil reports whether it actually had to wait: false means the
@@ -503,20 +602,14 @@ func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 // bracket means the measurement clock stepped backward between the reads
 // (its stamps carry no monotonic reading on Windows), so its midpoint is
 // equally meaningless: both are a miss.
-func classify(prev, cur reading, w Wiring, deadline time.Time) (clockReading, bool) {
-	if !inPulse(prev.state, w) && inPulse(cur.state, w) {
+func classify(prev, cur reading, deadline time.Time) (clockReading, bool) {
+	if !prev.inPulse && cur.inPulse {
 		if d := cur.poll.midpoint().elapsedSince(prev.poll.midpoint()); d >= period || d <= 0 {
 			return clockReading{}, true
 		}
 		return prev.poll.midpoint().midpoint(cur.poll.midpoint()), false
 	}
 	return clockReading{}, !cur.poll.midpoint().mono.Before(deadline)
-}
-
-// inPulse reports whether the state was observed during a pulse, as
-// selected by the wiring's polarity.
-func inPulse(s gpsio.SerialPinState, w Wiring) bool {
-	return s.Asserted(w.Pin) == w.Polarity.Asserted()
 }
 
 func halfCeil(d time.Duration) time.Duration {
