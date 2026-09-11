@@ -12,7 +12,7 @@ Message files can also be used to configure receiver-specific features that satp
 Send messages from a file:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t pps
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml -t pps
 ```
 
 The `-m` flag specifies the message file. The `-t` flag selects which tags to send.
@@ -28,7 +28,7 @@ Tag rules:
 List available tags:
 
 ```
-satpulsetool gps -m allystar/allystar.toml --show-tags
+satpulsetool gps -m allystar/tau1201.toml --show-tags
 ```
 
 The `-m` flag cannot be combined with config flags like `--gnss` or `--pps`.
@@ -56,10 +56,21 @@ This can help with seeing whether your receiver is handling the commands correct
 
 ### Allystar
 
-Configure an Allystar receiver, such as the TAU1201, for use with satpulsed:
+Choose the message file for the receiver family:
+
+| Receiver | Message file | CFG-MSG rate for 1Hz output | RTCM output |
+|----------|--------------|-----------------------------|-------------|
+| TAU1201 | `allystar/tau1201.toml` | 1 | No |
+| TAU13xx | `allystar/tau13xx.toml` | 1 | Yes |
+| TAU951M (P2 or K2) | `allystar/tau951m.toml` | 5 | Yes |
+
+The CFG-MSG rate is a divisor of the receiver's native measurement cycle,
+which is why the TAU951M uses a different message file. Configure a TAU1201
+for use with satpulsed as follows (substitute the appropriate file above for
+another model):
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
 ```
 
 This configures:
@@ -74,7 +85,7 @@ If you prefer to use a single constellation, you can use e.g. `gnss-gps` instead
 You can verify the configuration by querying current settings:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml \
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml \
   -t get-pps,get-gnss --packet-log verify.jsonl --capture 2
 satpulsetool annotate verify.jsonl | jq
 ```
@@ -82,7 +93,7 @@ satpulsetool annotate verify.jsonl | jq
 If the configuration seems to be working, you can save it to non-volatile memory:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t save
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml -t save
 ```
 
 ## Documentation

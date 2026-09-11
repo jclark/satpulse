@@ -1,0 +1,398 @@
+#:schema ../gpsmsg-schema.json
+# Allystar TAU1201 GPS message file
+# CFG-MSG rate is a divisor of the receiver's native measurement cycle.
+# The TAU1201 is 1Hz-native, so divisor 1 produces 1Hz output.
+
+[[include]]
+src = "asbin.toml"
+
+# Default delay: protocol says to wait for ACK before sending next command
+[default.asbin]
+delay = 0.1
+
+# Message Rate Control (CFG-MSG 0x06 0x01)
+
+# Enable NAV-TIME at 1Hz (for satpulsed)
+# Verified ACK received on TAU1201
+# Verified NAV-TIME messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-nav-time"
+description = "Enable NAV-TIME binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x05, 1]
+
+# Disable NAV-TIME
+# Verified ACK received on TAU1201
+# Verified NAV-TIME messages stop after disable on TAU1201
+[[asbin]]
+tag = "asbin-nav-time-off"
+description = "Disable NAV-TIME binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x05, 0]
+
+# Enable NAV-TIMEUTC at 1Hz (UTC time with validity flags)
+# Verified ACK received on TAU1201
+# Verified NAV-TIMEUTC messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-nav-timeutc"
+description = "Enable NAV-TIMEUTC binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 1]
+
+# Disable NAV-TIMEUTC
+# Verified ACK received on TAU1201
+# Verified NAV-TIMEUTC messages stop after disable on TAU1201
+[[asbin]]
+tag = "asbin-nav-timeutc-off"
+description = "Disable NAV-TIMEUTC binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 0]
+
+# Enable NAV-SVINFO at 1Hz (satellite visibility info)
+# Verified ACK received on TAU1201
+# Verified NAV-SVINFO messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-nav-svinfo"
+description = "Enable NAV-SVINFO binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 1]
+
+# Disable NAV-SVINFO
+# Verified ACK received on TAU1201
+# Verified NAV-SVINFO messages stop after disable on TAU1201
+[[asbin]]
+tag = "asbin-nav-svinfo-off"
+description = "Disable NAV-SVINFO binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 0]
+
+# Enable NAV-SVIN at 1Hz (survey-in status)
+# Verified ACK received on TAU1201
+# Verified NAV-SVIN messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-nav-svin"
+description = "Enable NAV-SVIN binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x31, 1]
+
+# Disable NAV-SVIN
+# Verified ACK received on TAU1201
+# Verified NAV-SVIN messages stop after disable on TAU1201
+[[asbin]]
+tag = "asbin-nav-svin-off"
+description = "Disable NAV-SVIN binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x31, 0]
+
+# Enable NAV-POSECEF at 1Hz (ECEF position)
+[[asbin]]
+tag = "asbin-nav-posecef"
+description = "Enable NAV-POSECEF binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 1]
+
+# Disable NAV-POSECEF
+[[asbin]]
+tag = "asbin-nav-posecef-off"
+description = "Disable NAV-POSECEF binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 0]
+
+# Enable NAV-POSLLH at 1Hz (LLH position)
+[[asbin]]
+tag = "asbin-nav-posllh"
+description = "Enable NAV-POSLLH binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 1]
+
+# Disable NAV-POSLLH
+[[asbin]]
+tag = "asbin-nav-posllh-off"
+description = "Disable NAV-POSLLH binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 0]
+
+# Enable NAV-AUTO at 1Hz (fix state, position, speed, DOPs, satellite counts)
+[[asbin]]
+tag = "asbin-nav-auto"
+description = "Enable NAV-AUTO binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0xC0, 1]
+
+# Disable NAV-AUTO
+[[asbin]]
+tag = "asbin-nav-auto-off"
+description = "Disable NAV-AUTO binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0xC0, 0]
+
+# Enable NAV-DOP at 1Hz (dilution of precision)
+[[asbin]]
+tag = "asbin-nav-dop"
+description = "Enable NAV-DOP binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 1]
+
+# Disable NAV-DOP
+[[asbin]]
+tag = "asbin-nav-dop-off"
+description = "Disable NAV-DOP binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 0]
+
+# Enable NAV-VELECEF at 1Hz (ECEF velocity)
+[[asbin]]
+tag = "asbin-nav-velecef"
+description = "Enable NAV-VELECEF binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 1]
+
+# Disable NAV-VELECEF
+[[asbin]]
+tag = "asbin-nav-velecef-off"
+description = "Disable NAV-VELECEF binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 0]
+
+# Enable NAV-VELNED at 1Hz (NED velocity)
+[[asbin]]
+tag = "asbin-nav-velned"
+description = "Enable NAV-VELNED binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 1]
+
+# Disable NAV-VELNED
+[[asbin]]
+tag = "asbin-nav-velned-off"
+description = "Disable NAV-VELNED binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 0]
+
+# Enable NAV-CLOCK at 1Hz (clock bias/drift)
+# Verified ACK received on TAU1201
+# Verified NAV-CLOCK messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "asbin-nav-clock"
+description = "Enable NAV-CLOCK binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 1]
+
+# Disable NAV-CLOCK
+# Verified ACK received on TAU1201
+[[asbin]]
+tag = "asbin-nav-clock-off"
+description = "Disable NAV-CLOCK binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 0]
+
+# NMEA messages use class 0xF0
+
+# Verified ACK received on TAU1201
+# Verified BDGGA messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDGGA messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 0]
+
+# Verified ACK received on TAU1201
+# Verified BDGSA messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDGSA messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 0]
+
+# Verified ACK received on TAU1201
+# Verified BDGSV messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDGSV messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 0]
+
+# Verified ACK received on TAU1201
+# Verified RMC messages (GNRMC/BDRMC) appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDRMC messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 0]
+
+# Verified ACK received on TAU1201
+# Verified BDZDA messages appear at 1Hz after enable on TAU1201
+[[asbin]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 1]
+
+# Verified ACK received on TAU1201
+# Verified BDZDA messages stop after disable on TAU1201
+[[asbin]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 0]
+
+[[asbin]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 1]
+
+[[asbin]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 0]
+# Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, ZDA)
+# Note: TXT cannot be disabled
+# GGA
+[[asbin]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 0]
+
+# GSA
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 0]
+
+# GSV
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 0]
+
+# RMC
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 0]
+
+# ZDA
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 0]
+
+# GLL
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 0]
