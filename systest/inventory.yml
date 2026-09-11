@@ -21,6 +21,7 @@ all:
         abondance.lan:
         abondance-ttySEP0.lan:
         brie.lan:
+        caciocavallo.lan:
         chaource.lan:
         gubbeen.lan:
         maasdam.lan:
@@ -30,7 +31,6 @@ all:
         roquefort.lan:
         serpa.lan:
         taleggio.lan:
-        vacherin.lan:
         valdeon.lan:
         valencay.lan:
         valtellina.lan:
@@ -43,18 +43,20 @@ all:
       children:
         testing:
       hosts:
+        beaufort.lan:
         edam.lan:
+        feta.lan:
         fontina.lan:
         montasio.lan:
         raschera.lan:
+        vacherin.lan:
     virtual_hosts:
       hosts:
         abondance-ttySEP0.lan:
   
   hosts:
-    # BG7TBL CM55 on USB (PL2303)
     vacherin.lan:
-      speed: 38400
+      speed: 115200
       instance: ttyUSB0
 
     # ZED-X20P on USB
@@ -106,9 +108,10 @@ all:
     venaco.lan:
       vendor: '"zhongke"'
 
-    # LEA-M8T over RS232
+    # BG7TBL CM55
     caciocavallo.lan:
       instance: ttyAMA3
+      speed: 38400
 
     # LEA-M8F in Timebeat sandwich board
     morbier.lan: # all default
@@ -164,19 +167,25 @@ all:
       interface: eth1
       speed: 38400
 
-    # NEO-F10N on FT232R USB adapter, PPS on CTS, feeding ntpd-rs (no PHC)
     edam.lan:
       interface: ""
       instance: ttyUSB0
-      speed: 38400
-      sock_path: /run/ntpd-rs/satpulse.ttyUSB0.sock
+      speed: 115200
     
     # Raspberry Pi 5
-    raschera.lan: # all defaults
+    raschera.lan:
+      interface: ""
     
     # Raspberry Pi 3
     montasio.lan:
       interface: ""
 
     fontina.lan:
+      interface: ""
+
+    # Raspberry Pi 4
+    beaufort.lan:
+      interface: ""
+
+    feta.lan:
       interface: ""
