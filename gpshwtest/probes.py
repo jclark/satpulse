@@ -59,9 +59,7 @@ FIXRATE_FAST = 0.2
 # only ~3 intervals, so a wider window keeps the median inter-arrival stable.
 RATE_OBSERVE_SECONDS = 6
 
-# Serial PPS polling learns the pulse phase before narrowing its polling
-# window. On an FT232R it can take 6-7 seconds to start publishing edges, so
-# the PHC's four-second observation window is too short for this path.
+# Give serial PPS detection enough time to observe several one-second periods.
 SERIAL_PPS_SECONDS = 10
 
 
