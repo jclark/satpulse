@@ -1,0 +1,26 @@
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","115200","--vendor","allystar","--test-log","allystar/tau1201-noop.jsonl"],"version":"satpulse version 0.3-pre.20260703.46cc7560.dirty, build date 2026-07-03 04:38:24+00:00","hostname":"edam"}
+{"t":"2026-07-03T04:43:36.205654Z","tag":"ASBIN","msg":"NAV-POSLLH","bin":"f1d901021c0056b7c31a802afd3b8d4f2f08277affff5de1ffffd6190000f7150000d4ae"}
+{"t":"2026-07-03T04:43:36.208605Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a0400000e34","out":true}
+{"t":"2026-07-03T04:43:36.20825Z","tag":"ASBIN","msg":"NAV-TIMEUTC","bin":"f1d90121140056b7c31a000000000e470300ea070703042b2427ed11"}
+{"t":"2026-07-03T04:43:36.210834Z","tag":"NMEA","msg":"GNTXT","ascii":"$GNTXT,01,01,02,ANT_OPEN,D2,*35\r\n"}
+{"t":"2026-07-03T04:43:36.213529Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a042000332e3031382e61616239356537000000484438303430442e39353239623636332821"}
+{"type":"receiver","vendor":"Allystar","hardware":"HD8040D.9529b663","firmware":"3.018.aab95e7","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config"}
+{"type":"env","args":["-d","/dev/ttyUSB0","-s","115200","--vendor","allystar","--test-log","allystar/tau1201-noop.jsonl","--show-config"],"version":"satpulse version 0.3-pre.20260703.46cc7560.dirty, build date 2026-07-03 04:38:24+00:00","hostname":"edam"}
+{"t":"2026-07-03T04:43:37.156379Z","tag":"ASBIN","msg":"NAV-POSLLH","bin":"f1d901021c002abbc31a742afd3b8c4f2f08ae7affffe3e1ffff66180000e91400002c0c"}
+{"t":"2026-07-03T04:43:37.159345Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a0400000e34","out":true}
+{"t":"2026-07-03T04:43:37.159131Z","tag":"ASBIN","msg":"NAV-TIMEUTC","bin":"f1d9012114002abbc31a000000009b4b0300ea070703042b252757b7"}
+{"t":"2026-07-03T04:43:37.161526Z","tag":"NMEA","msg":"GNTXT","ascii":"$GNTXT,01,01,02,ANT_OPEN,D2,*35\r\n"}
+{"t":"2026-07-03T04:43:37.164416Z","tag":"ASBIN","msg":"MON-VER","bin":"f1d90a042000332e3031382e61616239356537000000484438303430442e39353239623636332821"}
+{"t":"2026-07-03T04:43:37.168028Z","tag":"ASBIN","msg":"CFG-PPS","bin":"f1d9060700000d2d","out":true}
+{"t":"2026-07-03T04:43:37.168055Z","tag":"ASBIN","msg":"CFG-FIXEDECEF","bin":"f1d9061400001a54","out":true}
+{"t":"2026-07-03T04:43:37.168061Z","tag":"ASBIN","msg":"CFG-SURVEY","bin":"f1d906120000184e","out":true}
+{"t":"2026-07-03T04:43:37.168065Z","tag":"ASBIN","msg":"CFG-NAVSAT","bin":"f1d9060c0000123c","out":true}
+{"t":"2026-07-03T04:43:37.168169Z","tag":"ASBIN","msg":"CFG-ELEV","bin":"f1d9060b00001139","out":true}
+{"t":"2026-07-03T04:43:37.169108Z","tag":"ASBIN","msg":"CFG-PPS","bin":"f1d906070f0040420f0012020000a0860100010d00f68e"}
+{"t":"2026-07-03T04:43:37.171154Z","tag":"ASBIN","msg":"CFG-FIXEDECEF","bin":"f1d906140c000000000000000000000000002634"}
+{"t":"2026-07-03T04:43:37.172862Z","tag":"ASBIN","msg":"CFG-SURVEY","bin":"f1d9061208000000000000000000205e"}
+{"t":"2026-07-03T04:43:37.174264Z","tag":"ASBIN","msg":"CFG-NAVSAT","bin":"f1d9060c040037821004e322"}
+{"t":"2026-07-03T04:43:37.175288Z","tag":"ASBIN","msg":"CFG-ELEV","bin":"f1d9060b080035fa8e3cc2b8b23d7be0"}
+{"type":"receiver","vendor":"Allystar","hardware":"HD8040D.9529b663","firmware":"3.018.aab95e7","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","signalsEnabled":{"BDS":["B1I","B2a"],"GAL":["E1","E5a"],"GLO":["L1"],"GPS":["L1","L5"],"QZSS":["L1","L5"]},"static":false}

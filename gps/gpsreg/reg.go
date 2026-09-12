@@ -315,6 +315,8 @@ func novVariantFor(v Vendor) nov.Variant {
 // in: each config branch adds one case.
 func CreateConfigProtocol(vendor Vendor) gpsprot.ConfigProtocol {
 	switch vendor {
+	case VendorAllystar:
+		return as.NewConfigProtocol()
 	case VendorUblox:
 		return ubx.NewConfigProtocol()
 	case VendorUnicore:

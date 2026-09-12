@@ -154,17 +154,29 @@ func NewPacketProcessor() *PacketProcessor {
 
 // ProcessPacket processes an RTCM packet's data and returns any error.
 // It assumes checksum has already been verified.
+//
+// The message body is parsed only when the installed handler observes
+// consumed traffic (implements HandledNativeMsgHandler, as the rate
+// estimator does during configuration); the type assertion comes first so
+// normal operation, whose Dispatcher does not implement it, pays only the
+// cheap message-ID extraction and never decodes an MSM payload. A consumed
+// RTCM message goes out on the handled channel (parallel to the Allystar
+// processor's consumed path), carrying the parsed message so its MSM epoch
+// can feed the estimator.
 func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	msg, err := rtcmbin.ParseMsg(data)
-	if err != nil {
-		return "", err
-	}
 	msgID := rtcmbin.ExtractMsgID(data)
 	nmh := p.GetNativeMsgHandler()
-	if nmh != nil {
-		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
+	if nmh == nil {
+		return msgID, nil
 	}
-	return msgID, nil
+	if hh, ok := nmh.(gpsprot.HandledNativeMsgHandler); ok {
+		msg, err := rtcmbin.ParseMsg(data)
+		if err != nil {
+			return msgID, err
+		}
+		return msgID, hh.HandledNativeMsg(Tag, msgID, msg, tRead)
+	}
+	return msgID, nmh.NativeMsg(Tag, msgID, nil, tRead)
 }
 
 // NativeOnly returns true since RTCM only provides correction data

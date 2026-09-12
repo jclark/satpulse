@@ -1562,3 +1562,62 @@ func TestEventMarshal(t *testing.T) {
 		t.Error("missing t field")
 	}
 }
+
+// recordingNativeHandler records NativeMsg and HandledNativeMsg calls.
+// It implements both NativeMsgHandler and HandledNativeMsgHandler.
+type recordingNativeHandler struct {
+	native  []string
+	handled []string
+}
+
+func (h *recordingNativeHandler) NativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error {
+	h.native = append(h.native, msgID)
+	return nil
+}
+
+func (h *recordingNativeHandler) HandledNativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error {
+	h.handled = append(h.handled, msgID)
+	return nil
+}
+
+// plainNativeHandler implements only NativeMsgHandler, not the handled
+// channel; the Multi handler must not blow up forwarding to it.
+type plainNativeHandler struct{ native []string }
+
+func (h *plainNativeHandler) NativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error {
+	h.native = append(h.native, msgID)
+	return nil
+}
+
+// TestMultiNativeMsgHandlerForwarding checks the forwarding trap: the
+// Multi handler is what is installed during configuration, so it must
+// forward HandledNativeMsg to children that implement the optional
+// interface (and skip those that do not) - otherwise the packet
+// processors' type assertion fails exactly when observations are needed.
+func TestMultiNativeMsgHandlerForwarding(t *testing.T) {
+	rec := &recordingNativeHandler{}
+	plain := &plainNativeHandler{}
+	m := NewMultiNativeMsgHandler(plain, rec)
+
+	// A Multi still satisfies the optional interface, so a caller's type
+	// assertion on the installed handler succeeds.
+	hh, ok := any(m).(HandledNativeMsgHandler)
+	if !ok {
+		t.Fatal("MultiNativeMsgHandler does not implement HandledNativeMsgHandler")
+	}
+	if err := hh.HandledNativeMsg("NMEA", "GNRMC", nil, time.Time{}); err != nil {
+		t.Fatalf("HandledNativeMsg: %v", err)
+	}
+	if err := m.NativeMsg("NMEA", "GPGSV", nil, time.Time{}); err != nil {
+		t.Fatalf("NativeMsg: %v", err)
+	}
+	if len(rec.handled) != 1 || rec.handled[0] != "GNRMC" {
+		t.Errorf("recording child handled = %v, want [GNRMC]", rec.handled)
+	}
+	if len(plain.native) != 1 || plain.native[0] != "GPGSV" {
+		t.Errorf("plain child native = %v, want [GPGSV]", plain.native)
+	}
+	if len(rec.native) != 1 {
+		t.Errorf("recording child native = %v, want [GPGSV]", rec.native)
+	}
+}

@@ -157,7 +157,6 @@ func TestNavAutoEpoch(t *testing.T) {
 		t.Errorf("epoch 1 NumSVUsed = %v, want 12", e.NumSVUsed)
 	}
 
-
 	// Third NAV-AUTO should flush the second epoch
 	auto3 := &asbin.NavAuto{FixState: asbin.NavAutoFix3D, SatInUse: 10, SatInView: 20}
 	processMsg(t, pp, auto3, time.Unix(3, 0))
@@ -182,7 +181,7 @@ func TestNavAutoWithITOWEpoch(t *testing.T) {
 	// iTOW message starts epoch 1
 	processMsg(t, pp, &asbin.NavPosLlh{
 		NavITOW: asbin.NavITOW{ITow: 100000},
-		Lat: 473977640, Lon: 85255110, Height: 467890, HMSL: 420000,
+		Lat:     473977640, Lon: 85255110, Height: 467890, HMSL: 420000,
 		HAcc: 5000, VAcc: 4000,
 	}, time.Unix(1, 0))
 
@@ -201,7 +200,7 @@ func TestNavAutoWithITOWEpoch(t *testing.T) {
 	// iTOW message starts epoch 2, flushing epoch 1
 	processMsg(t, pp, &asbin.NavPosLlh{
 		NavITOW: asbin.NavITOW{ITow: 200000},
-		Lat: 473977641, Lon: 85255111, Height: 467891, HMSL: 420001,
+		Lat:     473977641, Lon: 85255111, Height: 467891, HMSL: 420001,
 		HAcc: 5001, VAcc: 4001,
 	}, time.Unix(2, 0))
 
@@ -238,16 +237,16 @@ func TestNavTimeUTCITowOffByOne(t *testing.T) {
 	// NAV-POSLLH, NAV-DOP, NAV-VELNED all have iTOW=100000
 	processMsg(t, pp, &asbin.NavPosLlh{
 		NavITOW: asbin.NavITOW{ITow: 100000},
-		Lat: 473977640, Lon: 85255110, Height: 467890, HMSL: 420000,
+		Lat:     473977640, Lon: 85255110, Height: 467890, HMSL: 420000,
 		HAcc: 5000, VAcc: 4000,
 	}, time.Unix(1, 0))
 	processMsg(t, pp, &asbin.NavDop{
 		NavITOW: asbin.NavITOW{ITow: 100000},
-		GDOP: 149, PDOP: 126, TDOP: 80, VDOP: 103, HDOP: 71,
+		GDOP:    149, PDOP: 126, TDOP: 80, VDOP: 103, HDOP: 71,
 	}, time.Unix(1, 3000000))
 	processMsg(t, pp, &asbin.NavVelNed{
 		NavITOW: asbin.NavITOW{ITow: 100000},
-		GSpeed: 5, Heading: 5517413, SAcc: 4,
+		GSpeed:  5, Heading: 5517413, SAcc: 4,
 	}, time.Unix(1, 6000000))
 	// NAV-TIMEUTC has iTOW=99999 (1ms less, as observed on real hardware)
 	utc1 := &asbin.NavTimeUTC{NavITOW: asbin.NavITOW{ITow: 99999}}
@@ -265,7 +264,7 @@ func TestNavTimeUTCITowOffByOne(t *testing.T) {
 	// Epoch 2: next second's messages flush epoch 1
 	processMsg(t, pp, &asbin.NavPosLlh{
 		NavITOW: asbin.NavITOW{ITow: 200000},
-		Lat: 473977641, Lon: 85255111, Height: 467891, HMSL: 420001,
+		Lat:     473977641, Lon: 85255111, Height: 467891, HMSL: 420001,
 		HAcc: 5001, VAcc: 4001,
 	}, time.Unix(2, 0))
 
