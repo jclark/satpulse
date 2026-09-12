@@ -179,6 +179,7 @@ exclude:
   - CLAUDE.md
   - log
   - man/CLAUDE.md
+  - workbench/CLAUDE.md
   - node_modules
   - package.json
   - package-lock.json

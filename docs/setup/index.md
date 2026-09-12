@@ -6,7 +6,8 @@ toc: false
 This section describes how to set up SatPulse and the software that works with it.
 
 Before installing SatPulse, you obviously need a working OS.
-SatPulse runs on Unix-like systems, including Linux and macOS.
+SatPulse runs on Linux, macOS and Windows,
+although not all features are available on every OS.
 When running headless, you should get to the point where you can log in with SSH.
 
 On a Raspberry Pi,
@@ -16,19 +17,24 @@ It is also possible to [install Fedora]({% link setup/fedora-rpi.md %}).
 On a CM4 or CM5, if you are connecting the TX/RX pins on the GPS board to the 40-pin HAT connector on the carrier board,
 then you also need to [configure the UARTs]({% link setup/rpi-uart.md %}).
 
-If the machine will act as a server, you will probably want a static IP address;
-the [network configuration]({% link setup/network.md %}) page describes how to do this on Linux.
-
-The first stage is the baseline setup,
-which gets you to the point where the GPS receiver is connected, satpulsed is running, and monitoring is working:
+The first two preliminary steps are:
 
 1. [Install SatPulse]({% link setup/satpulse-install.md %}).
    After this, you can use [satpulsetool]({%link man/satpulsetool.1.md%}) without any additional configuration.
 2. Identify the [serial]({% link setup/gps-serial.md %}) device connected to the GPS and verify that data is being received.
-   This can most easily be done with satpulsetool.
-   Configuration also needs to know the baud rate.
-3. [Configure and run satpulsed]({% link setup/satpulsed.md %}).
-4. [Monitor]({% link setup/monitor.md %}) satpulsed in a variety of ways.
+   You will also need to know the baud rate.
+
+After that, you can use SatPulse in a couple of ways.
+The easiest way to get started is to use [SatPulse Workbench]({% link workbench/index.md %}) to test out your receiver;
+no configuration is needed.
+
+If you want to use your receiver in production, then you will want to use the `satpulsed` service.
+In this case, you will probably want a static IP address;
+the [network configuration]({% link setup/network.md %}) page describes how to do this on Linux.
+After that you will want to establish a baseline setup where satpulsed is running, and monitoring is working:
+
+1. [Configure and run satpulsed]({% link setup/satpulsed.md %}).
+2. [Monitor]({% link setup/monitor.md %}) satpulsed in a variety of ways.
 
 On top of the baseline, you can add support for positioning with RTK and/or timing.
 
@@ -44,4 +50,3 @@ For timing, there are two levels, depending on your hardware:
   This supports a PTP server as well as NTP.
   It can achieve accuracy in the tens of nanoseconds, but needs very specific hardware.
   This capability is available only on Linux.
-
