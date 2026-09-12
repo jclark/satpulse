@@ -205,11 +205,7 @@ class Tool:
         exit 0 therefore return an event list for offline analysis.
         """
         self.seq += 1
-        # Some FT232R units accept the kernel-notification method without
-        # reporting transitions. Polling is less accurate but detects both
-        # tested adapters, and this check needs only edge presence.
-        argv = [str(self.exe), "serial", "--pps-pin", pin,
-                "--pps-method", "poll", "--jsonl",
+        argv = [str(self.exe), "serial", "--pps-pin", pin, "--jsonl",
                 "--device-speed", str(self.speed() or 0),
                 "--timeout", str(seconds), "-d", device]
         try:
