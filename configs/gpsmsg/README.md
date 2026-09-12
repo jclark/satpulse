@@ -56,18 +56,7 @@ This can help with seeing whether your receiver is handling the commands correct
 
 ### Allystar
 
-Choose the message file for the receiver family:
-
-| Receiver | Message file | CFG-MSG rate for 1Hz output | RTCM output |
-|----------|--------------|-----------------------------|-------------|
-| TAU1201 | `allystar/tau1201.toml` | 1 | No |
-| TAU13xx | `allystar/tau13xx.toml` | 1 | Yes |
-| TAU951M (P2 or K2) | `allystar/tau951m.toml` | 5 | Yes |
-
-The CFG-MSG rate is a divisor of the receiver's native measurement cycle,
-which is why the TAU951M uses a different message file. Configure a TAU1201
-for use with satpulsed as follows (substitute the appropriate file above for
-another model):
+Configure an Allystar receiver, such as the TAU1201, for use with satpulsed:
 
 ```
 satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
