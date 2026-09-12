@@ -157,6 +157,7 @@ When asked to review code or a plan:
 - When a commit completely resolves an issue, make `Fixes #N` (with the issue number) the last line of the commit message, so the issue closes when the commit merges.
 - Never mention Claude, Claude Code, or any other AI agent or tool anywhere in a commit message, PR description, or issue - no co-authorship, attribution, "Generated with ..." line, chat/session link, emoji marker, or reference of any kind. These are public, so a private-chat link leaks it, and the history must read as the author's own work. Describe only the change itself.
 - Never create a GitHub issue unless explicitly asked, even when writing a plan or notes that could become one.
+- Anything committed (code, comments, docs, plans, commit messages) must not refer to local files outside the repository or to uncommitted code or documents. Describe the thing itself instead of pointing at it.
 
 ## Development environment
 

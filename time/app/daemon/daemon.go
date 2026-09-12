@@ -13,6 +13,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -321,12 +322,12 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return err
 		}
 	}
-	var spCh <-chan serialpps.CandidateEdge
-	var spGen *serialpps.Generator
+	var ppsCh <-chan pps.CandidateEdge
+	var ppsGen *pps.Generator
 	if cfg.Serial.PPS != nil {
-		spGen = serialpps.NewGenerator(cfg.Sample.Serial.PPS)
-		ch := make(chan serialpps.CandidateEdge, 1)
-		spCh = ch
+		ppsGen = pps.NewGenerator(cfg.Sample.Serial.PPS.GeneratorConfig)
+		ch := make(chan pps.CandidateEdge, 1)
+		ppsCh = ch
 		wg.Go(func() {
 			defer close(ch)
 			lg.Debug("serial PPS goroutine started", "pin", cfg.Serial.PPS.Pin)
@@ -360,7 +361,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	obs.AddObserver(&oc, posObs)
 	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, spGen, observer, tStart, ggaSelector)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, ppsGen, observer, tStart, ggaSelector)
 	if err != nil {
 		return err
 	}
@@ -380,7 +381,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			d.LeapSecond(ls, time.Time{})
 		}
 		// Dispatcher is responsible for closing rcProxy via defer in Run()
-		d.Run(tsCh, spCh, pCh, pullPktCh)
+		d.Run(tsCh, ppsCh, pCh, pullPktCh)
 	})
 
 	return nil
@@ -395,7 +396,7 @@ func NewDispatcher(
 	gm *ptpgm.Grandmaster,
 	rc *refclock.ProxyRefClock,
 	shm *ntpshm.Writer,
-	spGen *serialpps.Generator,
+	ppsGen *pps.Generator,
 	obs obs.Observer,
 	tStart time.Time,
 	ggaSelector *stream.GGASelector,
@@ -425,7 +426,7 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, spGen, ls, obs, eventLogPath, tStart, gs)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ppsGen, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI

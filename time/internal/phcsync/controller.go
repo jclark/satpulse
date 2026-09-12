@@ -315,6 +315,7 @@ func (c *Controller) Pause() {
 
 // Tick handles regular tick events (0.25s intervals).
 func (c *Controller) Tick(now time.Time) {
+	defer c.gmRetry(now)
 	// Don't generate missing samples in reset mode
 	if c.mode == ModeReset {
 		return
@@ -453,6 +454,15 @@ func (c *Controller) notePulseInfo(pi pulseInfo) {
 		"currentFreq", c.freq,
 		"avgInterval", pi.avgInterval,
 		"pulseWidth", pi.pulseWidth)
+}
+
+// gmRetry runs after the rest of the tick so that a retry does not send
+// settings that a mode change in the same tick has just invalidated.
+func (c *Controller) gmRetry(now time.Time) {
+	if c.gm != nil && c.gm.RetryDue(now) {
+		c.gmUpdate()
+		c.gm.Retry()
+	}
 }
 
 func (c *Controller) gmUpdate() {

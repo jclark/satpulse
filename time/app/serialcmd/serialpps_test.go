@@ -12,28 +12,29 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/lib/serialenum"
 )
 
 func TestEdgePrinter(t *testing.T) {
-	edge := serialpps.Edge{
+	edge := pps.Edge{
 		Timestamp: time.Date(2026, time.August, 12, 21, 23, 5, 123_456_499, time.FixedZone("ICT", 7*60*60)),
 	}
 	for _, tc := range []struct {
 		name       string
-		edge       serialpps.CandidateEdge
+		edge       pps.CandidateEdge
 		jsonl      bool
 		withDevice bool
 		want       string
 	}{
-		{name: "human", edge: serialpps.CandidateEdge{Edge: edge}, want: "14:23:05.123456\n"},
-		{name: "human with device", edge: serialpps.CandidateEdge{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
-		{name: "wait JSONL", edge: serialpps.CandidateEdge{Edge: edge, Settled: true}, jsonl: true,
+		{name: "human", edge: pps.CandidateEdge{Edge: edge}, want: "14:23:05.123456\n"},
+		{name: "human with device", edge: pps.CandidateEdge{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
+		{name: "wait JSONL", edge: pps.CandidateEdge{Edge: edge, Settled: true}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\"}\n"},
-		{name: "settling poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
+		{name: "settling poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settling\":true}\n"},
-		{name: "settled poll JSONL", edge: serialpps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
+		{name: "settled poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -236,7 +237,7 @@ func TestMonitorPortListOutputFailure(t *testing.T) {
 	ports := []serialenum.Port{{Device: "writer"}, {Device: "waiting"}}
 	monitor := func(ctx context.Context, _ *slog.Logger, device string) ppsResult {
 		if device == "writer" {
-			err := pr.print(device, serialpps.CandidateEdge{})
+			err := pr.print(device, pps.CandidateEdge{})
 			return ppsResult{device: device, failure: err.Error()}
 		}
 		<-ctx.Done()

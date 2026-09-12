@@ -80,9 +80,20 @@ The PPS samples accurately mark the start of each second but do not identify whi
 The NTP daemon combines the two sources:
 the PPS signal determines when a second starts,
 and the samples from satpulsed determine which second it is.
-The accuracy you can expect is in the microsecond range,
+The accuracy you can expect is at best in the microsecond range,
 because the time of each PPS edge is measured in software by the kernel.
 
+It is important to understand that there is always a non-zero delay between the instant the pulse occurs
+and the instant the kernel records the timestamp that is reported through the PPS device.
+For example, on a Raspberry Pi 5 I measured a delay of ~11 microseconds,
+although this can be reduced by disabling PCIe power management.
+The NTP daemon has no knowledge of this delay and its reported statistics do not take account of it.
+If you can estimate this delay, then you can configure the NTP daemon to compensate for it.
+
+### Raspberry Pi boot configuration
+
+Typically, some system-dependent boot configuration is needed to enable PPS on a GPIO pin.
+This section covers the necessary configuration for a Raspberry Pi.
 
 When using a Raspberry Pi, the PPS signal is connected to a GPIO pin.
 GPS HATs typically wire the PPS signal to pin 12 (GPIO 18).
@@ -92,7 +103,20 @@ With Raspberry Pi OS, you can configure that pin as a PPS pin by adding the foll
 dtoverlay=pps-gpio,gpiopin=18
 ```
 
-Reboot after this.
+On the Raspberry Pi 5, if your system has the file `/boot/firmware/overlays/pps-rp1.dtbo`,
+you can instead use
+
+```
+dtoverlay=pps-rp1
+```
+
+This overlay has an `echo` option, which is useful for analyzing accuracy.
+
+On the Raspberry Pi 5, accuracy and jitter can be significantly improved
+by adding `pcie_aspm.policy=performance` to `/boot/firmware/cmdline.txt`.
+This disables PCIe link power management.
+
+### Verification
 
 To verify that the PPS signal is working, install pps-tools:
 
@@ -231,6 +255,11 @@ To provide NTP service to other machines, add an `allow` directive such as this:
 ```
 allow 192.168.1.0/24
 ```
+
+For better accuracy, you can add an `offset` option to the `refclock PPS` line
+to compensate for the delay between the time of the pulse and the time of the timestamp.
+On a Raspberry Pi, you can use the [ppsbias](https://github.com/jclark/ppsbias) program
+to determine an appropriate value.
 
 ## Set up ntpd-rs
 
