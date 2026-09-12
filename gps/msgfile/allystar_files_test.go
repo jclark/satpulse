@@ -14,9 +14,9 @@ func TestAllystarModelFiles(t *testing.T) {
 		wantRTCM   bool
 		wantEnable int
 	}{
-		{name: "tau1201", wantRate: 1, wantEnable: 17},
-		{name: "tau13xx", wantRate: 1, wantRTCM: true, wantEnable: 26},
-		{name: "tau951m", wantRate: 5, wantRTCM: true, wantEnable: 26},
+		{name: "tau1201", wantRate: 1, wantEnable: 18},
+		{name: "tau13xx", wantRate: 1, wantRTCM: true, wantEnable: 27},
+		{name: "tau951m", wantRate: 5, wantRTCM: true, wantEnable: 27},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -31,6 +31,9 @@ func TestAllystarModelFiles(t *testing.T) {
 
 			enables := 0
 			hasRTCM := false
+			hasGSTEnable := false
+			hasGSTDisable := false
+			var lastNMEAOff []byte
 			for i := range mf.ASBIN {
 				m := &mf.ASBIN[i]
 				if m.Class != 0x06 || m.ID != 0x01 {
@@ -46,6 +49,14 @@ func TestAllystarModelFiles(t *testing.T) {
 				if payload[0] == 0xF8 {
 					hasRTCM = true
 				}
+				switch m.getTag() {
+				case "nmea-gst":
+					hasGSTEnable = payload[0] == 0xF0 && payload[1] == 0x08 && payload[2] == tc.wantRate
+				case "nmea-gst-off":
+					hasGSTDisable = payload[0] == 0xF0 && payload[1] == 0x08 && payload[2] == 0
+				case "nmea-off":
+					lastNMEAOff = payload
+				}
 				if payload[2] == 0 {
 					continue
 				}
@@ -59,6 +70,12 @@ func TestAllystarModelFiles(t *testing.T) {
 			}
 			if hasRTCM != tc.wantRTCM {
 				t.Errorf("RTCM presence %v, want %v", hasRTCM, tc.wantRTCM)
+			}
+			if !hasGSTEnable || !hasGSTDisable {
+				t.Error("missing valid nmea-gst or nmea-gst-off tag")
+			}
+			if len(lastNMEAOff) != 3 || lastNMEAOff[0] != 0xF0 || lastNMEAOff[1] != 0x08 || lastNMEAOff[2] != 0 {
+				t.Errorf("last nmea-off payload % X, want F0 08 00", lastNMEAOff)
 			}
 		})
 	}

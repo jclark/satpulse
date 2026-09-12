@@ -346,7 +346,26 @@ class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF0, 0x01, 0]
-# Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, ZDA)
+
+# GST uses an undocumented CFG-MSG sub-ID discovered by hardware testing
+# Verified enable and disable on TAU1201 and TAU1312
+[[asbin]]
+tag = "nmea-gst"
+description = "Enable NMEA GST message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x08, 1]
+
+[[asbin]]
+tag = "nmea-gst-off"
+description = "Disable NMEA GST message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x08, 0]
+
+# Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, ZDA, GST)
 # Note: TXT cannot be disabled
 # GGA
 [[asbin]]
@@ -396,3 +415,11 @@ class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0xF0, 0x01, 0]
+
+# GST (undocumented CFG-MSG sub-ID; hardware-discovered); keep last
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x08, 0]
