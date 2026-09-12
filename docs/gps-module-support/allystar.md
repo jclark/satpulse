@@ -20,12 +20,13 @@ For these modules, SatPulse supports:
   - message files for configuration of TAU1201, TAU13xx and TAU951M modules
   - an `asbin` message type in message files, with correlation of responses
 
-SatPulse has been tested with the TAU1201, the L1/L2 TAU1302,
+SatPulse has been tested with the TAU1201 and TAU1202, the L1/L2 TAU1302,
 the L1/L5 TAU1312 and the more recent TAU951M-P200.
 
 ## High-level configuration
 
-High-level configuration has been tested with the TAU1201, TAU1302 and TAU951M-P200.
+High-level configuration has been tested with the TAU1201, TAU1202, TAU1302,
+TAU1312 and TAU951M-P200.
 It supports:
 
 - selection of GNSS constellations and signals
@@ -36,8 +37,8 @@ It supports:
 - selective and complete saves, reloads, cold resets and factory resets
 
 The available RTCM output depends on the module.
-The TAU1302 and TAU951M-P200 support MSM4, MSM7 and 1005 output,
-whereas the TAU1201 does not support RTCM output.
+The TAU13xx and TAU951M-P200 support MSM4, MSM7 and 1005 output,
+whereas the TAU1201/TAU1202 family does not support RTCM output.
 Raw output is controlled by RXM-DUMPRAW, but the resulting RXM-RAW payload is undocumented and is not decoded by SatPulse.
 
 Allystar receivers do not expose a time-pulse timestamp, leap-second announcements,

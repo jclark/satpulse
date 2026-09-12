@@ -2,10 +2,10 @@
 
 How device-independent configuration is realized on the Allystar
 TAU951M-P200 (HD9510), relative to perfect realization of the full
-model (`SEMANTICS.md`). Measured on firmware 3.018.2acec91c
-(2026-07-03, UART at 115200). Perfectly-realized behavior is not
-listed. This is the RTK member of the trio; its signal plan equals the
-TAU1201's.
+model (`SEMANTICS.md`). The current batch unit was recharacterized on
+firmware 3.018.002947c3 (2026-09-12, UART at 115200).
+Perfectly-realized behavior is not listed. This is the RTK member of
+the trio; its signal plan equals the TAU1201's.
 
 ## Starting state
 
@@ -40,12 +40,14 @@ mask) backs the verify readback.
 
 - Antenna cable delay does not exist; the CFG-PPS Offset field is
   factory-set (530 ns on this unit, surviving factory reset -
-  evidently calibration) and is preserved, never exposed. Time-pulse
-  findings on this unit are CFG-PPS register readbacks; the PPS pin
-  itself was not observed (no timing instrumentation).
+  evidently calibration) and is preserved, never exposed. The PPS output
+  was electrically verified over an FT232R CTS input: an always-on 0.1 s
+  pulse produced ten 1 Hz edges in ten seconds, and disabling it produced
+  none. CFG-PPS writes select the documented PPS GPIO 13.
 - Fixed position is ECEF-only in storage (0.01 m quantum); no stored
-  position accuracy (reads zero). LLH sets are converted.
-- Minimum elevation carries float32-radian rounding.
+  position accuracy (the property is omitted). LLH sets are converted.
+- Minimum elevation is stored in float32 radians and rounded to
+  millidegrees in the device-independent readback.
 - Time pulse alignment and timing constellation have no carrier.
 - The active UART is not identifiable; a CFG-PRT baud set switches the
   arriving port.
@@ -69,6 +71,13 @@ As-found running configuration: NMEA GGA, GSA, GSV, RMC, ZDA at 1 Hz
 (TXT off, unlike the TAU1201); mobile mode; full supported signal set;
 PPS 1 s period, 1% duty, RISING polarity, GPIO 13, offset 530 ns;
 NMEA version 4.11.
+
+Repeated artificial width changes in gpshwtest's scalar quantization sweep
+can wedge this unit's physical pulse engine: later CFG-PPS writes still ACK
+and read back, but no edge appears until a reload. A clean production-style
+enable/disable operation works. The electrical check therefore runs from the
+as-found state before the scalar stress sweep; the normal reload probe later
+clears the stressed state and the receiver is left as found.
 
 This batch unit's factory CFG-PPS polarity is rising (confirmed
 2026-07-13: factory-reset-inclusive disruptive runs show no polarity
