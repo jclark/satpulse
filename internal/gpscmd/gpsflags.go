@@ -547,6 +547,9 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 			if flags.Lookup("survey-acc").Changed {
 				vars.configSupport.require(gpsprot.ConfigSupportSurveyAcc, "--survey-acc")
 			}
+			if flags.Lookup("survey-time").Changed {
+				vars.configSupport.require(gpsprot.ConfigSupportSurveyDur, "--survey-time")
+			}
 			vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
 			vars.mode.Set(gpsprot.Mode{Static: true})
 			if p.mobile {
