@@ -16,12 +16,13 @@ For these modules, SatPulse supports:
 - decoding of the Allystar binary packet format (packet format tag is `ASBIN`)
 - conversion of messages into the SatPulse device-independent data model
 - low-level configuration
-  - message files for configuration
+  - message files for configuration of TAU1201, TAU13xx and TAU951M modules
   - an `asbin` message type in message files, with correlation of responses
 
 High-level configuration is [under development](https://github.com/jclark/satpulse/pull/349).
 
-SatPulse has been tested with the TAU1201 and the more recent TAU951M-P200.
+SatPulse has been tested with the TAU1201, the L1/L2 TAU1302,
+the L1/L5 TAU1312 and the more recent TAU951M-P200.
 
 ## Supported messages
 
