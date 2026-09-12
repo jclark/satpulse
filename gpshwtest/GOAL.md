@@ -9,7 +9,7 @@ This file defines the goal and how to measure progress toward it. It deliberatel
 ## Shape constraints
 
 - A Python program in this directory, stdlib-only at runtime, runnable in-repo as `python3 gpshwtest`, mypy strict via uv (like `smoketest/`).
-- All receiver I/O goes through `satpulsetool gps` invocations using `--json` and `--packet-log`. Captured packet logs are interpreted offline with `satpulsetool replay` (typed gpsprot events); physical time pulses are observed with `satpulsetool sdp`. The program contains no serial or GPS-protocol code; it tests exactly the behavior a satpulsetool user gets, at the level a satpulsetool user sees.
+- All receiver I/O goes through `satpulsetool gps` invocations using `--json` and `--packet-log`. Captured packet logs are interpreted offline with `satpulsetool replay` (typed gpsprot events); physical time pulses are observed with `satpulsetool sdp` or `satpulsetool serial`. The program contains no serial or GPS-protocol code; it tests exactly the behavior a satpulsetool user gets, at the level a satpulsetool user sees.
 - Receiver-specific knowledge in the program is minimized. What a receiver does is discovered by probing it, not encoded in tables of expected per-model behavior.
 
 ## Coverage: all of high-level configuration
@@ -62,7 +62,7 @@ Message output is verified by what the receiver actually emits, never by propert
 
 ### Physical time pulse
 
-Where the receiver's PPS output is wired to a PHC pin (declared by the `[phc]` table in a satpulse config file, or given explicitly), the time pulse configuration is verified electrically with `satpulsetool sdp --extts`: pulses present with the configured period when enabled, absent when disabled. Pulse width and polarity are not observable through external timestamps and stay readback-only. A pulse configured `onlyWhenLocked` fires only with a fix, so physical enable checks must first confirm the receiver has a fix (or use a configuration that pulses regardless). `sdp` on an interface requires root; without root or wiring, physical checks are skipped, never failed. Root is not currently available unattended on this host, so physical checks stay skipped for now; the follow-up is to run them via the systest integration, which runs as root.
+Where the receiver's PPS output is wired to a PHC pin (declared by the `[phc]` table in a satpulse config file, or given explicitly), the time pulse configuration is verified electrically with `satpulsetool sdp --extts`. A narrow local convention also infers CTS wiring when the receiver is connected through an enumerated FT232R adapter with a USB serial number; `satpulsetool serial` then verifies edge presence. Neither path is required: without recognized wiring the checks are skipped, never failed. With either path, pulses must be present when enabled and absent when disabled. Pulse width and polarity are not observable and stay readback-only. A pulse configured `onlyWhenLocked` fires only with a fix, so physical enable checks first confirm the receiver has a fix. PHC observation requires root; serial CTS observation does not.
 
 ## Failures versus limitations
 

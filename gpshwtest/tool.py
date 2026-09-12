@@ -157,6 +157,78 @@ class Tool:
                      "exit": p.returncode, "events": events, "stderr": p.stderr})
         return events if p.returncode == 0 else None
 
+    def serial_info(self, device: str) -> dict[str, Any] | None:
+        """Return satpulsetool's enumerated metadata for device.
+
+        Discovery is optional: a port that cannot be enumerated simply has no
+        inferred PPS wiring. The invocation is still recorded so an archived
+        run says why serial PPS was or was not selected.
+        """
+        self.seq += 1
+        argv = [str(self.exe), "serial", "--info", "--jsonl", "-d", device]
+        try:
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=30,
+                               env=_ENV)
+        except subprocess.TimeoutExpired:
+            self.record({"seq": self.seq, "name": "serial-info",
+                         "intent": {"op": "serial-info", "device": device},
+                         "argv": argv, "exit": 1,
+                         "stderr": "serial port information timed out",
+                         "nojson": True})
+            return None
+        info: dict[str, Any] | None = None
+        for line in p.stdout.splitlines():
+            try:
+                v = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(v, dict):
+                info = v
+                break
+        entry: dict[str, Any] = {
+            "seq": self.seq, "name": "serial-info",
+            "intent": {"op": "serial-info", "device": device},
+            "argv": argv, "exit": p.returncode, "stdout": p.stdout,
+            "stderr": p.stderr, "nojson": info is None,
+        }
+        if info is not None:
+            entry["json"] = info
+        self.record(entry)
+        return info if p.returncode == 0 else None
+
+    def serial_pps(self, name: str, device: str, pin: str, seconds: float,
+                   intent: dict[str, Any]) -> list[dict[str, Any]] | None:
+        """Detect PPS edges on a serial modem-control input.
+
+        Exit 2 is satpulsetool's successful observation of no edges, which is
+        the expected result while PPS is disabled. Both it and an edge-bearing
+        exit 0 therefore return an event list for offline analysis.
+        """
+        self.seq += 1
+        argv = [str(self.exe), "serial", "--pps-pin", pin, "--jsonl",
+                "--device-speed", str(self.speed() or 0),
+                "--timeout", str(seconds), "-d", device]
+        try:
+            p = subprocess.run(argv, capture_output=True, text=True,
+                               timeout=seconds + 30, env=_ENV)
+        except subprocess.TimeoutExpired:
+            self.record({"seq": self.seq, "name": name, "intent": intent,
+                         "argv": argv, "timeout": seconds + 30, "events": []})
+            raise ToolFailure(
+                f"{name}: serial PPS monitor did not finish within {seconds + 30}s")
+        events = []
+        for line in p.stdout.splitlines():
+            try:
+                v = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(v, dict):
+                events.append(v)
+        self.record({"seq": self.seq, "name": name, "intent": intent,
+                     "argv": argv, "exit": p.returncode, "events": events,
+                     "stdout": p.stdout, "stderr": p.stderr})
+        return events if p.returncode in (0, 2) else None
+
     def speed(self) -> int | None:
         """The currently pinned connection speed, None when unpinned."""
         if "-s" in self.conn:
