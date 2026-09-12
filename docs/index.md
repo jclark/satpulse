@@ -40,7 +40,7 @@ SatPulse consists of three programs:
 * satpulsed, a program that runs as a service: it transfers time from a GPS receiver to an NTP or PTP time server (this does not yet work on Windows);
   it supports monitoring through a Web dashboard and Prometheus metrics;
   it can work as an RTK base station;
-* satpulsewb, [SatPulse Workbench]({% link workbench/index.md %}): a web-based, graphical interface for GNSS receiver configuration and monitoring; it includes an Ntrip client allowing use of RTK positioning
+* satpulsewb, [SatPulse Workbench]({% link workbench/index.md %}): a web-based, graphical interface for GNSS receiver configuration and monitoring; it includes an Ntrip client allowing use of RTK positioning {% include new-in-03.html %}
 * satpulsetool, a suite of command-line tools: most important is the gps subcommand that does GPS configuration; other subcommands are intended to support the use of satpulsed and satpulsewb
 
 SatPulse has a distinctive approach to GPS configuration: it supports high-level configuration, which allows the intended configuration to be expressed in GNSS terms, independently of any vendor-specific configuration protocol.

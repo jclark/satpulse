@@ -66,7 +66,7 @@ The last column says whether high-level configuration can automatically enable o
 | CFG-RTCM | 0x06 0x14 | decode only | - |
 | CFG-TMODE2 | 0x06 0x16 | time mode configuration | - |
 | MSG-BDSUTC | 0x08 0x00 | decode only | no |
-| MSG-GPSUTC | 0x08 0x05 | decode only | yes |
+| MSG-GPSUTC | 0x08 0x05 | decode only | no |
 | MON-VER | 0x0A 0x04 | receiver identification | no |
 | NAV2-DOP | 0x11 0x01 | solution quality | yes |
 | NAV2-SOL | 0x11 0x02 | TAI time, ECEF position, ECEF velocity | yes |
