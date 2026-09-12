@@ -1023,7 +1023,7 @@ class Analyzer:
         n = len(s.events)
         if role == "enabled" and n < 2:
             self.failures.append(
-                f"pulse enabled with fix but {n} edges on {device} {pin.upper()}")
+                f"pulse enabled but {n} edges on {device} {pin.upper()}")
         elif role == "disabled" and n > 0:
             self.failures.append(
                 f"pulse disabled but {n} edges on {device} {pin.upper()}")
