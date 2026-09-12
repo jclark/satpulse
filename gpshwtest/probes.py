@@ -1425,21 +1425,33 @@ class ProbeRun:
         """Verify time-pulse enable/disable on every discovered physical path.
 
         A PHC timestamps the pulse accurately; a serial modem-control input
-        merely proves that edges exist. The default pulse fires only with a
-        fix, so without one the check is skipped (absence would prove nothing).
-        Pulse width and polarity stay readback-only.
+        merely proves that edges exist. The enabled probe requests a pulse
+        regardless of fix. If the receiver cannot realize that and has no fix,
+        the check is skipped (absence would prove nothing). Pulse width and
+        polarity stay readback-only.
         """
         inv = self.observe("pulse-fix-check", {"op": "observe", "role": "fix-check"})
         if inv is None:
             return
-        if not has_fix(replay(self.tool.exe, inv.packet_log)):
-            print("skipping physical time pulse checks: no fix", file=sys.stderr)
-            return
+        fixed = has_fix(replay(self.tool.exe, inv.packet_log))
         width = config_value(initial, ("timePulse", "width"))
+        enabled_props = pps_props(0.1)
+        enabled_props["onlyWhenLocked"] = False
         inv2 = self.tool.gps("set-pulse-on",
-                             target_arg({"Props": {"timePulse": pps_props(0.1)}}),
+                             target_arg({"Props": {"timePulse": enabled_props}}),
                              {"op": "pulse-set", "role": "on", "width": 0.1})
         if inv2.error is not None:
+            return
+        accepted_only_when_locked = config_value(
+            inv2.config(), ("timePulse", "onlyWhenLocked"))
+        if not fixed and accepted_only_when_locked is not False:
+            print("skipping physical time pulse checks: no fix and receiver did "
+                  "not accept always-on output", file=sys.stderr)
+            self.tool.gps(
+                "restore-pulse",
+                target_arg({"Props": {"timePulse": pps_props(width if width else 0)}}),
+                {"op": "pulse-set", "role": "restore",
+                 "width": width if width else 0})
             return
         self.observe_physical_pulse("enabled", phc, use_sudo, serial)
         inv2 = self.tool.gps("set-pulse-off",
