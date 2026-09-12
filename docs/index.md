@@ -11,8 +11,7 @@ home_gallery:
     alt: "Grafana panel of PHC offset statistics over 24 hours from satpulsed's Prometheus metrics"
     title: "PHC offset over 24 hours: Raspberry Pi CM5 with a Techtotop T303-5D"
 ---
-The goal of the SatPulse project is to provide a suite of open-source software
-for making use of a GPS receiver connected to a computer.
+The goal of the SatPulse project is to provide a suite of open-source software for making use of a GPS receiver connected to a computer.
 It has an emphasis on precision timing
 and has especially deep support for the Raspberry Pi, from the Pi Zero to the Pi 5.
 It supports a [wide range of GPS receivers]({% link gps-module-support/index.md %}).
@@ -26,16 +25,17 @@ The [blog]({% link blog.md %}) also describes recent changes in SatPulse.
 
 The [Setup guide]({% link setup/index.md %}) describes how to get started with SatPulse.
 
-With 0.3, SatPulse supports four main use cases:
+SatPulse supports not only timing, but also RTK positioning, and GPS receiver configuration, evaluation and monitoring.
+In particular, you can:
 
-* timing
-* monitoring and evaluation
-* GPS receiver configuration
-* precision positioning using RTK
+* run a stratum-1 NTP server using chrony, ntpd-rs or NTPsec
+* run a PTP grandmaster with a Raspberry Pi CM4/CM5 or an Intel NIC using linuxptp
+* act as an RTK base station or rover
+* configure, monitor and evaluate a GPS receiver using a web-based GUI {% include new-in-03.html %}
 
 {% include gallery id="home_gallery" %}
 
-It supports these use cases through three programs:
+SatPulse consists of three programs:
 
 * satpulsed, a program that runs as a service: it transfers time from a GPS receiver to an NTP or PTP time server (this does not yet work on Windows);
   it supports monitoring through a Web dashboard and Prometheus metrics;

@@ -19,7 +19,7 @@ title                    : "SatPulse"
 title_separator          : "-"
 subtitle                 : # site tagline that appears below site title in masthead
 name                     : "James Clark"
-description              : "SatPulse makes it easy to use a GPS receiver as a source of time for a PTP and NTP server"
+description              : "Use GNSS/GPS receiver on Linux, macOS, Windows: stratum 1 NTP server, RTK base/rover, configuration/evaluation GUI, PTP grandmaster on Raspberry Pi CM4/CM5"
 url                      : "https://satpulse.net"
 baseurl                  : ""
 repository               : "jclark/satpulse"
