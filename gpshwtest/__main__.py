@@ -238,11 +238,11 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, serial_device: str | Non
     done = False
     try:
         serial_pps = infer_serial_pps(tool, serial_device)
-        for p in PROPS:
-            print(f"probing {p.name}", file=sys.stderr)
-            pr.probe_scalar(p, initial)
-        print("probing positioning mode", file=sys.stderr)
-        pr.probe_modes(initial)
+        # Observe the production-style enable/disable operation from the
+        # as-found state. Some receivers' pulse engines can be wedged by the
+        # artificial scalar quantization sweep even though later register
+        # writes still ACK and read back, so that stress state must not poison
+        # this independent contract check.
         checked_phc = phc if phc is not None and use_sudo and sudo_ok() else None
         if checked_phc is not None:
             print(f"checking physical time pulse on {checked_phc[0]} "
@@ -255,6 +255,11 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, serial_device: str | Non
         else:
             print("skipping physical time pulse checks (no usable PHC or inferred "
                   "serial PPS wiring)", file=sys.stderr)
+        for p in PROPS:
+            print(f"probing {p.name}", file=sys.stderr)
+            pr.probe_scalar(p, initial)
+        print("probing positioning mode", file=sys.stderr)
+        pr.probe_modes(initial)
         supported = receiver.get("supportedGNSS")
         if not supported:
             # The backend deduced no supported set (empty on the UM980); the
