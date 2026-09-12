@@ -85,8 +85,8 @@ def main() -> int:
     else:
         status = 0
         try:
-            drive(tool, resolve_phc(args), args.sudo, args.disruptive,
-                  args.rtcm_fixed_pos_ecef)
+            drive(tool, resolve_phc(args), connection_device(args), args.sudo,
+                  args.disruptive, args.rtcm_fixed_pos_ecef)
         except ToolFailure as e:
             print(f"FAILURE: {e}", file=sys.stderr)
             status = 2
@@ -113,6 +113,27 @@ def conn_args(args: argparse.Namespace) -> list[str]:
     if args.device_speed:
         conn += ["-s", str(args.device_speed)]
     return conn
+
+
+def connection_device(args: argparse.Namespace) -> str | None:
+    """Return the serial device when it is available outside gps config.
+
+    A config used by a service instance can omit serial.device and receive it
+    on satpulsed's command line; gpshwtest cannot infer that external value and
+    simply skips optional serial-PPS discovery in that case.
+    """
+    if args.serial_device:
+        return str(args.serial_device)
+    if not args.config_file:
+        return None
+    try:
+        with open(args.config_file, "rb") as f:
+            serial = tomllib.load(f).get("serial")
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    if isinstance(serial, dict) and isinstance(serial.get("device"), str):
+        return str(serial["device"])
+    return None
 
 
 def resolve_phc(args: argparse.Namespace) -> tuple[str, int, int] | None:
@@ -194,8 +215,8 @@ def restore_from(tool: Tool, crashed: Path) -> None:
         pr.session_speed_restore(as_found_speed)
 
 
-def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
-          disruptive: bool, rtcm_fixed_pos_ecef: str) -> None:
+def drive(tool: Tool, phc: tuple[str, int, int] | None, serial_device: str | None,
+          use_sudo: bool, disruptive: bool, rtcm_fixed_pos_ecef: str) -> None:
     """Execute the probe sequence, recording every step. No verdicts here:
     the records are analyzed offline afterwards (also on a live run)."""
     pr = ProbeRun(tool)
@@ -216,17 +237,24 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
     base = None
     done = False
     try:
+        serial_pps = infer_serial_pps(tool, serial_device)
         for p in PROPS:
             print(f"probing {p.name}", file=sys.stderr)
             pr.probe_scalar(p, initial)
         print("probing positioning mode", file=sys.stderr)
         pr.probe_modes(initial)
-        if phc is not None and use_sudo and sudo_ok():
-            print(f"checking physical time pulse on {phc[0]} pin {phc[1]}", file=sys.stderr)
-            pr.probe_pulse_physical(initial, phc, True)
+        checked_phc = phc if phc is not None and use_sudo and sudo_ok() else None
+        if checked_phc is not None:
+            print(f"checking physical time pulse on {checked_phc[0]} "
+                  f"pin {checked_phc[1]}", file=sys.stderr)
+        if serial_pps is not None:
+            print(f"checking physical time pulse on {serial_pps[0]} "
+                  f"{serial_pps[1].upper()}", file=sys.stderr)
+        if checked_phc is not None or serial_pps is not None:
+            pr.probe_pulse_physical(initial, checked_phc, True, serial_pps)
         else:
-            print("skipping physical time pulse checks (need --sudo, passwordless "
-                  "sudo -n, and PHC wiring)", file=sys.stderr)
+            print("skipping physical time pulse checks (no usable PHC or inferred "
+                  "serial PPS wiring)", file=sys.stderr)
         supported = receiver.get("supportedGNSS")
         if not supported:
             # The backend deduced no supported set (empty on the UM980); the
@@ -295,6 +323,27 @@ def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
     return cfg
 
 
+def infer_serial_pps(tool: Tool, device: str | None) -> tuple[str, str] | None:
+    """Infer CTS wiring for a uniquely identified FT232R adapter.
+
+    This is deliberately a narrow lab convention, not a claim that FT232R
+    adapters are generally wired this way. Ports without matching metadata
+    retain the old behavior: no serial physical check is required.
+    """
+    if device is None:
+        return None
+    info = tool.serial_info(device)
+    if info is None or not info.get("serial"):
+        return None
+    usb = info.get("usb")
+    display = info.get("display")
+    if (not isinstance(usb, dict) or usb.get("vid") != 0x0403
+            or usb.get("pid") != 0x6001 or not isinstance(display, str)
+            or "FT232R" not in display):
+        return None
+    return device, "cts"
+
+
 def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
     """Analyze a log directory and report: write and print the
     characterization, print the failures, compare against the baseline
@@ -311,6 +360,8 @@ def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
         status = 2
     if not a.failures:
         print(f"ok: {a.observation_count} observations, no failures", file=sys.stderr)
+    if a.pulse_checks:
+        print(f"physical PPS checked via {', '.join(a.pulse_checks)}", file=sys.stderr)
     if baseline is None:
         return status
     return max(status, compare_baseline(baseline, text, a.disruptive))

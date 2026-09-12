@@ -1420,13 +1420,15 @@ class ProbeRun:
             print(f"emergency restore: {e}", file=sys.stderr)
 
     def probe_pulse_physical(self, initial: dict[str, Any],
-                             phc: tuple[str, int, int], use_sudo: bool) -> None:
-        """Verify the time pulse electrically on the wired PHC pin: pulses
-        present when enabled, absent when disabled. The default pulse fires
-        only with a fix, so without one the check is skipped (absence would
-        prove nothing). Pulse width and polarity are not observable through
-        external timestamps and stay readback-only."""
-        iface, pin, chan = phc
+                             phc: tuple[str, int, int] | None, use_sudo: bool,
+                             serial: tuple[str, str] | None) -> None:
+        """Verify time-pulse enable/disable on every discovered physical path.
+
+        A PHC timestamps the pulse accurately; a serial modem-control input
+        merely proves that edges exist. The default pulse fires only with a
+        fix, so without one the check is skipped (absence would prove nothing).
+        Pulse width and polarity stay readback-only.
+        """
         inv = self.observe("pulse-fix-check", {"op": "observe", "role": "fix-check"})
         if inv is None:
             return
@@ -1434,21 +1436,34 @@ class ProbeRun:
             print("skipping physical time pulse checks: no fix", file=sys.stderr)
             return
         width = config_value(initial, ("timePulse", "width"))
-        if not width:
-            inv2 = self.tool.gps("set-pulse-on",
-                                 target_arg({"Props": {"timePulse": pps_props(0.1)}}),
-                                 {"op": "pulse-set", "role": "on", "width": 0.1})
-            if inv2.error is not None:
-                return
-        self.tool.sdp_extts("sdp-pulse-enabled", iface, pin, chan, 4.0, use_sudo,
-                            {"op": "sdp", "role": "enabled", "iface": iface, "pin": pin})
+        inv2 = self.tool.gps("set-pulse-on",
+                             target_arg({"Props": {"timePulse": pps_props(0.1)}}),
+                             {"op": "pulse-set", "role": "on", "width": 0.1})
+        if inv2.error is not None:
+            return
+        self.observe_physical_pulse("enabled", phc, use_sudo, serial)
         inv2 = self.tool.gps("set-pulse-off",
                              target_arg({"Props": {"timePulse": pps_props(0)}}),
                              {"op": "pulse-set", "role": "off", "width": 0})
         if inv2.error is None:
             time.sleep(MSG_SETTLE)
-            self.tool.sdp_extts("sdp-pulse-disabled", iface, pin, chan, 4.0, use_sudo,
-                                {"op": "sdp", "role": "disabled", "iface": iface, "pin": pin})
+            self.observe_physical_pulse("disabled", phc, use_sudo, serial)
         self.tool.gps("restore-pulse",
                       target_arg({"Props": {"timePulse": pps_props(width if width else 0)}}),
                       {"op": "pulse-set", "role": "restore", "width": width if width else 0})
+
+    def observe_physical_pulse(self, role: str,
+                               phc: tuple[str, int, int] | None, use_sudo: bool,
+                               serial: tuple[str, str] | None) -> None:
+        """Record one enabled/disabled observation on each physical path."""
+        if phc is not None:
+            iface, phc_pin, chan = phc
+            self.tool.sdp_extts(
+                f"sdp-pulse-{role}", iface, phc_pin, chan, 4.0, use_sudo,
+                {"op": "sdp", "role": role, "iface": iface, "pin": phc_pin})
+        if serial is not None:
+            device, serial_pin = serial
+            self.tool.serial_pps(
+                f"serial-pulse-{role}", device, serial_pin, 4.0,
+                {"op": "serial-pps", "role": role, "device": device,
+                 "pin": serial_pin})

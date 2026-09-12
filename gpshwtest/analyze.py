@@ -104,6 +104,7 @@ class Analysis:
     observation_count: int
     characterization: dict[str, Any]
     disruptive: bool
+    pulse_checks: list[str]
 
 
 # The limitation entries only a disruptive run produces: a baseline from a
@@ -160,6 +161,7 @@ class Analyzer:
     pending_nvm: list[tuple[set[tuple[str, ...]], str]] = field(default_factory=list)
     scalar_paths: dict[str, tuple[str, ...]] = field(default_factory=dict)
     fixrate_ready: bool = False
+    pulse_checks: set[str] = field(default_factory=set)
 
     def run(self) -> Analysis:
         while self.i < len(self.steps):
@@ -190,7 +192,7 @@ class Analyzer:
                                                 "factory-reset", "save-all")
                          for s in self.steps)
         return Analysis(self.receiver, self.supports, self.failures, n, doc,
-                        disruptive)
+                        disruptive, sorted(self.pulse_checks))
 
     def step(self, s: Step) -> None:
         op = s.intent.get("op")
@@ -264,6 +266,10 @@ class Analyzer:
             self.pulse_set(s)
         elif op == "sdp":
             self.sdp(s)
+        elif op == "serial-pps":
+            self.serial_pps(s)
+        elif op == "serial-info":
+            pass  # optional wiring discovery, recorded for auditability
         else:
             self.failures.append(f"{s.name}: unknown step intent {s.intent!r}")
 
@@ -990,9 +996,34 @@ class Analyzer:
         if s.exit_code != 0 or s.events is None:
             return
         role, iface, pin = s.intent["role"], s.intent["iface"], s.intent["pin"]
+        self.pulse_checks.add(f"PHC {iface} pin {pin}")
         n = len(s.events)
         if role == "enabled" and n < 2:
             self.failures.append(
                 f"pulse enabled with fix but {n} timestamps on {iface} pin {pin}")
         elif role == "disabled" and n > 0:
             self.failures.append(f"pulse disabled but {n} timestamps on {iface} pin {pin}")
+
+    def serial_pps(self, s: Step) -> None:
+        """Check edge presence on a serial modem-control input.
+
+        satpulsetool serial exits 2 when no edges were detected, so both 0
+        and 2 are valid physical observations. Discovery is optional, but
+        once wiring was inferred a failure to perform the observation means
+        the promised physical coverage was not obtained.
+        """
+        device, pin = s.intent["device"], s.intent["pin"]
+        if s.exit_code not in (0, 2) or s.events is None:
+            self.failures.append(
+                f"serial PPS observation failed on {device} {pin.upper()}: "
+                f"{s.error or 'no event result'}")
+            return
+        role = s.intent["role"]
+        self.pulse_checks.add(f"serial {pin.upper()} on {device}")
+        n = len(s.events)
+        if role == "enabled" and n < 2:
+            self.failures.append(
+                f"pulse enabled with fix but {n} edges on {device} {pin.upper()}")
+        elif role == "disabled" and n > 0:
+            self.failures.append(
+                f"pulse disabled but {n} edges on {device} {pin.upper()}")
