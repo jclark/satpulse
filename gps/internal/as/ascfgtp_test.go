@@ -30,8 +30,8 @@ func TestTimePulseSet(t *testing.T) {
 		expectWant gpsprot.TimePulse
 	}{
 		{
-			// setting the width merges into the readback: period, GPIO,
-			// and the factory offset are preserved
+			// Setting the width merges into the readback: period and the
+			// factory offset are preserved, while GPIO selects PPS output 13.
 			name:  "width_100ms",
 			width: 100 * time.Millisecond,
 			expectPps: asbin.CfgPps{Period: 1000000, Offset: 530, DutyCycle: 100000,
@@ -48,7 +48,9 @@ func TestTimePulseSet(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rcvr := &testReceiver{monVer: tau1201Ver(), pps: tau951mPps()}
+			initial := tau951mPps()
+			initial.GPIO = 0 // factory-disabled TAU1312 state
+			rcvr := &testReceiver{monVer: tau1201Ver(), pps: initial}
 			cp := probe(t, rcvr)
 			target := &gpsprot.ConfigTarget{}
 			target.Props.SetTimePulseWidth(tc.width)

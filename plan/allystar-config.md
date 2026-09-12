@@ -295,9 +295,10 @@ Functionality: `--save --save-all --reset --reload --factory-reset` work.
 
 ## Stage 4: time pulse
 
-CFG-PPS (15-byte Cynosure II/III form on all three units): Width ->
+CFG-PPS (15-byte Cynosure II/III form on all tested units): Width ->
 duty*period, Period -> period, PolarityRising -> polarity, OnlyWhenLocked ->
-sync, GPIO preserved from the query-phase readback. AlignToGNSS/TimeGNSS
+sync, GPIO -> the documented PPS output 13 (required on a factory-disabled
+TAU1312, whose GPIO 0 accepts writes but produces no pulse). AlignToGNSS/TimeGNSS
 have no CFG-PPS carrier (audited: the message has no time-base or
 GNSS-select fields) - both absent. AntennaCableDelay iff the offset field
 proves to be that (stage 0).

@@ -11,7 +11,9 @@ import (
 // Time pulse configuration uses CFG-PPS (the 15-byte Cynosure II/III
 // form on every tested unit). A set is a read-modify-write: the query
 // phase polls CFG-PPS and the set phase merges the target properties
-// into the readback, preserving the GPIO pin and the Offset field.
+// into the readback, preserving the Offset field. GPIO 13 is the documented
+// PPS output and is selected on every write: a factory-disabled TAU1312 reads
+// back GPIO 0, which accepts pulse configuration but produces no output.
 // The offset is factory-set per unit (530 ns on two of the three test
 // units, surviving even a factory reset - evidently calibration, not
 // user config), so it is deliberately not exposed as AntennaCableDelay
@@ -27,6 +29,8 @@ import (
 // tpProps are the properties realized by CFG-PPS.
 const tpProps = gpsprot.PropIDTimePulseWidth | gpsprot.PropIDTimePulsePeriod |
 	gpsprot.PropIDTimePulseOnlyWhenLocked | gpsprot.PropIDTimePulsePolarityRising
+
+const ppsGPIO = 13
 
 // needsTP reports whether the target involves the time pulse.
 func (c *Configurator) needsTP() bool {
@@ -83,6 +87,7 @@ func (c *Configurator) generateTPSet() {
 			pps.Sync = asbin.CfgPpsSyncOnlyWithFix
 		}
 	}
+	pps.GPIO = ppsGPIO
 	c.addSetReq(&pps, func() { c.pps = &pps })
 }
 
