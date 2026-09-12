@@ -59,6 +59,11 @@ FIXRATE_FAST = 0.2
 # only ~3 intervals, so a wider window keeps the median inter-arrival stable.
 RATE_OBSERVE_SECONDS = 6
 
+# Serial PPS polling learns the pulse phase before narrowing its polling
+# window. On an FT232R it can take 6-7 seconds to start publishing edges, so
+# the PHC's four-second observation window is too short for this path.
+SERIAL_PPS_SECONDS = 10
+
 
 def signal_universe(gnss: list[str]) -> SignalMap:
     """The union of the full model signal set of each named constellation:
@@ -1476,6 +1481,6 @@ class ProbeRun:
         if serial is not None:
             device, serial_pin = serial
             self.tool.serial_pps(
-                f"serial-pulse-{role}", device, serial_pin, 4.0,
+                f"serial-pulse-{role}", device, serial_pin, SERIAL_PPS_SECONDS,
                 {"op": "serial-pps", "role": role, "device": device,
                  "pin": serial_pin})
