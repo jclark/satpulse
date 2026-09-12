@@ -33,27 +33,60 @@ Run `uname -m` once to determine which.
 
 ## Serial device and speed
 
-The `gps` subcommand always needs `-d` (serial device) and `-s` (baud rate), or `-f` (config file containing both).
+The `gps` and `serial` subcommands take `-d` (serial device) and `-s` (baud rate); `gps` needs both but can instead take `-f` (config file containing both).
 
-Look in `CLAUDE.local.md` for the device and speed of any connected receiver. If not documented there, ask the user and update `CLAUDE.local.md` with what they tell you.
+Look in `CLAUDE.local.md` for the device and speed of any connected receiver. If not documented there, ask the user and update `CLAUDE.local.md` with what they tell you (`serial -d DEV` can detect the speed).
 
 Before using a serial device, check that `satpulsed` is not running (`ps ax | grep satpulsed`) since they cannot share the device.
 
+## serial subcommand
+
+Examines serial ports. It only reads: it never transmits a byte to the device (`gps` talks, `serial` listens), so every serial operation is safe on a live receiver. The target is `-d DEV` (one port) or `-a` (all discovered ports). Full reference: `docs/man/satpulsetool-serial.1.md`. Four problems it solves:
+
+### 1. Which serial ports exist, and what is plugged into each?
+
+With no target, lists every discovered port without opening it, one key=value line per port with USB vid/pid, serial number, and aliases - enough to identify which device is which receiver (`-j` for JSONL; `-i -d DEV` for one port):
+
+```
+out/amd64/satpulsetool serial
+```
+
+### 2. What speed is the receiver running at?
+
+With a target and no other options, tries reading at different speeds until receiver output decodes, and prints the detected speed. The result is a bare number, so it composes with gps:
+
+```
+out/amd64/satpulsetool serial -d /dev/ttyACM0
+out/amd64/satpulsetool gps -d /dev/ttyACM0 -s $(out/amd64/satpulsetool serial -d /dev/ttyACM0) --show-receiver
+```
+
+`-a` instead of `-d` detects the speed on every port - use this when neither the device nor the speed is known. Add `--packet-log FILE` to also record the packets received during detection.
+
+### 3. What is the receiver emitting?
+
+Passive packet capture: record what the receiver sends, without sending it anything, to a JSONL file. Give the speed with `-s` (0 = keep the port's current speed) and always bound the capture with `-t N` seconds:
+
+```
+out/amd64/satpulsetool serial -d /dev/ttyACM0 -s 38400 --packet-log capture.jsonl -t 10
+```
+
+### 4. Is a PPS signal wired to a modem-control pin?
+
+`-p` with a pin name (`cts`, `dcd`, `dsr`, or `ri`) watches that pin for pulse edges and timestamps each one - this is how to check PPS wiring or judge edge timing quality. `-a` scans every port. `-p` alone leaves the port speed unchanged; add `-s` and `--packet-log` to capture packets while timing edges:
+
+```
+out/amd64/satpulsetool serial -p cts -d /dev/cu.usbserial-1140 -t 30
+```
+
+### Rules common to all modes
+
+Do NOT use the `timeout` command - use `-t N` (seconds) instead. `-t` bounds edge detection (default 10 s) and capture (default: until interrupted, so always give `-t` when capturing). `--packet-log` overwrites an existing file, so use a new filename each time. Exit status 2 means no data found (no ports, no packets, no edges).
+
 ## gps subcommand
 
-Configures GPS receivers and captures packets. Full reference: `docs/man/satpulsetool-gps.1.md`. Four main uses:
+Configures GPS receivers. Full reference: `docs/man/satpulsetool-gps.1.md`. Three main uses:
 
-### 1. Packet capture
-
-Capture packets from a receiver to a JSONL file. This is passive - it just records what the receiver sends.
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --packet-log capture.jsonl --capture 10
-```
-
-Do NOT use the `timeout` command - use `--capture N` (seconds) instead. Note that `--packet-log` appends to an existing file, so use a new filename each time.
-
-### 2. Low-level configuration with message files
+### 1. Low-level configuration with message files
 
 Message files are TOML files in `configs/gpsmsg/` that define named messages for specific receivers. Messages are selected by tag. See `configs/gpsmsg/tags.md` for tag naming conventions. When sending messages, satpulsetool correlates receiver responses with sent commands and reports whether each message was accepted (OK) or rejected (NAK).
 
@@ -83,7 +116,7 @@ out/arm64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/um980.tom
 
 When querying with a `get-*` tag, binary replies are printed as hex. Use `satpulsetool decode --bin` to decode them (see decode subcommand below).
 
-### 3. Sending arbitrary commands
+### 2. Sending arbitrary commands
 
 Use `-m -` to pipe the message file as a here document. No temporary file needed. The TOML format handles checksums and binary packing for you. See `configs/gpsmsg/format.md` for the full format reference.
 
@@ -121,7 +154,7 @@ TOML
 
 Combine with `--packet-log` to see the response.
 
-### 4. High-level configuration
+### 3. High-level configuration
 
 Device-independent options that satpulsetool translates into the right commands for the receiver. Currently supported on u-blox (6 through X20) and Unicore Nebulas IV (UM980/981/982/960).
 
@@ -229,7 +262,7 @@ out/amd64/satpulsetool annotate < capture.jsonl
 ### Typical workflow: capture then annotate
 
 ```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --packet-log cap.jsonl --capture 10
+out/amd64/satpulsetool serial -d /dev/ttyACM0 -s 38400 --packet-log cap.jsonl -t 10
 out/amd64/satpulsetool annotate cap.jsonl > decoded.jsonl
 ```
 

@@ -78,9 +78,8 @@ Many GPS receivers have a factory default configuration that emits NMEA messages
 and satpulsed is workable with that:
 by default, satpulsed does not change the receiver's configuration.
 
-If you have a receiver for which SatPulse supports high-level configuration --
-currently u-blox receivers (from the u-blox 6 platform through to the X20 platform)
-and Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960) --
+If you have a receiver for which SatPulse supports high-level configuration
+(see [GPS module support]({% link gps-module-support/index.md %})),
 then satpulsed can do additional configuration of the receiver.
 The easiest approach is to add the following to `satpulse.toml`:
 

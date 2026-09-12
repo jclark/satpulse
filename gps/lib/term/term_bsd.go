@@ -10,7 +10,7 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-type serialICounter struct{}
+type serialErrorState struct{}
 
 func Speed(speed int) AttrSetter {
 	b, ok := speedToB(speed)
@@ -32,13 +32,13 @@ func (attr *Attr) speed() int {
 
 // readError is a stub on BSD -- there is no way to detect serial errors
 // through the kernel, so Read never returns *Error on these platforms.
-func (t *Term) readError() *Error { return nil }
+func (t *unixTerm) readError() *Error { return nil }
 
-func (t *Term) Flush() error {
+func (t *unixTerm) Flush() error {
 	return t.wrapErr(unix.IoctlSetPointerInt(t.fd, unix.TIOCFLUSH, 0), "ioctl(TIOCFLUSH)")
 }
 
-func (t *Term) setAttrNow(attr *unix.Termios) error {
+func (t *unixTerm) setAttrNow(attr *unix.Termios) error {
 	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TIOCSETA, attr), "ioctl(TIOCSETA)")
 }
 
@@ -46,7 +46,7 @@ func (t *Term) setAttrNow(attr *unix.Termios) error {
 // blocks for the transmit time of the buffered output, and the Go
 // runtime's preemption and timer signals interrupt blocking syscalls
 // routinely, so EINTR here is runtime noise, not an event: retry.
-func (t *Term) Drain() error {
+func (t *unixTerm) Drain() error {
 	for {
 		err := unix.IoctlSetInt(t.fd, unix.TIOCDRAIN, 0)
 		if err != unix.EINTR {
@@ -55,7 +55,7 @@ func (t *Term) Drain() error {
 	}
 }
 
-func (t *Term) getAttr() (tp *unix.Termios, err error) {
+func (t *unixTerm) getAttr() (tp *unix.Termios, err error) {
 	tp, err = unix.IoctlGetTermios(t.fd, unix.TIOCGETA)
 	err = t.wrapErr(err, "ioctl(TIOCGETA)")
 	return
@@ -63,7 +63,7 @@ func (t *Term) getAttr() (tp *unix.Termios, err error) {
 
 // checkNotExclusive is a no-op on BSD: there is no TIOCGEXCL, so exclusive mode
 // can be set but not queried.
-func (t *Term) checkNotExclusive() error { return nil }
+func (t *unixTerm) checkNotExclusive() error { return nil }
 
 var errFlockNotSupported error = unix.ENOTSUP
 

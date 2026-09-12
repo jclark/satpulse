@@ -14,7 +14,7 @@ The `.yml` files are Ansible playbooks:
 Typically I would first deploy a new set of packages to my testing machines.
 
 ```
-ansible-playbook -K -i install.yml start.yml -l testing
+ansible-playbook -K -i inventory.yml install.yml -l testing
 ``` 
 
 Then start them up:

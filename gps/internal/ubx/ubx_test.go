@@ -61,7 +61,7 @@ type testMsgHandler struct {
 	gpsprot.DefaultHandler
 	msgs []struct {
 		msgType string
-		msg     interface{}
+		msg     any
 		tRead   time.Time
 	}
 }
@@ -69,7 +69,7 @@ type testMsgHandler struct {
 func (h *testMsgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	h.msgs = append(h.msgs, struct {
 		msgType string
-		msg     interface{}
+		msg     any
 		tRead   time.Time
 	}{"time", msg, tRead})
 }
@@ -77,7 +77,7 @@ func (h *testMsgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 func (h *testMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 	h.msgs = append(h.msgs, struct {
 		msgType string
-		msg     interface{}
+		msg     any
 		tRead   time.Time
 	}{"satellites", msg, tRead})
 }
@@ -85,7 +85,7 @@ func (h *testMsgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time)
 func (h *testMsgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	h.msgs = append(h.msgs, struct {
 		msgType string
-		msg     interface{}
+		msg     any
 		tRead   time.Time
 	}{"leapsecond", msg, tRead})
 }
@@ -93,7 +93,7 @@ func (h *testMsgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time)
 func (h *testMsgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
 	h.msgs = append(h.msgs, struct {
 		msgType string
-		msg     interface{}
+		msg     any
 		tRead   time.Time
 	}{"survey", msg, tRead})
 }
@@ -101,7 +101,7 @@ func (h *testMsgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
 func (h *testMsgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	h.msgs = append(h.msgs, struct {
 		msgType string
-		msg     interface{}
+		msg     any
 		tRead   time.Time
 	}{"navepoch", msg, tRead})
 }

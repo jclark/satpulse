@@ -18,9 +18,13 @@ func TestArbitrarySpeed(t *testing.T) {
 		t.Fatalf("close setup fd: %v", err)
 	}
 
-	term, err := Open(path, RawMode)
+	opened, err := Open(path, RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
+	}
+	term, ok := opened.(*unixTerm)
+	if !ok {
+		t.Fatalf("Open returned %T, want *unixTerm", opened)
 	}
 	t.Cleanup(func() {
 		if err := term.Close(); err != nil {

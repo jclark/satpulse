@@ -3,10 +3,23 @@
   become: yes
     
   tasks:
+    - name: Check whether SatPulse service is enabled
+      command: "systemctl is-enabled satpulse@{{ instance }}"
+      register: enabled_status
+      failed_when: false
+      changed_when: false
+
     - name: Stop SatPulse service
       systemd:
         name: "satpulse@{{ instance }}"
         state: stopped
+
+    - name: Configure GPS receiver
+      script: "gpscfg/{{ inventory_hostname_short }}.sh"
+      environment:
+        DEVICE: "/dev/{{ instance }}"
+        SPEED: "{{ speed }}"
+      when: lookup('fileglob', 'gpscfg/' + inventory_hostname_short + '.sh') | length > 0
 
     - name: Create temporary logrotate config
       copy:
@@ -37,7 +50,7 @@
 
     - name: Initialize PHC
       command: "phc_ctl -q {{ interface }} set 0 freq 0"
-      when: interface != ""
+      when: interface != "" and enabled_status.stdout != "enabled"
 
     - name: Start SatPulse service
       systemd:
@@ -48,3 +61,4 @@
       systemd:
         name: "{{ 'chronyd' if ansible_os_family == 'RedHat' else 'chrony' }}"
         state: restarted
+      when: enabled_status.stdout != "enabled"

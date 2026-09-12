@@ -47,17 +47,17 @@ import (
 	"math/rand"
 	"time"
 
-	"github.com/jclark/satpulse/time/lib/allan"
-	"github.com/jclark/satpulse/time/clocksim"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/clocksim"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
-	"github.com/jclark/satpulse/time/phctime"
-	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/statsobs"
 	"github.com/jclark/satpulse/time/internal/timemsg"
+	"github.com/jclark/satpulse/time/lib/allan"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 const (
@@ -66,7 +66,7 @@ const (
 	// Must be used by both pulse event generators, advancing once per PPS,
 	// so pulse edges and pulse messages use the same delay for each PPS.
 	pulseDelaySeed = 999
-	NoPulse      = gpsprot.NavSolution // use NavSolution value to indicate no sawtooth messages
+	NoPulse        = gpsprot.NavSolution // use NavSolution value to indicate no sawtooth messages
 )
 
 // Event represents a simulation event with a time
@@ -147,12 +147,12 @@ func (s Stats) String() string {
 			s.TrackingMean,
 			s.TrackingAbsMax.Nanoseconds(),
 			s.TrackingADev)
-	for m := phcsync.Mode(0); m < phcsync.NModes; m++ {
+	for m := range phcsync.NModes {
 		if n := s.ModeSamples[m]; n > 0 {
 			str += fmt.Sprintf("%sSamples = %d\n", m, n)
 		}
 	}
-	for m := phcsync.Mode(0); m < phcsync.NModes; m++ {
+	for m := range phcsync.NModes {
 		if n := s.ModeTransitions[m]; n > 0 {
 			str += fmt.Sprintf("%sEntered = %d\n", m, n)
 		}
@@ -440,7 +440,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 	// Convert mode arrays to maps (non-zero only)
 	modeSamples := make(map[phcsync.Mode]int)
 	modeTransitions := make(map[phcsync.Mode]int)
-	for m := phcsync.Mode(0); m < phcsync.NModes; m++ {
+	for m := range phcsync.NModes {
 		if n := modeObs.samples[m]; n > 0 {
 			modeSamples[m] = n
 		}

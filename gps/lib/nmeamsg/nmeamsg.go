@@ -191,7 +191,7 @@ func CheckSyntax(data string) SentenceSyntaxFlags {
 
 func Checksum(data []byte) byte {
 	var c byte
-	for i := 0; i < len(data); i++ {
+	for i := range data {
 		c ^= data[i]
 	}
 	return c

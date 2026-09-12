@@ -42,6 +42,73 @@ func TestRawModeLeavesParityChecking(t *testing.T) {
 	}
 }
 
+func TestCommEventMask(t *testing.T) {
+	tests := []struct {
+		name      string
+		pin       ModemControlPin
+		expect    uint32
+		expectErr bool
+	}{
+		{name: "CTS", pin: ModemCTS, expect: windows.EV_CTS},
+		{name: "DCD", pin: ModemDCD, expect: windows.EV_RLSD},
+		{name: "DSR", pin: ModemDSR, expect: windows.EV_DSR},
+		{name: "RI", pin: ModemRI, expect: windows.EV_RING},
+		{name: "invalid", pin: ModemControlPin(99), expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := commEventMask(tc.pin)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("commEventMask: %v", err)
+			}
+			if got != tc.expect {
+				t.Errorf("got  %d\nwant %d", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestCommWaitError(t *testing.T) {
+	tests := []struct {
+		name              string
+		err               error
+		expectUnavailable bool
+	}{
+		{name: "invalid function", err: windows.ERROR_INVALID_FUNCTION, expectUnavailable: true},
+		{name: "not supported", err: windows.ERROR_NOT_SUPPORTED, expectUnavailable: true},
+		{name: "invalid parameter", err: windows.ERROR_INVALID_PARAMETER, expectUnavailable: true},
+		{name: "other", err: windows.ERROR_ACCESS_DENIED},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := commWaitError(tc.err)
+			if errors.Is(got, ErrUnavailable) != tc.expectUnavailable {
+				t.Errorf("commWaitError(%v) = %v", tc.err, got)
+			}
+			if !errors.Is(got, tc.err) {
+				t.Errorf("commWaitError(%v) = %v, does not preserve the underlying error", tc.err, got)
+			}
+		})
+	}
+}
+
+// TestPinWatchCancel checks that cancellation is sticky and is observed
+// before WaitCommEvent: the watch holds an invalid handle, so anything
+// reaching the wait would fail with a handle error instead.
+func TestPinWatchCancel(t *testing.T) {
+	w := &pinWatch{handle: windows.InvalidHandle, pin: ModemCTS}
+	w.Cancel()
+	if c, missed, err := w.Wait(); !errors.Is(err, ErrCancelled) || c != (ModemControlPinChange{}) || missed != 0 {
+		t.Fatalf("ModemControlPinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
+	}
+}
+
 // TestOpenFallbackPipe exercises the Windows named-pipe fallback end to end:
 // a live pipe server on one end, term.OpenFallback (the daemon's path) on the
 // other. It is the proof that os.NewFile gives an overlapped pipe handle a

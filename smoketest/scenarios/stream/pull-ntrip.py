@@ -19,7 +19,14 @@ from scenarios import stream
 CAPTURE_WRITES = True
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"
 PULL_SOURCE_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon-msm4-115200.jsonl"
-FACTOR = 10
+# check_pulled_rtcm demands exact delivery, so FACTOR is bounded: the source
+# emits each RTCM type once a second and a pty drain that stalls longer than
+# 1/FACTOR seconds loses the stale packet to the daemon's same-type prune. At 10
+# that window was 100 ms, under the ~200 ms stalls a macOS runner shows, and the
+# scenario lost packets there. 5 gives the 200 ms of stream/wb-corrections, and
+# is as low as this scenario can go for free: it runs in the shadow of
+# stream/push-udp, so its 7 s fits the suite's slack where 3 would not.
+FACTOR = 5
 
 
 def run(ctx: common.SmokeContext) -> None:

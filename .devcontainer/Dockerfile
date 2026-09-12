@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/devcontainers/go:2-1.25-trixie
+FROM mcr.microsoft.com/devcontainers/go:2-1.26-trixie
 
 # Install gh (for doing releases) and rpm (for building rpms) and pandoc (for manpages)
 RUN apt-get update \

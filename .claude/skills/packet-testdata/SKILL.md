@@ -89,7 +89,7 @@ For each capture:
 
 3. **Add low-level messages** (if needed): Run satpulsetool with `-m <file> -t <tags>` to enable messages not reachable via high-level config. This can follow a high-level config step since `-m` does not probe or reset the receiver.
 
-4. **Capture**: Run satpulsetool with `--packet-log <file> --capture 30` (60 for survey). Use 30 seconds for most captures.
+4. **Capture**: Run `satpulsetool serial -d <device> -s <baud> --packet-log <file> -t 30` (60 for survey). Use 30 seconds for most captures. The `serial` command captures passively; `gps` probes the receiver before capturing, and the probe exchange would pollute the capture.
 
 5. **Verify**: Check message types in the capture with:
    ```

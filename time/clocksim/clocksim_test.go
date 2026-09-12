@@ -175,7 +175,7 @@ func TestPrecisionAtLargeTime(t *testing.T) {
 
 	// Collect timestamps from 20 PPS events over 20 simulation seconds
 	timestamps := make([]ptime.Time, 0, 20)
-	for i := 0; i < 20; i++ {
+	for i := range 20 {
 		simTime := float64(i + 1)
 		vc.AdvanceTo(simTime + 0.1)
 		reading, ok := vc.ReadTimestamp()
@@ -477,7 +477,7 @@ func TestAdjTimeDelayNonNegative(t *testing.T) {
 	delayGen := defaultAdjTimeDelay()
 
 	// Sample many times to catch tail events
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		delay := delayGen()
 		if delay < 0 {
 			t.Errorf("sample %d: delay = %v, must be non-negative", i, delay)
@@ -492,7 +492,7 @@ func TestAdjTimeDelayMean(t *testing.T) {
 	// Sample to compute mean
 	sum := 0.0
 	n := 10000
-	for i := 0; i < n; i++ {
+	for range n {
 		sum += delayGen()
 	}
 	mean := sum / float64(n)
@@ -538,7 +538,7 @@ func TestDualEdgeMode(t *testing.T) {
 	}
 
 	// Verify timestamps alternate: rising, trailing, rising, trailing, ...
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		risingIdx := i * 2
 		trailingIdx := i*2 + 1
 
@@ -671,7 +671,7 @@ func TestSawtoothArbitraryStartTime(t *testing.T) {
 
 	// Collect sawtooth corrections over several seconds
 	corrections := []float64{}
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		targetTime := startTime + float64(i) + 1.0
 		vc.AdvanceTo(targetTime + 0.1)
 
@@ -738,7 +738,7 @@ func TestRawClockWhiteFMStatistics(t *testing.T) {
 
 	// Compute deltas (phase change per second, minus nominal 1e9 ns)
 	deltas := make([]float64, nSeconds)
-	for i := 0; i < nSeconds; i++ {
+	for i := range nSeconds {
 		deltas[i] = phases[i+1] - phases[i] - 1e9
 	}
 

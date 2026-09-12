@@ -158,6 +158,37 @@ tag = "antenna-main-off"
 text = "setAntennaOffset, Main, 0, 0, 0, Unknown, Unknown, 0"
 description = "Clear main antenna offsets and phase-center calibration"
 
+# Antenna cable delay
+#
+# setCalibCommonDelay compensates all pseudoranges (and hence the receiver
+# time and the PPS) for delays in the reception chain: a CommonDelay of X ns
+# makes the PPS pulse come X ns earlier. Unlike setPPSParameters' Delay
+# argument, which moves only the pulse, this also corrects the pseudoranges.
+# The factory default is 0. u-blox receivers default their equivalent
+# (CFG-TP-ANT_CABLEDELAY) to 50 ns, so antenna-cable-delay-50 aligns a
+# Septentrio's PPS with a u-blox receiver on the same antenna.
+# Confirmed identical command/range on both models.
+
+# Verified on mosaic-G5: returns the current delay (factory default 0.000).
+[[line]]
+tag = "get-antenna-cable-delay"
+text = "getCalibCommonDelay"
+description = "Query common antenna/cable delay compensation"
+
+# Verified ACK with readback on mosaic-G5 (CalibCommonDelay, 50.000); the PPS
+# moved ~50ns earlier, measured against a u-blox ZED-F9P on the same host via
+# chrony SOCK refclocks.
+[[line]]
+tag = "antenna-cable-delay-50"
+text = "setCalibCommonDelay, 50"
+description = "Compensate 50ns antenna cable delay (the u-blox default)"
+
+# Verified ACK with readback on mosaic-G5 (CalibCommonDelay, 0.000).
+[[line]]
+tag = "antenna-cable-delay-0"
+text = "setCalibCommonDelay, 0"
+description = "Clear antenna cable delay compensation (factory default)"
+
 # NMEA message output control
 # Septentrio routes NMEA through a "stream": one NMEA stream (Stream1..Stream10,
 # a pool separate from the SBF streams) carries a list of sentences to one

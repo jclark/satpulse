@@ -1246,8 +1246,7 @@ func TestNtripNoAuthHeaderWhenNoUsername(t *testing.T) {
 }
 
 func TestGGASenderRejectsQualityZero(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,0,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
@@ -1270,8 +1269,7 @@ func TestGGASenderRejectsQualityZero(t *testing.T) {
 // A GGA with empty position fields is not usable even with a nonzero quality,
 // so a synthesized no-fix GGA (empty lat/lon) never starts an NMEA upload.
 func TestGGASenderRejectsNoPosition(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
@@ -1408,8 +1406,7 @@ func TestGGASenderTimeoutTolerance(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			ctx := t.Context()
 			ch := make(chan scan.Packet, 1)
 			ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
 			gs := NewGGASender(ch, 5*time.Millisecond)

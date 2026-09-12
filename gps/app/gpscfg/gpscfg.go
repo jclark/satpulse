@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/scan"
-	"golang.org/x/exp/maps"
 )
 
 type Result struct {
@@ -118,7 +118,7 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 	}
 	for tag, msgIDs := range mh.msgIDs {
 		if len(msgIDs) > 0 {
-			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", maps.Keys(msgIDs))
+			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", slices.Sorted(maps.Keys(msgIDs)))
 		}
 	}
 	return &Result{

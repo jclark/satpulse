@@ -15,6 +15,12 @@ tag = "get-version"
 text = "log versiona once"
 description = "Query firmware and hardware version"
 
+# Disable all logging (UNLOGALL with no port stops output on all ports)
+[[line]]
+tag = "msg-all-off"
+description = "Disable all message output"
+text = "UNLOGALL"
+
 # BESTPOS (NovAtel format geodetic position)
 # Verified BESTPOSB binary (msg 42) appears at 1Hz in capture on K902
 [[line]]

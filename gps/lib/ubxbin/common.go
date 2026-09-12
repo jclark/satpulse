@@ -302,10 +302,9 @@ func PacketMsgId[B Bytes](packet B) MsgID {
 }
 
 func Checksum(bytes []byte) (ckA, ckB byte) {
-	for i := 0; i < len(bytes); i++ {
+	for i := range bytes {
 		ckA += bytes[i]
 		ckB += ckA
 	}
 	return
 }
-

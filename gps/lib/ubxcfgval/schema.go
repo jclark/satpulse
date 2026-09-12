@@ -4,6 +4,7 @@ package ubxcfgval
 
 import (
 	"fmt"
+	"maps"
 	"math"
 )
 
@@ -65,25 +66,20 @@ func GetDfltSchema() *Schema {
 func (s *Schema) AddGroup(groupName string, group map[string]Desc) *Schema {
 	// Copy existing groups
 	groups := make(map[string]map[string]Desc)
-	for k, v := range s.groups {
-		groups[k] = v
-	}
+	maps.Copy(groups, s.groups)
 	groups[groupName] = group
-	
+
 	// Copy existing keys
 	keys := make(map[Key]NameDesc)
-	for k, v := range s.keys {
-		keys[k] = v
-	}
-	
+	maps.Copy(keys, s.keys)
+
 	// Add keys from new group
 	for itemName, d := range group {
 		keys[d.key()] = NameDesc{groupName, itemName, d}
 	}
-	
+
 	return &Schema{groups, keys}
 }
-
 
 func MustNewSchema(groups map[string]map[string]Desc) *Schema {
 	s, err := NewSchema(groups)
@@ -149,7 +145,6 @@ func (s *Schema) UnmarshalItems(data []byte) (map[string]map[string]any, map[Key
 	}
 	return cfg, unknown, nil
 }
-
 
 func (s *Schema) UnmarshalItemsFlat(data []byte) ([]string, []any, error) {
 	items, err := UnmarshalItems(data)

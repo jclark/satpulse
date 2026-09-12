@@ -1,6 +1,6 @@
 # Shared web UI package
 
-Create `@satpulse/webui`, a standalone Preact component library. The desktop GUI consumes it immediately; the web dashboard ([web-toolchain.md](../../../../plan/web-toolchain.md)) consumes it later. Components are built against gpsprot types, so once [gpsprot-sse.md](../../../../plan/gpsprot-sse.md) eliminates the SSE intermediary layer, the dashboard can plug in directly.
+Create `@satpulse/webui`, a standalone Preact component library. The desktop GUI consumes it immediately; the web dashboard ([web-toolchain.md](../archive/web-toolchain.md)) consumes it later. Components are built against gpsprot types, so once [gpsprot-sse.md](../../../../plan/gpsprot-sse.md) eliminates the SSE intermediary layer, the dashboard can plug in directly.
 
 Depends on [semantic-tokens.md](semantic-tokens.md) -- shared components must use semantic tokens only.
 

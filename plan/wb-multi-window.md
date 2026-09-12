@@ -3,7 +3,7 @@
 How satpulsewb supports multiple browser windows on one instance:
 exactly one window at a time holds the write seat, and every
 other window is a live, read-only viewer. Replaces the old
-[wb-writer-seat.md](wb-writer-seat.md) plan. The seat protocol is
+[wb-writer-seat.md](archive/wb-writer-seat.md) plan. The seat protocol is
 implemented (commit e8341e49, PR #367); the remaining work is
 making viewer windows fully live on the tabs that are fed by
 writer operations today. Lifting the one-writer restriction

@@ -561,7 +561,7 @@ func TestNewNilCfgResult(t *testing.T) {
 
 // jsonEqual compares two JSON strings for equivalence by parsing and using reflect.DeepEqual
 func jsonEqual(a, b string) bool {
-	var objA, objB interface{}
+	var objA, objB any
 	if err := json.Unmarshal([]byte(a), &objA); err != nil {
 		return false
 	}

@@ -64,11 +64,11 @@ func (attr *Attr) speed() int {
 	return speed
 }
 
-func (t *Term) Flush() error {
+func (t *unixTerm) Flush() error {
 	return t.wrapErr(unix.IoctlSetInt(t.fd, unix.TCFLSH, unix.TCIOFLUSH), "ioctl(TCFLSH)")
 }
 
-func (t *Term) setAttrNow(attr *unix.Termios) error {
+func (t *unixTerm) setAttrNow(attr *unix.Termios) error {
 	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TCSETS2, attr), "ioctl(TCSETS2)")
 }
 
@@ -80,7 +80,7 @@ func (t *Term) setAttrNow(attr *unix.Termios) error {
 // EINTR here is runtime noise, not an event: retry. (POSIX tcdrain may
 // legitimately return EINTR; under Go we must be more diligent than libc
 // callers about retrying it.)
-func (t *Term) Drain() error {
+func (t *unixTerm) Drain() error {
 	for {
 		err := unix.IoctlSetInt(t.fd, unix.TCSBRK, 1)
 		if err != unix.EINTR {
@@ -89,7 +89,7 @@ func (t *Term) Drain() error {
 	}
 }
 
-func (t *Term) getAttr() (tp *unix.Termios, err error) {
+func (t *unixTerm) getAttr() (tp *unix.Termios, err error) {
 	tp, err = unix.IoctlGetTermios(t.fd, unix.TCGETS2)
 	err = t.wrapErr(err, "ioctl(TCGETS2)")
 	return
@@ -102,7 +102,7 @@ var errExclusive = errors.New("terminal is in exclusive mode (TIOCEXCL)")
 // it, open would already have failed with EBUSY had the flag been set, so a
 // flag seen here was set by another process after our open succeeded, and
 // failing on it would just hand the port to a latecomer.
-func (t *Term) checkNotExclusive() error {
+func (t *unixTerm) checkNotExclusive() error {
 	if !capSysAdmin() {
 		return nil
 	}
@@ -188,20 +188,27 @@ func probePoll(fd int) error {
 	return nil
 }
 
+type serialErrorState struct {
+	count serialICounter
+	valid bool
+}
+
 // readError returns a *Error describing serial errors that have occurred
 // since the previous call, or nil if none. It also establishes the
-// baseline counters on the first call after Init.
-func (t *Term) readError() *Error {
+// baseline counters on the first successful call after initialization or
+// after a transient TIOCGICOUNT failure.
+func (t *unixTerm) readError() *Error {
 	icNew, err := ioctlGetSerialICounter(t.fd)
 	if err != nil {
-		t.iCount = nil
+		t.serialError.valid = false
 		return nil
 	}
-	if t.iCount == nil {
-		t.iCount = icNew
+	if !t.serialError.valid {
+		t.serialError.count = *icNew
+		t.serialError.valid = true
 		return nil
 	}
-	ic := t.iCount
+	ic := &t.serialError.count
 	ec := ErrorCounts{
 		Framing:    icNew.Frame - ic.Frame,
 		Overrun:    icNew.Overrun - ic.Overrun,
@@ -232,7 +239,23 @@ func (t *Term) readError() *Error {
 	return &Error{Path: t.path, Flags: flags, Counts: &ec}
 }
 
-func (t *Term) DevKind() DevKind {
+var _ ModemControlPinWatcher = (*unixTerm)(nil)
+var _ KernelModemControlPinWatcher = (*unixTerm)(nil)
+
+// NewModemControlPinWatch creates a watch with a private descriptor. All watch syscalls
+// use the duplicate, so the watch remains safe if the terminal is later
+// closed.
+func (t *unixTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
+	return newWaitPinWatch(t, pin)
+}
+
+// NewKernelModemControlPinWatch creates a watch that uses kernel PPS to
+// timestamp DCD transitions.
+func (t *unixTerm) NewKernelModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
+	return newKernelPPSPinWatch(t, pin)
+}
+
+func (t *unixTerm) DevKind() DevKind {
 	s := unix.Stat_t{}
 	err := unix.Fstat(t.fd, &s)
 	if err != nil {
