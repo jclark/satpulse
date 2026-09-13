@@ -97,6 +97,11 @@ Build system uses GNU Make:
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
+`make` puts the binaries in `out/<arch>/`: `out/amd64` or `out/arm64` on
+Linux, `out/<os>_<arch>` elsewhere (for example `out/darwin_arm64` on macOS).
+When a skill or document names `satpulsed`, `satpulsetool`, or `satpulsewb`
+without a path, run the repo build from `out/<arch>/`, never an installed copy.
+
 `make` works on macOS and FreeBSD too, but the `Makefile` proper is Linux-only:
 on other systems `Makefile` (GNU make) and `BSDmakefile` (bmake) both forward
 to the portable `Makefile.unix`; packaging targets are Linux-only. There the
@@ -178,8 +183,21 @@ System testing uses Ansible playbooks in `systest/`.
 - Treat an existing entry as covering the feature as a whole, including later refinements and enhancements before release. Do not add bullets or expand the entry to enumerate incremental work; revise it only when necessary to keep its concise summary accurate.
 - Add the entry under the current unreleased version heading, in the appropriate section, and reference the issue number(s) in parentheses to match the existing entries.
 
-## Connected GPS
+## GPS receivers and serial ports
 
-You can look at `/etc/satpulse.toml` if it exists to find device and speed of a connected GPS receiver.
-But before using it, check that `satpulsed` is not running `ps ax | grep satpulsed`.
-Use `satpulsetool gps` for operations that write to the receiver; do not send raw serial writes directly.
+Use `satpulsetool` for any task involving a GPS receiver, or a serial port or
+PPS signal that may be connected to one; never access the serial device
+directly, even just to read. Load the `satpulsetool` skill first. The skill is
+written for an installed system; in this repo:
+- the binary is the repo build (see "Development commands")
+- the man pages it cites are `docs/man/*.1.md`
+- the message directory `/usr/share/satpulse/gpsmsg` is `configs/gpsmsg`
+- `CLAUDE.local.md` lists the connected receivers with device, speed, and
+  name, but it may be stale: USB ports get swapped around. Verify with
+  `satpulsetool serial` before relying on it, discover unknown ports with
+  `serial -a` and `gps --show-receiver`, ask the user for the receiver's name
+  (they know it better than `--show-receiver` does, especially without
+  high-level support), and update `CLAUDE.local.md` with what you find.
+- when an ad-hoc command sent with `gps -m -` proves generally useful,
+  suggest adding it to the message files we ship in `configs/gpsmsg` (the
+  `gps-msg-add` skill does this)

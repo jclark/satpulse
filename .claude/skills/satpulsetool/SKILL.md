@@ -1,268 +1,85 @@
 ---
 name: satpulsetool
-description: How to use satpulsetool - GPS receiver configuration and packet decoding tool
+description: Work with GPS/GNSS receivers (modules), serial ports, and PPS signals using satpulsetool - find what is plugged into which port, detect a receiver's speed, capture and decode what it sends, check PPS on a serial modem-control pin or a PHC SDP, and query or change receiver configuration. Load when a task involves a GNSS receiver, or a serial port or PPS signal that may be connected to one.
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
-# satpulsetool cookbook
+# satpulsetool
 
-`satpulsetool` is a command-line tool with subcommands. Get help for any subcommand with `--help`:
+`satpulsetool` is a command-line tool with subcommands. This file has the rules
+that apply to every subcommand and a table saying which file to read for each
+kind of task. Read only the file for the task at hand.
 
-```
-out/amd64/satpulsetool gps --help
-out/amd64/satpulsetool decode --help
-```
+## Which file to read
 
-Global options go BEFORE the subcommand. The useful one is `-v` for verbose output (repeat for more):
+| Task | Read |
+|------|------|
+| Which serial ports exist, what is plugged into each, what speed a receiver runs at, what it is sending, whether PPS arrives on a modem-control pin (CTS, DCD, DSR, RI) | `serial.md` |
+| Whether PPS arrives on a PHC software-defined pin (SDP), or generating a pulse on one | `sdp.md` |
+| Show receiver info, query or change receiver configuration, send a command to a receiver | `gps.md` (which routes to `gps-highlevel.md`, `gps-msgfile.md`, or `gps-adhoc.md`) |
+| Decode one packet, or annotate a packet log with decoded fields | `decode.md` |
 
-```
-out/amd64/satpulsetool -v gps ...
-out/amd64/satpulsetool -v -v decode ...
-```
+Other subcommands (`pack`, `scan`, `replay`, `convobs`, `syncsim`, `ubxsim`,
+`ntrip`, `pmc`) do not touch hardware and are not covered here; see
+satpulsetool(1) and their `--help`.
 
-WRONG: `satpulsetool gps -v ...` (fails - `-v` is not a gps option)
+## Rules for every subcommand
 
-## Finding the binary
-
-Build with `make`. The binary location depends on platform:
-- Linux x86_64: `out/amd64/satpulsetool`
-- Linux aarch64: `out/arm64/satpulsetool`
-- macOS arm64: `out/darwin_arm64/satpulsetool`
-
-Run `uname -m` once to determine which.
-
-## Serial device and speed
-
-The `gps` and `serial` subcommands take `-d` (serial device) and `-s` (baud rate); `gps` needs both but can instead take `-f` (config file containing both).
-
-Look in `CLAUDE.local.md` for the device and speed of any connected receiver. If not documented there, ask the user and update `CLAUDE.local.md` with what they tell you (`serial -d DEV` can detect the speed).
-
-Before using a serial device, check that `satpulsed` is not running (`ps ax | grep satpulsed`) since they cannot share the device.
-
-## serial subcommand
-
-Examines serial ports. It only reads: it never transmits a byte to the device (`gps` talks, `serial` listens), so every serial operation is safe on a live receiver. The target is `-d DEV` (one port) or `-a` (all discovered ports). Full reference: `docs/man/satpulsetool-serial.1.md`. Four problems it solves:
-
-### 1. Which serial ports exist, and what is plugged into each?
-
-With no target, lists every discovered port without opening it, one key=value line per port with USB vid/pid, serial number, and aliases - enough to identify which device is which receiver (`-j` for JSONL; `-i -d DEV` for one port):
+Get help for any subcommand with `--help`:
 
 ```
-out/amd64/satpulsetool serial
+satpulsetool gps --help
 ```
 
-### 2. What speed is the receiver running at?
-
-With a target and no other options, tries reading at different speeds until receiver output decodes, and prints the detected speed. The result is a bare number, so it composes with gps:
-
-```
-out/amd64/satpulsetool serial -d /dev/ttyACM0
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s $(out/amd64/satpulsetool serial -d /dev/ttyACM0) --show-receiver
-```
-
-`-a` instead of `-d` detects the speed on every port - use this when neither the device nor the speed is known. Add `--packet-log FILE` to also record the packets received during detection.
-
-### 3. What is the receiver emitting?
-
-Passive packet capture: record what the receiver sends, without sending it anything, to a JSONL file. Give the speed with `-s` (0 = keep the port's current speed) and always bound the capture with `-t N` seconds:
+Global options go BEFORE the subcommand. The useful one is `-v` for verbose
+output (repeat for more):
 
 ```
-out/amd64/satpulsetool serial -d /dev/ttyACM0 -s 38400 --packet-log capture.jsonl -t 10
+satpulsetool -v gps ...
 ```
 
-### 4. Is a PPS signal wired to a modem-control pin?
+WRONG: `satpulsetool gps -v ...` (fails: `-v` is not a `gps` option).
 
-`-p` with a pin name (`cts`, `dcd`, `dsr`, or `ri`) watches that pin for pulse edges and timestamps each one - this is how to check PPS wiring or judge edge timing quality. `-a` scans every port. `-p` alone leaves the port speed unchanged; add `-s` and `--packet-log` to capture packets while timing edges:
-
-```
-out/amd64/satpulsetool serial -p cts -d /dev/cu.usbserial-1140 -t 30
-```
-
-### Rules common to all modes
-
-Do NOT use the `timeout` command - use `-t N` (seconds) instead. `-t` bounds edge detection (default 10 s) and capture (default: until interrupted, so always give `-t` when capturing). `--packet-log` overwrites an existing file, so use a new filename each time. Exit status 2 means no data found (no ports, no packets, no edges).
-
-## gps subcommand
-
-Configures GPS receivers. Full reference: `docs/man/satpulsetool-gps.1.md`. Three main uses:
-
-### 1. Low-level configuration with message files
-
-Message files are TOML files in `configs/gpsmsg/` that define named messages for specific receivers. Messages are selected by tag. See `configs/gpsmsg/tags.md` for tag naming conventions. When sending messages, satpulsetool correlates receiver responses with sent commands and reports whether each message was accepted (OK) or rejected (NAK).
-
-List available tags in a message file:
+The daemon `satpulsed` cannot share a serial port with `satpulsetool`. Before
+using a port, check that no `satpulsed` is using it (`ps ax | grep satpulsed`
+shows each daemon's `--serial-device`); if one is, stop it first, or ask. On a
+packaged install the daemon is a systemd instance per device, named after the
+device without `/dev/`, and restarts if merely killed:
 
 ```
-out/amd64/satpulsetool gps -m configs/gpsmsg/um980.toml --show-tags
+sudo systemctl stop satpulse@ttyUSB0
+sudo systemctl start satpulse@ttyUSB0
 ```
 
-Send tagged messages to a receiver:
+The `gps` and `serial` subcommands take `-d` (serial device) and `-s` (speed in
+bits per second). If the device or speed is not known, `satpulsetool serial`
+finds them (see `serial.md`); `gps` can instead read both from a satpulse
+configuration file with `-f` (on a packaged install, `/etc/satpulse.toml` or
+the per-device `/etc/satpulse.d/<device>.toml`).
 
-```
-out/arm64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/um980.toml -t pps
-```
+If opening a serial device fails with permission denied, the fix is to make
+the user a member of the group that owns the device (`ls -l DEV` shows it;
+`dialout` on Debian-derived systems), not to run satpulsetool as root.
 
-Send multiple tags in order:
+Do NOT wrap satpulsetool in the `timeout` command. Every subcommand that runs
+for a while has `-t N` (seconds) instead; always give it when capturing.
 
-```
-out/arm64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/um980.toml -t get-version,get-pps
-```
+`--packet-log FILE` overwrites an existing file, so use a new filename each
+time.
 
-Combine with `--packet-log` to see the full exchange:
+Exit status 2 from `serial` and `sdp` means no data found (no ports, no
+packets, no edges, no timestamps), not an error.
 
-```
-out/arm64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m configs/gpsmsg/um980.toml -t pps --packet-log result.jsonl
-```
+## Confirm with the user first
 
-When querying with a `get-*` tag, binary replies are printed as hex. Use `satpulsetool decode --bin` to decode them (see decode subcommand below).
+These change persistent or physical state. Do not run them without the user
+agreeing to that specific action:
 
-### 2. Sending arbitrary commands
+- `gps --save`, `--save-all`: write receiver non-volatile memory
+- `gps --reset`, `--factory-reset`: reset the receiver; `--reload` discards unsaved configuration
+- `sdp --extts`, `--perout`, `--disable`: change the function of a PHC pin
 
-Use `-m -` to pipe the message file as a here document. No temporary file needed. The TOML format handles checksums and binary packing for you. See `configs/gpsmsg/format.md` for the full format reference.
+## Reference
 
-Send a line command (e.g. Unicore). For Unicore receivers, set `responsePattern = "unicore"` so satpulsetool can match the receiver's ACK/NAK reply — without it the tool has no way to tell if the command was accepted. Use a `[default.line]` block to apply it to every `[[line]]` in the document:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
-[default.line]
-responsePattern = "unicore"
-[[line]]
-text = "CONFIG PPP ENABLE E6-HAS"
-TOML
-```
-
-Send an NMEA command (checksum computed automatically):
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
-[[nmea]]
-text = "PQTMCFGPPS,W,1,1,100,2,1,0"
-TOML
-```
-
-Send a binary command (payload packed automatically). Supported binary formats: `[[ubx]]` (u-blox), `[[asbin]]` (Allystar), `[[casbin]]` (CASIC), `[[sdbp]]` (Techtotop/Taidou). You specify the message class/id and the payload as type specifiers (`payload.types`) and values (`payload.values`). The type specifiers (`U1`, `U2`, `U4` unsigned; `I1`, `I2`, `I4` signed; `R4`, `R8` float) can typically be read directly from the protocol specification for the message. Satpulsetool handles sync bytes, length fields, and checksums.
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m - <<'TOML'
-[[ubx]]
-class = 0x06
-id = 0x03
-payload.types = "U4U4U1I1U1U1R4"
-payload.values = [1000000, 100000, 3, 0, 1, 0, 0.0]
-TOML
-```
-
-Combine with `--packet-log` to see the response.
-
-### 3. High-level configuration
-
-Device-independent options that satpulsetool translates into the right commands for the receiver. Currently supported on u-blox (6 through X20) and Unicore Nebulas IV (UM980/981/982/960).
-
-Show receiver info (also the default if no config options given):
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --show-receiver
-```
-
-Show current configuration:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --show-config
-```
-
-Enable constellations and bands:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 -g GPS,GAL -b L1,L2
-```
-
-Configure PPS (pulse width in seconds, 0 disables):
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --pps 0.5
-```
-
-Start a position survey (for timing mode):
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --survey --survey-time 3000 --survey-acc 1.5
-```
-
-Use a known fixed position:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --fixed-pos-ecef -941709.7,5965766.5,1553280.3 --fixed-pos-acc 0.1
-```
-
-Enable binary output for satpulsed:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --binary --pvt-out daemon
-```
-
-Configure RTCM output:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --rtcm-out MSM4,ARP -g GPS,GAL,BDS
-```
-
-Save configuration to receiver's non-volatile memory:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --save
-```
-
-Combine with `--packet-log` to see what commands are sent and how the receiver responds:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --show-config --packet-log config.jsonl --capture 5
-```
-
-Reset, reload, factory reset:
-
-```
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --reload
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --reset
-out/amd64/satpulsetool gps -d /dev/ttyACM0 -s 38400 --factory-reset
-```
-
-**Important note**
-
-`--save`, `--factory-reset`, and `--reset` modify persistent state - confirm with user before using.
-
-## decode subcommand
-
-Decodes a single GPS packet into JSON. Takes a positional DATA argument.
-
-Auto-detection: if all characters in DATA are hex digits, it is treated as hex-encoded binary (odd length is an error); otherwise it is treated as ASCII text (with \r\n appended). Use `--bin` or `--line` to force interpretation.
-
-```
-out/amd64/satpulsetool decode b562010614000000...
-out/amd64/satpulsetool decode '$GNGGA,034418.00,1343.91295,N,...*64'
-out/amd64/satpulsetool decode --bin b562010614000000...
-out/amd64/satpulsetool decode --line '$GNGGA,034418.00,1343.91295,N,...*64'
-```
-
-Options:
-- `--bin` - force hex interpretation
-- `--line` - force ASCII interpretation (appends \r\n)
-- `-c` / `--compact` - single-line JSON output
-- `--out` - treat packet as outgoing (affects CFG-VAL* decoding direction)
-
-## annotate subcommand
-
-Annotates a JSONL packet log with decoded fields (`header`, `payload`, `cfgData`).
-
-```
-out/amd64/satpulsetool annotate capture.jsonl
-out/amd64/satpulsetool annotate - < capture.jsonl
-out/amd64/satpulsetool annotate < capture.jsonl
-```
-
-### Typical workflow: capture then annotate
-
-```
-out/amd64/satpulsetool serial -d /dev/ttyACM0 -s 38400 --packet-log cap.jsonl -t 10
-out/amd64/satpulsetool annotate cap.jsonl > decoded.jsonl
-```
-
+Man pages: satpulsetool(1), satpulsetool-serial(1), satpulsetool-gps(1),
+satpulsetool-sdp(1). Message files live in `/usr/share/satpulse/gpsmsg`.
