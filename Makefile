@@ -40,7 +40,7 @@ GOARM=6
 ALL_GOARCH=arm64 amd64 arm
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
-MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1 satpulse.toml.5 satpulsed.8
+MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-pps.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1 satpulse.toml.5 satpulsed.8
 MAN_TARGETS = $(addprefix out/, $(MAN_PAGES))
 MAN_GZ_TARGETS = $(addsuffix .gz, $(MAN_TARGETS))
 MAN_TXT_TARGETS = $(addsuffix .txt, $(MAN_TARGETS))
@@ -106,6 +106,7 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	install -D -m 644 out/satpulsetool-pack.1 /usr/local/share/man/man1/satpulsetool-pack.1
 	install -D -m 644 out/satpulsetool-scan.1 /usr/local/share/man/man1/satpulsetool-scan.1
 	install -D -m 644 out/satpulsetool-sdp.1 /usr/local/share/man/man1/satpulsetool-sdp.1
+	install -D -m 644 out/satpulsetool-pps.1 /usr/local/share/man/man1/satpulsetool-pps.1
 	install -D -m 644 out/satpulsetool-syncsim.1 /usr/local/share/man/man1/satpulsetool-syncsim.1
 	install -D -m 644 out/satpulsetool-convobs.1 /usr/local/share/man/man1/satpulsetool-convobs.1
 	install -D -m 644 out/satpulsewb.1 /usr/local/share/man/man1/satpulsewb.1
@@ -129,6 +130,7 @@ uninstall:
 	rm -f /usr/local/share/man/man1/satpulsetool-pack.1
 	rm -f /usr/local/share/man/man1/satpulsetool-scan.1
 	rm -f /usr/local/share/man/man1/satpulsetool-sdp.1
+	rm -f /usr/local/share/man/man1/satpulsetool-pps.1
 	rm -f /usr/local/share/man/man1/satpulsetool-syncsim.1
 	rm -f /usr/local/share/man/man1/satpulsetool-convobs.1
 	rm -f /usr/local/share/man/man1/satpulsewb.1
@@ -202,6 +204,7 @@ $(DEB_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS) gpsmsg
 	install -D -m 644 out/satpulsetool-pack.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-pack.1.gz
 	install -D -m 644 out/satpulsetool-scan.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-scan.1.gz
 	install -D -m 644 out/satpulsetool-sdp.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-sdp.1.gz
+	install -D -m 644 out/satpulsetool-pps.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-pps.1.gz
 	install -D -m 644 out/satpulsetool-syncsim.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-syncsim.1.gz
 	install -D -m 644 out/satpulsetool-convobs.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-convobs.1.gz
 	install -D -m 644 out/satpulsewb.1.gz out/$*/deb/usr/share/man/man1/satpulsewb.1.gz
