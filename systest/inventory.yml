@@ -22,7 +22,6 @@ all:
         abondance-ttySEP0.lan:
         brie.lan:
         caciocavallo.lan:
-        chaource.lan:
         gubbeen.lan:
         maasdam.lan:
         morbier.lan:
@@ -31,6 +30,7 @@ all:
         roquefort.lan:
         serpa.lan:
         taleggio.lan:
+        vacherin.lan:
         valdeon.lan:
         valencay.lan:
         valtellina.lan:
@@ -44,25 +44,28 @@ all:
         testing:
       hosts:
         beaufort.lan:
+        chaource.lan:
         edam.lan:
         feta.lan:
         fontina.lan:
         montasio.lan:
         raschera.lan:
-        vacherin.lan:
     virtual_hosts:
       hosts:
         abondance-ttySEP0.lan:
   
   hosts:
-    vacherin.lan:
-      speed: 115200
-      instance: ttyUSB0
-
     # ZED-X20P on USB
-    roquefort.lan:
+    vacherin.lan:
       speed: 230400
       instance: ttyACM0
+
+    # Quectel LG290P on USB (Mozihao board, CH340)
+    roquefort.lan:
+      speed: 460800
+      instance: ttyUSB0
+      config: "false"
+      vendor: '"Quectel"'
 
     # LEA-6T
     pecorino.lan:
@@ -129,11 +132,8 @@ all:
     mascarpone.lan:
       speed: 115200
 
-    # Quectel LG290P on a CM4
+    # no receiver at present (LG290P moved to roquefort 2026-09-14); not in testing
     chaource.lan:
-      speed: 460800
-      config: "false"
-      vendor: '"Quectel"'
 
     # UM960 on UART
     wensleydale.lan:
