@@ -21,6 +21,7 @@ all:
         abondance.lan:
         abondance-ttySEP0.lan:
         brie.lan:
+        burrata.lan:
         caciocavallo.lan:
         gubbeen.lan:
         maasdam.lan:
@@ -186,6 +187,11 @@ all:
     # Raspberry Pi 4
     beaufort.lan:
       interface: ""
+
+    # Zhongke F8N-76 on UART; CM4 running 32-bit Raspberry Pi OS (armhf userland on the 64-bit kernel)
+    burrata.lan:
+      vendor: '"casic"'
+      speed: 115200
 
     feta.lan:
       interface: ""
