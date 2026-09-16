@@ -283,18 +283,24 @@ func (t *unixTerm) DevKind() DevKind {
 // use three for margin.
 const pl011WaitFrames = 3
 
-func (t *unixTerm) devWaitFrames() int {
+// devWaitFrames returns the number of character times to wait after changing
+// the line settings from old, and the speed at which to time them.
+func (t *unixTerm) devWaitFrames(old Attr) (frames int, speed int) {
 	major, minor, ok := t.devMajorMinor()
 	if !ok {
-		return 0
+		return 0, 0
 	}
 	// The kernel's device list does not assign minors to /dev/ttyAMA*: the
 	// amba-pl011 driver registers 14 ports from minor 64 of the low-density
 	// serial port major.
-	if major == 204 && minor >= 64 && minor < 78 {
-		return pl011WaitFrames
+	if major != 204 || minor < 64 || minor >= 78 {
+		return 0, 0
 	}
-	return 0
+	if old.ts.Cflag&unix.CBAUD == unix.B0 {
+		// The serial core programs B0 as 9600 baud (uart_get_baud_rate).
+		return pl011WaitFrames, 9600
+	}
+	return pl011WaitFrames, old.speed()
 }
 
 func (t *unixTerm) devMajorMinor() (uint32, uint32, bool) {

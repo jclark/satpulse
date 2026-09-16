@@ -137,15 +137,11 @@ func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
 	if sameHardware(old, current) {
 		return time.Time{}
 	}
-	frames := t.devWaitFrames()
+	frames, speed := t.devWaitFrames(old)
 	if frames == 0 {
 		return time.Time{}
 	}
-	duration := time.Duration(frames) * old.byteTransmitTime()
-	if duration == 0 {
-		return time.Time{}
-	}
-	return time.Now().Add(duration)
+	return time.Now().Add(time.Duration(frames) * byteTransmitTime(speed, old.ts))
 }
 
 // hardwareCflag holds the c_cflag bits that program the UART's frame format
@@ -237,17 +233,16 @@ func (t *unixTerm) TransmitTime(nBytes int) time.Duration {
 		return 0
 	}
 	attr := t.loadAttr()
-	return attr.byteTransmitTime() * time.Duration(nBytes)
+	return byteTransmitTime(attr.speed(), attr.ts) * time.Duration(nBytes)
 }
 
-// byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
-func (attr *Attr) byteTransmitTime() time.Duration {
-	speed := attr.speed()
+// byteTransmitTime returns the time it takes to send a byte at speed bits per second
+// with the frame format of ts.
+func byteTransmitTime(speed int, ts unix.Termios) time.Duration {
 	if speed <= 0 {
 		return 0
 	}
-	bits := bitsPerByte(attr.ts)
-	// speed is bits per second
+	bits := bitsPerByte(ts)
 	timePerBit := time.Second / time.Duration(speed)
 	return time.Duration(bits) * timePerBit
 }

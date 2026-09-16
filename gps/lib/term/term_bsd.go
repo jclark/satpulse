@@ -80,4 +80,4 @@ func openSelectFIFO(path string, timeout time.Duration) (*os.File, *File, DevKin
 	return nil, f, DevFIFO, nil
 }
 
-func (t *unixTerm) devWaitFrames() int { return 0 }
+func (t *unixTerm) devWaitFrames(Attr) (int, int) { return 0, 0 }
