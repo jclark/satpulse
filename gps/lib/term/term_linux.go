@@ -290,9 +290,8 @@ func (t *unixTerm) devWaitFrames(old Attr) (frames int, speed int) {
 	if !ok {
 		return 0, 0
 	}
-	// The kernel's device list does not assign minors to /dev/ttyAMA*: the
-	// amba-pl011 driver registers 14 ports from minor 64 of the low-density
-	// serial port major.
+	// amba-pl011 registers 14 ttyAMA ports from minor 64. Samsung ttySAC
+	// ports share the range and get a harmless, unnecessary wait.
 	if major != 204 || minor < 64 || minor >= 78 {
 		return 0, 0
 	}
