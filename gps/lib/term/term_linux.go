@@ -284,16 +284,17 @@ func (t *unixTerm) DevKind() DevKind {
 const pl011WaitFrames = 3
 
 func (t *unixTerm) devWaitFrames() int {
-	major, _, ok := t.devMajorMinor()
+	major, minor, ok := t.devMajorMinor()
 	if !ok {
 		return 0
 	}
-	switch major {
-	case 204, 205: // PL011 /dev/ttyAMA0
+	// The kernel's device list does not assign minors to /dev/ttyAMA*: the
+	// amba-pl011 driver registers 14 ports from minor 64 of the low-density
+	// serial port major.
+	if major == 204 && minor >= 64 && minor < 78 {
 		return pl011WaitFrames
-	default:
-		return 0
 	}
+	return 0
 }
 
 func (t *unixTerm) devMajorMinor() (uint32, uint32, bool) {
