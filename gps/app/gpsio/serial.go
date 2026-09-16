@@ -24,7 +24,8 @@ import (
 // nor more than one concurrent Write, nor more than one concurrent Close.
 // Stop can be called before Close to prevent further reads and writes.
 // Close will wait for any in-progress reads or writes to complete,
-// before restoring serial settings and closing the underlying file descriptor.
+// before restoring serial attributes and closing the underlying file descriptor.
+// Attributes affecting the UART hardware are not restored.
 // At most one WaitSerialPinChange call may be in progress, and it must
 // have returned before Close is called. Its context cancels it, and Stop
 // prevents further waits and cancels the watch; how soon a cancelled wait
@@ -430,7 +431,7 @@ func (c *SerialConn) Close() error {
 	}
 	var restoreErr error
 	if t := c.term(); t != nil {
-		restoreErr = t.Restore()
+		restoreErr = t.Restore(true)
 	}
 	closeErr := c.file.Close()
 	if restoreErr != nil {
@@ -484,7 +485,7 @@ func openTerm(path string, speed int) (term.Term, error) {
 	}
 	err = t.Flush()
 	if err != nil {
-		t.Restore()
+		t.Restore(true)
 		t.Close()
 		return nil, err
 	}

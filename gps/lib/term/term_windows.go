@@ -450,13 +450,35 @@ func (t *windowsTerm) Drain() error {
 	return t.wrapErr(windows.FlushFileBuffers(t.handle), "FlushFileBuffers")
 }
 
-func (t *windowsTerm) Restore() error {
-	err := windows.SetCommState(t.handle, &t.dcbSaved)
-	if err != nil {
+func (t *windowsTerm) Restore(exceptHardware bool) error {
+	dcb := t.dcbSaved
+	if exceptHardware {
+		var current windows.DCB
+		current.DCBlength = uint32(unsafe.Sizeof(current))
+		if err := windows.GetCommState(t.handle, &current); err != nil {
+			return t.wrapErr(err, "GetCommState")
+		}
+		dcb = restoreSettings(dcb, current)
+	}
+	if err := windows.SetCommState(t.handle, &dcb); err != nil {
 		return t.wrapErr(err, "SetCommState")
 	}
-	err = windows.SetCommTimeouts(t.handle, &t.timeoutsSaved)
-	return t.wrapErr(err, "SetCommTimeouts")
+	return t.wrapErr(windows.SetCommTimeouts(t.handle, &t.timeoutsSaved), "SetCommTimeouts")
+}
+
+func restoreSettings(saved, current windows.DCB) windows.DCB {
+	saved.BaudRate = current.BaudRate
+	saved.ByteSize = current.ByteSize
+	saved.Parity = current.Parity
+	saved.StopBits = current.StopBits
+	const flow = dcbOutxCtsFlow | dcbOutxDsrFlow | dcbDtrControlMask |
+		dcbDsrSensitivity | dcbTXContinueOnXoff | dcbOutX | dcbInX | dcbRtsControlMask
+	saved.Flags = saved.Flags&^flow | current.Flags&flow
+	saved.XonLim = current.XonLim
+	saved.XoffLim = current.XoffLim
+	saved.XonChar = current.XonChar
+	saved.XoffChar = current.XoffChar
+	return saved
 }
 
 func (t *windowsTerm) Close() error {

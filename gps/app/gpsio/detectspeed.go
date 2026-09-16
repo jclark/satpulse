@@ -198,8 +198,8 @@ func trySpeed(ctx context.Context, packetCh <-chan scan.Packet, procs map[gpspro
 // DetectSpeed looks for a speed at which the device produces suitable valid
 // packets. A zero candidate means the speed in effect on entry. On
 // DetectFound it leaves the connection at the detected speed. Otherwise the
-// speed is unspecified and the caller must close the connection, which
-// restores the terminal state captured when the port was opened.
+// speed is unspecified and the caller must close the connection. Close does not
+// restore attributes affecting the UART hardware, so the last tried speed remains.
 func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Packet, conn *SerialConn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, speeds []int, d time.Duration, stopSilent func(tried []int) bool) (DetectResult, error) {
 	if conn == nil {
 		panic("nil connection passed to DetectSpeed")

@@ -21,7 +21,10 @@ type Term interface {
 	ModemControlPinState() (ModemControlPinState, error)
 	Flush() error
 	Drain() error
-	Restore() error
+	// Restore restores the attributes saved at open. If exceptHardware is true,
+	// it does not restore attributes affecting the UART hardware
+	// i.e. speed, word length, parity, stop bits and hardware flow control.
+	Restore(exceptHardware bool) error
 }
 
 // ErrNotATTY is returned when a device does not support termios.

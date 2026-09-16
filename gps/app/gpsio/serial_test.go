@@ -32,6 +32,8 @@ func (f *fakeIOFile) Path() string { return "fake" }
 func (f *fakeIOFile) Buffered() (int, error) { return 0, nil }
 
 type fakeTerm struct {
+	exceptHardware bool
+
 	fakeIOFile
 	speed       int
 	changeCalls int
@@ -59,8 +61,9 @@ func (f *fakeTerm) Flush() error { return nil }
 
 func (f *fakeTerm) Drain() error { return nil }
 
-func (f *fakeTerm) Restore() error {
+func (f *fakeTerm) Restore(exceptHardware bool) error {
 	f.restored = true
+	f.exceptHardware = exceptHardware
 	return nil
 }
 
@@ -95,6 +98,9 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	}
 	if !f.restored {
 		t.Error("Close did not restore terminal settings")
+	}
+	if !f.exceptHardware {
+		t.Error("Close did not preserve hardware attributes")
 	}
 	if !f.closed {
 		t.Error("Close did not close terminal")

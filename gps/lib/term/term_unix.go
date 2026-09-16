@@ -412,8 +412,25 @@ func (t *unixTerm) ModemControlPinState() (ModemControlPinState, error) {
 	return state, nil
 }
 
-func (t *unixTerm) Restore() error {
-	return t.setAttrNow(&t.tsSaved)
+func (t *unixTerm) Restore(exceptHardware bool) error {
+	ts := t.tsSaved
+	if exceptHardware {
+		current, err := t.getAttr()
+		if err != nil {
+			return err
+		}
+		ts = restoreSettings(ts, *current)
+	}
+	return t.setAttrNow(&ts)
+}
+
+func restoreSettings(saved, current unix.Termios) unix.Termios {
+	saved.Cflag = saved.Cflag&^linkCflag | current.Cflag&linkCflag
+	const flow = unix.IXON | unix.IXOFF | unix.IXANY
+	saved.Iflag = saved.Iflag&^flow | current.Iflag&flow
+	saved.Ispeed = current.Ispeed
+	saved.Ospeed = current.Ospeed
+	return saved
 }
 
 func (t *unixTerm) Close() error {

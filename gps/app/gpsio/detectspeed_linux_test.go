@@ -106,7 +106,8 @@ func TestDetectSpeedPTY(t *testing.T) {
 }
 
 // A device that says nothing is an outcome, not an error, and leaves the
-// speed unspecified: cleanup is the caller's Close, which restores the port.
+// speed unspecified: cleanup is the caller's Close, which leaves the last
+// tried speed in place.
 func TestDetectSpeedPTYSilent(t *testing.T) {
 	_, conn := openTestPTY(t, 9600)
 	device := conn.LocalAddr()
@@ -130,8 +131,8 @@ func TestDetectSpeedPTYSilent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if speed != 9600 {
-		t.Errorf("restored speed = %d, want 9600", speed)
+	if speed != 38400 {
+		t.Errorf("preserved speed = %d, want 38400", speed)
 	}
 	if err := reopened.Close(); err != nil {
 		t.Fatal(err)

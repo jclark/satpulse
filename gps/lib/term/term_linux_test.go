@@ -50,7 +50,7 @@ func TestArbitrarySpeed(t *testing.T) {
 	}
 	checkTestSpeed(t, term.fd, unix.B9600, 0, 9600)
 
-	if err := term.Restore(); err != nil {
+	if err := term.Restore(false); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 	checkTestArbitrarySpeed(t, term.fd, testArbitrarySpeed)

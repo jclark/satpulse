@@ -9,6 +9,9 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+const frameCflag = unix.CSIZE | unix.PARENB | unix.PARODD | unix.CMSPAR | unix.CSTOPB
+const linkCflag = unix.CBAUD | unix.CIBAUD | frameCflag | unix.CRTSCTS
+
 var baudRates = []struct {
 	b     uint32
 	speed int
