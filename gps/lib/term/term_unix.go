@@ -94,7 +94,8 @@ func (t *unixTerm) init(path string, opts ...AttrSetter) (safe time.Time, err er
 			t.clearExclusive()
 		}
 	}()
-	attr := Attr{*tsp}
+	old := Attr{*tsp}
+	attr := old
 	t.tsSaved = *tsp
 	for _, opt := range opts {
 		err = opt(&attr)
@@ -106,7 +107,7 @@ func (t *unixTerm) init(path string, opts ...AttrSetter) (safe time.Time, err er
 	if err != nil {
 		return
 	}
-	safe = t.safeWriteTime(Attr{*tsp}, attr)
+	safe = t.safeWriteTime(old, attr)
 	t.storeAttr(attr)
 	_ = t.readError()
 	return
