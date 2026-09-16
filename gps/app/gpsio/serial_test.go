@@ -20,13 +20,19 @@ func testLogger() *slog.Logger {
 
 type fakeIOFile struct {
 	closed bool
+	write  func([]byte) (int, error)
 }
 
 var _ ioFile = (*fakeIOFile)(nil)
 
 func (f *fakeIOFile) Read([]byte) (int, error) { return 0, io.EOF }
 
-func (f *fakeIOFile) Write(p []byte) (int, error) { return len(p), nil }
+func (f *fakeIOFile) Write(p []byte) (int, error) {
+	if f.write != nil {
+		return f.write(p)
+	}
+	return len(p), nil
+}
 
 func (f *fakeIOFile) Close() error {
 	f.closed = true
@@ -42,7 +48,6 @@ type fakeTerm struct {
 	speed       int
 	changeCalls int
 	restored    bool
-	write       func([]byte) (int, error)
 	changeSafe  time.Time
 }
 
@@ -51,13 +56,6 @@ var _ term.Term = (*fakeTerm)(nil)
 func (f *fakeTerm) Change(...term.AttrSetter) (time.Time, error) {
 	f.changeCalls++
 	return f.changeSafe, nil
-}
-
-func (f *fakeTerm) Write(p []byte) (int, error) {
-	if f.write != nil {
-		return f.write(p)
-	}
-	return len(p), nil
 }
 
 func (f *fakeTerm) Speed() int { return f.speed }
@@ -117,8 +115,25 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 }
 
 func TestSerialConnWaitsBeforeWrite(t *testing.T) {
-	for _, method := range []string{"Write", "WritePacket", "WriteThenChangeSpeed"} {
-		t.Run(method, func(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*SerialConn) (int, error)
+	}{
+		{
+			name: "Write",
+			call: func(c *SerialConn) (int, error) { return c.Write([]byte("test")) },
+		},
+		{
+			name: "WritePacket",
+			call: func(c *SerialConn) (int, error) { return c.WritePacket([]byte("test"), nil) },
+		},
+		{
+			name: "WriteThenChangeSpeed",
+			call: func(c *SerialConn) (int, error) { return c.WriteThenChangeSpeed([]byte("test"), 115200) },
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				f := &fakeTerm{speed: 9600}
 				c := newSerialConn(testLogger(), f, term.DevUART)
@@ -133,16 +148,7 @@ func TestSerialConnWaitsBeforeWrite(t *testing.T) {
 					writes++
 					return len(p), nil
 				}
-				var err error
-				switch method {
-				case "Write":
-					_, err = c.Write([]byte("test"))
-				case "WritePacket":
-					_, err = c.WritePacket([]byte("test"), nil)
-				case "WriteThenChangeSpeed":
-					_, err = c.WriteThenChangeSpeed([]byte("test"), 115200)
-				}
-				if err != nil {
+				if _, err := tc.call(c); err != nil {
 					t.Fatal(err)
 				}
 				if writes != 1 || !c.safeWriteTime.IsZero() {
