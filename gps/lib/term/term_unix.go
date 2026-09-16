@@ -141,19 +141,11 @@ func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
 	if frames == 0 {
 		return time.Time{}
 	}
-	duration := time.Duration(frames) * frameDuration(old)
+	duration := time.Duration(frames) * old.byteTransmitTime()
 	if duration == 0 {
 		return time.Time{}
 	}
 	return time.Now().Add(duration)
-}
-
-func frameDuration(attr Attr) time.Duration {
-	speed := attr.speed()
-	if speed <= 0 {
-		return 0
-	}
-	return (time.Duration(bitsPerByte(attr.ts))*time.Second + time.Duration(speed) - 1) / time.Duration(speed)
 }
 
 func (t *unixTerm) Speed() int {
