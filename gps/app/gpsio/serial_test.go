@@ -32,12 +32,11 @@ func (f *fakeIOFile) Path() string { return "fake" }
 func (f *fakeIOFile) Buffered() (int, error) { return 0, nil }
 
 type fakeTerm struct {
-	exceptHardware bool
-
 	fakeIOFile
-	speed       int
-	changeCalls int
-	restored    bool
+	speed          int
+	changeCalls    int
+	restored       bool
+	exceptHardware bool
 }
 
 var _ term.Term = (*fakeTerm)(nil)
@@ -84,6 +83,7 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if !state.Asserted(SerialPinCTS) {
 		t.Error("SerialPinState did not report CTS asserted")
 	}
+	c.SetDetected()
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)
 	}
@@ -99,11 +99,23 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if !f.restored {
 		t.Error("Close did not restore terminal settings")
 	}
-	if !f.exceptHardware {
-		t.Error("Close did not preserve hardware attributes")
+	if f.exceptHardware {
+		t.Error("Close preserved hardware attributes after an unvalidated speed change")
 	}
 	if !f.closed {
 		t.Error("Close did not close terminal")
+	}
+}
+
+func TestSerialConnClosePreservesDetectedHardware(t *testing.T) {
+	f := &fakeTerm{speed: 4800}
+	c := newSerialConn(f, term.DevUART)
+	c.SetDetected()
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !f.exceptHardware {
+		t.Error("Close did not preserve hardware attributes after detection")
 	}
 }
 

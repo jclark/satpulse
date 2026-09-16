@@ -505,13 +505,14 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 		return nil, nil, 0, err
 	}
 	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
+	serPort, _ := port.(*gpsio.SerialConn)
 	var knownErr error // error that we know how to handle
 	for action := range director.Actions() {
 		director.AdvanceTimeTo(time.Now())
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
 			var err error
-			if serPort, ok := port.(*gpsio.SerialConn); ok && action.Speed != 0 {
+			if serPort != nil && action.Speed != 0 {
 				_, err = serPort.WriteThenChangeSpeed(action.Packet, action.Speed)
 			} else {
 				_, err = port.Write(action.Packet)
@@ -535,6 +536,9 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 				mh.packet(packet)
 				if packet.ChecksumValid {
 					director.ValidPacketReceived(packet.TRead)
+					if serPort != nil {
+						serPort.SetDetected()
+					}
 				}
 			}
 

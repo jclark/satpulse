@@ -12,8 +12,6 @@ import (
 
 type serialErrorState struct{}
 
-const linkCflag = unix.CSIZE | unix.PARENB | unix.PARODD | unix.CSTOPB | unix.CRTSCTS
-
 func Speed(speed int) AttrSetter {
 	b, ok := speedToB(speed)
 	if !ok {

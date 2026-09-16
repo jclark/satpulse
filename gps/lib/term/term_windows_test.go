@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-func TestRestoreSettings(t *testing.T) {
+func TestRestoreExceptHardware(t *testing.T) {
 	saved := windows.DCB{
 		BaudRate: 9600, ByteSize: 7, Parity: windows.EVENPARITY, StopBits: windows.TWOSTOPBITS,
 		Flags:     dcbParity | dcbErrorChar | dcbNull | dcbOutxCtsFlow | dcbOutX | dcbInX,
@@ -28,11 +28,9 @@ func TestRestoreSettings(t *testing.T) {
 	want.ByteSize = 8
 	want.Parity = windows.NOPARITY
 	want.StopBits = windows.ONESTOPBIT
-	want.Flags = dcbParity | dcbErrorChar | dcbNull | dcbRtsControlMask | dcbDtrControlMask
-	want.XonLim, want.XoffLim = 30, 40
-	want.XonChar, want.XoffChar = 1, 2
-	if got := restoreSettings(saved, current); got != want {
-		t.Errorf("restoreSettings = %+v, want %+v", got, want)
+	want.Flags = dcbParity | dcbErrorChar | dcbNull | dcbOutX | dcbInX | dcbRtsControlMask | dcbDtrControlMask
+	if got := restoreExceptHardware(saved, current); got != want {
+		t.Errorf("restoreExceptHardware = %+v, want %+v", got, want)
 	}
 }
 

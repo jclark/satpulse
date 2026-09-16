@@ -25,7 +25,9 @@ import (
 // Stop can be called before Close to prevent further reads and writes.
 // Close will wait for any in-progress reads or writes to complete,
 // before restoring serial attributes and closing the underlying file descriptor.
-// Attributes affecting the UART hardware are not restored.
+// Attributes affecting the UART hardware are not restored if a valid packet
+// was received since the last speed change (see SetDetected), since they then
+// describe the real state of the link.
 // At most one WaitSerialPinChange call may be in progress, and it must
 // have returned before Close is called. Its context cancels it, and Stop
 // prevents further waits and cancels the watch; how soon a cancelled wait
@@ -41,6 +43,7 @@ type SerialConn struct {
 	kind         term.DevKind
 	mu           sync.Mutex
 	stopped      bool // protected by mu
+	detected     bool // protected by mu
 	readLock     chan struct{}
 	writeLock    chan struct{}
 	pktLog       *PacketLog
@@ -353,6 +356,10 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 				err = t.Change(term.Speed(speed))
 				if err != nil {
 					speed = 0
+				} else {
+					c.mu.Lock()
+					c.detected = false
+					c.mu.Unlock()
 				}
 			} else {
 				// speed change is meaningless on a non-TTY device
@@ -373,6 +380,14 @@ func (c *SerialConn) isStopped() bool {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	return c.stopped
+}
+
+// SetDetected records that a valid packet was received at the current
+// settings, so that Close leaves the UART hardware settings in place.
+func (c *SerialConn) SetDetected() {
+	c.mu.Lock()
+	c.detected = true
+	c.mu.Unlock()
 }
 
 func (c *SerialConn) Stop() {
@@ -425,13 +440,16 @@ func (c *SerialConn) Close() error {
 	c.mu.Lock()
 	w := c.watch
 	c.watch = nil
+	detected := c.detected
 	c.mu.Unlock()
 	if w != nil {
 		_ = w.Close()
 	}
 	var restoreErr error
 	if t := c.term(); t != nil {
-		restoreErr = t.Restore(true)
+		// Hardware settings at which a valid packet was received describe
+		// the real state of the link, so leave them for the next open.
+		restoreErr = t.Restore(detected)
 	}
 	closeErr := c.file.Close()
 	if restoreErr != nil {
@@ -485,7 +503,7 @@ func openTerm(path string, speed int) (term.Term, error) {
 	}
 	err = t.Flush()
 	if err != nil {
-		t.Restore(true)
+		t.Restore(false)
 		t.Close()
 		return nil, err
 	}

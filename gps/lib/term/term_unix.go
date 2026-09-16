@@ -419,15 +419,23 @@ func (t *unixTerm) Restore(exceptHardware bool) error {
 		if err != nil {
 			return err
 		}
-		ts = restoreSettings(ts, *current)
+		ts = restoreExceptHardware(ts, *current)
 	}
 	return t.setAttrNow(&ts)
 }
 
-func restoreSettings(saved, current unix.Termios) unix.Termios {
-	saved.Cflag = saved.Cflag&^linkCflag | current.Cflag&linkCflag
-	const flow = unix.IXON | unix.IXOFF | unix.IXANY
-	saved.Iflag = saved.Iflag&^flow | current.Iflag&flow
+// hardwareIflag holds the input flags for break and parity error handling;
+// a change to them makes Linux reprogram the UART (the iflag_mask of
+// uart_set_termios). The rest of c_iflag is line discipline only.
+const hardwareIflag = unix.IGNBRK | unix.BRKINT | unix.IGNPAR | unix.PARMRK | unix.INPCK
+
+// restoreExceptHardware returns saved with the attributes that the kernel
+// programs into the UART taken from current. Linux reprograms the UART when
+// any of c_cflag, the speeds or hardwareIflag differ, so all of them are
+// preserved, not just the bits that name a speed or frame format.
+func restoreExceptHardware(saved, current unix.Termios) unix.Termios {
+	saved.Cflag = current.Cflag
+	saved.Iflag = saved.Iflag&^hardwareIflag | current.Iflag&hardwareIflag
 	saved.Ispeed = current.Ispeed
 	saved.Ospeed = current.Ospeed
 	return saved

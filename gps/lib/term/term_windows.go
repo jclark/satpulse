@@ -114,9 +114,7 @@ func (t *windowsTerm) init(path string, opts ...AttrSetter) (err error) {
 		windows.CloseHandle(h)
 		t.handle = windows.InvalidHandle
 	}()
-	var dcb windows.DCB
-	dcb.DCBlength = uint32(unsafe.Sizeof(dcb))
-	err = windows.GetCommState(h, &dcb)
+	dcb, err := getCommState(h)
 	if err != nil {
 		// GetCommState fails with ERROR_INVALID_FUNCTION on a handle that is
 		// not a serial device (e.g. a named pipe used as a replay sink), the
@@ -453,12 +451,11 @@ func (t *windowsTerm) Drain() error {
 func (t *windowsTerm) Restore(exceptHardware bool) error {
 	dcb := t.dcbSaved
 	if exceptHardware {
-		var current windows.DCB
-		current.DCBlength = uint32(unsafe.Sizeof(current))
-		if err := windows.GetCommState(t.handle, &current); err != nil {
+		current, err := getCommState(t.handle)
+		if err != nil {
 			return t.wrapErr(err, "GetCommState")
 		}
-		dcb = restoreSettings(dcb, current)
+		dcb = restoreExceptHardware(dcb, current)
 	}
 	if err := windows.SetCommState(t.handle, &dcb); err != nil {
 		return t.wrapErr(err, "SetCommState")
@@ -466,18 +463,22 @@ func (t *windowsTerm) Restore(exceptHardware bool) error {
 	return t.wrapErr(windows.SetCommTimeouts(t.handle, &t.timeoutsSaved), "SetCommTimeouts")
 }
 
-func restoreSettings(saved, current windows.DCB) windows.DCB {
+func getCommState(h windows.Handle) (windows.DCB, error) {
+	var dcb windows.DCB
+	dcb.DCBlength = uint32(unsafe.Sizeof(dcb))
+	return dcb, windows.GetCommState(h, &dcb)
+}
+
+// restoreExceptHardware returns saved with the attributes that program the
+// UART hardware taken from current: speed, frame format, and control of the
+// hardware handshake lines. XON/XOFF is handled by the driver, so it is restored.
+func restoreExceptHardware(saved, current windows.DCB) windows.DCB {
 	saved.BaudRate = current.BaudRate
 	saved.ByteSize = current.ByteSize
 	saved.Parity = current.Parity
 	saved.StopBits = current.StopBits
-	const flow = dcbOutxCtsFlow | dcbOutxDsrFlow | dcbDtrControlMask |
-		dcbDsrSensitivity | dcbTXContinueOnXoff | dcbOutX | dcbInX | dcbRtsControlMask
-	saved.Flags = saved.Flags&^flow | current.Flags&flow
-	saved.XonLim = current.XonLim
-	saved.XoffLim = current.XoffLim
-	saved.XonChar = current.XonChar
-	saved.XoffChar = current.XoffChar
+	const lines = dcbOutxCtsFlow | dcbOutxDsrFlow | dcbDtrControlMask | dcbDsrSensitivity | dcbRtsControlMask
+	saved.Flags = saved.Flags&^lines | current.Flags&lines
 	return saved
 }
 

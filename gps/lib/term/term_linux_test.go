@@ -107,6 +107,44 @@ func TestExclusiveModeReleased(t *testing.T) {
 	}
 }
 
+func TestRestoreExceptHardware(t *testing.T) {
+	saved := unix.Termios{
+		Iflag:  unix.ICRNL | unix.INPCK | unix.IXON | unix.IXOFF | unix.IXANY,
+		Oflag:  unix.OPOST,
+		Cflag:  unix.B9600 | unix.CS7 | unix.PARENB | unix.PARODD | unix.CMSPAR | unix.CSTOPB | unix.CRTSCTS | unix.HUPCL,
+		Lflag:  unix.ICANON | unix.ECHO | unix.ISIG,
+		Line:   7,
+		Ispeed: 9600,
+		Ospeed: 9600,
+	}
+	saved.Cc[unix.VMIN] = 1
+	saved.Cc[unix.VTIME] = 5
+	current := unix.Termios{
+		Iflag:  unix.BRKINT,
+		Cflag:  unix.BOTHER | unix.BOTHER<<16 | unix.CS8 | unix.CLOCAL | unix.CREAD,
+		Ispeed: 123457,
+		Ospeed: 234567,
+	}
+	current.Cc[unix.VTIME] = 1
+	want := saved
+	want.Cflag = current.Cflag
+	want.Iflag = unix.ICRNL | unix.IXON | unix.IXOFF | unix.IXANY | unix.BRKINT
+	want.Ispeed = 123457
+	want.Ospeed = 234567
+	if got := restoreExceptHardware(saved, current); got != want {
+		t.Errorf("restoreExceptHardware = %+v, want %+v", got, want)
+	}
+	// Also test restoration with the saved and current attributes swapped.
+	want = current
+	want.Cflag = saved.Cflag
+	want.Iflag = unix.INPCK
+	want.Ispeed = 9600
+	want.Ospeed = 9600
+	if got := restoreExceptHardware(current, saved); got != want {
+		t.Errorf("reverse restoreExceptHardware = %+v, want %+v", got, want)
+	}
+}
+
 func newTestPTY(t *testing.T) string {
 	t.Helper()
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
