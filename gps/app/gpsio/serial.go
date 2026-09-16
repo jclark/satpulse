@@ -37,6 +37,7 @@ import (
 // may not be before the process exits. That separate claim is what makes the
 // wait safe relative to Close.
 type SerialConn struct {
+	lg            *slog.Logger
 	file          ioFile
 	kind          term.DevKind
 	mu            sync.Mutex
@@ -68,10 +69,10 @@ var _ SerialOutPort = (*SerialConn)(nil)
 // speed can be 0 meaning to use the current speed.
 // It returns the actual speed configured on the device; for devices
 // that are not TTYs the returned speed is 0.
-func OpenSerial(path string, speed int) (*SerialConn, int, error) {
+func OpenSerial(lg *slog.Logger, path string, speed int) (*SerialConn, int, error) {
 	t, safe, err := openTerm(path, speed)
 	if err == nil {
-		c := newSerialConn(t, t.DevKind())
+		c := newSerialConn(lg, t, t.DevKind())
 		c.setSafeWriteTime(safe, "open")
 		return c, t.Speed(), nil
 	}
@@ -86,22 +87,22 @@ func OpenSerial(path string, speed int) (*SerialConn, int, error) {
 	if pf != nil {
 		f = newPollingFile(pf, readTimeout)
 	}
-	return newSerialConn(f, kind), 0, nil
+	return newSerialConn(lg, f, kind), 0, nil
 }
 
-func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {
+func newSerialConn(lg *slog.Logger, f ioFile, kind term.DevKind) *SerialConn {
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, kind: kind}
+	return &SerialConn{lg: lg, file: f, readLock: readLock, writeLock: writeLock, kind: kind}
 }
 
 // setSafeWriteTime is called before publishing the connection or with writeLock held.
 func (c *SerialConn) setSafeWriteTime(safe time.Time, operation string) {
 	c.safeWriteTime = safe
 	if !safe.IsZero() {
-		slog.Debug("serial write wait received", "path", c.file.Path(), "operation", operation, "until", safe, "wait", time.Until(safe))
+		c.lg.Debug("serial write wait received", "path", c.file.Path(), "operation", operation, "until", safe, "wait", time.Until(safe))
 	}
 }
 
@@ -340,7 +341,7 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 	// now we have the write lock
 	if !c.safeWriteTime.IsZero() {
 		if d := time.Until(c.safeWriteTime); d > 0 {
-			slog.Info("waiting before serial write after speed change", "path", c.file.Path(), "wait", d)
+			c.lg.Info("waiting before serial write after speed change", "path", c.file.Path(), "wait", d)
 			time.Sleep(d)
 		}
 		c.safeWriteTime = time.Time{}

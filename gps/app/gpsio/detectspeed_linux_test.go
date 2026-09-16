@@ -39,7 +39,7 @@ func openTestPTY(t *testing.T, speed int) (*os.File, *SerialConn) {
 	if err := setup.Close(); err != nil {
 		t.Fatal(err)
 	}
-	conn, _, err := OpenSerial(device, 0)
+	conn, _, err := OpenSerial(testLogger(), device, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestDetectSpeedPTYSilent(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, speed, err := OpenSerial(device, 0)
+	reopened, speed, err := OpenSerial(testLogger(), device, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

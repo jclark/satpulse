@@ -113,7 +113,7 @@ type fakeOpener struct {
 	opens  int
 }
 
-func (o *fakeOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
+func (o *fakeOpener) Open(_ context.Context, _ *slog.Logger) (gpsio.Conn, int, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.opens++
@@ -140,9 +140,9 @@ type blockingOpener struct {
 	gate chan struct{}
 }
 
-func (o *blockingOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+func (o *blockingOpener) Open(ctx context.Context, lg *slog.Logger) (gpsio.Conn, int, error) {
 	<-o.gate
-	return o.fakeOpener.Open(ctx)
+	return o.fakeOpener.Open(ctx, lg)
 }
 
 // gatedSink wraps fakeSink, blocking gps:state emissions on gate

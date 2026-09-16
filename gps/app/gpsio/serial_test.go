@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"testing"
@@ -11,6 +12,10 @@ import (
 
 	"github.com/jclark/satpulse/gps/lib/term"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
 
 type fakeIOFile struct {
 	closed bool
@@ -75,7 +80,7 @@ func (f *fakeTerm) Restore() error {
 
 func TestSerialConnUsesTermCapability(t *testing.T) {
 	f := &fakeTerm{speed: 4800}
-	c := newSerialConn(f, term.DevUART)
+	c := newSerialConn(testLogger(), f, term.DevUART)
 
 	if got := c.term(); got != f {
 		t.Fatalf("term() = %T, want fake terminal", got)
@@ -114,7 +119,7 @@ func TestSerialConnWaitsBeforeWrite(t *testing.T) {
 	for _, method := range []string{"Write", "WritePacket", "WriteThenChangeSpeed"} {
 		t.Run(method, func(t *testing.T) {
 			f := &fakeTerm{speed: 9600}
-			c := newSerialConn(f, term.DevUART)
+			c := newSerialConn(testLogger(), f, term.DevUART)
 			defer c.Close()
 			deadline := time.Now().Add(20 * time.Millisecond)
 			c.safeWriteTime = deadline // supplied by OpenSerial after term.Open
@@ -245,7 +250,7 @@ func (f *slowWaitTerm) NewModemControlPinWatch(term.ModemControlPin) (term.Modem
 
 func TestSerialConnWaitDoesNotBlockReadsWhileCreatingWatch(t *testing.T) {
 	f := &slowWaitTerm{watch: newFakePinWatch(), creating: make(chan struct{}), release: make(chan struct{})}
-	c := newSerialConn(f, term.DevUART)
+	c := newSerialConn(testLogger(), f, term.DevUART)
 	errCh := make(chan error, 1)
 	go func() {
 		_, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait)
@@ -277,7 +282,7 @@ func TestSerialConnWaitCapability(t *testing.T) {
 		missed: 2,
 	}
 	f := &fakeWaitTerm{watch: w}
-	c := newSerialConn(f, term.DevUSBtoUART)
+	c := newSerialConn(testLogger(), f, term.DevUSBtoUART)
 
 	change, missed, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait)
 	if err != nil || change.Timestamp != now || change.TRead != now || !change.Asserted || missed != 2 {
@@ -308,7 +313,7 @@ func TestSerialConnWaitCapability(t *testing.T) {
 func TestSerialConnWaitUnsupportedClosesWatch(t *testing.T) {
 	w := newFakePinWatch()
 	w.result <- fakeWatchResult{err: errors.ErrUnsupported}
-	c := newSerialConn(&fakeWaitTerm{watch: w}, term.DevUSBtoUART)
+	c := newSerialConn(testLogger(), &fakeWaitTerm{watch: w}, term.DevUSBtoUART)
 
 	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
@@ -325,7 +330,7 @@ func TestSerialConnWaitUnsupportedClosesWatch(t *testing.T) {
 
 func TestSerialConnWaitContextCancellation(t *testing.T) {
 	w := newFakePinWatch()
-	c := newSerialConn(&fakeWaitTerm{watch: w}, term.DevUSBtoUART)
+	c := newSerialConn(testLogger(), &fakeWaitTerm{watch: w}, term.DevUSBtoUART)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
@@ -351,7 +356,7 @@ func TestSerialConnWaitContextCancellation(t *testing.T) {
 
 func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	f := new(fakeIOFile)
-	c := newSerialConn(f, term.DevUnknown)
+	c := newSerialConn(testLogger(), f, term.DevUnknown)
 
 	if got := c.term(); got != nil {
 		t.Fatalf("term() = %T, want nil", got)
@@ -397,7 +402,7 @@ func TestSerialConnKernelMethod(t *testing.T) {
 		missed: 1,
 	}
 	f := &fakeKernelTerm{fakeWaitTerm: fakeWaitTerm{watch: w}}
-	c := newSerialConn(f, term.DevUART)
+	c := newSerialConn(testLogger(), f, term.DevUART)
 	change, missed, err := c.WaitSerialPinChange(context.Background(), SerialPinDCD, PPSMethodKernel)
 	if err != nil || change.Timestamp != now || change.TRead != now || change.Asserted || missed != 1 {
 		t.Fatalf("WaitSerialPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
@@ -412,7 +417,7 @@ func TestSerialConnKernelMethod(t *testing.T) {
 }
 
 func TestSerialConnKernelMethodUnsupported(t *testing.T) {
-	c := newSerialConn(&fakeWaitTerm{watch: newFakePinWatch()}, term.DevUSBtoUART)
+	c := newSerialConn(testLogger(), &fakeWaitTerm{watch: newFakePinWatch()}, term.DevUSBtoUART)
 	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinDCD, PPSMethodKernel); !errors.Is(err, errors.ErrUnsupported) {
 		t.Fatalf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
 	}
