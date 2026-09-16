@@ -9,6 +9,10 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// speedCflag holds the c_cflag bits that encode the speed; BOTHER in CBAUD
+// selects Ispeed and Ospeed instead.
+const speedCflag = unix.CBAUD | unix.CIBAUD
+
 var baudRates = []struct {
 	b     uint32
 	speed int

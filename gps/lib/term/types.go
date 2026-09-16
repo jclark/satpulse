@@ -25,8 +25,8 @@ type Term interface {
 	Drain() error
 	// Restore restores the attributes saved at open. If exceptHardware is true,
 	// it does not restore attributes affecting the UART hardware, i.e. speed,
-	// word length, parity, stop bits, hardware flow control and the other
-	// control flags, and the break and parity error handling input flags.
+	// word length, parity, stop bits, hardware flow control, and the break
+	// and parity error handling input flags.
 	Restore(exceptHardware bool) error
 }
 

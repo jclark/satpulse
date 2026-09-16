@@ -12,6 +12,9 @@ import (
 
 type serialErrorState struct{}
 
+// speedCflag is empty because the speed is held only in Ispeed and Ospeed.
+const speedCflag = 0
+
 func Speed(speed int) AttrSetter {
 	b, ok := speedToB(speed)
 	if !ok {

@@ -127,7 +127,7 @@ func TestRestoreExceptHardware(t *testing.T) {
 	}
 	current.Cc[unix.VTIME] = 1
 	want := saved
-	want.Cflag = current.Cflag
+	want.Cflag = unix.BOTHER | unix.BOTHER<<16 | unix.CS8 | unix.CMSPAR | unix.HUPCL
 	want.Iflag = unix.ICRNL | unix.IXON | unix.IXOFF | unix.IXANY | unix.BRKINT
 	want.Ispeed = 123457
 	want.Ospeed = 234567
@@ -136,7 +136,7 @@ func TestRestoreExceptHardware(t *testing.T) {
 	}
 	// Also test restoration with the saved and current attributes swapped.
 	want = current
-	want.Cflag = saved.Cflag
+	want.Cflag = unix.B9600 | unix.CS7 | unix.PARENB | unix.PARODD | unix.CSTOPB | unix.CRTSCTS | unix.CLOCAL | unix.CREAD
 	want.Iflag = unix.INPCK
 	want.Ispeed = 9600
 	want.Ospeed = 9600

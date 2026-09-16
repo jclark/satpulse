@@ -152,9 +152,15 @@ func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
 // handles it.
 const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CRTSCTS
 
+// hardwareIflag holds the input flags for break and parity error handling;
+// a change to them makes Linux reprogram the UART (the iflag_mask of
+// uart_set_termios). The rest of c_iflag is line discipline only.
+const hardwareIflag = unix.IGNBRK | unix.BRKINT | unix.IGNPAR | unix.PARMRK | unix.INPCK
+
 // sameHardware reports whether a and b program the UART identically.
 func sameHardware(a, b Attr) bool {
-	return a.speed() == b.speed() && a.ts.Cflag&hardwareCflag == b.ts.Cflag&hardwareCflag
+	return a.speed() == b.speed() && a.ts.Cflag&hardwareCflag == b.ts.Cflag&hardwareCflag &&
+		a.ts.Iflag&hardwareIflag == b.ts.Iflag&hardwareIflag
 }
 
 func (t *unixTerm) Speed() int {
@@ -454,17 +460,11 @@ func (t *unixTerm) Restore(exceptHardware bool) error {
 	return t.setAttrNow(&ts)
 }
 
-// hardwareIflag holds the input flags for break and parity error handling;
-// a change to them makes Linux reprogram the UART (the iflag_mask of
-// uart_set_termios). The rest of c_iflag is line discipline only.
-const hardwareIflag = unix.IGNBRK | unix.BRKINT | unix.IGNPAR | unix.PARMRK | unix.INPCK
-
-// restoreExceptHardware returns saved with the attributes that the kernel
-// programs into the UART taken from current. Linux reprograms the UART when
-// any of c_cflag, the speeds or hardwareIflag differ, so all of them are
-// preserved, not just the bits that name a speed or frame format.
+// restoreExceptHardware returns saved with the attributes that program the
+// UART taken from current: the speed, hardwareCflag and hardwareIflag.
 func restoreExceptHardware(saved, current unix.Termios) unix.Termios {
-	saved.Cflag = current.Cflag
+	const cflag = hardwareCflag | speedCflag
+	saved.Cflag = saved.Cflag&^cflag | current.Cflag&cflag
 	saved.Iflag = saved.Iflag&^hardwareIflag | current.Iflag&hardwareIflag
 	saved.Ispeed = current.Ispeed
 	saved.Ospeed = current.Ospeed
