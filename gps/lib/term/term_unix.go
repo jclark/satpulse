@@ -134,7 +134,7 @@ func (t *unixTerm) Change(opts ...AttrSetter) (time.Time, error) {
 }
 
 func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
-	if old.speed() == current.speed() {
+	if sameHardware(old, current) {
 		return time.Time{}
 	}
 	frames := t.devWaitFrames()
@@ -146,6 +146,17 @@ func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
 		return time.Time{}
 	}
 	return time.Now().Add(duration)
+}
+
+// hardwareCflag holds the c_cflag bits that program the UART's frame format
+// and handshake: word size, stop bits, parity and RTS/CTS. The speed is the
+// other hardware setting; its encoding is platform-specific, so speed()
+// handles it.
+const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CRTSCTS
+
+// sameHardware reports whether a and b program the UART identically.
+func sameHardware(a, b Attr) bool {
+	return a.speed() == b.speed() && a.ts.Cflag&hardwareCflag == b.ts.Cflag&hardwareCflag
 }
 
 func (t *unixTerm) Speed() int {
