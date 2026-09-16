@@ -33,16 +33,18 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-// Open opens and configures a serial terminal.
-func Open(path string, opts ...AttrSetter) (Term, error) {
+// Open opens and configures a serial terminal. It returns the earliest safe
+// write time, or zero if no wait is needed. The caller must delay writes until then.
+func Open(path string, opts ...AttrSetter) (Term, time.Time, error) {
 	t := new(unixTerm)
-	if err := t.init(path, opts...); err != nil {
-		return nil, err
+	safe, err := t.init(path, opts...)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, safe, nil
 }
 
-func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
+func (t *unixTerm) init(path string, opts ...AttrSetter) (safe time.Time, err error) {
 	t.path = path
 	// O_CLOEXEC is here, because we are using flock to lock.
 	// Without O_CLOEXEC, the lock would be inherited by child processes, which is probably not what is wanted.
@@ -92,7 +94,8 @@ func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
 			t.clearExclusive()
 		}
 	}()
-	attr := Attr{*tsp}
+	old := Attr{*tsp}
+	attr := old
 	t.tsSaved = *tsp
 	for _, opt := range opts {
 		err = opt(&attr)
@@ -100,30 +103,58 @@ func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
 			return
 		}
 	}
-	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
+	if err != nil {
+		return
+	}
+	safe = t.safeWriteTime(old, attr)
 	t.storeAttr(attr)
 	_ = t.readError()
 	return
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *unixTerm) Change(opts ...AttrSetter) error {
-	attr := t.loadAttr()
+func (t *unixTerm) Change(opts ...AttrSetter) (time.Time, error) {
+	old := t.loadAttr()
+	attr := old
 	for _, opt := range opts {
 		err := opt(&attr)
 		if err != nil {
-			return err
+			return time.Time{}, err
 		}
 	}
 	if err := t.Drain(); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if err := t.setAttrNow(&attr.ts); err != nil {
-		return err
+		return time.Time{}, err
 	}
+	safe := t.safeWriteTime(old, attr)
 	t.storeAttr(attr)
-	return nil
+	return safe, nil
+}
+
+func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
+	if sameHardware(old, current) {
+		return time.Time{}
+	}
+	frames, speed := t.devWaitFrames(old)
+	d := time.Duration(frames) * byteTransmitTime(speed, old.ts)
+	if d <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(d)
+}
+
+// hardwareCflag holds the c_cflag bits that program the UART's frame format
+// and handshake: word size, stop bits, parity and RTS/CTS. The speed is the
+// other hardware setting; its encoding is platform-specific, so speed()
+// handles it.
+const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CRTSCTS
+
+// sameHardware reports whether a and b program the UART identically.
+func sameHardware(a, b Attr) bool {
+	return a.speed() == b.speed() && a.ts.Cflag&hardwareCflag == b.ts.Cflag&hardwareCflag
 }
 
 func (t *unixTerm) Speed() int {
@@ -204,17 +235,16 @@ func (t *unixTerm) TransmitTime(nBytes int) time.Duration {
 		return 0
 	}
 	attr := t.loadAttr()
-	return attr.byteTransmitTime() * time.Duration(nBytes)
+	return byteTransmitTime(attr.speed(), attr.ts) * time.Duration(nBytes)
 }
 
-// byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
-func (attr *Attr) byteTransmitTime() time.Duration {
-	speed := attr.speed()
+// byteTransmitTime returns the time it takes to send a byte at speed bits per second
+// with the frame format of ts.
+func byteTransmitTime(speed int, ts unix.Termios) time.Duration {
 	if speed <= 0 {
 		return 0
 	}
-	bits := bitsPerByte(attr.ts)
-	// speed is bits per second
+	bits := bitsPerByte(ts)
 	timePerBit := time.Second / time.Duration(speed)
 	return time.Duration(bits) * timePerBit
 }

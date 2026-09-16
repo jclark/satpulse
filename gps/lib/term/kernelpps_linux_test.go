@@ -11,7 +11,7 @@ import (
 )
 
 func TestNewKernelModemControlPinWatchWrongPin(t *testing.T) {
-	term, err := Open(newTestPTY(t), RawMode)
+	term, _, err := Open(newTestPTY(t), RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -35,7 +35,7 @@ func TestNewKernelModemControlPinWatchWrongPin(t *testing.T) {
 // attach instead. Both are unavailable rather than unsupported, so the caller
 // warns and falls back rather than failing the run.
 func TestNewKernelModemControlPinWatchUnavailable(t *testing.T) {
-	term, err := Open(newTestPTY(t), RawMode)
+	term, _, err := Open(newTestPTY(t), RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

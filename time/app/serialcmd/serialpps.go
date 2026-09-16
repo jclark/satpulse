@@ -128,7 +128,7 @@ func ppsOutputFailure(ctx context.Context) *ppsOutputError {
 // traffic cannot stall the port.
 func monitorDevice(ctx context.Context, lg *slog.Logger, device string, speed int, w serialpps.Wiring, ppsCfg serialpps.Config, packetLogPath string, pr *edgePrinter) (result ppsResult) {
 	result.device = device
-	conn, _, err := gpsio.OpenSerial(device, speed)
+	conn, _, err := gpsio.OpenSerial(lg, device, speed)
 	if err != nil {
 		result.failure = serialPPS.describeError(err)
 		return

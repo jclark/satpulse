@@ -256,15 +256,14 @@ func (t *unixTerm) NewKernelModemControlPinWatch(pin ModemControlPin) (ModemCont
 }
 
 func (t *unixTerm) DevKind() DevKind {
-	s := unix.Stat_t{}
-	err := unix.Fstat(t.fd, &s)
-	if err != nil {
+	major, minor, ok := t.devMajorMinor()
+	if !ok {
 		return DevUnknown
 	}
 	// See https://www.kernel.org/doc/html/latest/admin-guide/devices.html
-	switch unix.Major(s.Rdev) {
+	switch major {
 	case 4, 5:
-		if unix.Minor(s.Rdev) >= 64 { // ttyS0, /dev/ttycua0
+		if minor >= 64 { // ttyS0, /dev/ttycua0
 			return DevUART
 		}
 	case 166, 167: // USB ACM "modem" /dev/ttyACM0
@@ -277,4 +276,36 @@ func (t *unixTerm) DevKind() DevKind {
 		return DevBT
 	}
 	return DevUnknown
+}
+
+// A PL011 can keep using the old divisor briefly after a live line-control
+// change. Two old-speed character times eliminated transient loss in tests;
+// use three for margin.
+const pl011WaitFrames = 3
+
+// devWaitFrames returns the number of character times to wait after changing
+// the line settings from old, and the speed at which to time them.
+func (t *unixTerm) devWaitFrames(old Attr) (frames int, speed int) {
+	major, minor, ok := t.devMajorMinor()
+	if !ok {
+		return 0, 0
+	}
+	// amba-pl011 registers 14 ttyAMA ports from minor 64. Samsung ttySAC
+	// ports share the range and get a harmless, unnecessary wait.
+	if major != 204 || minor < 64 || minor >= 78 {
+		return 0, 0
+	}
+	if old.ts.Cflag&unix.CBAUD == unix.B0 {
+		// The serial core programs B0 as 9600 baud (uart_get_baud_rate).
+		return pl011WaitFrames, 9600
+	}
+	return pl011WaitFrames, old.speed()
+}
+
+func (t *unixTerm) devMajorMinor() (uint32, uint32, bool) {
+	var s unix.Stat_t
+	if err := unix.Fstat(t.fd, &s); err != nil {
+		return 0, 0, false
+	}
+	return unix.Major(s.Rdev), unix.Minor(s.Rdev), true
 }

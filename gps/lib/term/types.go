@@ -14,7 +14,9 @@ type Term interface {
 
 	Path() string
 	Buffered() (int, error)
-	Change(...AttrSetter) error
+	// Change returns the earliest safe write time after a speed change.
+	// A zero time means no wait is needed. The caller must delay writes until then.
+	Change(...AttrSetter) (time.Time, error)
 	Speed() int
 	TransmitTime(int) time.Duration
 	DevKind() DevKind
