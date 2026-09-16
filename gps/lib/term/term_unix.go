@@ -146,12 +146,6 @@ func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
 	return time.Now().Add(d)
 }
 
-// hardwareCflag holds the c_cflag bits that program the UART's frame format
-// and handshake: word size, stop bits, parity and RTS/CTS. The speed is the
-// other hardware setting; its encoding is platform-specific, so speed()
-// handles it.
-const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CRTSCTS
-
 // hardwareIflag holds the input flags for break and parity error handling;
 // a change to them makes Linux reprogram the UART (the iflag_mask of
 // uart_set_termios). The rest of c_iflag is line discipline only.
@@ -463,8 +457,7 @@ func (t *unixTerm) Restore(exceptHardware bool) error {
 // restoreExceptHardware returns saved with the attributes that program the
 // UART taken from current: the speed, hardwareCflag and hardwareIflag.
 func restoreExceptHardware(saved, current unix.Termios) unix.Termios {
-	const cflag = hardwareCflag | speedCflag
-	saved.Cflag = saved.Cflag&^cflag | current.Cflag&cflag
+	saved.Cflag = saved.Cflag&^hardwareCflag | current.Cflag&hardwareCflag
 	saved.Iflag = saved.Iflag&^hardwareIflag | current.Iflag&hardwareIflag
 	saved.Ispeed = current.Ispeed
 	saved.Ospeed = current.Ospeed
