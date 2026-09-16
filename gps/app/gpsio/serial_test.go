@@ -36,13 +36,22 @@ type fakeTerm struct {
 	speed       int
 	changeCalls int
 	restored    bool
+	write       func([]byte) (int, error)
+	changeSafe  time.Time
 }
 
 var _ term.Term = (*fakeTerm)(nil)
 
-func (f *fakeTerm) Change(...term.AttrSetter) error {
+func (f *fakeTerm) Change(...term.AttrSetter) (time.Time, error) {
 	f.changeCalls++
-	return nil
+	return f.changeSafe, nil
+}
+
+func (f *fakeTerm) Write(p []byte) (int, error) {
+	if f.write != nil {
+		return f.write(p)
+	}
+	return len(p), nil
 }
 
 func (f *fakeTerm) Speed() int { return f.speed }
@@ -98,6 +107,53 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	}
 	if !f.closed {
 		t.Error("Close did not close terminal")
+	}
+}
+
+func TestSerialConnWaitsBeforeWrite(t *testing.T) {
+	for _, method := range []string{"Write", "WritePacket", "WriteThenChangeSpeed"} {
+		t.Run(method, func(t *testing.T) {
+			f := &fakeTerm{speed: 9600}
+			c := newSerialConn(f, term.DevUART)
+			defer c.Close()
+			deadline := time.Now().Add(20 * time.Millisecond)
+			c.safeWriteTime = deadline // supplied by OpenSerial after term.Open
+			writes := 0
+			f.write = func(p []byte) (int, error) {
+				if time.Now().Before(deadline) {
+					t.Error("wrote before the safe write time")
+				}
+				writes++
+				return len(p), nil
+			}
+			var err error
+			switch method {
+			case "Write":
+				_, err = c.Write([]byte("test"))
+			case "WritePacket":
+				_, err = c.WritePacket([]byte("test"), nil)
+			case "WriteThenChangeSpeed":
+				_, err = c.WriteThenChangeSpeed([]byte("test"), 115200)
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if writes != 1 || !c.safeWriteTime.IsZero() {
+				t.Fatalf("writes = %d, pending safe time = %v", writes, c.safeWriteTime)
+			}
+			// A speed change supplies a new deadline for the following write.
+			f.changeSafe = time.Now().Add(20 * time.Millisecond)
+			if _, err := c.WriteThenChangeSpeed(nil, 38400); err != nil {
+				t.Fatal(err)
+			}
+			deadline = f.changeSafe
+			if _, err := c.Write([]byte("next")); err != nil {
+				t.Fatal(err)
+			}
+			if !c.safeWriteTime.IsZero() {
+				t.Error("write did not consume the safe write time")
+			}
+		})
 	}
 }
 

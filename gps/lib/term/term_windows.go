@@ -67,13 +67,14 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-// Open opens and configures a serial terminal.
-func Open(path string, opts ...AttrSetter) (Term, error) {
+// Open opens and configures a serial terminal. Windows needs no write delay,
+// so the returned safe write time is always zero.
+func Open(path string, opts ...AttrSetter) (Term, time.Time, error) {
 	t := new(windowsTerm)
 	if err := t.init(path, opts...); err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, time.Time{}, nil
 }
 
 func (t *windowsTerm) init(path string, opts ...AttrSetter) (err error) {
@@ -168,27 +169,27 @@ func normalizeCOM(path string) string {
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *windowsTerm) Change(opts ...AttrSetter) error {
+func (t *windowsTerm) Change(opts ...AttrSetter) (time.Time, error) {
 	attr := t.attr
 	for _, opt := range opts {
 		err := opt(&attr)
 		if err != nil {
-			return err
+			return time.Time{}, err
 		}
 	}
 	if err := t.Drain(); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	err := windows.SetCommState(t.handle, &attr.dcb)
 	if err != nil {
-		return t.wrapErr(err, "SetCommState")
+		return time.Time{}, t.wrapErr(err, "SetCommState")
 	}
 	err = windows.SetCommTimeouts(t.handle, &attr.timeouts)
 	if err != nil {
-		return t.wrapErr(err, "SetCommTimeouts")
+		return time.Time{}, t.wrapErr(err, "SetCommTimeouts")
 	}
 	t.attr = attr
-	return nil
+	return time.Time{}, nil
 }
 
 func (t *windowsTerm) Read(buf []byte) (int, error) {

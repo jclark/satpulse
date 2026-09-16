@@ -32,7 +32,7 @@ func openTestPTY(t *testing.T, speed int) (*os.File, *SerialConn) {
 		t.Fatal(err)
 	}
 	device := fmt.Sprintf("/dev/pts/%d", n)
-	setup, err := term.Open(device, term.Speed(speed))
+	setup, _, err := term.Open(device, term.Speed(speed))
 	if err != nil {
 		t.Fatal(err)
 	}

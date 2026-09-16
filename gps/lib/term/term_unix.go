@@ -33,16 +33,18 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-// Open opens and configures a serial terminal.
-func Open(path string, opts ...AttrSetter) (Term, error) {
+// Open opens and configures a serial terminal. It returns the earliest safe
+// write time, or zero if no wait is needed. The caller must delay writes until then.
+func Open(path string, opts ...AttrSetter) (Term, time.Time, error) {
 	t := new(unixTerm)
-	if err := t.init(path, opts...); err != nil {
-		return nil, err
+	safe, err := t.init(path, opts...)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, safe, nil
 }
 
-func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
+func (t *unixTerm) init(path string, opts ...AttrSetter) (safe time.Time, err error) {
 	t.path = path
 	// O_CLOEXEC is here, because we are using flock to lock.
 	// Without O_CLOEXEC, the lock would be inherited by child processes, which is probably not what is wanted.
@@ -100,30 +102,58 @@ func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
 			return
 		}
 	}
-	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
+	if err != nil {
+		return
+	}
+	safe = t.safeWriteTime(Attr{*tsp}, attr)
 	t.storeAttr(attr)
 	_ = t.readError()
 	return
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *unixTerm) Change(opts ...AttrSetter) error {
-	attr := t.loadAttr()
+func (t *unixTerm) Change(opts ...AttrSetter) (time.Time, error) {
+	old := t.loadAttr()
+	attr := old
 	for _, opt := range opts {
 		err := opt(&attr)
 		if err != nil {
-			return err
+			return time.Time{}, err
 		}
 	}
 	if err := t.Drain(); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if err := t.setAttrNow(&attr.ts); err != nil {
-		return err
+		return time.Time{}, err
 	}
+	safe := t.safeWriteTime(old, attr)
 	t.storeAttr(attr)
-	return nil
+	return safe, nil
+}
+
+func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
+	if old.speed() == current.speed() {
+		return time.Time{}
+	}
+	frames := t.devWaitFrames()
+	if frames == 0 {
+		return time.Time{}
+	}
+	duration := time.Duration(frames) * frameDuration(old)
+	if duration == 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(duration)
+}
+
+func frameDuration(attr Attr) time.Duration {
+	speed := attr.speed()
+	if speed <= 0 {
+		return 0
+	}
+	return (time.Duration(bitsPerByte(attr.ts))*time.Second + time.Duration(speed) - 1) / time.Duration(speed)
 }
 
 func (t *unixTerm) Speed() int {

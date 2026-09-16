@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -36,17 +37,18 @@ import (
 // may not be before the process exits. That separate claim is what makes the
 // wait safe relative to Close.
 type SerialConn struct {
-	file         ioFile
-	kind         term.DevKind
-	mu           sync.Mutex
-	stopped      bool // protected by mu
-	readLock     chan struct{}
-	writeLock    chan struct{}
-	pktLog       *PacketLog
-	lastWriteLen int // bytes of the most recent write; read by Drain
-	watch        term.ModemControlPinWatch
-	watchPin     SerialPin
-	watchMethod  PPSMethod
+	file          ioFile
+	kind          term.DevKind
+	mu            sync.Mutex
+	stopped       bool // protected by mu
+	readLock      chan struct{}
+	writeLock     chan struct{}
+	pktLog        *PacketLog
+	lastWriteLen  int       // bytes of the most recent write; read by Drain
+	safeWriteTime time.Time // protected by writeLock
+	watch         term.ModemControlPinWatch
+	watchPin      SerialPin
+	watchMethod   PPSMethod
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
@@ -67,9 +69,11 @@ var _ SerialOutPort = (*SerialConn)(nil)
 // It returns the actual speed configured on the device; for devices
 // that are not TTYs the returned speed is 0.
 func OpenSerial(path string, speed int) (*SerialConn, int, error) {
-	t, err := openTerm(path, speed)
+	t, safe, err := openTerm(path, speed)
 	if err == nil {
-		return newSerialConn(t, t.DevKind()), t.Speed(), nil
+		c := newSerialConn(t, t.DevKind())
+		c.setSafeWriteTime(safe, "open")
+		return c, t.Speed(), nil
 	}
 	if !errors.Is(err, term.ErrNotATTY) {
 		return nil, 0, err
@@ -91,6 +95,14 @@ func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
 	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, kind: kind}
+}
+
+// setSafeWriteTime is called before publishing the connection or with writeLock held.
+func (c *SerialConn) setSafeWriteTime(safe time.Time, operation string) {
+	c.safeWriteTime = safe
+	if !safe.IsZero() {
+		slog.Debug("serial write wait received", "path", c.file.Path(), "operation", operation, "until", safe, "wait", time.Until(safe))
+	}
 }
 
 func (c *SerialConn) LocalAddr() string {
@@ -326,6 +338,11 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 		c.writeLock <- struct{}{}
 	}()
 	// now we have the write lock
+	if !c.safeWriteTime.IsZero() {
+		slog.Debug("waiting before serial write", "path", c.file.Path(), "wait", max(time.Until(c.safeWriteTime), 0))
+		time.Sleep(time.Until(c.safeWriteTime))
+		c.safeWriteTime = time.Time{}
+	}
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
@@ -349,7 +366,9 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 					delay += t.TransmitTime(n)
 				}
 				time.Sleep(delay)
-				err = t.Change(term.Speed(speed))
+				var safe time.Time
+				safe, err = t.Change(term.Speed(speed))
+				c.setSafeWriteTime(safe, "change")
 				if err != nil {
 					speed = 0
 				}
@@ -464,7 +483,7 @@ const readTimeout = time.Millisecond * 100
 // settings, on top of the computed transmit time for non-UART devices.
 const minDelay = time.Millisecond
 
-func openTerm(path string, speed int) (term.Term, error) {
+func openTerm(path string, speed int) (term.Term, time.Time, error) {
 	opts := []term.AttrSetter{
 		term.RawMode,
 		term.Local,
@@ -474,21 +493,21 @@ func openTerm(path string, speed int) (term.Term, error) {
 	}
 	if speed != 0 {
 		if !term.IsValidSpeed(speed) {
-			return nil, fmt.Errorf("non-standard serial speed %d is not supported", speed)
+			return nil, time.Time{}, fmt.Errorf("non-standard serial speed %d is not supported", speed)
 		}
 		opts = append(opts, term.Speed(speed))
 	}
-	t, err := term.Open(path, opts...)
+	t, safe, err := term.Open(path, opts...)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	err = t.Flush()
 	if err != nil {
 		t.Restore()
 		t.Close()
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, safe, nil
 }
 
 // pollingFile is an ioFile implementation backed by an *os.File opened

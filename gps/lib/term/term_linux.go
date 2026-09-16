@@ -256,15 +256,14 @@ func (t *unixTerm) NewKernelModemControlPinWatch(pin ModemControlPin) (ModemCont
 }
 
 func (t *unixTerm) DevKind() DevKind {
-	s := unix.Stat_t{}
-	err := unix.Fstat(t.fd, &s)
-	if err != nil {
+	major, minor, ok := t.devMajorMinor()
+	if !ok {
 		return DevUnknown
 	}
 	// See https://www.kernel.org/doc/html/latest/admin-guide/devices.html
-	switch unix.Major(s.Rdev) {
+	switch major {
 	case 4, 5:
-		if unix.Minor(s.Rdev) >= 64 { // ttyS0, /dev/ttycua0
+		if minor >= 64 { // ttyS0, /dev/ttycua0
 			return DevUART
 		}
 	case 166, 167: // USB ACM "modem" /dev/ttyACM0
@@ -277,4 +276,30 @@ func (t *unixTerm) DevKind() DevKind {
 		return DevBT
 	}
 	return DevUnknown
+}
+
+// A PL011 can keep using the old divisor briefly after a live line-control
+// change. Two old-speed character times eliminated transient loss in tests;
+// use three for margin.
+const pl011WaitFrames = 3
+
+func (t *unixTerm) devWaitFrames() int {
+	major, _, ok := t.devMajorMinor()
+	if !ok {
+		return 0
+	}
+	switch major {
+	case 204, 205: // PL011 /dev/ttyAMA0
+		return pl011WaitFrames
+	default:
+		return 0
+	}
+}
+
+func (t *unixTerm) devMajorMinor() (uint32, uint32, bool) {
+	var s unix.Stat_t
+	if err := unix.Fstat(t.fd, &s); err != nil {
+		return 0, 0, false
+	}
+	return unix.Major(s.Rdev), unix.Minor(s.Rdev), true
 }
