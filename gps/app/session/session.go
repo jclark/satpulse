@@ -490,7 +490,7 @@ func (s *Session) enterReconnect() bool {
 type Opener interface {
 	// Open connects to the receiver. It returns the host serial port
 	// speed, or 0 if the transport has none.
-	Open(ctx context.Context) (conn gpsio.Conn, speed int, err error)
+	Open(ctx context.Context, lg *slog.Logger) (conn gpsio.Conn, speed int, err error)
 	// Socket reports a proxy connection: sets ConfigOptions.Socket
 	// for gpscfg.Configure.
 	Socket() bool
@@ -512,9 +512,9 @@ const deviceWaitInterval = 200 * time.Millisecond
 // last open error is returned. The device is assumed to come back
 // under the same node: a receiver that re-enumerates under a
 // different name is not found (known limitation).
-func (o SerialOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (gpsio.Conn, int, error) {
 	for {
-		conn, speed, err := gpsio.OpenSerial(o.Device, o.Speed)
+		conn, speed, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
 		if err == nil {
 			return conn, speed, nil
 		}
@@ -539,7 +539,7 @@ type SocketOpener struct {
 }
 
 // Open connects to the unix socket.
-func (o SocketOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
+func (o SocketOpener) Open(_ context.Context, _ *slog.Logger) (gpsio.Conn, int, error) {
 	conn, err := gpsio.OpenSocket(o.Path)
 	if err != nil {
 		return nil, 0, err
@@ -588,7 +588,7 @@ func (s *Session) connect(gen int, op Opener, vendors []gpsreg.Vendor) error {
 	s.lifecycleMu.Unlock()
 	s.emitStateChange()
 	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
-	conn, speed, err := op.Open(ctx)
+	conn, speed, err := op.Open(ctx, s.lg)
 	cancel()
 	s.lifecycleMu.Lock()
 	s.mu.Lock()
@@ -672,7 +672,7 @@ func (s *Session) reopen(connCtx context.Context) (gpsio.Conn, int, error) {
 			}
 		}
 		ctx, cancel := context.WithTimeout(connCtx, reopenTimeout)
-		conn, speed, err := s.op.Open(ctx)
+		conn, speed, err := s.op.Open(ctx, s.lg)
 		cancel()
 		if err == nil {
 			return conn, speed, nil

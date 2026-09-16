@@ -131,7 +131,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	if cfg.Serial.Speed != nil {
 		cfgSpeed = *cfg.Serial.Speed
 	}
-	conn, speed, err := gpsio.OpenSerial(cfg.Serial.Device, cfgSpeed)
+	conn, speed, err := gpsio.OpenSerial(lg, cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
 	}

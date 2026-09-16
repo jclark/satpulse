@@ -18,7 +18,7 @@ func TestArbitrarySpeed(t *testing.T) {
 		t.Fatalf("close setup fd: %v", err)
 	}
 
-	opened, err := Open(path, RawMode)
+	opened, _, err := Open(path, RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -37,12 +37,12 @@ func TestArbitrarySpeed(t *testing.T) {
 	}
 	checkTestArbitrarySpeed(t, term.fd, testArbitrarySpeed)
 
-	if err := term.Change(Local); err != nil {
+	if _, err := term.Change(Local); err != nil {
 		t.Fatalf("Change: %v", err)
 	}
 	checkTestArbitrarySpeed(t, term.fd, testArbitrarySpeed)
 
-	if err := term.Change(Speed(9600)); err != nil {
+	if _, err := term.Change(Speed(9600)); err != nil {
 		t.Fatalf("Change Speed(9600): %v", err)
 	}
 	if got := term.Speed(); got != 9600 {
@@ -72,7 +72,7 @@ func TestExclusiveModeDetected(t *testing.T) {
 	if err := unix.IoctlSetInt(fd, unix.TIOCEXCL, 0); err != nil {
 		t.Fatalf("ioctl(TIOCEXCL): %v", err)
 	}
-	term, err := Open(path, RawMode)
+	term, _, err := Open(path, RawMode)
 	if err == nil {
 		term.Close()
 		t.Fatal("Open succeeded on a terminal in exclusive mode")
@@ -91,7 +91,7 @@ func TestExclusiveModeReleased(t *testing.T) {
 	path := newTestPTY(t)
 	fd := openTestTTY(t, path)
 	defer unix.Close(fd)
-	term, err := Open(path, RawMode)
+	term, _, err := Open(path, RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}

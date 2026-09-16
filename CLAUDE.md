@@ -15,6 +15,7 @@ Whenever you create a new package, add an entry describing it to the appropriate
 - User messages are often dictated; resolve phonetic garbles to project terms (e.g. "Southpaw" for satpulse, "Team Mode 2" for TMODE2) before acting, and ask only if genuinely ambiguous.
 - The user is a domain expert in GNSS, timing, and XML. When he questions a value or design, investigate the specific question; do not explain fundamentals.
 - The user edits files between messages; re-read the current version of a file before commenting on it again.
+- Never save project state, follow-up work, or design decisions to the agent's local memory: the user works across many machines, so that memory is useless. Such things go in git (commits, plan documents) or GitHub issues.
 
 ## Technical claims
 
