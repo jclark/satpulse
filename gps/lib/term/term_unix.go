@@ -138,10 +138,11 @@ func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
 		return time.Time{}
 	}
 	frames, speed := t.devWaitFrames(old)
-	if frames == 0 {
+	d := time.Duration(frames) * byteTransmitTime(speed, old.ts)
+	if d <= 0 {
 		return time.Time{}
 	}
-	return time.Now().Add(time.Duration(frames) * byteTransmitTime(speed, old.ts))
+	return time.Now().Add(d)
 }
 
 // hardwareCflag holds the c_cflag bits that program the UART's frame format
