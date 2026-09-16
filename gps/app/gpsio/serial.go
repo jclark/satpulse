@@ -339,8 +339,10 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 	}()
 	// now we have the write lock
 	if !c.safeWriteTime.IsZero() {
-		slog.Debug("waiting before serial write", "path", c.file.Path(), "wait", max(time.Until(c.safeWriteTime), 0))
-		time.Sleep(time.Until(c.safeWriteTime))
+		if d := time.Until(c.safeWriteTime); d > 0 {
+			slog.Info("waiting before serial write after speed change", "path", c.file.Path(), "wait", d)
+			time.Sleep(d)
+		}
 		c.safeWriteTime = time.Time{}
 	}
 	if c.isStopped() {
