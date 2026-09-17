@@ -146,15 +146,15 @@ func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
 	return time.Now().Add(d)
 }
 
-// hardwareCflag holds the c_cflag bits that program the UART's frame format
-// and handshake: word size, stop bits, parity and RTS/CTS. The speed is the
-// other hardware setting; its encoding is platform-specific, so speed()
-// handles it.
-const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CRTSCTS
+// hardwareIflag holds the input flags for break and parity error handling;
+// a change to them makes Linux reprogram the UART (the iflag_mask of
+// uart_set_termios). The rest of c_iflag is line discipline only.
+const hardwareIflag = unix.IGNBRK | unix.BRKINT | unix.IGNPAR | unix.PARMRK | unix.INPCK
 
 // sameHardware reports whether a and b program the UART identically.
 func sameHardware(a, b Attr) bool {
-	return a.speed() == b.speed() && a.ts.Cflag&hardwareCflag == b.ts.Cflag&hardwareCflag
+	return a.speed() == b.speed() && a.ts.Cflag&hardwareCflag == b.ts.Cflag&hardwareCflag &&
+		a.ts.Iflag&hardwareIflag == b.ts.Iflag&hardwareIflag
 }
 
 func (t *unixTerm) Speed() int {
@@ -446,8 +446,26 @@ func (t *unixTerm) ModemControlPinState() (ModemControlPinState, error) {
 	return state, nil
 }
 
-func (t *unixTerm) Restore() error {
-	return t.setAttrNow(&t.tsSaved)
+func (t *unixTerm) Restore(exceptHardware bool) error {
+	ts := t.tsSaved
+	if exceptHardware {
+		current, err := t.getAttr()
+		if err != nil {
+			return err
+		}
+		ts = restoreExceptHardware(ts, *current)
+	}
+	return t.setAttrNow(&ts)
+}
+
+// restoreExceptHardware returns saved with the attributes that program the
+// UART taken from current: the speed, hardwareCflag and hardwareIflag.
+func restoreExceptHardware(saved, current unix.Termios) unix.Termios {
+	saved.Cflag = saved.Cflag&^hardwareCflag | current.Cflag&hardwareCflag
+	saved.Iflag = saved.Iflag&^hardwareIflag | current.Iflag&hardwareIflag
+	saved.Ispeed = current.Ispeed
+	saved.Ospeed = current.Ospeed
+	return saved
 }
 
 func (t *unixTerm) Close() error {

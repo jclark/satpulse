@@ -50,7 +50,7 @@ func TestArbitrarySpeed(t *testing.T) {
 	}
 	checkTestSpeed(t, term.fd, unix.B9600, 0, 9600)
 
-	if err := term.Restore(); err != nil {
+	if err := term.Restore(false); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 	checkTestArbitrarySpeed(t, term.fd, testArbitrarySpeed)
@@ -104,6 +104,44 @@ func TestExclusiveModeReleased(t *testing.T) {
 	}
 	if v, err := unix.IoctlGetInt(fd, unix.TIOCGEXCL); err != nil || v != 0 {
 		t.Fatalf("ioctl(TIOCGEXCL) after Close = %d, %v; want 0", v, err)
+	}
+}
+
+func TestRestoreExceptHardware(t *testing.T) {
+	saved := unix.Termios{
+		Iflag:  unix.ICRNL | unix.INPCK | unix.IXON | unix.IXOFF | unix.IXANY,
+		Oflag:  unix.OPOST,
+		Cflag:  unix.B9600 | unix.CS7 | unix.PARENB | unix.PARODD | unix.CMSPAR | unix.CSTOPB | unix.CRTSCTS | unix.HUPCL,
+		Lflag:  unix.ICANON | unix.ECHO | unix.ISIG,
+		Line:   7,
+		Ispeed: 9600,
+		Ospeed: 9600,
+	}
+	saved.Cc[unix.VMIN] = 1
+	saved.Cc[unix.VTIME] = 5
+	current := unix.Termios{
+		Iflag:  unix.BRKINT,
+		Cflag:  unix.BOTHER | unix.BOTHER<<16 | unix.CS8 | unix.CLOCAL | unix.CREAD,
+		Ispeed: 123457,
+		Ospeed: 234567,
+	}
+	current.Cc[unix.VTIME] = 1
+	want := saved
+	want.Cflag = unix.BOTHER | unix.BOTHER<<16 | unix.CS8 | unix.HUPCL
+	want.Iflag = unix.ICRNL | unix.IXON | unix.IXOFF | unix.IXANY | unix.BRKINT
+	want.Ispeed = 123457
+	want.Ospeed = 234567
+	if got := restoreExceptHardware(saved, current); got != want {
+		t.Errorf("restoreExceptHardware = %+v, want %+v", got, want)
+	}
+	// Also test restoration with the saved and current attributes swapped.
+	want = current
+	want.Cflag = unix.B9600 | unix.CS7 | unix.PARENB | unix.PARODD | unix.CMSPAR | unix.CSTOPB | unix.CRTSCTS | unix.CLOCAL | unix.CREAD
+	want.Iflag = unix.INPCK
+	want.Ispeed = 9600
+	want.Ospeed = 9600
+	if got := restoreExceptHardware(current, saved); got != want {
+		t.Errorf("reverse restoreExceptHardware = %+v, want %+v", got, want)
 	}
 }
 

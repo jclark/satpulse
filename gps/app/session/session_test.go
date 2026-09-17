@@ -69,6 +69,7 @@ func (c *fakeConn) Write(b []byte) (int, error) {
 
 func (c *fakeConn) Buffered() (int, error) { return 0, nil }
 func (c *fakeConn) Drain() error           { return nil }
+func (c *fakeConn) SetDetected()           {}
 func (c *fakeConn) ReadOnly() bool         { return false }
 func (c *fakeConn) Direct() bool           { return true }
 func (c *fakeConn) LocalAddr() string      { return "fake" }

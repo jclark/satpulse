@@ -9,6 +9,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+// hardwareCflag holds the c_cflag bits that program the UART: word size,
+// stop bits, parity (including mark/space), RTS/CTS, and the speed encoding,
+// where BOTHER in CBAUD selects Ispeed and Ospeed instead.
+const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CMSPAR | unix.CRTSCTS | unix.CBAUD | unix.CIBAUD
+
 var baudRates = []struct {
 	b     uint32
 	speed int

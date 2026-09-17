@@ -12,6 +12,10 @@ import (
 
 type serialErrorState struct{}
 
+// hardwareCflag holds the c_cflag bits that program the UART: word size,
+// stop bits, parity and RTS/CTS. The speed is held only in Ispeed and Ospeed.
+const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CRTSCTS
+
 func Speed(speed int) AttrSetter {
 	b, ok := speedToB(speed)
 	if !ok {
