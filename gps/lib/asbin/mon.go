@@ -8,8 +8,8 @@ const (
 
 // MON-VER (0x0A 0x04)
 type MonVer struct {
-	SwVersion latin1z.StringZ16 // Software version string
-	HwVersion latin1z.StringZ16 // Hardware version string
+	SwVersion latin1z.StringZ16 `json:"swVersion"` // Software version string
+	HwVersion latin1z.StringZ16 `json:"hwVersion"` // Hardware version string
 }
 
 func (m *MonVer) ID() MsgID { return MonVerID }

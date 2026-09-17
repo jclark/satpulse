@@ -1,9 +1,11 @@
 package gpsio
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -17,25 +19,47 @@ import (
 // It provides a similar interface to net.Conn.
 // It implements io.Reader, io.Writer and io.Closer.
 // It is safe to call Read, Write and Close on different goroutines.
+// SerialPinState can be called concurrently with Read and Write, but
+// the caller must stop all SerialPinState calls before calling Close.
 // However, there must not be more than one concurrent Read
 // nor more than one concurrent Write, nor more than one concurrent Close.
 // Stop can be called before Close to prevent further reads and writes.
 // Close will wait for any in-progress reads or writes to complete,
-// before restoring serial settings and closing the underlying file descriptor.
+// before restoring serial attributes and closing the underlying file descriptor.
+// Attributes affecting the UART hardware are not restored if a valid packet
+// was received since the last speed change (see SetDetected), since they then
+// describe the real state of the link.
+// At most one WaitSerialPinChange call may be in progress, and it must
+// have returned before Close is called. Its context cancels it, and Stop
+// prevents further waits and cancels the watch; how soon a cancelled wait
+// itself returns is up to the platform, and where the wait primitive cannot
+// be interrupted it may be no sooner than the next pin change. After an error
+// return the logical watch is released. A cancelled wait is abandoned rather
+// than waited for: the goroutine keeps the watch, and with it the watch's own
+// claim on the port, until it wakes and releases it, which on such a platform
+// may not be before the process exits. That separate claim is what makes the
+// wait safe relative to Close.
 type SerialConn struct {
-	file      ioFile
-	kind      term.DevKind
-	mu        sync.Mutex
-	stopped   bool // protected by mu
-	readLock  chan struct{}
-	writeLock chan struct{}
-	pktLog    *PacketLog
+	lg            *slog.Logger
+	file          ioFile
+	kind          term.DevKind
+	mu            sync.Mutex
+	stopped       bool // protected by mu
+	detected      bool // protected by mu
+	readLock      chan struct{}
+	writeLock     chan struct{}
+	pktLog        *PacketLog
+	lastWriteLen  int       // bytes of the most recent write; read by Drain
+	safeWriteTime time.Time // protected by writeLock
+	watch         term.ModemControlPinWatch
+	watchPin      SerialPin
+	watchMethod   PPSMethod
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
-// Both *term.Term and *pollingFile satisfy it.
-// TTY-specific operations (speed change, flush, restore, error counts)
-// are performed via type assertion to *term.Term.
+// term.Term, *term.File, and *pollingFile satisfy it.
+// TTY-specific operations (speed change, flush, restore, error counts,
+// modem control pins) are performed via type assertion to term.Term.
 type ioFile interface {
 	io.ReadWriteCloser
 	Path() string
@@ -49,27 +73,41 @@ var _ SerialOutPort = (*SerialConn)(nil)
 // speed can be 0 meaning to use the current speed.
 // It returns the actual speed configured on the device; for devices
 // that are not TTYs the returned speed is 0.
-func OpenSerial(path string, speed int) (*SerialConn, int, error) {
-	t, err := openTerm(path, speed)
+func OpenSerial(lg *slog.Logger, path string, speed int) (*SerialConn, int, error) {
+	t, safe, err := openTerm(path, speed)
 	if err == nil {
-		return newSerialConn(t, t.DevKind()), t.Speed(), nil
+		c := newSerialConn(lg, t, t.DevKind())
+		c.setSafeWriteTime(safe, "open")
+		return c, t.Speed(), nil
 	}
 	if !errors.Is(err, term.ErrNotATTY) {
 		return nil, 0, err
 	}
-	f, kind, perr := term.OpenPolling(path)
+	pf, wf, kind, perr := term.OpenFallback(path, readTimeout)
 	if perr != nil {
 		return nil, 0, fmt.Errorf("%s and %w", perr, term.ErrNotATTY)
 	}
-	return newSerialConn(newPollingFile(f, readTimeout), kind), 0, nil
+	var f ioFile = wf
+	if pf != nil {
+		f = newPollingFile(pf, readTimeout)
+	}
+	return newSerialConn(lg, f, kind), 0, nil
 }
 
-func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {
+func newSerialConn(lg *slog.Logger, f ioFile, kind term.DevKind) *SerialConn {
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, kind: kind}
+	return &SerialConn{lg: lg, file: f, readLock: readLock, writeLock: writeLock, kind: kind}
+}
+
+// setSafeWriteTime is called before publishing the connection or with writeLock held.
+func (c *SerialConn) setSafeWriteTime(safe time.Time, operation string) {
+	c.safeWriteTime = safe
+	if !safe.IsZero() {
+		c.lg.Debug("serial write wait received", "path", c.file.Path(), "operation", operation, "until", safe, "wait", time.Until(safe))
+	}
 }
 
 func (c *SerialConn) LocalAddr() string {
@@ -96,21 +134,161 @@ func (c *SerialConn) Direct() bool {
 	return false
 }
 
-// term returns the underlying *term.Term if this SerialConn is backed by a
-// TTY, nil otherwise. TTY-specific operations (speed change, restore) are
-// gated on the result.
-func (c *SerialConn) term() *term.Term {
-	t, _ := c.file.(*term.Term)
+// term returns the underlying terminal capability if this SerialConn is backed
+// by a configurable terminal, nil otherwise. Terminal-specific operations
+// (speed change, restore) are gated on the result.
+func (c *SerialConn) term() term.Term {
+	t, _ := c.file.(term.Term)
 	return t
 }
 
-// Speed returns the current termios speed of the underlying TTY,
-// or 0 if this connection is not backed by a TTY.
+// Speed returns the current speed of the underlying configurable terminal,
+// or 0 if this connection does not provide terminal capabilities.
 func (c *SerialConn) Speed() int {
 	if t := c.term(); t != nil {
 		return t.Speed()
 	}
 	return 0
+}
+
+// SerialPinState returns the asserted modem control input pins. It
+// fails with term.ErrNotATTY when the connection uses a FIFO or another
+// non-TTY fallback. It must not be called concurrently with Close.
+func (c *SerialConn) SerialPinState() (SerialPinState, error) {
+	if t := c.term(); t != nil {
+		s, err := t.ModemControlPinState()
+		return SerialPinState(s), err
+	}
+	return 0, fmt.Errorf("%s: %w", c.file.Path(), term.ErrNotATTY)
+}
+
+// newPinWatch creates the watch that method selects. Inherent impossibility --
+// a backend without the capability at all, or a pin the kernel method can
+// never report -- fails with an error wrapping errors.ErrUnsupported; an
+// available backend whose device or driver cannot provide it fails with an
+// error wrapping ErrUnavailable. Other failures retain their underlying
+// error.
+func (c *SerialConn) newPinWatch(pin SerialPin, method PPSMethod) (term.ModemControlPinWatch, error) {
+	switch method {
+	case PPSMethodWait:
+		watcher, ok := c.file.(term.ModemControlPinWatcher)
+		if !ok {
+			return nil, fmt.Errorf("%s: cannot wait for a modem control pin change: %w", c.file.Path(), errors.ErrUnsupported)
+		}
+		return watcher.NewModemControlPinWatch(pin.termPin())
+	case PPSMethodKernel:
+		watcher, ok := c.file.(term.KernelModemControlPinWatcher)
+		if !ok {
+			return nil, fmt.Errorf("%s: kernel PPS is not available on this platform or device: %w", c.file.Path(), errors.ErrUnsupported)
+		}
+		return watcher.NewKernelModemControlPinWatch(pin.termPin())
+	default:
+		panic("gpsio: invalid PPS method for a pin watch")
+	}
+}
+
+// WaitSerialPinChange blocks until a modem control input changes,
+// watching it with the given detection method (PPSMethodWait or
+// PPSMethodKernel; anything else is a contract violation). The watch is
+// created on the first call and kept until an error or cancellation releases
+// it; every call must pass the same pin and method.
+func (c *SerialConn) WaitSerialPinChange(ctx context.Context, pin SerialPin, method PPSMethod) (SerialPinChange, int, error) {
+	if method != PPSMethodWait && method != PPSMethodKernel {
+		panic("gpsio: WaitSerialPinChange requires the wait or kernel method")
+	}
+	c.mu.Lock()
+	if c.stopped {
+		c.mu.Unlock()
+		return SerialPinChange{}, 0, net.ErrClosed
+	}
+	w := c.watch
+	if w != nil && (pin != c.watchPin || method != c.watchMethod) {
+		c.mu.Unlock()
+		panic("gpsio: WaitSerialPinChange called with a different pin or method")
+	}
+	c.mu.Unlock()
+	if w == nil {
+		// Creating the watch can be slow: the kernel method attaches a line
+		// discipline, scans sysfs, and waits for udev to open up the new
+		// device. Reads and writes take mu, so it is not held here.
+		fresh, err := c.newPinWatch(pin, method)
+		if err != nil {
+			return SerialPinChange{}, 0, err
+		}
+		c.mu.Lock()
+		// A Stop during the creation above cancelled a watch that was not
+		// there yet, so this one is closed rather than installed.
+		if c.stopped {
+			c.mu.Unlock()
+			_ = fresh.Close()
+			return SerialPinChange{}, 0, net.ErrClosed
+		}
+		if c.watch == nil {
+			c.watch = fresh
+			c.watchPin = pin
+			c.watchMethod = method
+		}
+		w = c.watch
+		c.mu.Unlock()
+		if w != fresh {
+			_ = fresh.Close()
+		}
+	}
+
+	type waitResult struct {
+		change term.ModemControlPinChange
+		missed int
+		err    error
+	}
+	ch := make(chan waitResult, 1)
+	delivered := make(chan bool, 1)
+	go func() {
+		change, missed, err := w.Wait()
+		cancelled := errors.Is(err, term.ErrCancelled)
+		if cancelled {
+			_ = w.Close()
+			c.dropPinWatch(w)
+		}
+		ch <- waitResult{change: change, missed: missed, err: err}
+		// A completed result can race context cancellation. If the caller
+		// selected the context instead, this wait goroutine still owns the
+		// abandoned watch and closes it.
+		if accepted := <-delivered; !accepted && !cancelled {
+			_ = w.Close()
+		}
+	}()
+
+	select {
+	case r := <-ch:
+		if err := ctx.Err(); err != nil {
+			w.Cancel()
+			c.dropPinWatch(w)
+			delivered <- false
+			return SerialPinChange{}, 0, err
+		}
+		delivered <- true
+		if errors.Is(r.err, term.ErrCancelled) {
+			return SerialPinChange{}, 0, net.ErrClosed
+		}
+		if r.err != nil {
+			_ = w.Close()
+			c.dropPinWatch(w)
+		}
+		return SerialPinChange(r.change), r.missed, r.err
+	case <-ctx.Done():
+		w.Cancel()
+		c.dropPinWatch(w)
+		delivered <- false
+		return SerialPinChange{}, 0, ctx.Err()
+	}
+}
+
+func (c *SerialConn) dropPinWatch(w term.ModemControlPinWatch) {
+	c.mu.Lock()
+	if c.watch == w {
+		c.watch = nil
+	}
+	c.mu.Unlock()
 }
 
 func (c *SerialConn) Read(p []byte) (int, error) {
@@ -165,32 +343,45 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 		c.writeLock <- struct{}{}
 	}()
 	// now we have the write lock
+	if !c.safeWriteTime.IsZero() {
+		if d := time.Until(c.safeWriteTime); d > 0 {
+			c.lg.Info("waiting before serial write after speed change", "path", c.file.Path(), "wait", d)
+			time.Sleep(d)
+		}
+		c.safeWriteTime = time.Time{}
+	}
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
 	n, err := c.file.Write(p)
 	if err == nil {
+		c.lastWriteLen = n
 		if speed != 0 {
 			if t := c.term(); t != nil {
-				// If it's a UART, then the TCSETSW flag should in theory take care of delaying the speed change
+				// If it's a UART, then the drain in Change should in theory take care of delaying the speed change
 				// until the data as been transmitted.
 				// But I found that on the Raspberry Pi, which uses a PL011 UART, it doesn't work without a little delay,
 				// for reasons I don't understand.
-				// With something like a USB-serial converter, it seems unlikely that the TCSETW flag will work,
+				// With something like a USB-serial converter, it seems unlikely that the drain will work,
 				// since the kernel does not have access to the UART buffer to determine when it is empty.
 				// So in this case, we increase the delay to ensure the data is transmitted before we change the speed,
 				// since that is the most important thing.
 				// We ideally want get the ACK back, which means we need to change the speed promptly.
 				// But we can recover from a lost ACK.
-				const minDelay = time.Millisecond
 				delay := minDelay
 				if c.kind != term.DevUART {
 					delay += t.TransmitTime(n)
 				}
 				time.Sleep(delay)
-				err = t.Change(term.Speed(speed))
+				var safe time.Time
+				safe, err = t.Change(term.Speed(speed))
+				c.setSafeWriteTime(safe, "change")
 				if err != nil {
 					speed = 0
+				} else {
+					c.mu.Lock()
+					c.detected = false
+					c.mu.Unlock()
 				}
 			} else {
 				// speed change is meaningless on a non-TTY device
@@ -213,10 +404,21 @@ func (c *SerialConn) isStopped() bool {
 	return c.stopped
 }
 
+// SetDetected records that a valid packet was received at the current
+// settings, so that Close leaves the UART hardware settings in place.
+func (c *SerialConn) SetDetected() {
+	c.mu.Lock()
+	c.detected = true
+	c.mu.Unlock()
+}
+
 func (c *SerialConn) Stop() {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	c.stopped = true
+	if c.watch != nil {
+		c.watch.Cancel()
+	}
 	if c.pktLog != nil {
 		// We need close promptly so that the logging goroutine can exit.
 		c.pktLog.SemiClose()
@@ -254,9 +456,22 @@ func (c *SerialConn) Close() error {
 	<-c.writeLock
 	close(c.writeLock)
 	// no more reads or writes are in progress
+	// A watch left idle by a completed wait would otherwise keep its claim
+	// on the port past Close. An abandoned wait has already dropped the
+	// watch, so a non-nil watch here has no user.
+	c.mu.Lock()
+	w := c.watch
+	c.watch = nil
+	detected := c.detected
+	c.mu.Unlock()
+	if w != nil {
+		_ = w.Close()
+	}
 	var restoreErr error
 	if t := c.term(); t != nil {
-		restoreErr = t.Restore()
+		// Hardware settings at which a valid packet was received describe
+		// the real state of the link, so leave them for the next open.
+		restoreErr = t.Restore(detected)
 	}
 	closeErr := c.file.Close()
 	if restoreErr != nil {
@@ -265,32 +480,56 @@ func (c *SerialConn) Close() error {
 	return closeErr
 }
 
+// Drain waits for pending output to be transmitted. satpulsetool gps calls it
+// before Close so a final no-response command (e.g. a reset) reaches the
+// receiver before the port settings are restored and the port is closed. It
+// mirrors WriteThenChangeSpeed: the drain ioctl for all TTYs, plus the
+// computed transmit time for non-UART devices, whose adapter buffer the kernel
+// cannot observe.
+func (c *SerialConn) Drain() error {
+	t := c.term()
+	if t == nil {
+		return nil
+	}
+	delay := minDelay
+	if c.kind != term.DevUART {
+		delay += t.TransmitTime(c.lastWriteLen)
+	}
+	time.Sleep(delay)
+	return t.Drain()
+}
+
 const readTimeout = time.Millisecond * 100
 
-func openTerm(path string, speed int) (*term.Term, error) {
+// minDelay is the minimum settle time before restoring or changing serial
+// settings, on top of the computed transmit time for non-UART devices.
+const minDelay = time.Millisecond
+
+func openTerm(path string, speed int) (term.Term, time.Time, error) {
 	opts := []term.AttrSetter{
 		term.RawMode,
 		term.Local,
+		term.NoParity,
 		term.NoFlowControl,
 		term.ReadTimeout(readTimeout),
 	}
 	if speed != 0 {
 		if !term.IsValidSpeed(speed) {
-			return nil, fmt.Errorf("non-standard serial speed %d is not supported", speed)
+			return nil, time.Time{}, fmt.Errorf("non-standard serial speed %d is not supported", speed)
 		}
 		opts = append(opts, term.Speed(speed))
 	}
-	t, err := term.Open(path, opts...)
+	t, safe, err := term.Open(path, opts...)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	err = t.Flush()
 	if err != nil {
-		t.Restore()
+		t.Restore(false)
 		t.Close()
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, safe, nil
 }
 
 // pollingFile is an ioFile implementation backed by an *os.File opened

@@ -9,7 +9,7 @@ This file defines the goal and how to measure progress toward it. It deliberatel
 ## Shape constraints
 
 - A Python program in this directory, stdlib-only at runtime, runnable in-repo as `python3 gpshwtest`, mypy strict via uv (like `smoketest/`).
-- All receiver I/O goes through `satpulsetool gps` invocations using `--json` and `--packet-log`. Captured packet logs are interpreted offline with `satpulsetool replay` (typed gpsprot events); physical time pulses are observed with `satpulsetool sdp`. The program contains no serial or GPS-protocol code; it tests exactly the behavior a satpulsetool user gets, at the level a satpulsetool user sees.
+- All receiver I/O goes through `satpulsetool gps` invocations using `--json` and `--packet-log`. Captured packet logs are interpreted offline with `satpulsetool replay` (typed gpsprot events); physical time pulses are observed with `satpulsetool sdp` or `satpulsetool serial`. The program contains no serial or GPS-protocol code; it tests exactly the behavior a satpulsetool user gets, at the level a satpulsetool user sees.
 - Receiver-specific knowledge in the program is minimized. What a receiver does is discovered by probing it, not encoded in tables of expected per-model behavior.
 
 ## Coverage: all of high-level configuration
@@ -41,16 +41,16 @@ Consequences that the tester must treat as normal, not as errors:
 - Achieved values may differ from requested ones: quantization to the receiver's resolution, range limits, coupled settings moving together, signal sets intersected and fixed up as SEMANTICS.md describes.
 - Some properties do not exist on a given backend; the responses show this (setting reports nothing achieved, and readback omits the property).
 - A receiver may refuse a request outright. satpulsetool reports this as an error; the refusal must leave the receiver's configuration unchanged.
-- Message output may deliver more than was asked for; only requested-but-missing information is significant.
+- Semantic message output (PVT, satellites) may deliver more than was asked for; only requested-but-missing information is significant. For the wire-format groups (NMEA, RTCM) a request is exact, so a message type inside the model's vocabulary that is emitted but not requested is a limitation the characterization records.
 - Saving is best-effort in granularity: a receiver's save granularity is a partition of the properties into groups that persist together, from one group per property (perfectly selective) down to a single group (`--save` indistinguishable from `--save-all`). The discovered partition is what the characterization records.
 - `ConfigSupportFlags` (`supports` in the JSON output) declares which optional capabilities a backend offers; absent capabilities bound what can be expected of a request.
 
 What the tool guarantees, and therefore what a tester can check without any receiver-specific knowledge:
 
 - An invocation responds: it does not crash, hang, or silently produce nothing.
-- Its reports are the truth, each at its own stage: a set response reports the values the receiver accepted (it is not a readback and must not become one), and configuration readback reports the values the receiver stores. The two are usually identical but need not be - a receiver may re-express an accepted value when storing it (the M8T stores a fixed position accepted in LLH form as ECEF). An accepted/stored difference is characterization data to vet, never by itself a failure; the stored value remains subject to the changed-what-it-could and persistence checks below.
+- Its reports are the truth, each at its own stage: a set response reports the values the receiver accepted (it is not a readback and must not become one), and configuration readback reports the values the receiver stores. The two are usually identical but need not be - a receiver may re-express an accepted value when storing it (the M8T stores a fixed position accepted in LLH form as ECEF). An accepted/stored difference is characterization data to vet, never by itself a failure; the stored value remains subject to the persistence checks below.
 - A reported error is the truth: nothing changed when it says configuration failed.
-- An accepted set changed what it could: a set accepted without error that demonstrably changed nothing (requests bracketing the prior value, value never moves) is a violation, not a limitation.
+- What the receiver does with an accepted write is the receiver's business, not a tool guarantee: the tool truthfully sends the write and reports the readback, so a set accepted without error that the receiver never applied - even one whose readback never moves under requests bracketing the prior value - is an ACK-without-apply receiver defect, recorded as characterization rather than reported as a failure. The restore and NVM-consistency mismatches that cascade from such a defect (the save truthfully persists what the receiver was running) are characterization for the same reason.
 - Persistence works as stated: what `--save` was asked to persist survives reload/reset (it may persist more, per the granularity limitation above); `--save-all` persists the whole running configuration; changes made after the last save do not survive reload.
 
 ### Message output
@@ -62,14 +62,14 @@ Message output is verified by what the receiver actually emits, never by propert
 
 ### Physical time pulse
 
-Where the receiver's PPS output is wired to a PHC pin (declared by the `[phc]` table in a satpulse config file, or given explicitly), the time pulse configuration is verified electrically with `satpulsetool sdp --extts`: pulses present with the configured period when enabled, absent when disabled. Pulse width and polarity are not observable through external timestamps and stay readback-only. A pulse configured `onlyWhenLocked` fires only with a fix, so physical enable checks must first confirm the receiver has a fix (or use a configuration that pulses regardless). `sdp` on an interface requires root; without root or wiring, physical checks are skipped, never failed. Root is not currently available unattended on this host, so physical checks stay skipped for now; the follow-up is to run them via the systest integration, which runs as root.
+Where the receiver's PPS output is wired to a PHC pin (declared by the `[phc]` table in a satpulse config file, or given explicitly), the time pulse configuration is verified electrically with `satpulsetool sdp --extts`. A narrow local convention also infers CTS wiring when the receiver is connected through an enumerated FT232R adapter with a USB serial number; `satpulsetool serial` then verifies edge presence. Neither path is required: without recognized wiring the checks are skipped, never failed. With either path, pulses must be present when enabled and absent when disabled. Pulse width and polarity are not observable and stay readback-only. The enabled probe requests output regardless of fix; if the receiver does not accept that mode, the check requires a fix because absence would otherwise prove nothing. PHC observation requires root; serial CTS observation does not.
 
 ## Failures versus limitations
 
 The single most important property of this program: **a receiver limitation is never reported as a test failure.** A tool that goes red because a receiver cannot do something is useless as a regression signal.
 
-- **Failures** (errors, nonzero exit) are violations of the tool guarantees above: no response, timeout, crash; state changed by a reported failure; a set accepted without error that changed nothing; persistence guarantees broken.
-- **Limitations** (data, the program's main output) are everything the receiver cannot do or does imprecisely: refused combinations, quantization, clipping, couplings, ranges, properties that do not exist, save granularity.
+- **Failures** (errors, nonzero exit) are violations of the tool guarantees above: no response, timeout, crash; state changed by a reported failure; persistence guarantees broken with no accepted-but-ineffective set to explain the miss.
+- **Limitations** (data, the program's main output) are everything the receiver cannot do or does imprecisely: refused combinations, quantization, clipping, couplings, ranges, properties that do not exist, save granularity, and defects such as an accepted write the receiver never applied.
 
 Failures that are diagnosed down to a satpulsetool defect get recorded in `BUGS.md` with their evidence; receiver quirks and limitations worth prose go in `HW/<receiver>.md`.
 
@@ -101,8 +101,9 @@ The end state is that this workflow runs unattended through `systest/`: a playbo
 - Analysis is repeatable offline: the run artifacts contain everything needed to re-derive the failure verdicts and the characterization without touching hardware, so improving the analysis never requires re-running receivers. (`IDEAS.md` sketches a program shape for this and for robustness; treat it as a suggestion to beat, not a specification.)
 - The characterization for a receiver we know well (ZED-F9P) states the things we know to be true of it, in a form a human can check against the integration manual in minutes.
 - Pointing the program at a receiver family it has never seen requires no new code for the common path, and produces a characterization plus, at worst, verbatim unexplained observations.
-- Two consecutive runs on the same receiver produce the same characterization.
+- Two consecutive runs on the same receiver produce the same characterization core; defect entries (ACK-without-apply behavior whose incidence drifts between sessions) are exempt, compared against the baseline by presence per property rather than by content.
 - The receiver is left as it was found (running configuration restored; NVM untouched except by the flag-gated disruptive probes, which must restore NVM to a sane state).
+- The starting state is the operator's job: each receiver bring-up chooses the configuration state a characterization run starts from - properties and message output both - documents it in `HW/<receiver>.md`, and provides a script that establishes it from factory defaults (`setup/<receiver>.sh`). gpshwtest restores to what it finds, so the starting state must be one the tool can restore: any property values work (properties restore through readback), but the message output state must be reproducible by the tool's own requests, since semantic message output cannot be reconstructed from observation. Without the documented state and script, applying gpshwtest to a receiver is not reproducible.
 - Per-invocation packet logs are kept as artifacts, usable as candidate replay-test data for `internal/gpscmd`.
 
 ## Ground rules for running against hardware

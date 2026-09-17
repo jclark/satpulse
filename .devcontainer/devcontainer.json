@@ -40,7 +40,7 @@
 	// "forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "git config --global --add safe.directory /workspaces/satpulse && npm install --prefix web"
+	"postCreateCommand": "git config --global --add safe.directory /workspaces/satpulse && npm ci --prefix webui"
 
 	// Configure tool-specific properties.
 	// "customizations": {},

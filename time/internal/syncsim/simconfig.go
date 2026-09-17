@@ -8,9 +8,9 @@ import (
 	"os"
 	"sort"
 
-	"github.com/jclark/satpulse/time/lib/check"
-	"github.com/jclark/satpulse/time/clocksim"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/check"
+	"github.com/jclark/satpulse/time/clocksim"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/pelletier/go-toml/v2"
 )

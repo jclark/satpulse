@@ -11,7 +11,7 @@ type ASBINMsg struct {
 }
 
 func (am *ASBINMsg) toRaw() (RawMsg, error) {
-	payload, err := am.Payload.Encode(asbin.Endian())
+	payload, err := am.Payload.Encode(asbin.Endian)
 	if err != nil {
 		return RawMsg{}, err
 	}

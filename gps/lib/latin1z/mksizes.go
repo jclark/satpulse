@@ -12,7 +12,7 @@ import (
 // sizes lists the array lengths to generate StringZN types for.
 // Add a new size here when a new message type needs it, then re-run
 // `go generate ./...`.
-var sizes = []int{5, 10, 16, 30, 32, 33, 43, 66, 129}
+var sizes = []int{3, 5, 10, 16, 20, 21, 30, 32, 33, 40, 43, 60, 66, 129}
 
 func main() {
 	var buf bytes.Buffer

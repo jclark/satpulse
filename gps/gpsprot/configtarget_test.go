@@ -2,6 +2,7 @@ package gpsprot
 
 import (
 	"encoding/json"
+	"reflect"
 	"testing"
 	"time"
 
@@ -66,7 +67,7 @@ func TestPoint3DRoundTrip(t *testing.T) {
 		t.Fatalf("ParsePoint3D returned error: %v", err)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if parsedPoint[i] != originalPoint[i] {
 			t.Errorf("Expected coordinate %d to be %v, got %v", i, originalPoint[i], parsedPoint[i])
 		}
@@ -255,6 +256,18 @@ func TestConfigPropsJSONRoundTrip(t *testing.T) {
 					PosType:      PosTypeECEF,
 					FixedPosECEF: Point3D{Meters(4000000), Meters(500000), Meters(4800000)},
 					FixedPosAcc:  Meters(0.1),
+				})
+				return cp
+			},
+		},
+		{
+			"mode ECEF no accuracy stated",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetMode(Mode{
+					Static:       true,
+					PosType:      PosTypeECEF,
+					FixedPosECEF: Point3D{Meters(4000000), Meters(500000), Meters(4800000)},
 				})
 				return cp
 			},
@@ -503,5 +516,150 @@ func TestConfigOptionsJSONRoundTrip(t *testing.T) {
 				t.Errorf("round-trip mismatch:\n  got:  %+v\n  want: %+v", got, tc.opts)
 			}
 		})
+	}
+}
+
+func TestConfigFlagJSON(t *testing.T) {
+	tests := []struct {
+		name    string
+		empty   any
+		one     any
+		all     any
+		unknown any
+		new     func() any
+		oneJSON string
+		allJSON string
+	}{
+		{"NMEAMsgFlags", NMEAMsgFlags(0), NMEAMsgGGA, NMEAMsgAny, NMEAMsgFlags(1 << 14), func() any { return new(NMEAMsgFlags) }, `["GGA"]`, `["RMC","GGA","GSA","GSV","ZDA","VTG","GLL","other"]`},
+		{"RTCMMsgFlags", RTCMMsgFlags(0), RTCMMsgMSM7, RTCMMsgMSM4 | RTCMMsgMSM7 | RTCMMsgARP | RTCMMsgLax | RTCMMsgOther, RTCMMsgFlags(1 << 1), func() any { return new(RTCMMsgFlags) }, `["MSM7"]`, `["MSM4","MSM7","ARP","lax","other"]`},
+		{"PVTMsgFlags", PVTMsgFlags(0), PVTMsgTimePulseAfter, PVTMsgPos | PVTMsgVel | PVTMsgTime | PVTMsgTimePulse | PVTMsgLeapSecond | PVTMsgSurvey | PVTMsgTAI | PVTMsgECEF | PVTMsgTimePulseAfter | PVTMsgQuality | PVTMsgEpoch | PVTMsgOff, PVTMsgFlags(1 << 15), func() any { return new(PVTMsgFlags) }, `["timePulseAfter"]`, `["pos","vel","time","timePulse","leapSecond","survey","tai","ecef","timePulseAfter","quality","epoch","off"]`},
+		{"SatsMsgFlags", SatsMsgFlags(0), SatsMsgSignal, SatsMsgAny, SatsMsgFlags(1 << 7), func() any { return new(SatsMsgFlags) }, `["signal"]`, `["sat","signal"]`},
+		{"RawMsgFlags", RawMsgFlags(0), RawMsgNavData, RawMsgAny, RawMsgFlags(1 << 7), func() any { return new(RawMsgFlags) }, `["navData"]`, `["obs","navData"]`},
+		{"SurveyFlags", SurveyFlags(0), SurveyAgain, SurveyAgain, SurveyFlags(1 << 1), func() any { return new(SurveyFlags) }, `["again"]`, `["again"]`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, test := range []struct {
+				name string
+				val  any
+				json string
+			}{
+				{"empty", tc.empty, `[]`},
+				{"one", tc.one, tc.oneJSON},
+				{"all", tc.all, tc.allJSON},
+			} {
+				t.Run(test.name, func(t *testing.T) {
+					data, err := json.Marshal(test.val)
+					if err != nil {
+						t.Fatalf("Marshal: %v", err)
+					}
+					if string(data) != test.json {
+						t.Errorf("JSON = %s, want %s", data, test.json)
+					}
+					got := tc.new()
+					if err := json.Unmarshal(data, got); err != nil {
+						t.Fatalf("Unmarshal: %v", err)
+					}
+					if !reflect.DeepEqual(reflect.ValueOf(got).Elem().Interface(), test.val) {
+						t.Errorf("round trip = %v, want %v", reflect.ValueOf(got).Elem(), test.val)
+					}
+				})
+			}
+			if err := json.Unmarshal([]byte(`["unknown"]`), tc.new()); err == nil {
+				t.Error("unknown name did not return an error")
+			}
+			if err := json.Unmarshal([]byte(`null`), tc.new()); err == nil {
+				t.Error("null did not return an error")
+			}
+			if _, err := json.Marshal(tc.unknown); err == nil {
+				t.Error("unknown bit did not return an error")
+			}
+		})
+	}
+}
+
+func TestConfigEnumJSON(t *testing.T) {
+	tests := []struct {
+		name string
+		val  any
+		new  func() any
+		json string
+	}{
+		{"save none", SaveNone, func() any { return new(SaveType) }, `"none"`},
+		{"save minimal", SaveMinimal, func() any { return new(SaveType) }, `"minimal"`},
+		{"save all", SaveAll, func() any { return new(SaveType) }, `"all"`},
+		{"reset none", ResetNone, func() any { return new(ResetType) }, `"none"`},
+		{"reset reload", ResetReload, func() any { return new(ResetType) }, `"reload"`},
+		{"reset cold", ResetCold, func() any { return new(ResetType) }, `"cold"`},
+		{"reset factory", ResetFactory, func() any { return new(ResetType) }, `"factory"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			data, err := json.Marshal(tc.val)
+			if err != nil {
+				t.Fatalf("Marshal: %v", err)
+			}
+			if string(data) != tc.json {
+				t.Errorf("JSON = %s, want %s", data, tc.json)
+			}
+			got := tc.new()
+			if err := json.Unmarshal(data, got); err != nil {
+				t.Fatalf("Unmarshal: %v", err)
+			}
+			if !reflect.DeepEqual(reflect.ValueOf(got).Elem().Interface(), tc.val) {
+				t.Errorf("round trip = %v, want %v", reflect.ValueOf(got).Elem(), tc.val)
+			}
+			if err := json.Unmarshal([]byte(`"unknown"`), tc.new()); err == nil {
+				t.Error("unknown name did not return an error")
+			}
+			if err := json.Unmarshal([]byte(`1`), tc.new()); err == nil {
+				t.Error("numeric value did not return an error")
+			}
+		})
+	}
+}
+
+func TestConfigTargetJSONRoundTrip(t *testing.T) {
+	target := NewConfigTarget()
+	target.Props.SetMode(Mode{Static: true})
+	target.Get = PropIDSignalsEnabled | PropIDTimePulse
+	target.Opts.Save = SaveMinimal
+	target.Opts.Reset = ResetCold
+	target.Opts.PVTMsg = PVTMsgTimePulse | PVTMsgTimePulseAfter
+	target.Opts.NMEAMsg.Set(NMEAMsgNone)
+	target.Opts.RTCMMsg.Set(RTCMMsgMSM7 | RTCMMsgARP)
+	target.Opts.SatsMsg.Set(SatsMsgAny)
+	target.Opts.RawMsg.Set(RawMsgObs)
+	target.Opts.Survey.Flags = SurveyAgain
+	data, err := json.Marshal(target)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var got ConfigTarget
+	if err := json.Unmarshal(data, &got); err != nil {
+		t.Fatalf("Unmarshal(%s): %v", data, err)
+	}
+	if got != *target {
+		t.Errorf("round-trip mismatch:\n  got:  %+v\n  want: %+v", got, *target)
+	}
+	if !got.Opts.NMEAMsg.IsSet() || got.Opts.NMEAMsg.Get() != NMEAMsgNone {
+		t.Errorf("set-empty NMEAMsg did not round trip: %+v", got.Opts.NMEAMsg)
+	}
+	if got.Opts.TimeAssist != (TimeEstimate{}) {
+		t.Errorf("unset option changed: %+v", got.Opts.TimeAssist)
+	}
+}
+
+func TestFixedPosToECEF(t *testing.T) {
+	llh := Mode{Static: true, PosType: PosTypeLLH}
+	if p, ok := llh.FixedPosToECEF(); !ok || p != (Point3D{Meters(6378137), 0, 0}) {
+		t.Errorf("LLH origin = %v,%v, want the WGS84 semi-major axis on X", p, ok)
+	}
+	ecef := Mode{Static: true, PosType: PosTypeECEF, FixedPosECEF: Point3D{1, 2, 3}}
+	if p, ok := ecef.FixedPosToECEF(); !ok || p != ecef.FixedPosECEF {
+		t.Errorf("ECEF = %v,%v, want pass-through", p, ok)
+	}
+	if _, ok := (Mode{Static: true}).FixedPosToECEF(); ok {
+		t.Error("PosTypeNone reported a position")
 	}
 }

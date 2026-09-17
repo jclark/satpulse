@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg/testdata"
 )
 
@@ -55,7 +56,7 @@ func compareSyntaxFlags(t *testing.T, description, packet string, got, expected 
 		name string
 	}{
 		{SentenceIsPacket, "SentenceIsPacket"},
-		{SentenceAddressLength5, "SentenceAddressLength5"},
+		{SentenceApprovedAddressFormat, "SentenceApprovedAddressFormat"},
 		{SentenceProprietaryAddressFormat, "SentenceProprietaryAddressFormat"},
 		{SentenceTalkerIsGP, "SentenceTalkerIsGP"},
 		{SentenceTalkerIsGL, "SentenceTalkerIsGL"},
@@ -98,6 +99,31 @@ func TestSyntaxFlagMethods(t *testing.T) {
 	t.Log("SentenceSyntaxFlags methods verified")
 }
 
+func TestClassificationMethods(t *testing.T) {
+	cases := []struct {
+		packet                    string
+		approved, gnss, propriety bool
+	}{
+		{"$GPGGA,123*5A\r\n", true, true, false},
+		{"$XXTXT,123*5A\r\n", true, false, false},   // approved, unregistered talker
+		{"$PUBX,41,1*25\r\n", false, false, true},   // proprietary
+		{"$PUBX1,data*5A\r\n", false, false, true},  // 5-char P address: proprietary, not approved
+		{"$P1234,data*5A\r\n", false, false, false}, // P + digits: neither approved nor proprietary
+	}
+	for _, tt := range cases {
+		f := CheckSyntax(tt.packet)
+		if got := f.IsValidApprovedNMEA(); got != tt.approved {
+			t.Errorf("IsValidApprovedNMEA(%q) = %v, want %v", tt.packet, got, tt.approved)
+		}
+		if got := f.IsValidGNSSTalkerNMEA(); got != tt.gnss {
+			t.Errorf("IsValidGNSSTalkerNMEA(%q) = %v, want %v", tt.packet, got, tt.gnss)
+		}
+		if got := f.IsValidProprietaryNMEA(); got != tt.propriety {
+			t.Errorf("IsValidProprietaryNMEA(%q) = %v, want %v", tt.packet, got, tt.propriety)
+		}
+	}
+}
+
 // checkSyntaxReference is a reference implementation that prioritizes correctness over performance
 func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	var flags SentenceSyntaxFlags
@@ -107,24 +133,29 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 
 	// Constraint 2: Terminated with line terminator (CR/LF or LF)
 	var lineTerminatorIndex int
+	var endsWithCRLF bool
 	if strings.HasSuffix(data, "\r\n") {
 		lineTerminatorIndex = len(data) - 2
+		endsWithCRLF = true
 	} else if strings.HasSuffix(data, "\n") {
 		lineTerminatorIndex = len(data) - 1
 	} else {
 		return 0
 	}
 
-	// Constraint 4: Total length ≤ SentenceMaxLength characters (including line terminator)
-	if len(data) > SentenceMaxLength {
+	// Constraint 4: Total length including a canonical CRLF is at most SentenceMaxLength characters
+	if len(data) > SentenceMaxLength || (!endsWithCRLF && len(data) == SentenceMaxLength) {
 		return 0
 	}
 
 	// Constraint 1: First character is `$` and no other `$` characters
-	if len(data) < 1 || data[0] != '$' {
+	if len(data) < 3 || data[0] != '$' {
 		return 0
 	}
 	if strings.Count(data, "$") != 1 {
+		return 0
+	}
+	if !ascii.IsAlnum(data[1]) || !ascii.IsAlnum(data[2]) {
 		return 0
 	}
 
@@ -145,13 +176,13 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	}
 
 	// Check that the two chars after * are uppercase hex
-	if !isUpperHexDigit(data[asteriskIndex+1]) || !isUpperHexDigit(data[asteriskIndex+2]) {
+	if !ascii.IsUpperHexDigit(data[asteriskIndex+1]) || !ascii.IsUpperHexDigit(data[asteriskIndex+2]) {
 		return 0
 	}
 
 	// Constraint 3: All characters before line terminator must be printable ASCII (0x20-0x7E)
 	for i := 0; i < lineTerminatorIndex; i++ {
-		if !isPrintableASCII(data[i]) {
+		if !ascii.IsPrint(data[i]) {
 			return 0
 		}
 	}
@@ -176,14 +207,15 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	// ===== ADDRESS AND DATA VALIDATION =====
 	// Address already extracted in constraint 6
 
-	// SentenceAddressLength5: Address is exactly 5 uppercase alphanumeric chars
-	if len(address) == 5 && isUpperAlphanumeric(address) {
-		flags |= SentenceAddressLength5
+	// SentenceApprovedAddressFormat: Address is exactly 5 uppercase alphanumeric chars, not starting with P
+	if len(address) == 5 && isUpperAlphanumeric(address) && address[0] != 'P' {
+		flags |= SentenceApprovedAddressFormat
 	}
 
 	// ===== PROPRIETARY FORMAT VALIDATION =====
-	// SentenceProprietaryAddressFormat: Address starts with P + 3+ uppercase alphanumeric chars
-	if len(address) >= 4 && address[0] == 'P' && isUpperAlphanumeric(address[1:]) {
+	// SentenceProprietaryAddressFormat: Address starts with P + 3 ASCII letters
+	if len(address) >= 4 && address[0] == 'P' &&
+		ascii.IsLetter(address[1]) && ascii.IsLetter(address[2]) && ascii.IsLetter(address[3]) {
 		flags |= SentenceProprietaryAddressFormat
 	}
 
@@ -228,7 +260,7 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 				validCaretEscaping = false
 				break
 			}
-			if !isUpperHexDigit(dataFields[i+1]) || !isUpperHexDigit(dataFields[i+2]) {
+			if !ascii.IsUpperHexDigit(dataFields[i+1]) || !ascii.IsUpperHexDigit(dataFields[i+2]) {
 				validCaretEscaping = false
 				break
 			}
@@ -259,15 +291,10 @@ func checkSyntaxReference(data string) SentenceSyntaxFlags {
 	return flags
 }
 
-// isPrintableASCII checks if character is in printable ASCII range (0x20-0x7E)
-func isPrintableASCII(c byte) bool {
-	return c >= 0x20 && c <= 0x7E
-}
-
 // isUpperAlphanumeric checks if string contains only uppercase letters and digits
 func isUpperAlphanumeric(s string) bool {
-	for _, c := range s {
-		if !((c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9')) {
+	for i := 0; i < len(s); i++ {
+		if !ascii.IsUpper(s[i]) && !ascii.IsDigit(s[i]) {
 			return false
 		}
 	}

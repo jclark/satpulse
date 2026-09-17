@@ -2,9 +2,26 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-For detailed documentation of the package structure, dependencies, and layering, see @docs/internals.md.
+For detailed documentation of the package structure, dependencies, and layering, see @docs/internals/packages.md.
 
-Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals.md.
+Whenever you create a new package, add an entry describing it to the appropriate section of @docs/internals/packages.md.
+
+## Interaction
+
+- Do not ask the user multiple-choice questions, and never use the `AskUserQuestion` tool (the one that renders selectable options). When you need a decision, state your recommendation in prose and let the user respond freely in their own words.
+- When the user asks a question or is discussing a design, answer the question; do not edit code or docs, write plans, or fix anything until explicitly told to. Agreement to one step is not agreement to the next.
+- Keep design discussions exploratory: present framings and trade-offs, not a single forced answer. The user decides; never assume which option he will pick.
+- Report only deltas: what changed or what still needs fixing, never what stayed the same or is already fine.
+- User messages are often dictated; resolve phonetic garbles to project terms (e.g. "Southpaw" for satpulse, "Team Mode 2" for TMODE2) before acting, and ask only if genuinely ambiguous.
+- The user is a domain expert in GNSS, timing, and XML. When he questions a value or design, investigate the specific question; do not explain fundamentals.
+- The user edits files between messages; re-read the current version of a file before commenting on it again.
+- Never save project state, follow-up work, or design decisions to the agent's local memory: the user works across many machines, so that memory is useless. Such things go in git (commits, plan documents) or GitHub issues.
+
+## Technical claims
+
+- Never state a technical claim you have not verified against the code, the vendor documentation, or a test. No speculation.
+- Protocol facts come from the local vendor protocol documentation (see CLAUDE.local.md for its location), not from memory or web search.
+- In protocol code, use the vendor spec's own terminology for names; never invent terms.
 
 ## Go code style
 
@@ -26,6 +43,14 @@ Whenever you create a new package, add an entry describing it to the appropriate
   - Variables with wider scope or complex meaning
 - For exported function/variables, the name the user sees is the package name plus the function name
 
+### Simplicity
+- Prefer modest, targeted diffs; do not rewrite or reformat code beyond the requested change (no gofmt churn on untouched lines)
+- No premature generalization: generalize when the second case arrives, not before
+- Do not create a new file for a small helper; put it in the existing file where it belongs
+- No backwards-compatibility shims or migration paths: this is a pre-1.0, sole-developer project
+- Keep tests proportional to the change; a trivial change does not need a battery of new tests
+- Programmer errors (contract violations) panic; data-dependent failures return errors
+
 ### Code density and readability
 - Minimize blank lines - use them only to separate large logical sections
 - Inline simple expressions instead of creating single-use variables
@@ -34,6 +59,9 @@ Whenever you create a new package, add an entry describing it to the appropriate
 - DO create variables to avoid repetition:
   - Bad: `process(config.Server.Host, config.Server.Port)`
   - Good: `srv := config.Server; process(srv.Host, srv.Port)`
+
+### Control flow
+- Do not use a tagless `switch {}` on non-constant conditions when an if/else (or guard-clause) chain would work just as well; reserve `switch` for dispatch on a value (especially constants/types)
 
 ### Comments
 - Every exported function needs a comment starting with the function name
@@ -44,16 +72,20 @@ Whenever you create a new package, add an entry describing it to the appropriate
 - Use ASCII only - avoid non-ASCII characters (no fancy quotes, checkmarks, emojis, etc.)
 - Exception: math symbols where truly needed (e.g., μs for microseconds)
 
-### Function ordering
-- Order code for top-to-bottom readability: readers should understand what's happening without jumping around
-- Type definitions come before the functions that use them
-- Main/exported functions come before their helper functions
-- Example ordering:
-  1. Type definitions (structs, interfaces, constants)
-  2. Constructor/factory functions
-  3. Main methods on those types
-  4. Helper functions used by the methods
-- The goal: reading from top to bottom tells a story - what the types are, what the main operations are, then how they're implemented
+### Declaration ordering
+- Order declarations to tell the story from top to bottom: start with the main operation, then follow its control flow into progressively lower-level helpers
+- Put callers before callees; put main/exported functions as early as their type dependencies allow
+- Define a type before the first non-method function that uses a value of that type, whether as a parameter, result, local variable, or composite literal
+- Do not move a type up merely because its name is mentioned, and do not collect all types at the top of the file; introduce types used only by later helpers immediately before that part of the story
+- Methods need not immediately follow their type definitions; put them where their behavior fits the top-down flow
+- Put constants and package variables near the first part of the story that uses them, before that use
+- A typical order is:
+  1. Types whose values the main/exported function uses
+  2. Main/exported function
+  3. Types and constants needed by its first helper
+  4. First helper, followed by its lower-level helpers
+  5. Subsequent operations in control-flow order
+  6. Shared low-level helpers and methods
 
 ## Development commands
 
@@ -66,31 +98,72 @@ Build system uses GNU Make:
 - `make pkg` - Build both deb and rpm packages
 - `make clean` - Remove build artifacts
 
-It builds on Linux only. On macOS, use `unix-build.sh` instead.
+`make` puts the binaries in `out/<arch>/`: `out/amd64` or `out/arm64` on
+Linux, `out/<os>_<arch>` elsewhere (for example `out/darwin_arm64` on macOS).
+When a skill or document names `satpulsed`, `satpulsetool`, or `satpulsewb`
+without a path, run the repo build from `out/<arch>/`, never an installed copy.
 
-Web interface is build using npm in `web/` directory.
-- `npm run build` - Rebuilds .js and .css files that are embedded.
+`make` works on macOS and FreeBSD too, but the `Makefile` proper is Linux-only:
+on other systems `Makefile` (GNU make) and `BSDmakefile` (bmake) both forward
+to the portable `Makefile.unix`; packaging targets are Linux-only. There the
+build (`all`) only generates and the install only copies, because the build
+runs as the user and the install as root. Each has a binaries subgoal and a man
+page subgoal: `all` runs `bin` and `man`, `install` runs `install-bin` and
+`install-man`. The subgoals are strict, so CI names them; the aggregates skip
+the man half with a warning when pandoc is missing, so a build and an install
+work without it. `Makefile.unix` is parsed by both GNU make 3.81 and bmake, so
+it must stay in the intersection of the two dialects: no parse-time shell,
+conditionals, includes or pattern rules.
+
+The web interfaces are built with npm from the `webui/` workspace. Their built
+assets are checked in and embedded into the binaries, and `make` does not
+rebuild them: after changing frontend sources you must regenerate and commit
+the assets. See @webui/CLAUDE.md.
 
 Testing:
 - Individual package: `go test -v ./internal/packagename`
 - All tests: `make test`
+- Before committing a fix that changes Go code, always run the full test suite with `make test`
 - Test files follow `*_test.go` convention
 - Tests for `X.go` go in `X_test.go` by default; put them elsewhere only when that file would become very unwieldy
-- When requested to review code, do not run tests unless explicitly requested.
 
 Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
 (daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
 hardware). Build first with `make`, then run `make smoketest`. See
 @smoketest/CLAUDE.md.
 
+Race detection: `GOFLAGS=-race make` builds with the race detector (and
+`GOFLAGS=-race make test` runs the Go tests under it). Then
+`GORACE=halt_on_error=1 make smoketest` runs the smoke tests against those
+binaries, killing the daemon at the first race; without `halt_on_error` a race
+is only reported in the daemon log, which the smoke tests do not check. This
+works for `make` but not `allarch`: the detector does not support 32-bit arm.
+
 System testing on real hardware is doing using ansible in `systest/` directory.
+
+## Code review
+
+When asked to review code or a plan:
+- Do not run tests unless explicitly requested - they have already been run.
+- Do not modify any files.
+- Check correctness (logic errors, off-by-one, nil risks, error handling, races) and consistency with the relevant `plan/*.md` if one is named.
+- Be pragmatic and concise: flag real issues only - no nitpicks, no severity inflation.
+- Deliver findings as a numbered list; when asked, walk through them one at a time.
 
 ## Git usage
 
 - Never use `git add -A` or `git add .` - these add untracked files which may include test data or local files
 - Use `git add -u` to stage modified/deleted tracked files, then add new files explicitly by name
+- "Stage" means stage only. Stage, commit, and push are separate steps, each done only when explicitly requested; the user reviews staged changes before commit.
+- Commit messages need an informative body explaining what the problem was and what the change does; match the style of recent `git log` entries.
+- Put logically distinct changes in separate commits. Work that belongs on another branch does not go on this one.
+- When multiple branches or worktrees are in play, verify the current branch before every commit; integration branches get merges only, never direct commits.
 - Only create a branch when explicitly instructed to. Otherwise commit on the current branch, including the default branch.
+- Prefer merge to rebase. Never rebase unless explicitly told to (the repo is checked out on multiple machines with different hardware, so rewriting shared history causes conflicts). Integrate diverged branches with `git merge`, not `git rebase` or `git pull --rebase`.
 - When a commit completely resolves an issue, make `Fixes #N` (with the issue number) the last line of the commit message, so the issue closes when the commit merges.
+- Never mention Claude, Claude Code, or any other AI agent or tool anywhere in a commit message, PR description, or issue - no co-authorship, attribution, "Generated with ..." line, chat/session link, emoji marker, or reference of any kind. These are public, so a private-chat link leaks it, and the history must read as the author's own work. Describe only the change itself.
+- Never create a GitHub issue unless explicitly asked, even when writing a plan or notes that could become one.
+- Anything committed (code, comments, docs, plans, commit messages) must not refer to local files outside the repository or to uncommitted code or documents. Describe the thing itself instead of pointing at it.
 
 ## Development environment
 
@@ -99,14 +172,33 @@ System testing uses Ansible playbooks in `systest/`.
 ## Documentation style
 
 - Headings use sentence case (capitalise only the first word and proper nouns)
+- For prose the user is writing (docs, blog posts), fix typos, spelling, and grammar only; no rewrites or editorial improvements unless explicitly asked.
+- Give prose corrections as exact word-level replacements with line numbers, one at a time; do not emit rewritten paragraphs.
+- When editing an existing document, make minimal targeted edits that match the document's voice and style.
 
 ## Release notes
 
 - Implementing a user-facing feature MUST include an entry in `docs/_includes/NEWS.md`, in the same change as the implementation.
 - This applies to new features, behaviour changes, and upgrade notes. Bug fixes are excluded.
+- Never add an entry for a bug fix, and do not add one when an existing entry already covers the change. Keep entries short.
+- Treat an existing entry as covering the feature as a whole, including later refinements and enhancements before release. Do not add bullets or expand the entry to enumerate incremental work; revise it only when necessary to keep its concise summary accurate.
 - Add the entry under the current unreleased version heading, in the appropriate section, and reference the issue number(s) in parentheses to match the existing entries.
 
-## Connected GPS
+## GPS receivers and serial ports
 
-You can look at `/etc/satpulse.toml` if it exists to find device and speed of a connected GPS receiver.
-But before using it, check that `satpulsed` is not running `ps ax | grep satpulsed`.
+Use `satpulsetool` for any task involving a GPS receiver, or a serial port or
+PPS signal that may be connected to one; never access the serial device
+directly, even just to read. Load the `satpulsetool` skill first. The skill is
+written for an installed system; in this repo:
+- the binary is the repo build (see "Development commands")
+- the man pages it cites are `docs/man/*.1.md`
+- the message directory `/usr/share/satpulse/gpsmsg` is `configs/gpsmsg`
+- `CLAUDE.local.md` lists the connected receivers with device, speed, and
+  name, but it may be stale: USB ports get swapped around. Verify with
+  `satpulsetool serial` before relying on it, discover unknown ports with
+  `serial -a` and `gps --show-receiver`, ask the user for the receiver's name
+  (they know it better than `--show-receiver` does, especially without
+  high-level support), and update `CLAUDE.local.md` with what you find.
+- when an ad-hoc command sent with `gps -m -` proves generally useful,
+  suggest adding it to the message files we ship in `configs/gpsmsg` (the
+  `gps-msg-add` skill does this)

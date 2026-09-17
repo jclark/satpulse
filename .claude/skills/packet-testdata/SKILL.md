@@ -14,7 +14,7 @@ This is NOT for ad-hoc packet capture during development. It is for building the
 
 There are two ways to configure GPS receivers for captures, corresponding to the two configuration modes of `satpulsetool gps` (see `docs/man/satpulsetool-gps.1.md`):
 
-- **High-level configuration** uses device-independent flags like `--pvt-out`, `--sats-out`, `--binary`, `--nmea-out`, `--raw-out`, `--time-gnss`, `--gnss`, `--survey`, `--reload`. Currently supported on u-blox receivers (u-blox 6 through X20) and Unicore Nebulas IV (UM980, UM981, UM982, UM960). See `highlevel-config.md`.
+- **High-level configuration** uses device-independent flags like `--pvt-out`, `--sats-out`, `--binary`, `--nmea-out`, `--raw-out`, `--time-gnss`, `--gnss`, `--survey`, `--reload`. Currently supported on u-blox receivers (u-blox 6 through X20), Unicore Nebulas IV (UM980, UM981, UM982, UM960), and CASIC (Zhongke) V5/V6. See `highlevel-config.md`.
 
 - **Low-level configuration** uses a TOML message file (`-m`) containing protocol-specific commands. This works with all receivers. Message files are in per-vendor subdirectories of `configs/gpsmsg/` (e.g., `configs/gpsmsg/u-blox/ubx.toml`, `configs/gpsmsg/unicore/um980.toml`, `configs/gpsmsg/allystar/allystar.toml`). See `lowlevel-config.md`.
 
@@ -75,6 +75,8 @@ For u-blox receivers specifically, also read `ubx-config.md`.
 
 For Unicore receivers (UM980, UM981, UM982), also read `unicore-config.md`.
 
+For CASIC (Zhongke) receivers, read `casic-config.md` - it maps which captures are possible on which attached unit (CASIC firmware acknowledges enabling messages it never emits).
+
 For all receivers, message files in the per-vendor subdirectories of `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.
 
 ## Capture procedure
@@ -87,7 +89,7 @@ For each capture:
 
 3. **Add low-level messages** (if needed): Run satpulsetool with `-m <file> -t <tags>` to enable messages not reachable via high-level config. This can follow a high-level config step since `-m` does not probe or reset the receiver.
 
-4. **Capture**: Run satpulsetool with `--packet-log <file> --capture 30` (60 for survey). Use 30 seconds for most captures.
+4. **Capture**: Run `satpulsetool serial -d <device> -s <baud> --packet-log <file> -t 30` (60 for survey). Use 30 seconds for most captures. The `serial` command captures passively; `gps` probes the receiver before capturing, and the probe exchange would pollute the capture.
 
 5. **Verify**: Check message types in the capture with:
    ```

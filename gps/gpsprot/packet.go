@@ -75,7 +75,7 @@ type AltChecksumPacketFormat interface {
 // It does not validate the checksum.
 func IsValidPacket(pf PacketFormat, buf []byte) bool {
 	state := ScanStateSync
-	for i := 0; i < len(buf); i++ {
+	for i := range buf {
 		state = pf.Next(state, buf, i, i)
 		if state == ScanStateSync {
 			return false

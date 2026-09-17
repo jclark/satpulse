@@ -1,0 +1,14 @@
+# satpulsed startup config against the u-blox simulator: active detection over
+# the pty, plus the satellites-output ConfigTarget landing on the receiver. The
+# speed is the personality's default CFG-UART1-BAUDRATE (38400), so the config
+# phase stays out of the baud-change path; speed is nominal on a pty anyway.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+speed = 38400
+
+[gps]
+config = true
+satellitesOutput = true
+
+[[http]]
+listen = "127.0.0.1:${SATPULSE_TEST_HTTP_PORT}"

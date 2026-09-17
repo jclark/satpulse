@@ -1,0 +1,14 @@
+/* Inline "new in 0.3" label on tutorial pages, emitted by the
+   new-in-03.html include while prerelease_labels is set in _config.yml. */
+.new-in-label {
+  font-size: 0.65em;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #fff;
+  background-color: #b8860b;
+  border-radius: 3px;
+  padding: 0.15em 0.5em;
+  vertical-align: middle;
+  white-space: nowrap;
+}

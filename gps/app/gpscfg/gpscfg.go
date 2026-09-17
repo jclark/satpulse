@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/scan"
-	"golang.org/x/exp/maps"
 )
 
 type Result struct {
@@ -118,7 +118,7 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 	}
 	for tag, msgIDs := range mh.msgIDs {
 		if len(msgIDs) > 0 {
-			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", maps.Keys(msgIDs))
+			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", slices.Sorted(maps.Keys(msgIDs)))
 		}
 	}
 	return &Result{
@@ -244,8 +244,11 @@ const (
 	silentWaitTimeout = 1 * time.Second
 	// probeRetryDelay is how long to wait after sending a probe before retrying
 	probeRetryDelay = 1500 * time.Millisecond
-	// probeResponseTimeout is how long to wait after the final probe before giving up
-	probeResponseTimeout = 3 * time.Second
+	// probeResponseTimeout is how long to wait after the final probe before giving up.
+	// A receiver on a saturated low-baud line answers only after its TX queue
+	// drains: a CASIC V5 at 9600 was measured taking up to ~4.3 s after the
+	// second probe (~5.8 s after the first), so allow 6 s.
+	probeResponseTimeout = 6 * time.Second
 )
 
 // listeningDetector detects by listening for a suitable packet.
@@ -254,12 +257,19 @@ type listeningDetector struct {
 }
 
 // probingDetector detects by sending probe packets and listening for responses.
+// probePackets holds the writes remaining in the current probe attempt.
+// delayBeforeProbe[i] is the pause required before writing probePackets[i];
+// it stays empty in the usual case where no packet needs a delay, and entries
+// past its length mean no delay.
 type probingDetector struct {
 	detector
-	port         gpsio.OutPort
-	silenceTimer <-chan time.Time
-	probeTimer   <-chan time.Time
-	nProbesSent  int
+	port             gpsio.OutPort
+	silenceTimer     <-chan time.Time
+	probeTimer       <-chan time.Time
+	writeTimer       <-chan time.Time
+	probePackets     [][]byte
+	delayBeforeProbe []time.Duration
+	nProbesSent      int
 }
 
 // detector holds shared state for both detection modes.
@@ -333,6 +343,11 @@ func (d *probingDetector) run(ctx context.Context) (gpsprot.ConfigProtocol, erro
 			if err := d.maybeSendProbe(d.nProbesSent); err != nil {
 				return nil, err
 			}
+		case <-d.writeTimer:
+			d.writeTimer = nil
+			if err := d.sendProbePackets(); err != nil {
+				return nil, err
+			}
 		}
 	}
 }
@@ -353,20 +368,58 @@ func (d *probingDetector) processPacket(packet scan.Packet) error {
 	return nil
 }
 
-// maybeSendProbe sends probes if nProbesSent equals probeIndex.
-// It increments nProbesSent, nils deadline, and sets probeTimer for the next step.
+// maybeSendProbe starts a probe attempt if nProbesSent equals probeIndex.
+// It queues the probe packets of all protocols, increments nProbesSent,
+// nils deadline, and starts writing the queue.
 func (d *probingDetector) maybeSendProbe(probeIndex int) error {
 	if d.nProbesSent != probeIndex {
 		return nil
 	}
 	for _, prot := range d.mh.configProts {
-		if _, err := d.port.Write(prot.ProbePacket()); err != nil {
-			return err
+		packets, delay := prot.ProbePackets()
+		if delay > 0 {
+			for i := 1; i < len(packets); i++ {
+				d.setDelayBefore(len(d.probePackets)+i, delay)
+			}
 		}
+		d.probePackets = append(d.probePackets, packets...)
 	}
 	d.nProbesSent++
-	d.mh.lg.Debug("sent probe packets", "probeNum", d.nProbesSent)
+	d.mh.lg.Debug("sending probe packets", "probeNum", d.nProbesSent)
 	d.deadlineTimer = nil
+	return d.sendProbePackets()
+}
+
+// setDelayBefore records that probePackets[i] must be preceded by delay,
+// growing delayBeforeProbe as needed.
+func (d *probingDetector) setDelayBefore(i int, delay time.Duration) {
+	for len(d.delayBeforeProbe) <= i {
+		d.delayBeforeProbe = append(d.delayBeforeProbe, 0)
+	}
+	d.delayBeforeProbe[i] = delay
+}
+
+// sendProbePackets writes queued probe packets. On reaching a packet with a
+// nonzero delayBeforeProbe, it arms writeTimer and returns; the run loop calls
+// it again when the timer fires. Once the queue drains, it sets probeTimer for
+// the next step.
+func (d *probingDetector) sendProbePackets() error {
+	for len(d.probePackets) > 0 {
+		if len(d.delayBeforeProbe) > 0 {
+			if delay := d.delayBeforeProbe[0]; delay > 0 {
+				d.delayBeforeProbe[0] = 0
+				d.writeTimer = time.After(delay)
+				return nil
+			}
+		}
+		if _, err := d.port.Write(d.probePackets[0]); err != nil {
+			return err
+		}
+		d.probePackets = d.probePackets[1:]
+		if len(d.delayBeforeProbe) > 0 {
+			d.delayBeforeProbe = d.delayBeforeProbe[1:]
+		}
+	}
 	if d.nProbesSent == 1 {
 		d.probeTimer = time.After(probeRetryDelay)
 	} else {
@@ -452,13 +505,14 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 		return nil, nil, 0, err
 	}
 	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
+	serPort, _ := port.(*gpsio.SerialConn)
 	var knownErr error // error that we know how to handle
 	for action := range director.Actions() {
 		director.AdvanceTimeTo(time.Now())
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
 			var err error
-			if serPort, ok := port.(*gpsio.SerialConn); ok && action.Speed != 0 {
+			if serPort != nil && action.Speed != 0 {
 				_, err = serPort.WriteThenChangeSpeed(action.Packet, action.Speed)
 			} else {
 				_, err = port.Write(action.Packet)
@@ -482,6 +536,9 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 				mh.packet(packet)
 				if packet.ChecksumValid {
 					director.ValidPacketReceived(packet.TRead)
+					if serPort != nil {
+						serPort.SetDetected()
+					}
 				}
 			}
 

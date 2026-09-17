@@ -13,6 +13,33 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
+func TestTimeNavTimeUTC(t *testing.T) {
+	m := &casbin.NavTimeUTC{
+		Ms:        800,
+		MsErr:     0.00025,
+		Year:      2026,
+		Month:     7,
+		Day:       22,
+		Hour:      15,
+		Min:       25,
+		Sec:       26,
+		Valid:     casbin.NavTimeUTCTOWValid,
+		TimeSrc:   casbin.GPS,
+		DateValid: casbin.NavDateMultipleSats,
+	}
+	tm := timeNavTimeUTC(m)
+	want := ptime.UTC(2026, 7, 22, 15, 25, 26, 800000250)
+	if !tm.UTCTime.IsSet() {
+		t.Fatal("UTCTime is not set")
+	}
+	if got := tm.UTCTime.Get(); got != want {
+		t.Errorf("UTCTime = %v, want %v", got, want)
+	}
+	if tm.GNSS != gpsprot.GPS {
+		t.Errorf("GNSS = %v, want GPS", tm.GNSS)
+	}
+}
+
 func TestTimeNav2TimeUTC(t *testing.T) {
 	m := &casbin.Nav2TimeUTC{
 		TAcc:    50.0, // 50 ns

@@ -17,15 +17,28 @@ func TestLogEventRoundTrip(t *testing.T) {
 		event LogEvent
 	}{
 		{
-			name: "pulseEdge",
+			name: "phcPulseEdge",
 			event: LogEvent{
-				Type: pulseEdgeType,
+				Type: phcPulseEdgeType,
 				T:    tm,
 				Mono: 1500 * gpsprot.Millisecond,
-				Data: &PulseEdge{
+				Data: &PHCPulseEdge{
 					T:     ptime.Time(100 * time.Second),
 					Era:   1,
 					TRead: ptime.Time(100*time.Second + 99*time.Microsecond),
+				},
+			},
+		},
+		{
+			name: "sysPulseEdge",
+			event: LogEvent{
+				Type: sysPulseEdgeType,
+				T:    tm,
+				Mono: 1500 * gpsprot.Millisecond,
+				Data: &SysPulseEdge{
+					T:           tm.Add(-26 * time.Microsecond),
+					Uncertainty: 26 * gpsprot.Microsecond,
+					Settled:     true,
 				},
 			},
 		},

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"log/syslog"
 	"sync"
 )
 
@@ -58,7 +57,7 @@ func (h *SdHandler) WithGroup(name string) slog.Handler {
 }
 
 func (h *SdHandler) Handle(c context.Context, r slog.Record) error {
-	line := ([]byte)(fmt.Sprintf("<%d>%s", int(syslogPriority(r.Level)), r.Message))
+	line := ([]byte)(fmt.Sprintf("<%d>%s", syslogPriority(r.Level), r.Message))
 	h.shared.mu.Lock()
 	defer h.shared.mu.Unlock()
 	err := h.handler.Handle(c, r)
@@ -75,25 +74,25 @@ func (h *SdHandler) Handle(c context.Context, r slog.Record) error {
 	return err
 }
 
-func syslogPriority(level slog.Level) syslog.Priority {
+func syslogPriority(level slog.Level) int {
 	switch level {
 	case slog.LevelDebug:
-		return syslog.LOG_DEBUG
+		return SYSLOG_DEBUG
 	case slog.LevelInfo:
-		return syslog.LOG_INFO
+		return SYSLOG_INFO
 	case slog.LevelWarn:
-		return syslog.LOG_WARNING
+		return SYSLOG_WARNING
 	case slog.LevelError:
-		return syslog.LOG_ERR
+		return SYSLOG_ERR
 	}
 	if level < slog.LevelInfo {
-		return syslog.LOG_DEBUG
+		return SYSLOG_DEBUG
 	}
 	if level < slog.LevelWarn {
-		return syslog.LOG_NOTICE
+		return SYSLOG_NOTICE
 	}
 	if level < slog.LevelError {
-		return syslog.LOG_ERR
+		return SYSLOG_ERR
 	}
-	return syslog.LOG_CRIT
+	return SYSLOG_CRIT
 }

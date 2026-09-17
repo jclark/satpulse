@@ -6,13 +6,13 @@ const (
 
 // TimTP is TIM-TP (0x02 0x00) - time pulse information (24 bytes)
 type TimTP struct {
-	RunTime  uint32  // ms since boot/reset
-	QErr     float32 // s, quantization error of next time pulse
-	TOW      float64 // s, time of week of next time pulse
-	Wn       uint16  // week number of next time pulse
-	RefTime  TimTPRefTime
-	UTCValid TimTPUTCValid
-	_        uint32 // reserved
+	RunTime  uint32        `json:"runTime"` // ms since boot/reset
+	QErr     float32       `json:"qErr"`    // s, quantization error of next time pulse
+	TOW      float64       `json:"tow"`     // s, time of week of next time pulse
+	Wn       uint16        `json:"wn"`      // week number of next time pulse
+	RefTime  TimTPRefTime  `json:"refTime"`
+	UTCValid TimTPUTCValid `json:"utcValid"`
+	_        uint32        // reserved
 }
 
 func (m *TimTP) ID() MsgID                    { return TimTPID }

@@ -90,7 +90,7 @@ func SolveDiscreteLyapunov2x2(phi11, phi12, phi21, phi22, q00, q01, q10, q11 flo
 	}
 
 	// Forward elimination with partial pivoting
-	for col := 0; col < 4; col++ {
+	for col := range 4 {
 		// Find pivot
 		maxRow := col
 		maxVal := math.Abs(m[col][col])
@@ -222,4 +222,3 @@ func DriftInternalToUser(omegaN, zeta, sigmaDrift float64) (driftTau, driftSigma
 	}
 	return driftTau, driftSigmaNs, driftZeta
 }
-

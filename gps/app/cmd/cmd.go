@@ -8,7 +8,19 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+
+	"github.com/jclark/satpulse/gps/gpsreg"
 )
+
+// ResolveVendors returns the vendor list in effect: the explicitly
+// specified vendor if any, else the SATPULSE_VENDORS declaration, else
+// nil. A non-nil error (a malformed declaration) is fatal at startup.
+func ResolveVendors(vendor gpsreg.Vendor) ([]gpsreg.Vendor, error) {
+	if vendor != 0 {
+		return []gpsreg.Vendor{vendor}, nil
+	}
+	return gpsreg.EnvVendors()
+}
 
 func ErrPrintln(progName string, arg any) {
 	fmt.Fprintln(os.Stderr, progName+":", arg)

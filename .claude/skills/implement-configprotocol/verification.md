@@ -2,8 +2,9 @@
 
 Verification climbs four rungs. Each rung catches what the one below
 cannot; the top rung (gpshwtest) caught the only two real
-post-implementation bugs in the CASIC work, both invisible to the
-rungs below because they encode the implementor's own assumptions.
+post-implementation bugs in the CASIC work and all three in the
+Allystar work, each invisible to the rungs below because they encode
+the implementor's own assumptions.
 
 ## 1. Offline tests through the real path
 
@@ -62,6 +63,12 @@ Rules learned:
   ACKed but silently ignored yields dirty, non-reproducible traces. (V6
   CASIC --reload is exactly this trap - ACKed, no effect.)
 - One scenario per option area keeps a failing replay localized.
+- Enumerating the cmd/<area> scenarios against the property model is a
+  cheap SCOPE AUDIT: planning the Allystar replay areas exposed that
+  --min-elev had never been implemented despite its carrier being
+  present and verified. Traces must be recaptured whenever a fix
+  changes the configurator's wire output - byte-exact comparison makes
+  stale traces fail loudly, which is the point.
 
 ## 3. gpshwtest characterization
 
@@ -72,6 +79,15 @@ Contract: FAILURES are tool-guarantee violations only; receiver
 limitations are data; runs must be run-to-run identical; receivers are
 left as found. Process:
 
+- The characterization starting state is chosen, documented, and
+  scripted (gpshwtest/GOAL.md ground rule): pick a state the tool's
+  own requests can reproduce - semantic message output cannot be
+  reconstructed from observation, so an arbitrary as-found stream
+  reports an honest restore failure - document it in the HW note, and
+  provide setup/<receiver>.sh establishing it from factory defaults.
+  The starting state is a characterization precondition, distinct
+  from the receiver's real as-found configuration, which is restored
+  after the campaign.
 - Run until clean, then commit the baseline
   (gpshwtest/baselines/<identity>.json) and a per-receiver note
   (gpshwtest/HW/<receiver>.md) describing limitations relative to the
@@ -83,9 +99,52 @@ left as found. Process:
   achieved signal set; the save/speed ordering). It also caught a
   readback rounding bug that masqueraded as a receiver limitation -
   when a "limitation" looks odd, check our own conversion first.
+  All three Allystar finds were real too: silicon signal coupling
+  that made syntax-equivalent requests achieve different sets; a
+  complete RTCM request silencing broadcast-ephemeris output the
+  option could not re-enable; and an erratic PPS disable. A finding
+  being real does not make the reflexive fix right: all three first
+  fixes were later reversed or reworked by owner rulings (the
+  identity-plan intersection, the leave-ephemeris-alone rule, the
+  post-set verify readback - see rulings.md). Before fixing a find,
+  re-read rulings.md and SEMANTICS.md; prefer the fix that reports
+  honestly over one that compensates for the receiver.
 - Disruptive coverage (--disruptive: speed, NVM persistence) is
   required coverage too, gated; it must include recovery (rediscover
-  a receiver whose speed changed; restore sane NVM).
+  a receiver whose speed changed; restore sane NVM). It earns its
+  cost: the erratic Allystar PPS-disable defect appeared ONLY under
+  disruptive runs.
+  A disruptive sweep's restore obligations include the NVM files
+  themselves, not just the running configuration: save probes write
+  the boot configuration, and the sweep's recovery does not return it
+  to its pre-run content. Capture the as-found NVM state before the
+  sweep and verify it after, using the receiver's own configuration
+  dump as the oracle (Septentrio: lstConfigFile Boot, restored with
+  exeCopyConfigFile RxDefault,Boot on a factory-default install).
+- A characterization may legitimately never be failure-free when the
+  receiver itself is erratic (byte-identical writes, differing
+  outcomes). Commit the clean non-disruptive baseline and record the
+  receiver defect in the HW note instead of chasing green.
+- A shared-CLI vocabulary gap - a restore the flags cannot express (a
+  falling PPS polarity no flag names; out-of-group output before its
+  CLI exposure lands) - also makes runs fail honestly until the
+  vocabulary issue closes, and a --disruptive run's saves can PERSIST
+  the unrepresentable state into NVM. Where the shipped configuration
+  is the factory state, factory reset is the recovery. File the gap
+  as an issue, record it in the HW note, and do not chase green.
+- Baselines are per-UNIT, not per-model: a same-model replacement
+  unit can differ in factory state (one HD9510's factory PPS polarity
+  is falling, its batch replacement's rising) and in HW/SW hashes.
+  When a bench unit is swapped or replaced, recapture its baseline
+  and retire the stale one - a baseline matching no attached unit is
+  standing debt.
+- gpshwtest reads --json, which marshals per-field; the human text
+  renderer gates whole sections on COMPLETE property sets
+  (gpsprot.GetTimePulse wants all five time-pulse properties), so one
+  absent property can blank a --show-config section that JSON still
+  shows - and the ladder never sees it. Eyeball the text --show-config
+  once per receiver, and report fixed behaviors as constants rather
+  than absences (see protocol-questions.md).
 
 ## 4. Observation, not enablement
 
@@ -99,12 +158,29 @@ protocol's own schedules (GPS subframe data: 12.5 min).
 
 Before claiming verification, state what observation would differ if
 the claim were false; if nothing would, the test discriminates nothing
-(see rulings.md, "Evidence must discriminate"). Report results
+(see rulings.md, "Evidence must discriminate"). Be careful about
+unsubstantiated premature generalizations, especially of negative
+findings: an experiment establishes its result under the conditions it
+ran in, not universally. (Incident: "exeSBFOnce never delivers to the
+issuing connection" was observed with the block enabled on no stream
+and universalized; with the block enabled on a stream it delivers in
+milliseconds, and a design had meanwhile been built on the general
+claim.) Record the conditions a negative was observed under, and vary
+the plausible state dimensions before a negative becomes load-bearing. Report results
 faithfully: failed runs with output, skipped checks as skipped, weak
-oracles as weak. Restore receivers after every hardware session and
+oracles as weak. A register readback is not physical behavior: without
+instrumentation on the PPS pin, every time-pulse finding is register
+semantics, and wording like "disables the pulse" overclaims what was
+seen (owner correction from the Allystar work) - write "the readback
+shows duty 0" and say the pin was not observed. gpshwtest can verify
+the pulse electrically through a PHC pin (--phc, needs root and
+wiring) when the setup allows. Restore receivers after every hardware session and
 verify the restoration (sample the line; check the state read back).
 The as-found state is not always reachable through the property
 interface - an auto/default mode can alias an explicit set, and writing
 a value can couple in others (CASIC V6 NAVBAND); when restore cannot
 reproduce the initial readback, record that rather than claiming a clean
-restore.
+restore. As-found can also be a nonzero shipped baseline (one Allystar
+unit ships emitting RTCM MSM7 plus ephemeris): restore means back to
+as-found, never "back to defaults" - do not restore a shipped
+configuration away.

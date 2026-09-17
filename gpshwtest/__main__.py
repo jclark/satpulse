@@ -18,7 +18,6 @@ import json
 import shutil
 import subprocess
 import sys
-import time
 import tomllib
 from pathlib import Path
 from typing import Any
@@ -26,7 +25,7 @@ from typing import Any
 from analyze import DISRUPTIVE_KEYS, analyze_run, load_steps
 from characterize import to_json
 from model import emissions, port_has_serial_speed
-from probes import PROPS, RESET_SETTLE, ProbeRun
+from probes import PROPS, ProbeRun
 from tool import Invocation, Tool, ToolFailure
 
 
@@ -86,8 +85,8 @@ def main() -> int:
     else:
         status = 0
         try:
-            drive(tool, resolve_phc(args), args.sudo, args.disruptive,
-                  args.rtcm_fixed_pos_ecef)
+            drive(tool, resolve_phc(args), connection_device(args), args.sudo,
+                  args.disruptive, args.rtcm_fixed_pos_ecef)
         except ToolFailure as e:
             print(f"FAILURE: {e}", file=sys.stderr)
             status = 2
@@ -114,6 +113,27 @@ def conn_args(args: argparse.Namespace) -> list[str]:
     if args.device_speed:
         conn += ["-s", str(args.device_speed)]
     return conn
+
+
+def connection_device(args: argparse.Namespace) -> str | None:
+    """Return the serial device when it is available outside gps config.
+
+    A config used by a service instance can omit serial.device and receive it
+    on satpulsed's command line; gpshwtest cannot infer that external value and
+    simply skips optional serial-PPS discovery in that case.
+    """
+    if args.serial_device:
+        return str(args.serial_device)
+    if not args.config_file:
+        return None
+    try:
+        with open(args.config_file, "rb") as f:
+            serial = tomllib.load(f).get("serial")
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    if isinstance(serial, dict) and isinstance(serial.get("device"), str):
+        return str(serial["device"])
+    return None
 
 
 def resolve_phc(args: argparse.Namespace) -> tuple[str, int, int] | None:
@@ -195,19 +215,14 @@ def restore_from(tool: Tool, crashed: Path) -> None:
         pr.session_speed_restore(as_found_speed)
 
 
-def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
-          disruptive: bool, rtcm_fixed_pos_ecef: str) -> None:
+def drive(tool: Tool, phc: tuple[str, int, int] | None, serial_device: str | None,
+          use_sudo: bool, disruptive: bool, rtcm_fixed_pos_ecef: str) -> None:
     """Execute the probe sequence, recording every step. No verdicts here:
     the records are analyzed offline afterwards (also on a live run)."""
     pr = ProbeRun(tool)
-    ident = identify_receiver(tool, pr, setup=disruptive)
+    ident = identify_receiver(tool, pr)
     if ident is None:
         return
-    if disruptive:
-        start_from_factory_defaults(tool, pr)
-        ident = identify_receiver(tool, pr, setup=False)
-        if ident is None:
-            return
     receiver = ident.out.get("receiver", {})
     supports = ident.out.get("supports") or []
     print(f"receiver: {receiver.get('vendor')} {receiver.get('hardware')} "
@@ -222,17 +237,29 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
     base = None
     done = False
     try:
+        serial_pps = infer_serial_pps(tool, serial_device)
+        # Observe the production-style enable/disable operation from the
+        # as-found state. Some receivers' pulse engines can be wedged by the
+        # artificial scalar quantization sweep even though later register
+        # writes still ACK and read back, so that stress state must not poison
+        # this independent contract check.
+        checked_phc = phc if phc is not None and use_sudo and sudo_ok() else None
+        if checked_phc is not None:
+            print(f"checking physical time pulse on {checked_phc[0]} "
+                  f"pin {checked_phc[1]}", file=sys.stderr)
+        if serial_pps is not None:
+            print(f"checking physical time pulse on {serial_pps[0]} "
+                  f"{serial_pps[1].upper()}", file=sys.stderr)
+        if checked_phc is not None or serial_pps is not None:
+            pr.probe_pulse_physical(initial, checked_phc, True, serial_pps)
+        else:
+            print("skipping physical time pulse checks (no usable PHC or inferred "
+                  "serial PPS wiring)", file=sys.stderr)
         for p in PROPS:
             print(f"probing {p.name}", file=sys.stderr)
             pr.probe_scalar(p, initial)
         print("probing positioning mode", file=sys.stderr)
         pr.probe_modes(initial)
-        if phc is not None and use_sudo and sudo_ok():
-            print(f"checking physical time pulse on {phc[0]} pin {phc[1]}", file=sys.stderr)
-            pr.probe_pulse_physical(initial, phc, True)
-        else:
-            print("skipping physical time pulse checks (need --sudo, passwordless "
-                  "sudo -n, and PHC wiring)", file=sys.stderr)
         supported = receiver.get("supportedGNSS")
         if not supported:
             # The backend deduced no supported set (empty on the UM980); the
@@ -247,7 +274,7 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
         # that can wedge the session come after everything else.
         print("probing message output", file=sys.stderr)
         fixed = rtcm_fixed_pos_ecef if "fixedPos" in supports else None
-        base = pr.probe_messages(initial, fixed)
+        base = pr.probe_messages(initial, fixed, receiver)
         print("probing reload", file=sys.stderr)
         # Serial links get speed rediscovery after each reload, since NVM
         # may hold a different baud rate. Native USB has no baud rate.
@@ -274,33 +301,18 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, use_sudo: bool,
             pr.session_speed_restore(as_found_speed)
 
 
-def identify_receiver(tool: Tool, pr: ProbeRun, setup: bool) -> Invocation | None:
-    name = "setup-show-receiver" if setup else "show-receiver"
+def identify_receiver(tool: Tool, pr: ProbeRun) -> Invocation | None:
     intent = {"op": "identify"}
-    if setup:
-        intent["role"] = "setup"
-    ident = tool.gps(name, ["--show-receiver"], intent)
+    ident = tool.gps("show-receiver", ["--show-receiver"], intent)
     if ident.error is not None:
         # satpulsetool does not scan baud rates, so a UART resting at the
         # wrong speed (a crashed run, another program) looks like a dead
         # receiver. Rediscover the speed and identify again.
         if pr.rediscover_speed() is not None:
-            ident = tool.gps(name, ["--show-receiver"], intent)
+            ident = tool.gps("show-receiver", ["--show-receiver"], intent)
         if ident.error is not None:
             return None
     return ident
-
-
-def start_from_factory_defaults(tool: Tool, pr: ProbeRun) -> None:
-    """Put a disruptive run into a known starting state before probing."""
-    print("resetting receiver to factory defaults", file=sys.stderr)
-    tool.gps("setup-factory-reset", ["--factory-reset"],
-             {"op": "factory-reset", "role": "setup"})
-    time.sleep(RESET_SETTLE)
-    pr.rediscover_speed()
-    tool.gps("setup-reset", ["--reset"], {"op": "reset", "role": "setup"})
-    time.sleep(RESET_SETTLE)
-    pr.rediscover_speed()
 
 
 def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
@@ -314,6 +326,27 @@ def check_show_port(tool: Tool, pr: ProbeRun) -> dict[str, Any]:
     if "-s" not in tool.conn and port_has_serial_speed(cfg):
         tool.set_speed(baud)
     return cfg
+
+
+def infer_serial_pps(tool: Tool, device: str | None) -> tuple[str, str] | None:
+    """Infer CTS wiring for a uniquely identified FT232R adapter.
+
+    This is deliberately a narrow lab convention, not a claim that FT232R
+    adapters are generally wired this way. Ports without matching metadata
+    retain the old behavior: no serial physical check is required.
+    """
+    if device is None:
+        return None
+    info = tool.serial_info(device)
+    if info is None or not info.get("serial"):
+        return None
+    usb = info.get("usb")
+    display = info.get("display")
+    if (not isinstance(usb, dict) or usb.get("vid") != 0x0403
+            or usb.get("pid") != 0x6001 or not isinstance(display, str)
+            or "FT232R" not in display):
+        return None
+    return device, "cts"
 
 
 def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
@@ -332,6 +365,8 @@ def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
         status = 2
     if not a.failures:
         print(f"ok: {a.observation_count} observations, no failures", file=sys.stderr)
+    if a.pulse_checks:
+        print(f"physical PPS checked via {', '.join(a.pulse_checks)}", file=sys.stderr)
     if baseline is None:
         return status
     return max(status, compare_baseline(baseline, text, a.disruptive))
@@ -340,20 +375,46 @@ def report(log_dir: Path, exe: Path, baseline: Path | None) -> int:
 def compare_baseline(baseline: Path, text: str, disruptive: bool) -> int:
     """Compare against the checked-in characterization; differences are
     regressions to investigate. The baseline holds the full characterization
-    from a disruptive run; a default run is compared with the
-    disruptive-only entries stripped."""
-    want = baseline.read_text()
+    from a disruptive run; a default run is compared with the disruptive-only
+    entries stripped.
+
+    Defect entries are unstable by nature - a receiver's ACK-without-apply
+    incidence drifts between sessions - so they are compared by content
+    subset rather than exactly: a defect property absent from the run does not
+    diff (drift down is allowed), and neither does a run whose observations
+    are all recorded in the baseline. What diffs is novel receiver behavior -
+    a defect property the baseline never recorded, or a stuck value or request
+    shape the baseline's entry for that property does not contain. The rest of
+    the characterization, the stable core, must match exactly."""
+    want_doc = json.loads(baseline.read_text())
+    run_doc = json.loads(text)
     if not disruptive:
-        doc = json.loads(want)
         for k in DISRUPTIVE_KEYS:
-            doc.get("limitations", {}).pop(k, None)
-        want = to_json(doc)
-    if want == text:
+            want_doc.get("limitations", {}).pop(k, None)
+    want_defects = want_doc.pop("defects", {})
+    run_defects = run_doc.pop("defects", {})
+    new_defects = sorted(set(run_defects) - set(want_defects))
+    novel = []
+    for p in sorted(set(run_defects) & set(want_defects)):
+        want_obs = want_defects[p].get("acceptedButNotApplied", [])
+        extra = [o for o in run_defects[p].get("acceptedButNotApplied", [])
+                 if o not in want_obs]
+        if extra:
+            novel.append((p, extra))
+    want, core = to_json(want_doc), to_json(run_doc)
+    if want == core and not new_defects and not novel:
         print(f"matches baseline {baseline}", file=sys.stderr)
         return 0
-    sys.stderr.writelines(difflib.unified_diff(
-        want.splitlines(keepends=True), text.splitlines(keepends=True),
-        fromfile=str(baseline), tofile="this run"))
+    if want != core:
+        sys.stderr.writelines(difflib.unified_diff(
+            want.splitlines(keepends=True), core.splitlines(keepends=True),
+            fromfile=str(baseline), tofile="this run"))
+    for p in new_defects:
+        print(f"new receiver defect not in baseline: {p}: "
+              f"{json.dumps(run_defects[p], sort_keys=True)}", file=sys.stderr)
+    for p, extra in novel:
+        print(f"receiver defect {p} has observations not in baseline: "
+              f"{json.dumps(extra, sort_keys=True)}", file=sys.stderr)
     print("characterization differs from baseline", file=sys.stderr)
     return 1
 

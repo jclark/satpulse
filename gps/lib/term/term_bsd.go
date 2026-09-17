@@ -4,11 +4,17 @@ package term
 
 import (
 	"fmt"
+	"os"
+	"time"
 
 	"golang.org/x/sys/unix"
 )
 
-type serialICounter struct{}
+type serialErrorState struct{}
+
+// hardwareCflag holds the c_cflag bits that program the UART: word size,
+// stop bits, parity and RTS/CTS. The speed is held only in Ispeed and Ospeed.
+const hardwareCflag = unix.CSIZE | unix.CSTOPB | unix.PARENB | unix.PARODD | unix.CRTSCTS
 
 func Speed(speed int) AttrSetter {
 	b, ok := speedToB(speed)
@@ -30,22 +36,52 @@ func (attr *Attr) speed() int {
 
 // readError is a stub on BSD -- there is no way to detect serial errors
 // through the kernel, so Read never returns *Error on these platforms.
-func (t *Term) readError() *Error { return nil }
+func (t *unixTerm) readError() *Error { return nil }
 
-func (t *Term) Flush() error {
+func (t *unixTerm) Flush() error {
 	return t.wrapErr(unix.IoctlSetPointerInt(t.fd, unix.TIOCFLUSH, 0), "ioctl(TIOCFLUSH)")
 }
 
-func (t *Term) setAttrNow(attr *unix.Termios) error {
+func (t *unixTerm) setAttrNow(attr *unix.Termios) error {
 	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TIOCSETA, attr), "ioctl(TIOCSETA)")
 }
 
-func (t *Term) setAttrDrain(attr *unix.Termios) error {
-	return t.wrapErr(unix.IoctlSetTermios(t.fd, unix.TIOCSETAW, attr), "ioctl(TIOCSETAW)")
+// Drain blocks until all pending output has been transmitted. The ioctl
+// blocks for the transmit time of the buffered output, and the Go
+// runtime's preemption and timer signals interrupt blocking syscalls
+// routinely, so EINTR here is runtime noise, not an event: retry.
+func (t *unixTerm) Drain() error {
+	for {
+		err := unix.IoctlSetInt(t.fd, unix.TIOCDRAIN, 0)
+		if err != unix.EINTR {
+			return t.wrapErr(err, "ioctl(TIOCDRAIN)")
+		}
+	}
 }
 
-func (t *Term) getAttr() (tp *unix.Termios, err error) {
+func (t *unixTerm) getAttr() (tp *unix.Termios, err error) {
 	tp, err = unix.IoctlGetTermios(t.fd, unix.TIOCGETA)
 	err = t.wrapErr(err, "ioctl(TIOCGETA)")
 	return
 }
+
+// checkNotExclusive is a no-op on BSD: there is no TIOCGEXCL, so exclusive mode
+// can be set but not queried.
+func (t *unixTerm) checkNotExclusive() error { return nil }
+
+var errFlockNotSupported error = unix.ENOTSUP
+
+// OpenFallback opens supported non-TTY devices using OS readiness waiting.
+func OpenFallback(path string, timeout time.Duration) (*os.File, *File, DevKind, error) {
+	return openFallback(path, timeout, nil, openSelectFIFO)
+}
+
+func openSelectFIFO(path string, timeout time.Duration) (*os.File, *File, DevKind, error) {
+	f, err := openFile(path, unix.O_RDWR|unix.O_CLOEXEC|unix.O_NONBLOCK, timeout)
+	if err != nil {
+		return nil, nil, DevUnknown, err
+	}
+	return nil, f, DevFIFO, nil
+}
+
+func (t *unixTerm) devWaitFrames(Attr) (int, int) { return 0, 0 }

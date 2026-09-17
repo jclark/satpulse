@@ -8,6 +8,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -27,7 +28,8 @@ var update = flag.Bool("update", false, "update golden test data files")
 // packetCmpFunc compares actual and expected packets for a specific protocol.
 // Returns (equal, updatable): equal means packets match;
 // updatable means the mismatch is safe to auto-update in golden files.
-type packetCmpFunc func(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool)
+// Each comparator identifies messages in its own vendor's protocol.
+type packetCmpFunc func(t *testing.T, actual []byte, expected gpsio.PacketLogEntry) (bool, bool)
 
 func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 	path := filepath.Join("testdata", name+".jsonl")
@@ -84,12 +86,8 @@ func testReplayFile(t *testing.T, name string, packetCmp packetCmpFunc) {
 		if r.structural {
 			continue
 		}
-		for idx, pkt := range r.updates {
-			allUpdates[idx] = pkt
-		}
-		for idx, pkt := range r.inputUpdates {
-			allInputUpdates[idx] = pkt
-		}
+		maps.Copy(allUpdates, r.updates)
+		maps.Copy(allInputUpdates, r.inputUpdates)
 	}
 	if len(allUpdates) == 0 && len(allInputUpdates) == 0 {
 		return
@@ -228,14 +226,17 @@ func newReplayer(t *testing.T, test *replayTest, comparePackets packetCmpFunc) (
 		return nil, err
 	}
 
-	target, err := createConfigTarget(v)
-	if err != nil {
-		return nil, err
-	}
+	target := createConfigTarget(v)
 
-	// Create packet processors like gpscfg does
-	packetProcs := gpsreg.CreatePacketProcessors(v.vendor)
-	configProts := gpsreg.CreateConfigProtocols(v.vendor)
+	// Create packet processors like gpscfg does. The vendor list comes
+	// from the flags alone: replay must stay hermetic, so the
+	// environment declaration is deliberately not consulted.
+	var vendors []gpsreg.Vendor
+	if v.vendor != 0 {
+		vendors = []gpsreg.Vendor{v.vendor}
+	}
+	packetProcs := gpsreg.CreatePacketProcessors(vendors)
+	configProts := gpsreg.CreateConfigProtocols(vendors)
 
 	// Build timeline of all packet timestamps
 	timeline := make([]time.Time, 0, len(test.inPackets)+len(test.outPackets))
@@ -313,14 +314,15 @@ func (r *replayer) run() {
 	// Send probe packets for all protocols
 	probesSent := 0
 	for _, prot := range r.configProts {
-		probePacket := prot.ProbePacket()
-
-		// Verify probe packet matches expected output
-		if r.outIdx < len(r.test.outPackets) {
-			expected := r.test.outPackets[r.outIdx]
-			if string(probePacket) == expected.Data() {
-				r.outIdx++
-				probesSent++
+		probePackets, _ := prot.ProbePackets()
+		for _, probePacket := range probePackets {
+			// Verify probe packet matches expected output
+			if r.outIdx < len(r.test.outPackets) {
+				expected := r.test.outPackets[r.outIdx]
+				if string(probePacket) == expected.Data() {
+					r.outIdx++
+					probesSent++
+				}
 			}
 		}
 	}
@@ -373,12 +375,7 @@ func (r *replayer) run() {
 			}
 
 			expected := r.test.outPackets[r.outIdx]
-			// Extract message ID from packet for proper comparison
-			msgID := ""
-			if msg, err := ubxbin.ParseMsg(string(action.Packet)); err == nil {
-				msgID = msg.ID().String()
-			}
-			eq, updatable := r.packetCmp(r.t, msgID, action.Packet, expected)
+			eq, updatable := r.packetCmp(r.t, action.Packet, expected)
 			if *update {
 				if keys := cfgValgetRequestKeys(action.Packet); len(keys) != 0 {
 					r.pendingValget = append(r.pendingValget, valgetResponsePatch{keys: keys})

@@ -54,6 +54,9 @@ The companion program **satpulsetool(1)** supports the use of **satpulsed**; in 
 **SATPULSE_CONFIG_FILE**
 : Default configuration file path if **\-f** option is not specified.
 
+**SATPULSE_VENDORS**
+: The possible vendors of the connected GPS receiver, as a comma-separated list of vendor names (the same names accepted by the `[gps]` `vendor` key), or `all` for any vendor. It can be overridden by the `[gps]` `vendor` key.
+
 # FILES
 
 **/etc/satpulse.toml**

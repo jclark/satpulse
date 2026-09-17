@@ -112,7 +112,7 @@ in frontend).
 ### Frontend: path-based field mapping
 
 The gpsprot types are defined in `@satpulse/gps` (`gps/ts/`), which the web
-workspace depends on via `file:../gps/ts` (see `web-toolchain.md`). Frontend
+workspace depends on via `file:../gps/ts` (see `archive/web-toolchain.md`). Frontend
 code imports types from `@satpulse/gps/gpsprot`.
 
 The gpsprot types have nested structures (`Point3D`, `Accuracy`, `DOP`,

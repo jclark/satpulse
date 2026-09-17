@@ -1,0 +1,21 @@
+{
+  "name": "@satpulse/workbench",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "comment": "Component library consumed by entry packages (e.g. @satpulse/workbench-http) that install a transport; it has no standalone app.",
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/dseg7-classic": "^5.2.5",
+    "@satpulse/gps": "file:../../../gps/ts",
+    "preact": "^10.25.0"
+  },
+  "devDependencies": {
+    "@preact/preset-vite": "^2.10.5",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,0 +1,27 @@
+/* Collapsible sidebar navigation sections (see _includes/nav_list) */
+.nav__list .nav__details > summary {
+    cursor: pointer;
+    list-style: none;
+    display: flex;
+    align-items: center;
+}
+
+/* Hide the default disclosure marker across browsers */
+.nav__list .nav__details > summary::-webkit-details-marker {
+    display: none;
+}
+
+/* Custom disclosure triangle that rotates when open */
+.nav__list .nav__details > summary::before {
+    content: "";
+    flex: 0 0 auto;
+    margin-right: 0.5em;
+    border-style: solid;
+    border-width: 0.3em 0 0.3em 0.45em;
+    border-color: transparent transparent transparent currentColor;
+    transition: transform 0.15s ease;
+}
+
+.nav__list .nav__details[open] > summary::before {
+    transform: rotate(90deg);
+}

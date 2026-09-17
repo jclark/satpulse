@@ -10,6 +10,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
@@ -36,7 +37,7 @@ func TestDecodeUBX(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to serialize: %v", err)
 	}
-	pf, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -74,7 +75,7 @@ func TestDecodeUBXCfgValget(t *testing.T) {
 		t.Fatalf("failed to serialize: %v", err)
 	}
 	// out=false means response, which has items (key-value pairs)
-	_, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	_, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -102,7 +103,7 @@ func TestDecodeUBXCfgValgetRequest(t *testing.T) {
 		t.Fatalf("failed to serialize: %v", err)
 	}
 	// out=true means request, which has keys only
-	_, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, true)
+	_, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, true)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -116,7 +117,44 @@ func TestDecodeUBXUnknown(t *testing.T) {
 	// Construct a minimal valid UBX packet with unknown class/id
 	// Sync: B5 62, Class: FF, ID: FF, Length: 0, Checksum: FE F9
 	packet := []byte{0xB5, 0x62, 0xFF, 0xFF, 0x00, 0x00, 0xFE, 0xF9}
-	_, _, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	_, _, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
+	if err != ErrUnknownMsg {
+		t.Errorf("expected ErrUnknownMsg, got %v", err)
+	}
+}
+
+func TestDecodeSBF(t *testing.T) {
+	packet, err := sbfbin.Serialize(&sbfbin.Block{
+		TimeStamp: sbfbin.TimeStamp{TOW: 123456000, WNc: 2376},
+		Params:    &sbfbin.EndOfMeas{},
+	})
+	if err != nil {
+		t.Fatalf("failed to serialize: %v", err)
+	}
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Tag() != gpsreg.TagSBF {
+		t.Errorf("expected tag %s, got %s", gpsreg.TagSBF, pf.Tag())
+	}
+	if _, ok := result.Payload.(*sbfbin.EndOfMeas); !ok {
+		t.Fatalf("expected *sbfbin.EndOfMeas, got %T", result.Payload)
+	}
+	if result.Header != (sbfbin.TimeStamp{TOW: 123456000, WNc: 2376}) {
+		t.Fatalf("Header = %#v", result.Header)
+	}
+}
+
+func TestDecodeSBFUnknown(t *testing.T) {
+	packet, err := sbfbin.Serialize(&sbfbin.Block{
+		TimeStamp: sbfbin.TimeStamp{TOW: 1, WNc: 2},
+		Params:    &sbfbin.UnknownParams{Number: 7000, Payload: "\x01\x02"},
+	})
+	if err != nil {
+		t.Fatalf("failed to serialize: %v", err)
+	}
+	_, _, err = Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != ErrUnknownMsg {
 		t.Errorf("expected ErrUnknownMsg, got %v", err)
 	}
@@ -129,7 +167,7 @@ func TestDecodeUNCB(t *testing.T) {
 			"80df3420fcffffffa0b259fe2000e803150000000000000069666600000000" +
 			"2bbcd2100100000000acecb02c000000000000000091a800a5",
 	)
-	pf, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -146,13 +184,13 @@ func TestDecodeUNCB(t *testing.T) {
 
 func TestDecodeErrInvalidPacket(t *testing.T) {
 	// Random bytes that don't match any format
-	_, _, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), []byte("random data"), false)
+	_, _, err := Decode(gpsreg.CreatePacketFormats(nil), []byte("random data"), false)
 	if err != ErrInvalidPacket {
 		t.Errorf("expected ErrInvalidPacket for random data, got %v", err)
 	}
 	// Starts like UBX but too short / invalid structure
 	packet := []byte{0xB5, 0x62, 0x01, 0x20, 0x10, 0x00} // says 16 bytes payload but none present
-	_, _, err = Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	_, _, err = Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != ErrInvalidPacket {
 		t.Errorf("expected ErrInvalidPacket for truncated UBX, got %v", err)
 	}
@@ -174,7 +212,7 @@ func TestDecodeChecksumError(t *testing.T) {
 	// Corrupt last byte (part of checksum)
 	packet[len(packet)-1] ^= 0xFF
 
-	pf, _, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	pf, _, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if pf == nil {
 		t.Error("expected pf to be returned even on checksum error")
 	}
@@ -189,7 +227,7 @@ func TestDecodeChecksumError(t *testing.T) {
 
 func TestDecodeUnicoreAscii(t *testing.T) {
 	packet := []byte("#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;3,2376,540336000,-4,-27676000,0x03E80020,0x00000015,0,0x00666669,0x2B000000,0x0110D2BC,0x00000000,0x2CB0ECAC,0x00000000,0x00000000*0bbaac1a\r\n")
-	pf, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -213,7 +251,7 @@ func TestDecodeUnicoreAsciiUnknown(t *testing.T) {
 	// Compute CRC32 checksum
 	crc := novmsg.CRC32(packet[1 : len(packet)-1])
 	packet = append(packet, []byte(fmt.Sprintf("%08x\r\n", crc))...)
-	_, _, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	_, _, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != ErrUnknownMsg {
 		t.Errorf("expected ErrUnknownMsg, got %v", err)
 	}
@@ -221,7 +259,7 @@ func TestDecodeUnicoreAsciiUnknown(t *testing.T) {
 
 func TestDecodeNovAtelAscii(t *testing.T) {
 	packet := []byte("#IONUTCA,COM3,0,99.7,FINESTEERING,2382,7850.000,00000000,0000,784;2.514570951461792e-08,2.235174179077148e-08,-1.192092895507813e-07,-1.192092895507813e-07,1.331200000000000e+05,3.276800000000000e+04,-2.621440000000000e+05,4.587520000000000e+05,2382,147456,9.3132257461548000e-10,6.217248938e-15,2441,7,18,18,0*73788199\r\n")
-	pf, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -245,7 +283,7 @@ func makeNMEASentence(payload string) []byte {
 func TestDecodeNMEAPQTM(t *testing.T) {
 	payload := "PQTMPVT,1,31075000,20221225,083737.000,,3,09,18,31.12738291,117.26372910,34.212,5.267,3.212,2.928,0.238,4.346,34.12,2.16,4.38"
 	packet := makeNMEASentence(payload)
-	pf, result, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -261,9 +299,31 @@ func TestDecodeNMEAPQTM(t *testing.T) {
 }
 
 func TestDecodeNMEAUnknown(t *testing.T) {
-	packet := makeNMEASentence("GPGGA,123456.00,,,,,0,00,99.99,,,,,,")
-	_, _, err := Decode(gpsreg.CreatePacketFormats(gpsreg.VendorUnknown), packet, false)
+	// GSV is a valid GNSS-talker sentence that we do not decode.
+	packet := makeNMEASentence("GPGSV,1,1,01,01,40,083,41")
+	_, _, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
 	if err != ErrUnknownMsg {
 		t.Errorf("expected ErrUnknownMsg, got %v", err)
+	}
+}
+
+func TestDecodeNMEAGGA(t *testing.T) {
+	packet := makeNMEASentence("GNGGA,081015.000,4911.69099090,N,00228.79721128,E,2,36,0.34,56.718,M,44.686,M,5.0,9002")
+	pf, result, err := Decode(gpsreg.CreatePacketFormats(nil), packet, false)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if pf.Tag() != gpsreg.TagNMEA {
+		t.Errorf("expected tag %s, got %s", gpsreg.TagNMEA, pf.Tag())
+	}
+	if result.Header != nil {
+		t.Errorf("expected no header, got %v", result.Header)
+	}
+	gga, ok := result.Payload.(nmeamsg.GGAFields)
+	if !ok {
+		t.Fatalf("expected nmeamsg.GGAFields, got %T", result.Payload)
+	}
+	if lat, lon := gga.LatLon(); lat < 49 || lat > 50 || lon < 2 || lon > 3 {
+		t.Errorf("LatLon = (%v, %v), want ~(49.19, 2.48)", lat, lon)
 	}
 }

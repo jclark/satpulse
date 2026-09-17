@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"time"
@@ -45,13 +47,15 @@ func (mc *MsgCommon) tagDesc() TagDesc {
 type ResponsePattern int
 
 const (
-	ResponsePatternNone    ResponsePattern = iota // zero value: no response matching
-	ResponsePatternUnicore                        // "unicore"
+	ResponsePatternNone       ResponsePattern = iota // zero value: no response matching
+	ResponsePatternUnicore                           // "unicore"
+	ResponsePatternSeptentrio                        // "septentrio"
 )
 
 var responsePatternStrings = [...]string{
-	ResponsePatternNone:    "none",
-	ResponsePatternUnicore: "unicore",
+	ResponsePatternNone:       "none",
+	ResponsePatternUnicore:    "unicore",
+	ResponsePatternSeptentrio: "septentrio",
 }
 
 // String returns the string representation of the ResponsePattern.
@@ -188,9 +192,21 @@ type msgFile struct {
 
 // loadedFile tracks a parsed file during the Load tree walk.
 type loadedFile struct {
-	path string // absolute path
+	path string
 	out  int    // DFS out-index (in-index is the slice index)
 	p    Parsed // per-file parsed content with defaults applied
+}
+
+type fileLoader struct {
+	open    func(string) (fs.File, error)
+	resolve func(string, string) (string, error)
+}
+
+var osFileLoader = fileLoader{
+	open: func(name string) (fs.File, error) {
+		return os.Open(name)
+	},
+	resolve: resolveInclude,
 }
 
 func newMsgFile() *msgFile {
@@ -209,7 +225,7 @@ func Load(path string) (*Parsed, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := processFile(mf, "", &files); err != nil {
+		if err := processFile(mf, "", osFileLoader, &files); err != nil {
 			return nil, err
 		}
 	} else {
@@ -217,9 +233,23 @@ func Load(path string) (*Parsed, error) {
 		if err != nil {
 			return nil, err
 		}
-		if err := loadTree(absPath, &files); err != nil {
+		if err := loadTree(absPath, osFileLoader, &files); err != nil {
 			return nil, err
 		}
+	}
+	return mergeFiles(files)
+}
+
+// LoadFS reads and parses a TOML message file from fsys, processing
+// any [[include]] entries relative to the including file.
+func LoadFS(fsys fs.FS, name string) (*Parsed, error) {
+	if !fs.ValidPath(name) {
+		return nil, fmt.Errorf("invalid message file path %q", name)
+	}
+	var files []loadedFile
+	loader := fileLoader{open: fsys.Open, resolve: resolveFSInclude}
+	if err := loadTree(name, loader, &files); err != nil {
+		return nil, err
 	}
 	return mergeFiles(files)
 }
@@ -232,8 +262,8 @@ func loadFile(r io.Reader) (*msgFile, error) {
 	return mf, nil
 }
 
-func loadPath(absPath string) (*msgFile, error) {
-	f, err := os.Open(absPath)
+func loadPath(name string, loader fileLoader) (*msgFile, error) {
+	f, err := loader.open(name)
 	if err != nil {
 		return nil, err
 	}
@@ -241,15 +271,15 @@ func loadPath(absPath string) (*msgFile, error) {
 	return loadFile(f)
 }
 
-func loadTree(absPath string, files *[]loadedFile) error {
-	mf, err := loadPath(absPath)
+func loadTree(name string, loader fileLoader, files *[]loadedFile) error {
+	mf, err := loadPath(name, loader)
 	if err != nil {
 		return err
 	}
-	return processFile(mf, absPath, files)
+	return processFile(mf, name, loader, files)
 }
 
-func processFile(mf *msgFile, path string, files *[]loadedFile) error {
+func processFile(mf *msgFile, name string, loader fileLoader, files *[]loadedFile) error {
 	p := &mf.Parsed
 	// Apply per-file defaults so tags are known for ownership resolution.
 	applyDefaults(p.Line, p.applyLineDefaults)
@@ -262,19 +292,19 @@ func processFile(mf *msgFile, path string, files *[]loadedFile) error {
 	applyDefaults(p.UBXVal, p.applyUBXValDefaults)
 	applyDefaults(p.UBXValPort, p.applyUBXValPortDefaults)
 	idx := len(*files)
-	*files = append(*files, loadedFile{path: path, p: mf.Parsed})
+	*files = append(*files, loadedFile{path: name, p: mf.Parsed})
 	for _, inc := range mf.Include {
 		if inc.Src == "" {
-			return fmt.Errorf("%s: include src must not be empty", formatPath(path))
+			return fmt.Errorf("%s: include src must not be empty", formatPath(name))
 		}
-		incAbs, err := resolveInclude(path, inc.Src)
+		incName, err := loader.resolve(name, inc.Src)
 		if err != nil {
 			return err
 		}
-		if err := checkUnique(incAbs, *files); err != nil {
+		if err := checkUnique(incName, *files); err != nil {
 			return err
 		}
-		if err := loadTree(incAbs, files); err != nil {
+		if err := loadTree(incName, loader, files); err != nil {
 			return err
 		}
 	}
@@ -306,6 +336,14 @@ func resolveInclude(basePath, src string) (string, error) {
 		src = filepath.Join(filepath.Dir(basePath), src)
 	}
 	return filepath.Abs(src)
+}
+
+func resolveFSInclude(base, src string) (string, error) {
+	name := path.Clean(path.Join(path.Dir(base), src))
+	if !fs.ValidPath(name) {
+		return "", fmt.Errorf("%s: invalid include path %q", formatPath(base), src)
+	}
+	return name, nil
 }
 
 // fileTags returns the set of tags defined by a loaded file's messages.

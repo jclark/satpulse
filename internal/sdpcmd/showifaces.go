@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"os"
+	"path"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -123,9 +124,9 @@ func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInf
 	ptpPath := fmt.Sprintf("class/ptp/ptp%d", phcIndex)
 
 	// Check for pins
-	nPins := readSysfsInt(fsys, filepath.Join(ptpPath, "n_programmable_pins"))
+	nPins := readSysfsInt(fsys, path.Join(ptpPath, "n_programmable_pins"))
 	if nPins <= 0 {
-		nPins = readSysfsInt(fsys, filepath.Join(ptpPath, "n_pins"))
+		nPins = readSysfsInt(fsys, path.Join(ptpPath, "n_pins"))
 	}
 	if nPins <= 0 {
 		return nil, nil // No software-defined pins - not an error
@@ -140,8 +141,8 @@ func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInf
 		Name:              ifaceName,
 		ClockIndex:        phcIndex,
 		Pins:              pins,
-		NumExttsChannels:  readSysfsInt(fsys, filepath.Join(ptpPath, "n_external_timestamps")),
-		NumPeroutChannels: readSysfsInt(fsys, filepath.Join(ptpPath, "n_periodic_outputs")),
+		NumExttsChannels:  readSysfsInt(fsys, path.Join(ptpPath, "n_external_timestamps")),
+		NumPeroutChannels: readSysfsInt(fsys, path.Join(ptpPath, "n_periodic_outputs")),
 	}
 
 	// Check for inconsistency
@@ -153,8 +154,8 @@ func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInf
 }
 
 
-func readSysfsInt(fsys fs.FS, path string) int {
-	data, err := fs.ReadFile(fsys, path)
+func readSysfsInt(fsys fs.FS, name string) int {
+	data, err := fs.ReadFile(fsys, name)
 	if err != nil {
 		return 0
 	}
@@ -165,8 +166,8 @@ func readSysfsInt(fsys fs.FS, path string) int {
 	return n
 }
 
-func readHex(path string) (uint32, error) {
-	b, err := os.ReadFile(path)
+func readHex(name string) (uint32, error) {
+	b, err := os.ReadFile(name)
 	if err != nil {
 		return 0, err
 	}
@@ -179,7 +180,7 @@ func readHex(path string) (uint32, error) {
 // readPinNames reads pin names from the pins directory
 func readPinNames(fsys fs.FS, ptpPath string) ([]string, error) {
 	var pins []string
-	pinsDir := filepath.Join(ptpPath, "pins")
+	pinsDir := path.Join(ptpPath, "pins")
 	entries, err := fs.ReadDir(fsys, pinsDir)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {

@@ -50,6 +50,12 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     host, port = args.listen.rsplit(":", 1)
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    # Enlarge the kernel receive buffer (clamped to the OS max) so a brief
+    # stall in the single-threaded recv/write loop -- a GC pause or a disk
+    # flush -- cannot overflow the default buffer and silently drop datagrams,
+    # which would make the lossless-delivery check flaky. macOS defaults this
+    # buffer far smaller than Linux, so the loss only showed up there.
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4 * 1024 * 1024)
     sock.bind((host, int(port)))
     log(f"{iso(time.time())} listening {host}:{port}")
     try:

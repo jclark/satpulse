@@ -38,14 +38,14 @@ export interface SignalInfo {
 export interface SVInfo {
     id: SVID;
     lookAngles?: LookAngles;
-    signals: SignalInfo[];
+    signals?: SignalInfo[];
     used?: boolean;
 }
 
 export interface SatellitesMsg {
     tag?: Tag;
     nativeMsgID?: string;
-    info: SVInfo[];
+    info?: SVInfo[];
     usedValidity?: SatelliteUsedValidity;
 }
 

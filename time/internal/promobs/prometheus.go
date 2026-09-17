@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 )
@@ -697,9 +698,9 @@ func splitCamelWords(s string) []string {
 			upperRunLen = 0
 			continue
 		}
-		upper := 'A' <= c && c <= 'Z'
+		upper := ascii.IsUpper(byte(c))
 		if upper {
-			if upperRunLen == 0 && i > start && s[i-1] >= 'a' && s[i-1] <= 'z' {
+			if upperRunLen == 0 && i > start && ascii.IsLower(s[i-1]) {
 				// Uppercase after lowercase: new word.
 				words = append(words, s[start:i])
 				start = i

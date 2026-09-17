@@ -283,13 +283,6 @@ description = "Query time pulse configuration"
 class = 0x06
 id = 0x03
 
-# Verified CFG-RATE response and ACK on AT632-6T-30
-[[casbin]]
-tag = "get-rate"
-description = "Query navigation rate"
-class = 0x06
-id = 0x04
-
 # Verified CFG-NAVLIMIT response and ACK on AT632-6T-30
 [[casbin]]
 tag = "get-min-elev"

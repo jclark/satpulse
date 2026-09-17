@@ -66,7 +66,7 @@ func HideTestReplayBug(t *testing.T) {
 // ubxPacketsEqual returns (equal, updatable).
 // updatable is true when the mismatch is in CFG-VALSET/CFG-VALGET content
 // and is safe to auto-update in golden files.
-func ubxPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
+func ubxPacketsEqual(t *testing.T, actual []byte, expected gpsio.PacketLogEntry) (bool, bool) {
 	actualStr := string(actual)
 	expectedStr := expected.Data()
 
@@ -75,6 +75,10 @@ func ubxPacketsEqual(t *testing.T, msgID string, actual []byte, expected gpsio.P
 		return true, false
 	}
 
+	msgID := ""
+	if msg, err := ubxbin.ParseMsg(actualStr); err == nil {
+		msgID = msg.ID().String()
+	}
 	// If not, check special cases for messages that might have reordered data
 	switch msgID {
 	case "CFG-VALSET":

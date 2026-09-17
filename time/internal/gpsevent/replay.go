@@ -41,7 +41,7 @@ func (r *Replayer) replayEvent(bytes []byte) error {
 		*r.tPtr = tRead
 	}
 	switch data := event.Data.(type) {
-	case *PulseEdge:
+	case *PHCPulseEdge:
 		r.ctrl.PulseEdge(phcsync.PulseEdge{
 			Timestamp: phctime.Time{
 				T:   data.T,

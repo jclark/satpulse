@@ -81,9 +81,9 @@ func (d *NtripDestination) Connect(ctx context.Context) (net.Conn, error) {
 	return conn, nil
 }
 
-// fatalConnectError wraps a Destination.Connect error that no amount
+// fatalConnectError wraps an endpoint Connect error that no amount
 // of retrying can fix (e.g. a rejected NTRIP password or an invalid
-// mountpoint).  The writer stops rather than reconnecting when it
+// mountpoint).  The stream stops rather than reconnecting when it
 // sees one.  Errors not wrapped this way are treated as transient.
 type fatalConnectError struct{ err error }
 

@@ -15,8 +15,11 @@ import (
 type ConfigProtocol interface {
 	NativeMsgHandler
 
-	// ProbePacket returns a packet to be sent to the GPS receiver for probing.
-	ProbePacket() []byte
+	// ProbePackets returns the ordered write sequence for one logical probe attempt.
+	// The duration is the delay between consecutive writes in that sequence;
+	// no delay is applied after the final write. Every call returns the same
+	// sequence; a retry sends it again.
+	ProbePackets() ([][]byte, time.Duration)
 
 	// ProbeOK returns true when a message has been received indicating the GPS receiver is responding.
 	ProbeOK() bool
@@ -42,6 +45,7 @@ const (
 	ConfigSupportRTCMMSM7
 	ConfigSupportRTCMBaseID
 	ConfigSupportRTCMQZSS
+	ConfigSupportReload
 	ConfigSupportPort
 	ConfigSupportLast = ConfigSupportPort
 	// ConfigSupportFull is every configuration flag set - the support of a
@@ -70,6 +74,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportRTCMMSM7, "rtcmMSM7"},
 	{ConfigSupportRTCMBaseID, "rtcmBaseID"},
 	{ConfigSupportRTCMQZSS, "rtcmQZSS"},
+	{ConfigSupportReload, "reload"},
 	{ConfigSupportPort, "port"},
 }
 
@@ -134,11 +139,11 @@ type Configurator interface {
 
 // ReceiverInfo provides static information about the GPS receiver.
 type ReceiverInfo struct {
-	Vendor         string      `json:"vendor"`        // receiver vendor (e.g., "u-blox")
-	Firmware       string      `json:"firmware"`      // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
-	Hardware       string      `json:"hardware"`      // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
-	SupportedGNSS  GNSSSet     `json:"supportedGNSS"` // supported GNSS constellations
-	VendorSpecific interface{} `json:"-"`             // vendor-specific information, excluded from JSON
+	Vendor         string  `json:"vendor"`        // receiver vendor (e.g., "u-blox")
+	Firmware       string  `json:"firmware"`      // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
+	Hardware       string  `json:"hardware"`      // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
+	SupportedGNSS  GNSSSet `json:"supportedGNSS"` // supported GNSS constellations
+	VendorSpecific any     `json:"-"`             // vendor-specific information, excluded from JSON
 }
 
 // ConfigRequestState represents the current state of a configuration request.

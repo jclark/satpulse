@@ -39,6 +39,32 @@ def check_pull_connected(ctx: common.SmokeContext) -> None:
     assert common.poll(attempt), "daemon did not connect to the pull correction source"
 
 
+def check_pull_uploaded_gga(ctx: common.SmokeContext) -> None:
+    """The fake correction source recorded a post-handshake GGA before streaming."""
+    def attempt() -> bool:
+        with open(ctx.source_log, errors="replace") as f:
+            return "accepted GGA" in f.read()
+
+    assert common.poll(attempt), "pull correction source did not record an NMEA GGA"
+
+
+def check_pull_periodic_gga(ctx: common.SmokeContext, want: int = 2) -> None:
+    """The pull client re-sends GGA on its interval, not just once on connect.
+
+    The fake source logs every post-handshake GGA the client uploads. With a
+    small nmeaSendInterval the daemon must re-send, so at least `want` GGAs are
+    recorded over the connection's lifetime; one-shot-on-connect would record
+    exactly one.
+    """
+    def attempt() -> bool:
+        with open(ctx.source_log, errors="replace") as f:
+            return f.read().count("accepted GGA") >= want
+
+    assert common.poll(attempt), (
+        f"pull correction source recorded fewer than {want} GGA uploads (no periodic re-send)"
+    )
+
+
 def check_pulled_rtcm(ctx: common.SmokeContext) -> int:
     """The pull source's RTCM is written back to the receiver over the serial port.
 
@@ -60,6 +86,35 @@ def check_pulled_rtcm(ctx: common.SmokeContext) -> int:
             f"pulled RTCM does not match source log: captured {n} of {len(want)} packets"
         )
     return len(want)
+
+
+def check_pulled_rtcm_window(ctx: common.SmokeContext, min_packets: int = 5) -> int:
+    """A real str2str caster's RTCM is written back to the receiver over serial.
+
+    Like check_pulled_rtcm, but the correction source is a real RTKLIB str2str
+    Ntrip caster rather than the prompt fakesource.py. A real caster serves only
+    from the daemon's connect point onward, so the daemon writes back a non-empty
+    contiguous window of the source RTCM, not the whole log. The captured serial
+    writes must therefore be a contiguous run within the source -- interop proof
+    that the pull client speaks the real caster's protocol and relays the bytes
+    faithfully. Polls because corrections may still be arriving.
+    """
+    want = [d for (_, _, d) in common.log_packets(ctx.pull_source_log, "RTCM")]
+    assert want, "pull source log has no RTCM packets"
+
+    def attempt() -> list[bytes] | None:
+        got = _pulled(ctx)
+        if len(got) >= min_packets and common.is_contiguous_sublist(want, got):
+            return got
+        return None
+
+    got = common.poll(attempt, interval=0.25)
+    if got is None:
+        n = len(_pulled(ctx))
+        raise AssertionError(
+            f"pulled RTCM is not a contiguous run of the source (captured {n} packets)"
+        )
+    return len(got)
 
 
 def check_udp_pushed_all(ctx: common.SmokeContext) -> int:

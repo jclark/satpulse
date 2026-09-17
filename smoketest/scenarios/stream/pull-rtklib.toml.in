@@ -1,0 +1,10 @@
+# stream.pull interop: the daemon pulls RTCM from a real RTKLIB str2str Ntrip
+# caster (run.py starts it on SATPULSE_TEST_REMOTE_CASTER_PORT) and writes the
+# corrections back to the receiver over the serial port. A pty backs the serial
+# device so the write path exists -- a read-only FIFO cannot carry the writes.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[stream.pull.ntrip]
+address = "127.0.0.1:${SATPULSE_TEST_REMOTE_CASTER_PORT}"
+mountpoint = "RTCM"

@@ -1,0 +1,3 @@
+[[nmea]]
+text = "PUBX,04"
+tag = "poll"

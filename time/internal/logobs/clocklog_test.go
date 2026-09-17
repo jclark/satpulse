@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -116,6 +117,12 @@ func TestClockLogObserver(t *testing.T) {
 }
 
 func TestClockLogObserverReopenLog(t *testing.T) {
+	// Log reopen renames the open log file (the chrony/logrotate idiom),
+	// which Windows forbids while a handle is open. The reopen path is
+	// driven by SIGHUP, never delivered on Windows, so it is dormant there.
+	if runtime.GOOS == "windows" {
+		t.Skip("log reopen renames an open file, unsupported on Windows")
+	}
 	// Create temp dir for log file
 	tmpDir := t.TempDir()
 	logPath := filepath.Join(tmpDir, "clock.log")

@@ -30,21 +30,21 @@ satpulsetool-gps - configure a GPS receiver
 # DESCRIPTION
 
 The **satpulsetool** **gps** command is used to configure a GPS receiver for use with satpulsed.
-It can also be used to capture packets from the receiver.
 Two kinds of configuration are supported, high-level and low-level;
 they cannot be performed simultaneously.
 
 With high-level configuration, configuration changes are requested with device-independent semantics;
 **satpulsetool** determines the best way to implement the request for the particular GPS receiver.
-High-level configuration is currently supported on two families of GPS receiver:
+High-level configuration is currently supported on three families of GPS receiver:
 u-blox receivers (from the u-blox 6 platform through to the X20 platform);
-Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
+Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960);
+Zhongke Microelectronics receivers using CASIC (such as the ATGM332D and ATGM336H).
 
 With low-level configuration, a *message file* is used.
 A message file is a file in TOML format that defines a collection of named messages.
 SatPulse provides a library of message files, which can be used to configure a wide variety of different GPS receivers.
 
-If no options other than connection options and `--packet-log` are specified,
+If no options other than connection options, `--packet-log` and `--capture` are specified,
 then it will detect the receiver and show information about it,
 as if the `--show-receiver` option had been specified.
 
@@ -100,8 +100,7 @@ The object can have the following fields, omitted when there is nothing to repor
 `packetFormats` (the packet formats detected),
 `config` (the configuration properties that were set or queried),
 and `error` (the error message when configuration fails; the exit code is unaffected).
-Applies to high-level configuration and the show options; cannot be combined with **\-\-msg\-file**
-or with passive packet capture.
+Applies to high-level configuration and the show options; cannot be combined with **\-\-msg\-file**.
 
 The following options control which satellites and signals the receiver uses.
 
@@ -340,6 +339,9 @@ The following option configures the receiver's serial port speed.
 
 **\-\-speed** *bps*
 : Configure the GPS receiver's serial speed in bits per second.
+The speed is part of the receiver configuration like any other property:
+combined with **\-\-save** or **\-\-save\-all**, the new speed is what is saved,
+and is the speed the receiver will use after a restart.
 
 The following options control use of the receiver's non-volatile memory.
 
@@ -362,10 +364,10 @@ The following option restricts which configuration protocols are probed. It also
 
 **\-\-vendor** *name*
 : GPS receiver vendor name.
-  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke`, `other`.
+  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke` (or `CASIC`), `other`.
   In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `Septentrio`, `SkyTraq`, `Trimble`.
   Values are case-insensitive.
-  If not specified, no restrictions are applied.
+  If not specified, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, no restrictions are applied.
 
 ## Low-level configuration
 
@@ -418,6 +420,17 @@ Use `0` to capture indefinitely until interrupted.
 With low-level configuration (**\-m**), capture time is added after response waiting is complete.
 Requires **\-\-packet\-log** or **\-\-msg\-file**.
 
+# EXIT STATUS
+
+**0**
+: Success
+
+**1**
+: Error: the connection failed, a high-level configuration request could not be applied, or the receiver rejected a message from the message file
+
+**2**
+: Command-line usage error
+
 # EXAMPLES
 
 Show receiver information using device and speed from the satpulse configuration file:
@@ -444,10 +457,6 @@ Enable only NMEA RMC messages:
 
     satpulsetool gps -d /dev/ttyACM0 -s 19200 -nmea --nmea-out RMC
 
-Passively capture packets for 30 seconds without probing:
-
-    satpulsetool gps -d /dev/ttyUSB0 -s 9600 --packet-log capture.jsonl --capture 30
-
 Probe the receiver, then capture packets for 10 seconds:
 
     satpulsetool gps -d /dev/ttyACM0 -s 9600 --show-receiver --packet-log capture.jsonl --capture 10
@@ -473,6 +482,11 @@ Send an ad-hoc command from stdin using a here document:
     text = "CONFIG PPP ENABLE E6-HAS"
     TOML
 
+# ENVIRONMENT
+
+**SATPULSE_VENDORS**
+: The possible vendors of the connected GPS receiver, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It can be overridden by **\-\-vendor**.
+
 # FILES
 
 `/usr/share/satpulse/gpsmsg`
@@ -480,4 +494,4 @@ Send an ad-hoc command from stdin using a here document:
 
 # SEE ALSO
 
-**satpulsetool(1)**, **satpulsed(8)**
+**satpulsetool(1)**, **satpulsetool-serial(1)**, **satpulsed(8)**

@@ -2,6 +2,7 @@ package nmea
 
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 )
 
@@ -23,6 +24,7 @@ func (f packetFormat) IsBinary() bool {
 const (
 	stateSync gpsprot.ScanState = iota + gpsprot.ScanStateSync
 	stateHadDollar
+	stateHadFirstAlnum
 	stateNormal
 	stateHadStar
 	stateHadChecksum1
@@ -35,13 +37,14 @@ const maxSentenceLength = nmeamsg.SentenceMaxLength
 
 // Next implements the gpsprot.PacketFormat interface for NMEA-like packets.
 // Constraints for acceptable NMEA-like packet (not necessarily completely NMEA compliant)
-// 1. First character is `$` and the packet does not contain any other `$` characters.
-// 2. Terminated with a line terminator (CR/LF or LF)
-// 3. All character before the line terminator must be printable ASCII (0x20-0x7E).
-// 4. Total length of packet does not exceed maxSentenceLength characters (including the line terminator).
-// 5. Immediately before the line terminator there is a `*` and two uppercase hex digits;
-//    this `*` is the only one in the packet.
-// 6. The address field is non-empty, where the address is the substring between `$` and the first comma or `*`.
+//  1. First character is `$` and the packet does not contain any other `$` characters.
+//  2. The first two characters after `$` are ASCII alphanumeric characters.
+//  3. Terminated with CRLF; LF alone is also accepted.
+//  4. All characters before the line terminator must be printable ASCII (0x20-0x7E).
+//  5. Total length including CRLF does not exceed maxSentenceLength characters;
+//     a packet ending in LF alone can be at most maxSentenceLength-1 characters.
+//  6. Immediately before the line terminator there is a `*` and two uppercase hex digits;
+//     this `*` is the only one in the packet.
 func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, packetLen int) gpsprot.ScanState {
 	b := buf[nextScanIndex]
 
@@ -50,11 +53,10 @@ func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, p
 		if b == '$' {
 			return stateHadDollar
 		}
-	case stateHadDollar:
-		if b == '*' || b == ',' {
-			break
+	case stateHadDollar, stateHadFirstAlnum:
+		if ascii.IsAlnum(b) {
+			return state + 1
 		}
-		fallthrough
 	case stateNormal:
 		switch b {
 		case '*':
@@ -62,12 +64,12 @@ func (f packetFormat) Next(state gpsprot.ScanState, buf []byte, nextScanIndex, p
 		case '$':
 			break
 		default:
-			if b >= ' ' && b < 0x7f && packetLen < maxSentenceLength-5 { // excluding 3-byte checksum and CRLF
+			if ascii.IsPrint(b) && packetLen < maxSentenceLength-5 { // excluding 3-byte checksum and CRLF
 				return stateNormal
 			}
 		}
 	case stateHadStar, stateHadChecksum1:
-		if isUpperHexDigit(b) {
+		if ascii.IsUpperHexDigit(b) {
 			return state + 1
 		}
 	case stateHadChecksum2:
@@ -103,7 +105,9 @@ func (f packetFormat) MsgID(pkt []byte) string {
 // We represent the checksum as a single byte in the expectation that when a checksum error is described the bytes will be printed as hex.
 func (f packetFormat) ExtractChecksum(pkt []byte) []byte {
 	i := starIndex(pkt) + 1
-	return []byte{(hexWeight(pkt[i]) << 4) | hexWeight(pkt[i+1])}
+	hi, _ := ascii.UpperHexVal(pkt[i])
+	lo, _ := ascii.UpperHexVal(pkt[i+1])
+	return []byte{hi<<4 | lo}
 }
 
 // ComputeChecksum computes the checksum for the NMEA packet.
@@ -120,7 +124,7 @@ func (f packetFormat) ComputeAltChecksum(pkt []byte) []byte {
 	// This won't get called often, so no need to be efficient.
 	flags := nmeamsg.CheckSyntax(string(pkt))
 	// If it looks like an NMEA packet with 5-char address and GNSS talker ID, then do not allow alternate checksum.
-	if flags&nmeamsg.SentenceAddressLength5 != 0 && flags&nmeamsg.SentenceTalkerIsGNSS != 0 {
+	if flags&nmeamsg.SentenceApprovedAddressFormat != 0 && flags&nmeamsg.SentenceTalkerIsGNSS != 0 {
 		return nil
 	}
 	// Since manufacturers using NMEA-like packets are purposefully ignoring the NMEA proprietary extension mechanism,
@@ -143,15 +147,4 @@ func starIndex(pkt []byte) int {
 		}
 	}
 	return starOffset
-}
-
-func isUpperHexDigit(b byte) bool {
-	if '0' <= b && b <= '9' {
-		return true
-	}
-	// NMEA requires checksum to use upper-case hex digits
-	if 'A' <= b && b <= 'F' {
-		return true
-	}
-	return false
 }

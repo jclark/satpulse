@@ -30,10 +30,11 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 		}
 		return
 	}
-	target, err := createConfigTarget(v)
+	vendors, err := cmd.ResolveVendors(v.vendor)
 	if err != nil {
 		return
 	}
+	var target *gpsprot.ConfigTarget
 	var raw []msgfile.RawMsg
 	if v.msgFilePath != "" {
 		var mf *msgfile.Parsed
@@ -65,10 +66,12 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 		if err != nil {
 			return
 		}
+	} else {
+		target = createConfigTarget(v)
 	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
-		conn, _, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
+		conn, _, err = gpsio.OpenSerial(lg, v.serialDevice, v.localSpeed)
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
 	}
@@ -77,58 +80,54 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
-	err = run(ctx, lg, target, raw, conn, v.vendor, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, v.jsonOut, v.configSupport, args)
+	err = run(ctx, lg, target, raw, conn, vendors, v.packetLogPath, v.packetLogMode, v.capture, v.showReceiver, v.jsonOut, v.configSupport, args)
 	return
 }
 
-// createConfigTarget returns nil if msgFilePath is set (message file mode)
-// or if nothing requires the configurator (passive capture mode).
-func createConfigTarget(v *flagVars) (*gpsprot.ConfigTarget, error) {
-	if v.msgFilePath != "" {
-		return nil, nil
+func createConfigTarget(v *flagVars) *gpsprot.ConfigTarget {
+	target := v.targetJSON
+	if target != nil {
+		target.Get |= v.configGet
+	} else {
+		target = gpsprot.NewConfigTarget()
+		target.Opts = v.configOpts
+		target.Get = v.configGet
+		cp := &target.Props
+		if v.pps.IsSet() {
+			cp.SetPPS(v.pps.Get())
+		}
+		if v.antCableDelay.IsSet() {
+			cp.SetAntennaCableDelay(v.antCableDelay.Get())
+		}
+		if v.minElev.IsSet() {
+			cp.SetMinElevation(v.minElev.Get())
+		}
+		if v.timeGNSS != 0 {
+			cp.SetTimeGNSS(v.timeGNSS)
+		}
+		if v.enabledSignals != 0 {
+			cp.SetSignalsEnabled(v.enabledSignals)
+		}
+		if v.mode.IsSet() {
+			cp.SetMode(v.mode.Get())
+		}
+		if v.navMsgAuth.IsSet() {
+			cp.SetNavMsgAuth(v.navMsgAuth.Get())
+		}
+		if v.rtcmBaseID.IsSet() {
+			cp.SetRTCMBaseID(v.rtcmBaseID.Get())
+		}
+		if v.baudRate.IsSet() {
+			cp.SetBaudRate(v.baudRate.Get())
+		}
 	}
-	target := gpsprot.NewConfigTarget()
-	target.Opts = v.configOpts
-	target.Get = v.configGet
-	cp := &target.Props
-	if v.pps.IsSet() {
-		cp.SetPPS(v.pps.Get())
-	}
-	if v.antCableDelay.IsSet() {
-		cp.SetAntennaCableDelay(v.antCableDelay.Get())
-	}
-	if v.minElev.IsSet() {
-		cp.SetMinElevation(v.minElev.Get())
-	}
-	if v.timeGNSS != 0 {
-		cp.SetTimeGNSS(v.timeGNSS)
-	}
-	if v.enabledSignals != 0 {
-		cp.SetSignalsEnabled(v.enabledSignals)
-	}
-	if v.mode.IsSet() {
-		cp.SetMode(v.mode.Get())
-	}
-	if v.navMsgAuth.IsSet() {
-		cp.SetNavMsgAuth(v.navMsgAuth.Get())
-	}
-	if v.rtcmBaseID.IsSet() {
-		cp.SetRTCMBaseID(v.rtcmBaseID.Get())
-	}
-	if v.baudRate.IsSet() {
-		cp.SetBaudRate(v.baudRate.Get())
-	}
-	// If nothing requires the configurator, return nil (passive capture mode)
-	if !v.showReceiver && target.NoOp() {
-		return nil, nil
-	}
-	if v.socketPath != "" {
-		target.Opts.Socket = true
-	}
+	// Opts.Socket describes the transport, not a configuration request, so
+	// it is set from the transport even for a JSON target.
+	target.Opts.Socket = v.socketPath != ""
 	if target.NoOp() {
 		target.Opts.ForceProbe = true
 	}
-	return target, nil
+	return target
 }
 
 func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
@@ -143,18 +142,23 @@ func configTargetIsProbeOnly(target *gpsprot.ConfigTarget) bool {
 
 // run executes the GPS command.
 //
-// Modes based on target and raw:
-//   - target non-nil: config mode (runs GPS configuration)
+// Modes based on raw:
 //   - raw non-nil: message file mode (sends user-defined messages)
-//   - both nil: passive capture mode (just logs packets, no interaction)
+//   - raw nil: config mode (runs GPS detection/configuration)
 //
 // Parameter dependencies:
 //   - logMode: must not be testLogMode when raw is non-nil
 //   - args: only used for test log header when logMode is testLogMode
-func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw []msgfile.RawMsg, conn gpsio.Conn, vendor gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, jsonOut bool, support configSupportReq, args []string) error {
+//   - target: non-nil when raw is nil
+func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw []msgfile.RawMsg, conn gpsio.Conn, vendors []gpsreg.Vendor, logPath string, logMode packetLogMode, capture opt.Val[time.Duration], showReceiver bool, jsonOut bool, support configSupportReq, args []string) error {
 	defer func() {
 		addr := conn.LocalAddr()
 		lg.Debug("closing the GPS connection", "addr", addr)
+		// Drain first so a final no-response command (e.g. a reset) reaches
+		// the receiver before Close restores and closes the port.
+		if e := conn.Drain(); e != nil {
+			lg.Debug("error draining the GPS connection before close", "addr", addr, "error", e)
+		}
 		e := conn.Close()
 		if e != nil {
 			lg.Error("error closing the GPS connection", "addr", addr, "error", e)
@@ -165,7 +169,7 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 
 	var wg sync.WaitGroup
 
-	pktFormats := gpsreg.CreatePacketFormats(vendor)
+	pktFormats := gpsreg.CreatePacketFormats(vendors)
 	pktLog, lf, err := gpsio.LogPackets(lg, &wg, logPath, false, pktFormats)
 	if err != nil {
 		return fmt.Errorf("failed to initialize packet logging: %w", err)
@@ -189,13 +193,8 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 	var rslt *gpscfg.Result
 	if raw != nil {
 		err = runMsgs(ctx, lg, conn, pCh, raw, capture)
-	} else if target != nil {
-		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendor, capture, showReceiver, jsonOut, support)
 	} else {
-		// Passive capture mode: just read and log packets
-		if capture.IsSet() {
-			keepReading(ctx, lg, pCh, capture.Get(), nil)
-		}
+		rslt, err = runConfig(ctx, lg, target, pCh, conn, vendors, capture, showReceiver, jsonOut, support)
 	}
 
 	lg.Debug("about to wait")
@@ -212,13 +211,13 @@ func run(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, raw
 	return err
 }
 
-func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, vendor gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool, jsonOut bool, support configSupportReq) (*gpscfg.Result, error) {
+func runConfig(ctx context.Context, lg *slog.Logger, target *gpsprot.ConfigTarget, pCh <-chan scan.Packet, conn gpsio.Conn, vendors []gpsreg.Vendor, capture opt.Val[time.Duration], showReceiver bool, jsonOut bool, support configSupportReq) (*gpscfg.Result, error) {
 	// Compile-time check: serial faults surfaced by gpsio satisfy the
 	// gpscfg.SerialError interface. gpscfg relies on this.
 	var _ gpscfg.SerialError = (*gpsio.SerialError)(nil)
-	pktProcs := gpsreg.CreatePacketProcessors(vendor)
+	pktProcs := gpsreg.CreatePacketProcessors(vendors)
 	gpsprot.SetAllMsgHandlers(pktProcs, &gpsprot.DefaultHandler{})
-	rslt, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendor), target, pCh, conn)
+	rslt, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendors), target, pCh, conn)
 	if errors.Is(err, gpscfg.ErrNoProbeResponse) && configTargetIsProbeOnly(target) {
 		err = nil
 	}
@@ -253,6 +252,14 @@ func warnMissingConfigSupport(lg *slog.Logger, req configSupportReq, supported g
 	}
 }
 
+// nakError reports that the receiver rejected a message. It is quiet:
+// the per-message rejection lines have already been printed, so main
+// adds only the non-zero exit status.
+type nakError struct{}
+
+func (nakError) Error() string { return "receiver rejected message" }
+func (nakError) Quiet() bool   { return true }
+
 func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan scan.Packet, raw []msgfile.RawMsg, capture opt.Val[time.Duration]) error {
 	rh := newResponseHandler(os.Stdout, lg)
 	err := sendAllMsgs(ctx, lg, conn, pCh, raw, rh)
@@ -261,6 +268,9 @@ func runMsgs(ctx context.Context, lg *slog.Logger, conn gpsio.Conn, pCh <-chan s
 	}
 	rh.reportMissing()
 	rh.Flush()
+	if err == nil && rh.nakCount > 0 {
+		return nakError{}
+	}
 	return err
 }
 

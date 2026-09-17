@@ -6,6 +6,7 @@ _Not yet released_
 
 - `satpulse.toml` has a new `[ntrip]` table and `[[ntrip.mountpoint]]` table array, which make `satpulsed` act as an Ntrip caster serving RTCM correction data from the receiver. Authentication is supported in conjunction with a new `[[user]]` table array. (#126)
 - `satpulse.toml` has a new `[stream.pull]` table, which makes `satpulsed` act as an Ntrip client, pulling correction data from an Ntrip caster and feeding it to the receiver. A plain TCP correction source can also be used. (#221)
+- `[stream.pull.ntrip]` has new `nmeaSend` and `nmeaSendInterval` options for Virtual Reference Station casters. When `nmeaSend` is enabled, `satpulsed` waits for a usable receiver position, uploads a current GGA sentence after connecting, and then re-uploads it every `nmeaSendInterval` seconds (default 5; 0 means upload only once per connection) so that casters requiring a periodic GGA keep streaming. (#325)
 - `satpulse.toml` has a new `[[stream.push]]` table array, which makes `satpulsed` act as an Ntrip server, pushing receiver packet streams to a remote Ntrip caster. RTCM is the default payload, and NMEA or UBX can be selected explicitly. (#238)
 - `[[stream.push]]` entries can now use `udp.address` to send receiver packet data to a UDP destination. (#320)
 - `satpulse.toml` has new `msm7to4` options on Ntrip mountpoints and push entries, which make `satpulsed` convert RTCM MSM7 packets to MSM4 before forwarding them, while leaving non-MSM7 packets unchanged. (#126, #238, #288)
@@ -13,6 +14,13 @@ _Not yet released_
 - The device-independent GPS model now includes correction reports for RTCM correction data received by the system; these are exposed in the JSONL event log. Reports can come from correction data pulled from a network source, or from receiver-reported correction status when the receiver is configured to emit it. (#237)
 - The web dashboard has an RTCM card showing correction-report data, including per-message counts and receiver-reported usage when available. (#237)
 - Prometheus metrics now expose correction-report data. (#237)
+- SatPulse now supports the SPARTN correction protocol: `satpulsed` scans and decodes SPARTN packets, can pull SPARTN corrections from an Ntrip caster such as u-blox PointPerfect and feed them to the receiver, emits SPARTN correction reports in the JSONL event log, and shows them on the web dashboard alongside RTCM. (#324)
+
+### Septentrio protocol-specific support
+
+- SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
+- Decoded SBF blocks are translated into the device-independent GPS model: time, leap-second, position, velocity, per-epoch solution quality, satellite, survey, and correction-report information is extracted and exposed in the JSONL event log, the web dashboard, and the NTP/PPS timing path. (#340)
+- `satpulsetool gps` can configure Septentrio receivers from a message file: it frames the receiver's ASCII command-line replies and reports whether each command succeeded or was rejected. Message files for the mosaic-G5 (and the shared mosaic entries) are included. (#340)
 
 ### u-blox protocol-specific support
 
@@ -26,9 +34,11 @@ _Not yet released_
 ### NTP support
 
 - SatPulse now supports the NTP SHM protocol in addition to the chrony refclock SOCK protocol for sending time information to an NTP server. `satpulse.toml` has a new `[ntp.shm]` table for configuring this. (#300)
+- The `[serial]` table in `satpulse.toml` has a new `pps.pin` key that lets `satpulsed` detect receiver PPS edges on a serial modem-control input and use them for more precise refclock samples on systems without a PTP hardware clock. Detected edges are logged in the JSONL event log as a new `sysPulseEdge` event type. (#402)
 
 ### GPS high-level configuration
 
+- High-level configuration now supports Zhongke Microelectronics receivers using CASIC, covering both the V5 (URANUS5) and V6 (URANUS6) firmware families. `satpulsetool gps` and `satpulsed` can now configure receivers such as the ATGM332D and ATGM336H. (#229)
 - `satpulsetool gps` has new `--signal` and `--except-signal` options for controlling individual GNSS signals. `--signal` enables individual signals, in addition to the constellations enabled by `--gnss`; `--except-signal` excludes individual signals from those constellations. `--band` does not affect what signals are enabled by `--signal`. Signals are named by the constellation name followed by the signal name (`GPSL1C`, `QZSSL1S`); the constellation name is not required for Galileo and BeiDou signal names (`E5b`, `B1C`). (#97)
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
 - The `[gps]` table in `satpulse.toml` has a new `fixedPosLLH` key for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#147)
@@ -42,20 +52,31 @@ _Not yet released_
 
 - `satpulsetool` has a new `convobs` command, which converts raw GNSS observation data from u-blox UBX-RXM-RAWX, Unicore OBSVM, or RTCM MSM7 into RINEX observation files for PPP post-processing. It can decimate observations and set RINEX header metadata from command-line options or a TOML header file. `convobs` also supports a new JSON Lines observation format that follows RINEX semantics to enable convenient processing with modern tooling such as `jq`; it reads and writes this format, and can also read existing RINEX files, so it can convert freely between raw packets, RINEX, and the JSON Lines format. (#296)
 
+### SatPulse Workbench
+
+- There is a new `satpulsewb` command, which serves SatPulse Workbench: a web app for interactive GPS receiver configuration and monitoring. It offers device-independent receiver configuration through a GUI that requires no knowledge of the receiver's protocol, live monitoring of position, time, satellites, and signal strength, a packet inspector, sending configuration message files chosen from a built-in library (with `SATPULSE_GPSMSG_PATH` directories searched ahead of it), and correction forwarding from an Ntrip caster or TCP source. `satpulsewb` is a commissioning tool run when needed: from a local desktop session it opens the browser automatically; over SSH it prints a URL protected by a per-run token. It serves a GUI session until stopped. (#357)
+
 ### Other satpulsetool improvements
 
+- `satpulsetool` has a new `serial` command, which examines serial ports: it can discover the available serial ports, show information about a port, detect the speed of a connected GPS receiver, detect PPS edges on a modem-control input and log received packets. (#326, #394, #408)
+- Passive serial packet logging has moved from `satpulsetool gps` to `satpulsetool serial`. The `gps` command now always probes or configures the receiver; `--show-receiver` is always implied when no operation is specified, even if `--capture` is specified. (#408)
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
-- `satpulsetool ntrip` has a new `--gga` option that sends an NMEA GGA sentence to the caster on connect, for use with Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. (#325)
+- `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)
 
 ### Miscellaneous
 
 - The default `satpulse.toml` no longer specifies a `phc.interface`, so `satpulsed` runs without a PHC by default; using a PHC now requires uncommenting and editing the `interface` line in the `[phc]` table. This will affect only fresh installs. (#309)
 - SatPulse now compiles and is tested on 32-bit architectures. Debian packages for `armhf` architecture are provided. These are built for ARMv6, and so will work on Raspberry Pi Zero with Raspberry Pi OS, as well as more powerful Raspberry Pi models which use ARMv7. (#305)
+- SatPulse can be installed on macOS using the [Homebrew](https://brew.sh/) package manager. See the [homebrew-satpulse](https://github.com/jclark/homebrew-satpulse) repository, which provides a tap. (#322)
 - GPS message files are now installed by packages under `/usr/share/satpulse/gpsmsg`, and by `make install` under `/usr/local/share/satpulse/gpsmsg`. The files are organized by vendor directory. (#233)
 - The `satpulse@.service` has been improved so that if a USB GNSS receiver is unplugged, its `satpulse@...` service stops, and when the receiver is plugged back in, its service is automatically restarted, provided it was enabled. To take advantage of this after installing the new unit file, previously enabled instances need to be reenabled, for example with `systemctl reenable satpulse@ttyS0`. (#172)
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
 - The JSONL event log now uses a natural event shape with a `type` discriminator and a `data` payload, replacing the previous one-field-per-type record shape. The `nanos` integer field is replaced by a `mono` field holding monotonic elapsed seconds. This matches the envelope already emitted by `satpulsetool replay`. Existing event logs in the old format can be converted with the `migrate_log.go` tool in `time/internal/gpsevent`. (#277)
+- The `pulseEdge` event type in the JSONL event log has been renamed to `phcPulseEdge`, because SatPulse now supports two different kinds of pulse edge: PHC-timestamped and system-clock-timestamped. (#402)
+- On exit, if a GPS receiver has been successfully detected at some serial speed, the serial port is left at that speed rather than being restored to how it was before SatPulse started. This avoids an unnecessary speed change when the port is next opened, minimizing the risk of serial corruption on Raspberry Pi UARTs.
+- A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
+- Building from source now uses `make` on macOS and FreeBSD as well as Linux, replacing the `unix-build.sh` script. `make install` works there too, installing under `/usr/local` by default, or under a prefix given by `prefix=`. (#420)
 
 ## Changes in 0.2
 

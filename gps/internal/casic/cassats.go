@@ -112,7 +112,11 @@ func satsNav2Sig(m *casbin.Nav2Sig) *gpsprot.SatellitesMsg {
 			})
 			sigIndex[svid] = idx
 		}
-		used := sig.SolFlags&0x01 != 0
+		// A signal is used in the solution either as an independent pseudorange
+		// (solFlagx bit0) or as one frequency of a dual-frequency ionosphere-free
+		// combination, which the receiver flags only through the corFlagx iono
+		// model. Without the latter, L5 signals on a dual-band fix read as unused.
+		used := sig.SolFlags&casbin.Nav2SigSolPRUsed != 0 || sig.CorFlags&casbin.Nav2SigIonoMask == casbin.Nav2SigIonoDualFreq
 		sigs := &svs[idx].Signals
 		*sigs = append(*sigs, gpsprot.SignalInfo{
 			ID:   casicSigIDMap[sig.SigID],
@@ -148,19 +152,19 @@ func corrFromNav2Sig(ne *gpsprot.NavEpochMsg, m *casbin.Nav2Sig) {
 	}
 	for i := range m.Sigs {
 		sig := &m.Sigs[i]
-		if sig.SolFlags&0x01 == 0 { // not used in solution
+		if sig.SolFlags&casbin.Nav2SigSolPRUsed == 0 { // not used in solution
 			continue
 		}
-		switch sig.CorFlags & 0x07 {
-		case 1: // SBAS
+		switch sig.CorFlags & casbin.Nav2SigCorSrcMask {
+		case casbin.Nav2SigCorSrcSBAS:
 			ne.Correction |= gpsprot.CorrSBAS | gpsprot.CorrUsed
-		case 2: // BDS B2b PPP
+		case casbin.Nav2SigCorSrcBDS: // B2b PPP
 			ne.Correction |= gpsprot.CorrSSR | gpsprot.CorrUsed
-		case 3: // RTCM2
+		case casbin.Nav2SigCorSrcRTCM2:
 			ne.Correction |= gpsprot.CorrRTCM | gpsprot.CorrUsed
-		case 4: // OSR
+		case casbin.Nav2SigCorSrcOSR:
 			ne.Correction |= gpsprot.CorrOSR | gpsprot.CorrRTCM | gpsprot.CorrUsed
-		case 5: // SSR
+		case casbin.Nav2SigCorSrcSSR:
 			ne.Correction |= gpsprot.CorrSSR | gpsprot.CorrRTCM | gpsprot.CorrUsed
 		}
 	}

@@ -19,7 +19,9 @@ FinalKillSignal=SIGQUIT
 # CAP_SYS_TIME is needed for setting the PHC clock.
 # CAP_CHOWN is needed to chown proxy listener sockets to a configured group.
 # CAP_NET_BIND_SERVICE allows binding HTTP/proxy listeners to low ports.
-CapabilityBoundingSet=CAP_SYS_TIME CAP_CHOWN CAP_NET_BIND_SERVICE
+# CAP_DAC_OVERRIDE is needed to write refclock sockets owned by an NTP daemon
+# running as its own user (e.g. ntpd-rs).
+CapabilityBoundingSet=CAP_SYS_TIME CAP_CHOWN CAP_NET_BIND_SERVICE CAP_DAC_OVERRIDE
 NoNewPrivileges=yes
 ProtectSystem=full
 MemoryDenyWriteExecute=yes

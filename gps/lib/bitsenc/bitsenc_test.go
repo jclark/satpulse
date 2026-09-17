@@ -28,6 +28,19 @@ func TestReadUnsigned(t *testing.T) {
 	}
 }
 
+func TestReaderBitLen(t *testing.T) {
+	r := NewReader([]byte{0xAB})
+	if r.BitLen() != 0 {
+		t.Errorf("BitLen = %d, want 0", r.BitLen())
+	}
+	if _, err := r.Uint(3); err != nil {
+		t.Fatal(err)
+	}
+	if r.BitLen() != 3 {
+		t.Errorf("BitLen = %d, want 3", r.BitLen())
+	}
+}
+
 func TestReadSigned(t *testing.T) {
 	// Two's complement: 5-bit value 11111 = -1, 5-bit value 00001 = 1
 	// 11111_00001_000000 = 0xF840
@@ -333,9 +346,9 @@ func TestWriterPutUint(t *testing.T) {
 
 func TestWriterPutInt(t *testing.T) {
 	w := NewWriter(nil)
-	w.PutInt(-1, 5)  // 11111
-	w.PutInt(1, 5)   // 00001
-	w.PutUint(0, 6)  // padding
+	w.PutInt(-1, 5) // 11111
+	w.PutInt(1, 5)  // 00001
+	w.PutUint(0, 6) // padding
 	got := w.Bytes()
 	want := []byte{0xF8, 0x40}
 	if !bytes.Equal(got, want) {

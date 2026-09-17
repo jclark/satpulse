@@ -128,6 +128,7 @@ func TestSingleBDSL1Signal(t *testing.T) {
 
 func TestVersionConfigSupport(t *testing.T) {
 	tmode := gpsprot.ConfigSupportSpeed |
+		gpsprot.ConfigSupportReload |
 		gpsprot.ConfigSupportSurvey |
 		gpsprot.ConfigSupportSurveyAcc |
 		gpsprot.ConfigSupportFixedPos |
@@ -147,7 +148,7 @@ func TestVersionConfigSupport(t *testing.T) {
 		{"F9P", testVers.f9p, sig | tmode2 | raw | msm},
 		{"F9T before MSM4", testVers.f9t, sig | tmode2 | raw | gpsprot.ConfigSupportRTCMMSM7},
 		{"F9T with MSM4", testVers.f9t25, sig | tmode2 | raw | msm | gpsprot.ConfigSupportRTCMBaseID},
-		{"F10S", testVers.f10s, sig | gpsprot.ConfigSupportSpeed},
+		{"F10S", testVers.f10s, sig | gpsprot.ConfigSupportSpeed | gpsprot.ConfigSupportReload},
 		{"X20P", testVers.x20p, sig | tmode2 | raw | msm | gpsprot.ConfigSupportRTCMBaseID},
 	}
 	for _, tt := range tests {

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
@@ -293,7 +294,7 @@ func (id SignalID) IsValid() bool {
 	}
 	b := id[0]
 	a := id[1]
-	return b >= '1' && b <= '9' && a >= 'A' && a <= 'Z'
+	return b >= '1' && b <= '9' && ascii.IsUpper(a)
 }
 
 // UnmarshalJSON unmarshals and validates a RINEX signal identifier.

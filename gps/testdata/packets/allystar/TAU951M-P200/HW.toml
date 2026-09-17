@@ -1,0 +1,4 @@
+vendor = "allystar"
+model = "TAU951M-P200"
+firmware = "3.018.002947c3"
+default-baud = 115200

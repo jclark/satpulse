@@ -9,9 +9,11 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 	"github.com/jclark/satpulse/gps/lib/ubxcfgval"
@@ -101,6 +103,9 @@ checksumOK:
 		return pf, r, err
 	case gpsreg.TagRTCM:
 		r, err := rtcmDecode(data)
+		return pf, r, err
+	case gpsreg.TagSBF:
+		r, err := sbfDecode(data)
 		return pf, r, err
 	default:
 		return pf, nil, ErrInvalidPacket
@@ -196,6 +201,17 @@ func sdbpDecode(data []byte) (*DecodeResult, error) {
 	return &DecodeResult{Payload: msg}, nil
 }
 
+func sbfDecode(data []byte) (*DecodeResult, error) {
+	b, err := sbfbin.ParseMsg(string(data))
+	if err != nil {
+		return nil, err
+	}
+	if _, isUnknown := b.Params.(*sbfbin.UnknownParams); isUnknown {
+		return nil, ErrUnknownMsg
+	}
+	return &DecodeResult{Payload: b.Params, Header: b.TimeStamp}, nil
+}
+
 func uncbinDecode(data []byte) (*DecodeResult, error) {
 	msg, err := uncmsg.ParseBinMsg(data)
 	if err != nil {
@@ -249,14 +265,26 @@ func nmeaDecode(data []byte) (*DecodeResult, error) {
 		return nil, ErrInvalidPacket
 	}
 	payload := string(data[1:starIdx])
-	msg, err := qtmmsg.ParsePeriodicMsg(payload)
+	// Approved GNSS-talker sentences (GGA, RMC, ...) first.
+	msg, err := nmeamsg.ParseGNSSTalkerPayload(payload, nmeamsg.CheckSyntax(string(data)))
+	if err != nil {
+		if errors.Is(err, nmeamsg.ErrUnsupportedSentence) {
+			return nil, ErrUnknownMsg
+		}
+		return nil, err
+	}
+	if msg != nil {
+		return &DecodeResult{Payload: msg.Body()}, nil
+	}
+	// Otherwise proprietary NMEA (PQTM).
+	pqtm, err := qtmmsg.ParsePeriodicMsg(payload)
 	if err != nil {
 		return nil, err
 	}
-	if msg == nil {
+	if pqtm == nil {
 		return nil, ErrUnknownMsg
 	}
-	return &DecodeResult{Payload: msg}, nil
+	return &DecodeResult{Payload: pqtm}, nil
 }
 
 // nmeaStarIndex finds the index of the * before the checksum in an NMEA packet.

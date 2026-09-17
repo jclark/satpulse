@@ -93,9 +93,11 @@ t() {
 # Display version first
 satpulsetool --version
 
-# Discard temp state
-echo Running: satpulsetool gps --reload
-satpulsetool gps --reload -d /dev/$dev -s $speed $vendor_flag
+# Discard temp state. --reload by default; a receiver stub may set
+# $reset_args to different satpulsetool arguments when --reload does not
+# work for that receiver.
+echo Running: satpulsetool gps ${reset_args:---reload}
+satpulsetool gps ${reset_args:---reload} -d /dev/$dev -s $speed $vendor_flag
 sleep ${reload_secs:-1}
 
 echo Setting binary mode

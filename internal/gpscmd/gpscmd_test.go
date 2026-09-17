@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 )
@@ -55,6 +56,11 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "capture after default probe",
+			args: []string{"-d", "/dev/ttyACM0", "-s", "9600", "--packet-log", "capture.jsonl", "--capture", "10"},
+			want: true,
+		},
+		{
 			name: "serial device with configuration change",
 			args: []string{"-d", "/dev/ttyACM0", "-s", "9600", "--gnss", "GPS"},
 			want: false,
@@ -71,10 +77,7 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 				t.Fatalf("parseFlags returned nil flagVars")
 			}
 
-			target, err := createConfigTarget(flagVars)
-			if err != nil {
-				t.Fatalf("createConfigTarget failed: %v", err)
-			}
+			target := createConfigTarget(flagVars)
 
 			got := configTargetIsProbeOnly(target)
 			if got != tt.want {
@@ -86,6 +89,68 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 				t.Logf("target.Opts.ForceProbe = %v", target.Opts.ForceProbe)
 			}
 		})
+	}
+}
+
+func TestCreateConfigTargetJSON(t *testing.T) {
+	v := &flagVars{
+		targetJSON: mustTargetJSON(t, `{"Props":{"mode":{"static":true}},"Get":["baudRate"],"Opts":{"Save":"minimal","NMEAMsg":[]}}`),
+	}
+	target := createConfigTarget(v)
+	mode, ok := target.Props.GetMode()
+	if !ok || !mode.Static {
+		t.Errorf("mode = %+v, %t, want static mode", mode, ok)
+	}
+	if target.Get != gpsprot.PropIDBaudRate {
+		t.Errorf("Get = %v, want baudRate", target.Get)
+	}
+	if target.Opts.Save != gpsprot.SaveMinimal {
+		t.Errorf("Save = %v, want SaveMinimal", target.Opts.Save)
+	}
+	if !target.Opts.NMEAMsg.IsSet() || target.Opts.NMEAMsg.Get() != gpsprot.NMEAMsgNone {
+		t.Errorf("NMEAMsg = %+v, want set-empty", target.Opts.NMEAMsg)
+	}
+}
+
+// Opts.Socket describes the transport, so the JSON must not be able to claim a
+// proxy connection on a serial device: that would skip the silence wait, the
+// detection deadline, and the framing checks in gpscfg.Configure.
+func TestCreateConfigTargetJSONSocketFollowsTransport(t *testing.T) {
+	target := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{"Opts":{"Socket":true}}`), serialDevice: "/dev/ttyACM0"})
+	if target.Opts.Socket {
+		t.Error("Socket = true for a serial transport")
+	}
+	target = createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`), socketPath: "/tmp/socket"})
+	if !target.Opts.Socket {
+		t.Error("Socket = false for a socket transport")
+	}
+}
+
+func TestCreateConfigTargetJSONNoOp(t *testing.T) {
+	target := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`)})
+	if target == nil || !target.Opts.ForceProbe {
+		t.Errorf("target = %+v, want force-probe target", target)
+	}
+}
+
+func TestCreateConfigTargetJSONMergesGet(t *testing.T) {
+	v, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{"Get":["baudRate"]}`, "--show-config"})
+	if err != nil {
+		t.Fatalf("parseFlags: %v", err)
+	}
+	target := createConfigTarget(v)
+	want := showProps | gpsprot.PropIDBaudRate
+	if target.Get != want {
+		t.Errorf("Get = %v, want %v", target.Get, want)
+	}
+}
+
+func TestCreateConfigTargetJSONDoesNotApplyFlagProps(t *testing.T) {
+	v := flagVars{targetJSON: mustTargetJSON(t, `{}`)}
+	v.pps.Set(time.Second)
+	target := createConfigTarget(&v)
+	if _, ok := target.Props.GetTimePulseWidth(); ok {
+		t.Error("JSON target includes flag-derived PPS property")
 	}
 }
 
@@ -112,6 +177,7 @@ func TestWarnMissingConfigSupport(t *testing.T) {
 	var req configSupportReq
 	req.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-ecef")
 	req.require(gpsprot.ConfigSupportRaw, "--raw-out")
+	req.require(gpsprot.ConfigSupportReload, "--reload")
 	req.require(gpsprot.ConfigSupportPort, "--show-port")
 	req.requireMSM("--rtcm-out")
 	var b bytes.Buffer
@@ -123,6 +189,9 @@ func TestWarnMissingConfigSupport(t *testing.T) {
 	}
 	if !strings.Contains(s, "option=--fixed-pos-ecef") {
 		t.Errorf("log output missing option: %q", s)
+	}
+	if !strings.Contains(s, "option=--reload") {
+		t.Errorf("log output missing reload option: %q", s)
 	}
 	if !strings.Contains(s, "option=--show-port") {
 		t.Errorf("log output missing show-port option: %q", s)

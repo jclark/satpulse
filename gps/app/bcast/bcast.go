@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"reflect"
 	"sync"
-
-	"golang.org/x/exp/constraints"
 )
 
 type subscriber[T any] struct {
@@ -172,11 +170,4 @@ func (b *Bcast[T]) subscriberIndex(c <-chan T) int {
 		}
 	}
 	return -1
-}
-
-func min[T constraints.Ordered](a, b T) T {
-	if a < b {
-		return a
-	}
-	return b
 }

@@ -1,0 +1,7 @@
+# Build context for desktop/Dockerfile. Keep it small and never copy host build
+# outputs into the image -- the package is built fresh inside the container.
+# (.git IS needed: the deb version is derived from `git describe`.)
+**/node_modules
+desktop/build/bin
+desktop/build/*.deb
+out

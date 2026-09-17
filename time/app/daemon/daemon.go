@@ -13,7 +13,11 @@ import (
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/pps"
+	"github.com/jclark/satpulse/gps/app/serialpps"
+	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/gpsevent"
@@ -48,6 +52,11 @@ func Cmd(progName string, args []string) {
 		cmd.ErrPrintlnWithDetail(progName, err)
 		os.Exit(exitConfig)
 	}
+	vendors, err := cmd.ResolveVendors(cfg.GPS.Vendor)
+	if err != nil {
+		cmd.ErrPrintlnWithDetail(progName, err)
+		os.Exit(exitConfig)
+	}
 	if vars.wait {
 		cfg.PHC.Wait = true
 	}
@@ -71,7 +80,7 @@ func Cmd(progName string, args []string) {
 	ctx := context.Background()
 	ctx, _ = cmd.CancelOnSignal(ctx, lg)
 	ctx, cancelCause := context.WithCancelCause(ctx)
-	err = run(ctx, lg, cancelCause, cfg)
+	err = run(ctx, lg, cancelCause, cfg, vendors)
 	// run returns only after shutdown completes, so the cancellation cause is
 	// settled. A non-signal cause -- the scan worker sets one when the serial
 	// input disappears -- becomes the process error, so exitCode picks a
@@ -87,7 +96,7 @@ func Cmd(progName string, args []string) {
 	}
 }
 
-func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, cfg *Config) error {
+func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, cfg *Config, vendors []gpsreg.Vendor) error {
 	tStart := time.Now()
 	if err := cfg.Validate(lg); err != nil {
 		return err
@@ -122,14 +131,21 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	if cfg.Serial.Speed != nil {
 		cfgSpeed = *cfg.Serial.Speed
 	}
-	conn, speed, err := gpsio.OpenSerial(cfg.Serial.Device, cfgSpeed)
+	conn, speed, err := gpsio.OpenSerial(lg, cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
+	}
+	if cfg.Serial.PPS != nil {
+		if _, err := conn.SerialPinState(); err != nil {
+			conn.Close()
+			return fmt.Errorf("serial PPS requires a TTY with modem-control pins: %w", err)
+		}
 	}
 	if speed == 0 {
 		speed = cfgSpeed
 	}
-
+	// During normal shutdown, the worker-wait defer registered below runs
+	// first, so the serial PPS poller stops before the connection is closed.
 	defer func() {
 		serialDev := cfg.Serial.Device
 		lg.Debug("closing the serial port", "path", serialDev)
@@ -142,7 +158,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}()
 
 	var wg sync.WaitGroup
-	pktFormats := cfg.GPS.CreatePacketFormats()
+	pktFormats := gpsreg.CreatePacketFormats(vendors)
 	// pLog must be closed by both the startScan goroutine and the conn
 	// gpsio.Scan starts a goroutine that calls conn.Stop() when the context is cancelled
 	pLog, lf, err := gpsio.LogPackets(lg, &wg, cfg.Log.PacketPath(cfg.Serial.Device, gpsio.PacketLogExtension), true, pktFormats)
@@ -190,11 +206,18 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		if sseCh != nil {
 			close(sseCh)
 		}
+		// This defer intentionally runs before the serial-port close defer,
+		// so that no goroutine still issues syscalls against the connection
+		// when it is closed. One exception is safe by construction: a
+		// serial-PPS wait abandoned by cancellation may stay parked in
+		// TIOCMIWAIT past the close, but its ModemControlPinWatch holds a private dup of
+		// the descriptor and touches nothing else. Its gpsio goroutine closes
+		// the watch when the ioctl eventually wakes.
 		wg.Wait()
 		lg.Debug("wait group counter dropped to zero")
 	}()
 
-	pktProcs := cfg.GPS.CreatePacketProcessors()
+	pktProcs := gpsreg.CreatePacketProcessors(vendors)
 	// Install a MsgHandler to capture leap second and position during
 	// configuration; consumed after gpscfg.Configure returns.
 	var cc configCapture
@@ -206,7 +229,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	if err != nil {
 		return err
 	}
-	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, cfg.GPS.CreateConfigProtocols(), gct, pCh, conn)
+	gcfg, err := gpscfg.Configure(ctx, lg, pktProcs, gpsreg.CreateConfigProtocols(vendors), gct, pCh, conn)
 	cc.logLeapSecond(lg)
 	if err != nil {
 		if errors.Is(err, gpscfg.ErrNoProbeResponse) {
@@ -228,10 +251,17 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}
 
 	version, _ := cmd.Version()
-	pullSetup := cfg.Stream.Pull.Prepare(version, conn, portLock)
+	pull, pullAddr := cfg.Stream.Pull.NewPull(version, lg,
+		gpsreg.CreateCorrectionFormats(), conn, portLock)
+	var ggaSelector *stream.GGASelector
+	var selectedGGA <-chan scan.Packet
+	if pull != nil && cfg.Stream.Pull.NMEASend() {
+		ggaSelector = stream.NewGGASelector()
+		selectedGGA = ggaSelector.Packets()
+	}
 	var pullPktCh <-chan scan.Packet
-	if pullSetup != nil {
-		pullPktCh = pullSetup.Bcast().Subscribe()
+	if pull != nil {
+		pullPktCh = pull.Packets.Subscribe()
 	}
 
 	if err := startNtrip(ctx, lg, &wg, cfg, gcfg, pb, cc.pos); err != nil {
@@ -292,6 +322,22 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return err
 		}
 	}
+	var ppsCh <-chan pps.CandidateEdge
+	var ppsGen *pps.Generator
+	if cfg.Serial.PPS != nil {
+		ppsGen = pps.NewGenerator(cfg.Sample.Serial.PPS.GeneratorConfig)
+		ch := make(chan pps.CandidateEdge, 1)
+		ppsCh = ch
+		wg.Go(func() {
+			defer close(ch)
+			lg.Debug("serial PPS goroutine started", "pin", cfg.Serial.PPS.Pin)
+			if err := serialpps.Detect(ctx, lg, conn, cfg.Serial.PPS.wiring(), cfg.Sample.Serial.PPS, ch, nil); err != nil && ctx.Err() == nil {
+				lg.Error("serial PPS detection failed", "pin", cfg.Serial.PPS.Pin, "err", err)
+				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Pin, err))
+			}
+			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
+		})
+	}
 	statsObs := newStatsLogObserver(cfg, lg)
 	clockObs, err := newClockLogObserver(cfg, lg, clk, cfg.LeapSecond.leapSecond())
 	if err != nil {
@@ -315,7 +361,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	obs.AddObserver(&oc, posObs)
 	observer := oc.Observer()
 
-	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, observer, tStart)
+	d, err := NewDispatcher(lg, pktProcs, clk, cfg, gm, rcProxy, shm, ppsGen, observer, tStart, ggaSelector)
 	if err != nil {
 		return err
 	}
@@ -329,13 +375,13 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	// the SyncRunner assumes responsibility for closing the sseCh
 	sseCh = nil
 	ls := cc.leapSecond
-	startPull(ctx, lg, &wg, pullSetup)
+	startPull(ctx, lg, &wg, pull, pullAddr, selectedGGA)
 	wg.Go(func() {
 		if ls != nil {
 			d.LeapSecond(ls, time.Time{})
 		}
 		// Dispatcher is responsible for closing rcProxy via defer in Run()
-		d.Run(tsCh, pCh, pullPktCh)
+		d.Run(tsCh, ppsCh, pCh, pullPktCh)
 	})
 
 	return nil
@@ -350,8 +396,10 @@ func NewDispatcher(
 	gm *ptpgm.Grandmaster,
 	rc *refclock.ProxyRefClock,
 	shm *ntpshm.Writer,
+	ppsGen *pps.Generator,
 	obs obs.Observer,
 	tStart time.Time,
+	ggaSelector *stream.GGASelector,
 ) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
@@ -372,7 +420,13 @@ func NewDispatcher(
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
 	shmWriter := gpsevent.NewSHMWriter(shm, cfg.shmFixedPrecision())
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ls, obs, eventLogPath, tStart)
+	// Keep a nil selector a nil interface, not a non-nil interface wrapping a
+	// nil pointer, which would defeat the dispatcher's nil checks.
+	var gs gpsevent.GGASelector
+	if ggaSelector != nil {
+		gs = ggaSelector
+	}
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ppsGen, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
@@ -494,6 +548,9 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {
+		cf |= cfgPosition
+	}
+	if cfg.Stream.Pull.NMEASend() {
 		cf |= cfgPosition
 	}
 	if cfg.httpWantsSatellites() {
