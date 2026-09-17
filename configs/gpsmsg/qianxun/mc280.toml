@@ -26,7 +26,7 @@
 # but still tracking satellites (bench setup). All test changes were RAM-only
 # (no "save") and reverted with "reload" afterwards.
 #
-# Summary of what does and does not work on this firmware:
+# Summary of what does and does not work on that unit (firmware unidentified):
 #  - WORKS: every get-* query below except get-version and get-rtcm; all NMEA
 #    output control (QXCFGMSG class 1); fix-rate, nmea-ver, min-elev, gnss,
 #    pps, fixed-pos / base mode, reload.
@@ -44,14 +44,17 @@ delay = 0.2
 # ---------------------------------------------------------------------------
 
 # Get firmware and hardware version.
-# Response would be: $QXMONVER,PN,swVersion,hwVersion,SN
-# DOES NOT WORK: $NACK,0 on MC280 - this firmware does not implement QXMONVER
-# (rejected on 3 attempts, incl. when not the first command sent). QX spec V1.74
-# documents no alternative version query. Kept for firmware that does support it.
+# Response: $QXMONVER,PN,swVersion,hwVersion,SN
+# The MC280 tested on 2026-06-23 returned $NACK,0 on 3 attempts, including
+# when this was not the first command sent. QX spec V1.74 documents no
+# alternative version query.
+# WORKS on another unit tested on 2026-09-17: returned a QXMONVER response
+# followed by $ACK, identifying PN "MC280M -B0", software "BG1101BDV1.05.85",
+# and hardware "3.2".
 [[nmea]]
 text = "QXMONVER"
 tag = "get-version"
-description = "Get firmware and hardware version (unsupported on this MC280)"
+description = "Get firmware and hardware version"
 
 # ---------------------------------------------------------------------------
 # Read-only queries (safe to batch together as a probe)
