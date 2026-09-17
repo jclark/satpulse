@@ -207,8 +207,12 @@ func (t *unixTerm) clearExclusive() error {
 
 func RawMode(a *Attr) error {
 	// this comes from termios(3)
-	a.ts.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP |
+	a.ts.Iflag &^= unix.BRKINT | unix.PARMRK | unix.ISTRIP |
 		unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON
+	// Both flags are needed to prevent Linux UART drivers such as PL011
+	// from inserting a zero byte on receive overruns. Error counters
+	// report overruns separately.
+	a.ts.Iflag |= unix.IGNBRK | unix.IGNPAR
 	a.ts.Oflag &^= unix.OPOST
 	a.ts.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
 	a.ts.Cflag &^= unix.CSIZE | unix.PARENB
