@@ -23,6 +23,7 @@ all:
         brie.lan:
         burrata.lan:
         caciocavallo.lan:
+        chaource.lan:
         gubbeen.lan:
         maasdam.lan:
         morbier.lan:
@@ -45,7 +46,6 @@ all:
         testing:
       hosts:
         beaufort.lan:
-        chaource.lan:
         edam.lan:
         feta.lan:
         fontina.lan:
@@ -133,8 +133,11 @@ all:
     mascarpone.lan:
       speed: 115200
 
-    # no receiver at present (LG290P moved to roquefort 2026-09-14); not in testing
+    # Allystar TAU1201 on UART
     chaource.lan:
+      speed: 115200
+      config: "false"
+      vendor: '"Allystar"'
 
     # UM960 on UART
     wensleydale.lan:
