@@ -451,6 +451,9 @@ func (r detectResult) description() string {
 	if r.detection.Outcome == gpsio.DetectSilent {
 		return "no output received from the device"
 	}
+	if r.detection.GaplessWindow {
+		return "output had no gaps: suggest configuring the GPS receiver to use a higher speed"
+	}
 	return "output was received, but no known GNSS protocol was validated at a candidate speed"
 }
 
