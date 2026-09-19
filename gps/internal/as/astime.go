@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -58,7 +58,7 @@ func timeNavTime(m *asbin.NavTime) *gpsprot.TimeMsg {
 		t.TAITime = ptime.BeiDou(week, tow)
 		t.GNSS = gpsprot.BDS
 	default:
-		t.TAITime = ptime.GPS(week, tow)
+		t.TAITime = ptime.GPS(int16(ptime.ExtendGPSWeek(m.Week)), tow)
 		t.GNSS = gpsprot.GPS
 	}
 	if (m.Flags & asbin.NavTimeFlagLeapSecValid) != 0 {

@@ -1,15 +1,69 @@
 package as
 
 import (
+	"encoding/hex"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
+
+func TestTimeNavTimeTAU1201Rollover(t *testing.T) {
+	// Captured from a Star River SR1723TAU1201 board running firmware 3.M6A.a3f23db.
+	// Both periodic and polled NAV-TIME report week 388 instead of 2436.
+	tests := []struct {
+		name     string
+		packet   string
+		utc      ptime.UTCTime
+		accuracy time.Duration
+	}{
+		{
+			name:     "periodic NavSys 24",
+			packet:   "f1d90105100018075fec68ba3e1c840112000d000000a0b7",
+			utc:      ptime.UTC(2026, 9, 18, 11, 37, 35, -5025),
+			accuracy: 13 * time.Nanosecond,
+		},
+		{
+			name:     "polled GPS",
+			packet:   "f1d90105100000072ffd90fc8f1f840112001b00000035a7",
+			utc:      ptime.UTC(2026, 9, 19, 3, 5, 12, -721),
+			accuracy: 27 * time.Nanosecond,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			packet, err := hex.DecodeString(tc.packet)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg, err := asbin.ParseMsg(string(packet))
+			if err != nil {
+				t.Fatal(err)
+			}
+			m, ok := msg.(*asbin.NavTime)
+			if !ok {
+				t.Fatalf("parsed %T, want *asbin.NavTime", msg)
+			}
+			if m.Week != 388 {
+				t.Fatalf("packet week = %d, want 388", m.Week)
+			}
+			want := gpsprot.TimeMsg{
+				NativeMsgID: "NAV-TIME",
+				TAITime:     ptime.LeapSecond2016().UTCtoTime(tc.utc),
+				GNSS:        gpsprot.GPS,
+				UTCOffset:   37,
+				Accuracy:    tc.accuracy,
+			}
+			if got := timeNavTime(m); !reflect.DeepEqual(*got, want) {
+				t.Errorf("timeNavTime() = %+v, want %+v", *got, want)
+			}
+		})
+	}
+}
 
 func TestTimeNavTime(t *testing.T) {
 	tests := []struct {
@@ -81,12 +135,12 @@ func TestTimeNavTime(t *testing.T) {
 				NavSys:  asbin.NavTimeSysGalileo,
 				Flags:   asbin.NavTimeFlagWeekValid | asbin.NavTimeFlagSecondValid | asbin.NavTimeFlagLeapSecValid,
 				RefTow:  0,
-				Week:    2345,
+				Week:    1412,
 				LeapSec: 18,
 			},
 			expect: gpsprot.TimeMsg{
 				NativeMsgID: "NAV-TIME",
-				TAITime:     ptime.Galileo(2345, 0),
+				TAITime:     ptime.Galileo(1412, 0),
 				GNSS:        gpsprot.GAL,
 				UTCOffset:   18 + ptime.TAIMinusGalileo,
 			},
@@ -142,10 +196,10 @@ func TestTimeNavTime(t *testing.T) {
 		{
 			name: "week overflow",
 			input: asbin.NavTime{
-				NavSys:  asbin.NavTimeSysGPS,
-				Flags:   asbin.NavTimeFlagWeekValid | asbin.NavTimeFlagSecondValid,
-				RefTow:  0,
-				Week:    0x8000, // > math.MaxInt16
+				NavSys: asbin.NavTimeSysGPS,
+				Flags:  asbin.NavTimeFlagWeekValid | asbin.NavTimeFlagSecondValid,
+				RefTow: 0,
+				Week:   0x8000, // > math.MaxInt16
 			},
 			expect: gpsprot.TimeMsg{NativeMsgID: "NAV-TIME"},
 		},
