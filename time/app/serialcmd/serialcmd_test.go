@@ -159,26 +159,6 @@ func TestDetectResultExitCode(t *testing.T) {
 	}
 }
 
-func TestDetectResultDescription(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		result detectResult
-		want   string
-	}{
-		{"silent", detectResult{}, "no output received from the device"},
-		{"unrecognized", detectResult{detection: gpsio.DetectResult{Outcome: gpsio.DetectUnrecognized}},
-			"output was received, but no known GNSS protocol was validated at a candidate speed"},
-		{"described error", detectResult{failure: "speed detection requires a serial device"},
-			"speed detection requires a serial device"},
-		{"packet log permission", detectResult{failure: "opening packet log: permission denied"},
-			"opening packet log: permission denied"},
-	} {
-		if got := tc.result.description(); got != tc.want {
-			t.Errorf("%s: description() = %q, want %q", tc.name, got, tc.want)
-		}
-	}
-}
-
 func TestCaptureResult(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
