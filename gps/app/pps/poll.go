@@ -54,6 +54,7 @@ type poller struct {
 	stats       *PollStats
 	nextEdge    time.Time
 	lastBracket time.Duration
+	lastWidth   time.Duration
 	widths      *median.Window[time.Duration]
 	slept       bool
 	stateReads  int
@@ -65,8 +66,8 @@ type poller struct {
 // from cold after losing the partly acquired signal. Tracking polls at the
 // finest cadence the host has and adapts only the extent of the window
 // around the predicted edge: a catch shrinks it toward a few brackets,
-// a miss doubles it, and sustained failure restarts the cycle from
-// acquisition.
+// a miss grows it by a quarter while the polling budget allows, and
+// sustained failure restarts the cycle from acquisition.
 //
 // Every catch is sent, with the midpoint of the two query midpoints as its
 // timestamp, Uncertainty reaching the outer endpoints of those queries, and
@@ -145,7 +146,7 @@ const (
 // miss resets that confirmation. Misses at the full-period window sweep the
 // poll-grid phase; missLimit misses after the window narrows abandon this
 // attempt. The returned duration is the extent with which tracking should
-// begin, at most maxExtent.
+// begin.
 func (p *poller) acquire() (time.Duration, bool, error) {
 	initialPolls, minSpacing := time.Duration(p.params.InitialPolls), p.params.MinSpacing
 	spacing := maxWindow / initialPolls
@@ -178,7 +179,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 				}
 			}
 			if acquired {
-				return min(initialPolls*spacing, maxExtent), true, nil
+				return initialPolls * spacing, true, nil
 			}
 			continue
 		}
@@ -203,6 +204,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 type trackObservation struct {
 	outcome         outcome
 	predictionError time.Duration
+	width           time.Duration // outer interval width; used only on catches
 	// bracket is the most recent caught bracket: this catch's own, or on a
 	// miss the previous catch's, since a missed window measures none.
 	bracket    time.Duration
@@ -231,14 +233,14 @@ func (p *poller) track(extent time.Duration) error {
 	attempt := func(extent time.Duration) (trackObservation, error) {
 		o, predictionError, err := p.pollWindow(extent, p.params.MinSpacing, true)
 		return trackObservation{outcome: o, predictionError: predictionError,
-			bracket: p.lastBracket, stateReads: p.stateReads}, err
+			width: p.lastWidth, bracket: p.lastBracket, stateReads: p.stateReads}, err
 	}
 	advance := func(d time.Duration) { p.nextEdge = p.nextEdge.Add(d) }
-	return track(extent, attempt, advance, p.logTrackEvent)
+	return track(extent, p.params.MinSpacing, attempt, advance, p.logTrackEvent)
 }
 
-// The tracking constants control dynamics only; every time scale comes from
-// observed brackets.
+// The tracking constants control dynamics and polling work, without a
+// hardware-dependent time limit on coverage.
 const (
 	// shrinkStop is the extent, in brackets, at which catches stop
 	// shrinking it. It is in brackets rather than a duration because the
@@ -248,26 +250,33 @@ const (
 	// shrinkDivisor sets the shrink rate: each catch drops the extent
 	// by 1/shrinkDivisor until shrinkStop brackets stop it.
 	shrinkDivisor = 32
+	// growthDivisor sets miss growth to a quarter of the extent, limiting
+	// how far one expansion can overshoot the polling budget at a steady pace.
+	growthDivisor = 4
+	// maxPolls is the threshold for further growth, not a limit on an
+	// attempt: polling continues through the full extent or until a catch.
+	maxPolls = 50
 	// failureLimit consecutive misses return tracking to acquisition.
 	failureLimit = 10
-	// maxExtent bounds the extent tracking will poll; a miss whose doubling
-	// would exceed it returns to acquisition instead.
-	maxExtent = period / 8
 )
 
 // track maintains the extent of the polling window with one feedback loop.
 // Polling resolution does not depend on the extent, so the extent is
-// coverage and CPU only. A catch advances the prediction by a period
-// plus half its prediction error, damping the midpoint's quantisation noise,
-// and shrinks the extent by 1/shrinkDivisor down to shrinkStop brackets; it
-// never widens it, so no catch, however wide its bracket, can make the loop
-// work harder. A miss doubles the extent, which is how the loop finds the
-// margin a jittery host needs. failureLimit consecutive misses, or a doubling
-// that would exceed maxExtent, hand back to acquisition, since catching the
-// pulse in an inflated extent is far more expensive than reacquiring it.
+// coverage and CPU only. A catch advances the prediction by a period,
+// adding half its prediction error only when its outer interval is no wider
+// than half the extent: a coarse measurement must not displace a narrow
+// search window. Every catch resets failures and shrinks the extent by
+// 1/shrinkDivisor down to shrinkStop brackets; it never widens it, so no
+// catch, however wide its bracket, can make the loop work harder. A miss
+// grows the extent by a quarter unless both maxPolls reads and an extent of
+// maxPolls*minSpacing have been reached. Ignoring short sleeps can cost more
+// polls, but must not prevent growth to that coverage.
+// This finds the margin a jittery host needs while using observed polling
+// work to decide whether more coverage is affordable. Only failureLimit
+// consecutive misses hand back to acquisition.
 // Misses are reported as they happen; shrinking only once per halving, to
 // keep the log quiet.
-func track(extent time.Duration, attempt func(time.Duration) (trackObservation, error),
+func track(extent, minSpacing time.Duration, attempt func(time.Duration) (trackObservation, error),
 	advance func(time.Duration), report func(trackEvent)) error {
 	report(trackEvent{kind: trackStarted, extent: extent})
 	logged := extent
@@ -278,7 +287,11 @@ func track(extent time.Duration, attempt func(time.Duration) (trackObservation, 
 			return err
 		}
 		if obs.outcome == caught {
-			advance(period + obs.predictionError/2)
+			d := period
+			if obs.width <= extent/2 {
+				d += obs.predictionError / 2
+			}
+			advance(d)
 			failures = 0
 			next := min(extent, max(extent-extent/shrinkDivisor, shrinkStop*obs.bracket))
 			if 2*next <= logged {
@@ -290,8 +303,11 @@ func track(extent time.Duration, attempt func(time.Duration) (trackObservation, 
 		}
 		advance(period)
 		failures++
-		next := 2 * extent
-		if failures >= failureLimit || next > maxExtent {
+		next := extent
+		if obs.stateReads < maxPolls || extent < maxPolls*minSpacing {
+			next += extent / growthDivisor
+		}
+		if failures >= failureLimit {
 			report(trackEvent{kind: trackLost, extent: extent, nextExtent: next, observation: obs, failures: failures})
 			return nil
 		}
@@ -315,11 +331,7 @@ func (p *poller) logTrackEvent(e trackEvent) {
 			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
 			"failures", e.failures)
 	case trackLost:
-		cause := "failures"
-		if e.failures < failureLimit {
-			cause = "extent"
-		}
-		p.lg.Info("serial PPS track status", "reason", "lost", "cause", cause,
+		p.lg.Info("serial PPS track status", "reason", "lost",
 			"extent", e.extent, "nextExtent", e.nextExtent, "stateReads", e.observation.stateReads,
 			"bracket", e.observation.bracket, "failures", e.failures)
 	}
@@ -416,6 +428,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
 			uncertainty = [2]time.Duration{edge.elapsedSince(prev.poll.start), cur.poll.end.elapsedSince(edge)}
+			p.lastWidth = uncertainty[0] + uncertainty[1]
 			pollWidths = [2]time.Duration{prev.poll.duration(), cur.poll.duration()}
 		}
 		prev = cur
@@ -428,7 +441,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		return miss, 0, nil
 	}
 	predictionError := edge.mono.Sub(nextEdge)
-	anomalous := p.anomalous(uncertainty[0]+uncertainty[1], acquired)
+	anomalous := p.anomalous(p.lastWidth, acquired)
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.

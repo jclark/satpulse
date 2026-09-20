@@ -30,10 +30,56 @@ evidence.
 ### Tracking controller
 
 Tracking cadence is independent of extent. Catches cannot widen the
-extent; misses double it; catches shrink it at 31/32, stopping at eight
-midpoint-to-midpoint brackets. The first redesign replaced settled-bracket
-history with local rejection tests and removed `Settled`. The subsequent
+extent; misses grow it by 25% while the polling budget allows; catches
+shrink it at 31/32, stopping at eight midpoint-to-midpoint brackets.
+The first redesign replaced settled-bracket history with local rejection
+tests and removed `Settled`. The subsequent
 anomaly-flag revision below has removed those local tests and `Rejected`.
+
+### Poll-count budget replaces maximum extent
+
+Implemented: a missed window increases the next extent by one quarter
+unless both the read count is at least 50 and the extent is at least
+`50 * MinSpacing`. The count is feedback from a completed search, not a
+reason to stop polling early. Catches keep the existing shrink rule.
+
+`MaxExtent` and the acquisition handoff cap are removed. Only ten
+consecutive misses return tracking to acquisition; a catch resets that
+count. This resolves review point 9: reaching the work budget no longer
+causes premature reacquisition.
+
+The product `MaxPolls * MinSpacing` is 2.5 ms with the defaults: roughly
+1.25 ms either side of the prediction. Skipping sleeps increases the
+number of polls within a chosen extent; it does not shorten that extent.
+The extent condition prevents those extra reads from stopping expansion
+below this coverage scale. It is not a minimum extent: catches can still
+shrink below it. Slower queries can permit growth beyond it.
+
+The budget limits permission to grow rather than imposing a hard read
+limit. Skipped waits, an extent inherited from acquisition, a change in
+query pace, or one expansion can produce more than 50 reads. Growth by
+1.25 reduces the overshoot compared with doubling. Linux
+fractional-millisecond sleeping remains separate follow-up work.
+
+### Prediction correction requires a sufficiently narrow interval
+
+Implemented: tracking applies half the prediction error only when the
+outer interval width `W` is at most half the current extent, before any
+shrinking. A wider catch advances prediction by exactly one period.
+Every catch still resets failures, follows the ordinary shrink rule and
+is sent to the consumer. The controller does not read `Anomalous`.
+Acquisition continues to adopt its coarse catches normally.
+
+This protects a narrow search window from an imprecise phase estimate.
+On the loaded Mac, a 13 ms opening poll corrected prediction by 5 ms and
+cost four misses. In the synthetic three-stall scenario, a 50 ms query
+shifted prediction by about 6 ms. With 1.25 growth but no correction
+guard, that produced nine recovery misses and a 12-second forwarding gap.
+With the half-extent guard, the scenario has only the two misses directly
+caused by stalls, a three-second forwarding gap and no reacquisition.
+
+The outer width controls correction eligibility; midpoint separation
+remains the shrink rule's cadence measure, so `K` stays at eight.
 
 ### Asymmetric uncertainty and paired poll widths
 
@@ -62,8 +108,8 @@ reported interval; human-readable timestamps still round to microseconds.
 The consumer and simulator apply the existing uncertainty limit to the
 larger component. Interval validity now requires ordered query endpoints and an outer width strictly between
 zero and one period. The controller retains midpoint separation as its
-`bracket`, with the same shrink constant and half-error prediction
-correction.
+`bracket`, with the same shrink constant. Eligible prediction corrections
+still use half the prediction error.
 
 ### Anomaly flag replaces rejected catches
 
@@ -168,17 +214,23 @@ a CPU saving where it can be honoured and nothing where it cannot.
 4. Update the state:
 
    ```
-   catch:     prediction += period + predictionError/2
+   catch:     prediction += period
+              if W <= extent / 2:
+                  prediction += predictionError / 2
               extent      = min(extent, max(extent * 31/32, K * bracket))
               failures    = 0
    miss:      prediction += period
-              extent      = 2 * extent
               failures++
+              if stateReads < MaxPolls || extent < MaxPolls * MinSpacing:
+                  extent += extent / 4
    ```
 
-5. Give up and return to acquisition if `failures >= F`, or if the
-   doubling in step 4 would make `extent` exceed `MaxExtent`. In the
-   second case the doubling is not applied.
+5. Give up and return to acquisition if `failures >= F`. No extent growth
+   is applied when returning to acquisition. Reaching the poll budget
+   can prevent growth once the coverage scale is reached; it does not
+   cause reacquisition. A miss searches the full extent, so its read count
+   measures the cost of that search.
+   Catches stop early and their read counts do not control growth.
 6. Send every catch to the consumer with the midpoint of the two poll
    midpoints as its timestamp `T`, `Uncertainty = [T - prev.start,
    cur.end - T]`, `PollWidths = [duration(prev), duration(cur)]`, and a
@@ -198,7 +250,8 @@ A slept catch or miss resets the query-paced confirmation. Misses sweep
 the poll-grid phase, and an in-progress pulse is polled through.
 
 Coarse or anomalous catches can advance acquisition normally. The extent
-handed to tracking is capped at `MaxExtent`.
+handed to tracking is 64 times the spacing after the final halving, with
+no separate extent cap. The acquisition spacing policy is unchanged.
 
 ### Constants
 
@@ -209,14 +262,16 @@ None encodes a hardware timing.
 | `MinSpacing` | sleep between queries where the platform can | 50 us, as today |
 | `K` | brackets at which shrinking stops | 8 |
 | shrink | fraction of the extent kept per catch | 31/32 |
+| growth | extent multiplier after a miss when growth is allowed | 1.25 |
+| `MaxPolls` | state-read threshold for allowing further growth | 50 |
+| correction width fraction | largest outer width relative to the pre-catch extent for phase correction | 1/2 |
 | anomaly ratio | outer width relative to the recent median | 4 |
 | history length | previous valid tracking widths | 31 |
 | `F` | consecutive misses before giving up | 10 |
-| `MaxExtent` | largest tracking extent, a fraction of the period | 1/8 |
 | `U` | consumer's uncertainty limit | 1 ms, as today |
 
-Measured quantities: the bracket, the durations of the two queries around
-the edge, and the gap before the catching query.
+Measured quantities: state reads per attempt, the bracket, the durations
+of the two queries around the edge, and the gap before the catching query.
 
 ### Consumer
 
@@ -237,8 +292,8 @@ faster.
 - The 300-catch hold after a short run of misses (`shrinkAfter`,
   `catches`, `absentRun`).
 - First-miss growth by two brackets, distinct from later doubling.
-- Loss declared by ten misses at the full period (replaced by `F` and
-  `MaxExtent`).
+- Loss declared by ten misses at the full period (replaced by `F`
+  consecutive misses at any extent).
 - `atFloor` and `Settled`.
 - The ring of recent settled brackets and `OutlierRatio`. The new width
   history includes all valid tracking catches, independently of forwarding.
@@ -290,7 +345,8 @@ complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-cat
 
 The redesign has focused on tracking; review acquisition against the new
 CPU budget model too. Its initial allowance of 64 polls comes from the
-previous design, whereas tracking now permits more polls. Consider
+previous design; tracking now uses 50 observed reads as its growth
+threshold rather than a maximum extent. Consider
 allowing more polls at the start of acquisition to find short pulses
 sooner. Evaluate acquisition time and total CPU cost, as well as sustained
 cost when no pulse is present. The current `InitialPolls` parameter also
@@ -309,44 +365,6 @@ Investigate a simple way to acquire short pulses more reliably. Compare
 acquisition time across startup phases, restarts and CPU cost, including
 the hardware comparison between the existing pulse and a 0.1 s pulse.
 
-### Revisit reacquisition at the maximum extent
-
-Review point 9 remains unresolved: a miss returns to acquisition when
-doubling would exceed `MaxExtent`, even before ten consecutive misses.
-Acquisition can hand tracking an extent already at `MaxExtent`, in which
-case one miss causes reacquisition. From a 15.625 ms extent, four
-consecutive misses suffice to reach this exit.
-
-Decide whether to retain this early exit or cap the extent at `MaxExtent`
-and continue until the failure limit. Compare total polling cost and
-recovery time, including the cost of reacquiring a short pulse; the
-ten-failure limit currently does not guarantee ten tracking attempts.
-
-### Consider a separate prediction correction guard
-
-Independently of anomaly classification, consider whether prediction
-correction needs protection from imprecise measurements. A proposed local
-guard would skip correction when `W > extent`: the observation is then
-less precise than the current search scale. On the loaded Mac, a 13 ms
-open poll passed the open-read exception, corrected the prediction by
-5 ms and cost four misses. This width guard would have stopped that
-correction. Width and placement are distinct, though: the guard alone
-does not address a narrow catch far from the prediction.
-
-This guard is not yet chosen. It must earn its place as a prediction
-update rule, without recreating a special catch category with different
-failure counting and acquisition behaviour. The implemented anomaly flag
-does not depend on adopting it. Midpoint separation remains the controller's cadence measure;
-changing uncertainty to outer width is not a reason to change `K` from
-8 to 4.
-
-For context, tests of the former rejection rules produced gaps of 14,
-24 and 44 s for ten, twenty and forty stalled catches, including
-reacquisition. The longest rejection run seen on hardware was seven before
-the absolute floor was added and two since. These results motivate
-checking consecutive forwarding gaps, not just anomaly rates, when
-evaluating the revised controller and forwarding gate together.
-
 ### Evaluate the estimator
 
 Keep the midpoint of poll midpoints for now. On catches the consumer would
@@ -363,9 +381,14 @@ changing what interval is reported.
 
 ### Review coverage and pacing
 
-- **Maximum extent.** Is `MaxExtent = period/8` too generous? At a
-  one-second period, 125 ms costs about 12 percent of a core on the Mac
-  for the few seconds before acquisition takes over.
+- **Polling budget and growth.** Evaluate the 50-read growth threshold
+  together with the `MaxPolls * MinSpacing` coverage scale and 1.25 growth
+  factor against recorded disturbances. Slower expansion reduces budget
+  overshoot but can delay recovery from a large prediction error. Compare
+  forwarding gaps and total CPU, including reacquisition. Check that the
+  default 2.5 ms coverage scale accommodates the observed phase error and
+  window-opening delay; increasing `MinSpacing` also changes resolution
+  where that spacing is honoured.
 - **Minimum coverage.** With 3.6 us UART queries, midpoint separation is
   about 4.5 us and extent shrinks to about 35 us. Scheduler jitter above
   roughly 17 us then costs a miss: 11 isolated misses in 20 minutes
@@ -394,8 +417,9 @@ changing what interval is reported.
 This section records the incident and the reasoning behind the initial
 controller redesign. References to the old controller and its scalar
 uncertainty describe the code before that redesign or the later interface
-fix. The local rejection heuristics described here have since been removed;
-"Current algorithm" specifies their replacement.
+fix. The local rejection heuristics, miss doubling, unconditional phase
+correction and maximum-extent exit described here have since been
+replaced; "Current algorithm" specifies the implemented rules.
 
 ### The incident
 
@@ -551,7 +575,10 @@ of queries per second on the key target and the benefit is that the
 prediction-error excursions of a few hundred microseconds seen in the Mac
 log sit inside the margin instead of being rediscovered by misses.
 
-### Every miss doubles
+### Miss doubling in the initial redesign
+
+This rationale is historical. Miss growth is now 1.25 and conditional on
+the observed poll count, as recorded under "Revisions made".
 
 A miss is the only event that widens the extent, and every miss doubles
 it. There is no first-miss special case and no `lastMissed` state. This
@@ -572,6 +599,13 @@ filter cannot afford, and the state it needs is not worth keeping.
 ### Local rejection in the initial redesign
 
 These rules are historical. The implemented anomaly flag has replaced them.
+
+Tests of the former rejection rules produced gaps of 14, 24 and 44 s for
+ten, twenty and forty stalled catches, including reacquisition. The
+longest rejection run seen on hardware was seven before the absolute
+floor was added and two since. These results motivate checking consecutive
+forwarding gaps, not just anomaly rates, when evaluating the controller
+and forwarding gate together.
 
 A stall can land in three places relative to the two queries around the
 edge: inside the first, inside the second, or between them. The two
@@ -640,7 +674,10 @@ slow queries, acquisition is the expensive mode. A transient common
 slowdown resolves by itself while tracking keeps its phase; hardware
 permanently too slow for `U` deserves a warning from the consumer.
 
-### One budget constant
+### The maximum-extent budget in the initial redesign
+
+This rationale is historical. The implemented budget now uses observed
+state-read counts rather than an extent limit.
 
 A polling budget accounted as elapsed query time per period, shared by
 both modes and carried across mode switches as a credit balance, was
@@ -687,15 +724,22 @@ show; the bracket widths alone do not.
 
 ### Unit tests
 
-The full `make test` suite passed after the anomaly-flag revision. The
-incident simulation forwards no sample outside the uncertainty limit and
-has a longest forwarding gap of three seconds, with no reacquisition.
+The full `make test` suite passed after the poll-budget and prediction-guard
+revision. The synthetic three-stall scenario forwards no sample outside
+the uncertainty limit and has two tracking misses and a longest
+forwarding gap of three seconds, with no reacquisition.
 
 The relevant coverage includes:
 
 - `track` via the simulated `attempt`: catches never increase extent,
-  shrink stops at `K` brackets, every miss doubles, and both `F` and
-  `MaxExtent` hand back to acquisition.
+  shrink stops at `K` brackets, a miss grows by a quarter below 50 reads
+  or below `50 * MinSpacing`, and holds when both thresholds are reached.
+  Only `F` consecutive misses hand back to acquisition, including at the
+  former extent limit; a catch resets the failure count even when it is
+  too wide to correct prediction.
+- The half-extent correction boundary, unchanged ordinary catch handling
+  when correction is skipped, and continued growth despite extra reads
+  from skipped waits, including a nondefault minimum spacing.
 - The four-times-median boundary, empty and short histories, exclusion of
   acquisition widths, and adaptation through anomalous catches.
 - Identical polling observations with histories that make all catches

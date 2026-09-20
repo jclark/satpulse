@@ -44,8 +44,8 @@ func TestSimulateQuiet(t *testing.T) {
 // TestSimulateStalls replays the shape of the 2026-09-20 incident with
 // stalls placed where the loop is exposed. The first two cause missed
 // windows; the third stretches the catching bracket to tens of milliseconds.
-// That catch is anomalous but still corrects prediction, causing two more
-// misses. Nothing wrong is forwarded, and forwarding is back within a few seconds.
+// That catch is anomalous and too wide to correct prediction. Nothing wrong
+// is forwarded, and the next pulse after the last stall is caught normally.
 func TestSimulateStalls(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sim.Duration = 180
@@ -56,14 +56,14 @@ func TestSimulateStalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log(st)
-	if st.Anomalous != 1 || st.TrackMisses != 4 {
-		t.Errorf("anomalous = %d trackMisses = %d, want 1 and 4", st.Anomalous, st.TrackMisses)
+	if st.Anomalous != 1 || st.TrackMisses != 2 {
+		t.Errorf("anomalous = %d trackMisses = %d, want 1 and 2", st.Anomalous, st.TrackMisses)
 	}
 	if st.Wrong != 0 {
 		t.Errorf("%d forwarded edges wrong by more than the limit, want none", st.Wrong)
 	}
-	if st.LongestGap > 5 || st.Lost != 0 {
-		t.Errorf("longestGap = %v s lost = %d, want forwarding back within a few seconds without reacquisition", st.LongestGap, st.Lost)
+	if st.LongestGap > 3.001 || st.Lost != 0 {
+		t.Errorf("longestGap = %v s lost = %d, want a gap of at most three pulses without reacquisition", st.LongestGap, st.Lost)
 	}
 }
 

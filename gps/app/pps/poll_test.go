@@ -201,13 +201,12 @@ func TestPoll(t *testing.T) {
 // previous catch's bracket. The late-opens scenario reproduces the hardware's
 // sporadic oversleep of the window open: an edge arriving before the late
 // open cannot be observed, so the extent that misses is discovered only by
-// missing, and the miss-double-shrink cycle pays an isolated miss for it
-// every so often. Even with prompt opens the jitter sits at the edge of the
+// missing, and the miss-grow-shrink cycle pays occasional misses for it.
+// Even with prompt opens the jitter sits at the edge of the
 // extent that shrinkStop brackets of the narrowest bracket give, so the
 // cycle shows there too, at a lower rate. The outage scenario is a run of
-// misses the doubling survives without maxExtent handing back to
-// acquisition; the wide-catch scenario stretches every 30th bracket,
-// which must not widen the extent.
+// misses shorter than the failure limit; the wide-catch scenario stretches
+// every 30th bracket, which must not widen the extent.
 func TestTrackSimulation(t *testing.T) {
 	const openLate = 900 * time.Microsecond
 	tests := []struct {
@@ -254,7 +253,7 @@ func TestTrackSimulation(t *testing.T) {
 			var events []trackEvent
 			nextEdge := time.Duration(0)
 			lastBracket := brackets[0]
-			err := track(initialPolls*minSpacing, func(extent time.Duration) (trackObservation, error) {
+			err := track(initialPolls*minSpacing, minSpacing, func(extent time.Duration) (trackObservation, error) {
 				i := len(samples)
 				if i == cap(samples) {
 					return trackObservation{}, done
@@ -290,7 +289,7 @@ func TestTrackSimulation(t *testing.T) {
 				samples = append(samples, sample{extent: extent, predictionError: predictionError,
 					outcome: o, stateReads: stateReads})
 				return trackObservation{outcome: o, predictionError: predictionError,
-					bracket: lastBracket, stateReads: stateReads}, nil
+					width: 2 * bracket, bracket: lastBracket, stateReads: stateReads}, nil
 			}, func(d time.Duration) {
 				nextEdge += d
 			}, func(e trackEvent) {
@@ -373,12 +372,6 @@ func TestTrackSimulation(t *testing.T) {
 					t.Errorf("tracking event kind = %v, want no loss events", e.kind)
 				}
 			}
-			for i, s := range samples {
-				if s.extent > maxExtent {
-					t.Errorf("attempt %d extent = %v, want at most maxExtent %v", i, s.extent, maxExtent)
-					break
-				}
-			}
 			if samples[3].extent <= 2*samples[3].predictionError.Abs() {
 				t.Errorf("disturbance extent = %v for prediction error %v, want the edge retained inside the margin",
 					samples[3].extent, samples[3].predictionError)
@@ -389,22 +382,25 @@ func TestTrackSimulation(t *testing.T) {
 
 // TestTrackFeedback pins the feedback law step by step: a catch shrinks
 // the extent by 1/shrinkDivisor but not below shrinkStop brackets, half of
-// each prediction error advances the prediction, every miss doubles,
-// and a catch with a wide bracket never widens the extent.
+// a sufficiently precise catch's prediction error advances the prediction,
+// misses grow only below the poll budget, and a wide catch neither widens
+// the extent nor corrects prediction.
 func TestTrackFeedback(t *testing.T) {
 	done := errors.New("simulation complete")
 	var extents, advances []time.Duration
 	var events []trackEvent
 	observations := []trackObservation{
-		{outcome: caught, bracket: 100 * time.Microsecond},
-		{outcome: caught, predictionError: 750 * time.Microsecond, bracket: 50 * time.Microsecond},
-		{outcome: caught, predictionError: 2 * time.Millisecond, bracket: 400 * time.Microsecond},
-		{outcome: miss, bracket: 400 * time.Microsecond},
-		{outcome: miss, bracket: 400 * time.Microsecond},
-		{outcome: caught, bracket: 100 * time.Microsecond},
-		{outcome: caught, bracket: time.Millisecond},
+		{outcome: caught, width: 200 * time.Microsecond, bracket: 100 * time.Microsecond},
+		{outcome: caught, predictionError: 750 * time.Microsecond, width: 100 * time.Microsecond, bracket: 50 * time.Microsecond},
+		{outcome: caught, predictionError: 2 * time.Millisecond, width: 800 * time.Microsecond, bracket: 400 * time.Microsecond},
+		{outcome: miss, bracket: 400 * time.Microsecond, stateReads: 49},
+		{outcome: miss, bracket: 400 * time.Microsecond, stateReads: 50},
+		{outcome: miss, bracket: 400 * time.Microsecond, stateReads: 51},
+		{outcome: caught, width: 200 * time.Microsecond, bracket: 100 * time.Microsecond},
+		{outcome: caught, width: 2 * time.Millisecond, bracket: time.Millisecond},
+		{outcome: miss, bracket: time.Millisecond, stateReads: 40},
 	}
-	err := track(800*time.Microsecond, func(extent time.Duration) (trackObservation, error) {
+	err := track(800*time.Microsecond, 10*time.Microsecond, func(extent time.Duration) (trackObservation, error) {
 		extents = append(extents, extent)
 		if len(extents) > len(observations) {
 			return trackObservation{}, done
@@ -419,15 +415,16 @@ func TestTrackFeedback(t *testing.T) {
 		t.Fatalf("track error = %v, want simulation completion", err)
 	}
 	if want := []time.Duration{800 * time.Microsecond, 800 * time.Microsecond, 775 * time.Microsecond,
-		775 * time.Microsecond, 1550 * time.Microsecond, 3100 * time.Microsecond,
-		3003125 * time.Nanosecond, 3003125 * time.Nanosecond}; !reflect.DeepEqual(extents, want) {
+		775 * time.Microsecond, 968750 * time.Nanosecond, 968750 * time.Nanosecond,
+		968750 * time.Nanosecond, 938477 * time.Nanosecond, 938477 * time.Nanosecond,
+		1173096 * time.Nanosecond}; !reflect.DeepEqual(extents, want) {
 		t.Errorf("tracking extents = %v, want %v", extents, want)
 	}
-	if want := []time.Duration{period, period + 375*time.Microsecond, period + time.Millisecond, period, period,
-		period, period}; !reflect.DeepEqual(advances, want) {
+	if want := []time.Duration{period, period + 375*time.Microsecond, period, period, period,
+		period, period, period, period}; !reflect.DeepEqual(advances, want) {
 		t.Errorf("prediction advances = %v, want %v", advances, want)
 	}
-	wantEvents := []trackEventKind{trackStarted, trackMissed, trackMissed}
+	wantEvents := []trackEventKind{trackStarted, trackMissed, trackMissed, trackMissed, trackMissed}
 	if len(events) != len(wantEvents) {
 		t.Fatalf("tracking events = %v, want kinds %v", events, wantEvents)
 	}
@@ -436,8 +433,72 @@ func TestTrackFeedback(t *testing.T) {
 			t.Errorf("tracking event %d kind = %v, want %v", i, events[i].kind, want)
 		}
 	}
-	if events[1].failures != 1 || events[2].failures != 2 {
-		t.Errorf("failure counts = %d %d, want 1 and 2", events[1].failures, events[2].failures)
+	for i, want := range []int{1, 2, 3, 1} {
+		if got := events[i+1].failures; got != want {
+			t.Errorf("miss event %d failures = %d, want %d", i, got, want)
+		}
+	}
+}
+
+// TestTrackBudgetCoverage checks that skipped waits cannot stop expansion
+// below the coverage implied by the configured spacing and poll budget.
+func TestTrackBudgetCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		extent, spacing time.Duration
+		want            time.Duration
+	}{
+		{"below coverage", 2 * time.Millisecond, 50 * time.Microsecond, 2500 * time.Microsecond},
+		{"at coverage", 2500 * time.Microsecond, 50 * time.Microsecond, 2500 * time.Microsecond},
+		{"custom spacing", 2500 * time.Microsecond, 100 * time.Microsecond, 3125 * time.Microsecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			done := errors.New("simulation complete")
+			var extents []time.Duration
+			err := track(tc.extent, tc.spacing, func(extent time.Duration) (trackObservation, error) {
+				extents = append(extents, extent)
+				if len(extents) > 1 {
+					return trackObservation{}, done
+				}
+				return trackObservation{outcome: miss, stateReads: 100}, nil
+			}, func(time.Duration) {}, func(trackEvent) {})
+			if !errors.Is(err, done) {
+				t.Fatalf("track error = %v, want simulation completion", err)
+			}
+			if got := extents[1]; got != tc.want {
+				t.Errorf("extent after miss = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTrackCorrection(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		width   time.Duration
+		advance time.Duration
+	}{
+		{"below half", 500*time.Microsecond - 1, period + 100*time.Microsecond},
+		{"at half", 500 * time.Microsecond, period + 100*time.Microsecond},
+		{"above half", 500*time.Microsecond + 1, period},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			done := errors.New("simulation complete")
+			var advance time.Duration
+			err := track(time.Millisecond, minSpacing, func(time.Duration) (trackObservation, error) {
+				if advance != 0 {
+					return trackObservation{}, done
+				}
+				return trackObservation{outcome: caught, predictionError: 200 * time.Microsecond,
+					width: tc.width, bracket: tc.width / 2}, nil
+			}, func(d time.Duration) { advance = d }, func(trackEvent) {})
+			if !errors.Is(err, done) {
+				t.Fatalf("track error = %v, want simulation completion", err)
+			}
+			if advance != tc.advance {
+				t.Errorf("prediction advance = %v, want %v", advance, tc.advance)
+			}
+		})
 	}
 }
 
@@ -448,11 +509,11 @@ func TestTrackShrinkReported(t *testing.T) {
 	done := errors.New("simulation complete")
 	var events []trackEvent
 	attempts := 0
-	err := track(3200*time.Microsecond, func(extent time.Duration) (trackObservation, error) {
+	err := track(3200*time.Microsecond, minSpacing, func(extent time.Duration) (trackObservation, error) {
 		if attempts++; attempts > 40 {
 			return trackObservation{}, done
 		}
-		return trackObservation{outcome: caught, bracket: 100 * time.Microsecond}, nil
+		return trackObservation{outcome: caught, width: 200 * time.Microsecond, bracket: 100 * time.Microsecond}, nil
 	}, func(time.Duration) {}, func(e trackEvent) {
 		events = append(events, e)
 	})
@@ -467,41 +528,48 @@ func TestTrackShrinkReported(t *testing.T) {
 	}
 }
 
-// TestTrackLoss pins the give-up rules: a miss whose doubling would exceed
-// maxExtent, or failureLimit consecutive misses, hand back to
-// acquisition.
+// TestTrackLoss checks that only consecutive misses cause reacquisition,
+// even at the former extent limit or after exhausting the polling budget.
 func TestTrackLoss(t *testing.T) {
 	tests := []struct {
-		name         string
-		extent       time.Duration
-		outcome      outcome
-		wantAttempts int
-		wantExtent   time.Duration
+		name       string
+		stateReads int
+		catchAfter int
 	}{
-		{name: "misses double to the bound", extent: time.Millisecond, outcome: miss, wantAttempts: 7, wantExtent: 64 * time.Millisecond},
-		{name: "misses from a wide extent", extent: 20 * time.Millisecond, outcome: miss, wantAttempts: 3, wantExtent: 80 * time.Millisecond},
-		{name: "consecutive misses", extent: time.Microsecond, outcome: miss, wantAttempts: failureLimit, wantExtent: 512 * time.Microsecond},
+		{name: "below budget", stateReads: 49},
+		{name: "at budget", stateReads: 50},
+		{name: "above budget", stateReads: 100},
+		{name: "wide catch resets failures", stateReads: 50, catchAfter: 9},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			var extents []time.Duration
 			var events []trackEvent
-			err := track(tc.extent, func(extent time.Duration) (trackObservation, error) {
+			err := track(period/8, minSpacing, func(extent time.Duration) (trackObservation, error) {
 				extents = append(extents, extent)
-				return trackObservation{outcome: tc.outcome, bracket: 100 * time.Microsecond}, nil
+				o := miss
+				if tc.catchAfter > 0 && len(extents) == tc.catchAfter+1 {
+					o = caught
+				}
+				return trackObservation{outcome: o, width: 100 * time.Millisecond,
+					bracket: 50 * time.Millisecond, stateReads: tc.stateReads}, nil
 			}, func(time.Duration) {}, func(e trackEvent) {
 				events = append(events, e)
 			})
 			if err != nil {
 				t.Fatalf("track error = %v, want nil after loss", err)
 			}
-			if len(extents) != tc.wantAttempts {
-				t.Errorf("pulse declared gone after %d attempts, want %d", len(extents), tc.wantAttempts)
+			wantAttempts := failureLimit
+			if tc.catchAfter > 0 {
+				wantAttempts += tc.catchAfter + 1
+			}
+			if len(extents) != wantAttempts {
+				t.Errorf("pulse declared gone after %d attempts, want %d", len(extents), wantAttempts)
 			}
 			last := events[len(events)-1]
-			if last.kind != trackLost || last.extent != tc.wantExtent || last.failures != tc.wantAttempts {
-				t.Errorf("last event = kind %v extent %v failures %d, want loss at extent %v after %d failures",
-					last.kind, last.extent, last.failures, tc.wantExtent, tc.wantAttempts)
+			if last.kind != trackLost || last.failures != failureLimit {
+				t.Errorf("last event = kind %v failures %d, want loss after %d failures",
+					last.kind, last.failures, failureLimit)
 			}
 		})
 	}
@@ -610,13 +678,14 @@ func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
 			}
 			done := errors.New("tracking complete")
 			attempts := 0
-			err = track(extent, func(extent time.Duration) (trackObservation, error) {
+			err = track(extent, p.params.MinSpacing, func(extent time.Duration) (trackObservation, error) {
 				if attempts == 12 {
 					return trackObservation{}, done
 				}
 				attempts++
 				o, e, err := p.pollWindow(extent, minSpacing, true)
-				return trackObservation{outcome: o, predictionError: e, bracket: p.lastBracket, stateReads: p.stateReads}, err
+				return trackObservation{outcome: o, predictionError: e, width: p.lastWidth,
+					bracket: p.lastBracket, stateReads: p.stateReads}, err
 			}, func(d time.Duration) {
 				p.nextEdge = p.nextEdge.Add(d)
 			}, func(e trackEvent) {
@@ -642,7 +711,7 @@ func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
 }
 
 // TestPollShortOutageKeepsTracking checks that an outage shorter than the
-// give-up horizon does not discard the phase: the doubled extent recaptures
+// give-up horizon does not discard the phase: the grown extent recaptures
 // the pulse on its first reappearance, and since tracking polls at query
 // resolution whatever the extent, the recapture is usable at once.
 func TestPollShortOutageKeepsTracking(t *testing.T) {
@@ -794,7 +863,7 @@ func TestPollTrackingConverges(t *testing.T) {
 
 // TestPollDeliveryTailCostsIsolatedMisses checks that a recurring 1 ms
 // delivery delay, beyond the extent that shrinkStop brackets give, is paid
-// for with isolated misses only: each miss doubles the extent, which then
+// for with isolated misses only: each miss grows the extent, which then
 // shrinks back until the boundary is found again, so no two consecutive
 // pulses are lost.
 func TestPollDeliveryTailCostsIsolatedMisses(t *testing.T) {
