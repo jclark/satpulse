@@ -36,6 +36,11 @@ type PollParams struct {
 	// scheduled poll. It reports whether it actually waited: false means
 	// the scheduled time was already past or nearer than it can sleep to.
 	Wait func(ctx context.Context, t time.Time) (bool, error)
+	// Now, if non-nil, replaces the clock the loop reads, so that a
+	// simulation can drive it in virtual time together with Wait. The
+	// reading serves as both the measurement stamp and the pacing
+	// coordinate.
+	Now func() time.Time
 }
 
 type poller struct {
@@ -383,7 +388,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		if _, err := p.wait(open.Add(-p.params.PreWarm)); err != nil {
 			return miss, 0, err
 		}
-		for time.Now().Before(open) {
+		for p.now().mono.Before(open) {
 			if p.ctx.Err() != nil {
 				return miss, 0, p.ctx.Err()
 			}
@@ -491,14 +496,22 @@ func (p *poller) readState(sched time.Time) (reading, error) {
 	if err != nil {
 		return reading{}, err
 	}
-	start := now()
+	start := p.now()
 	inPulse, err := p.r.InPulse()
-	end := now()
+	end := p.now()
 	if err != nil {
 		return reading{}, err
 	}
 	return reading{inPulse: inPulse, poll: poll{start: start, end: end}, start: start.mono,
 		sched: sched, slept: slept}, nil
+}
+
+func (p *poller) now() clockReading {
+	if p.params.Now != nil {
+		t := p.params.Now()
+		return clockReading{stamp: t, mono: t}
+	}
+	return now()
 }
 
 func (p *poller) wait(t time.Time) (bool, error) {
