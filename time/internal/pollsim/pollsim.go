@@ -4,9 +4,10 @@
 // The real Poll runs unchanged: the simulator supplies its clock, its timer
 // and its pulse reader. Virtual time advances only when the loop does
 // something that takes time: a query, a clock read, or a sleep. Faults are a
-// pulse outage or a stall of the polling thread, which lands wherever the
+// pulse outage, a stall of the polling thread, which lands wherever the
 // loop happens to be, inside a query, between queries or at a wakeup, so
-// that the loop's rejection tests are exercised in every placement. The
+// that the loop's rejection tests are exercised in every placement, and a
+// period of slowed queries, which the rejection tests cannot see. The
 // consumer applies the daemon's forwarding rule, and the statistics judge
 // what the time daemon would have received: how many edges, how wrong, and
 // with what gaps between them.
@@ -116,6 +117,11 @@ type stall struct {
 	at, dur time.Duration
 }
 
+type slow struct {
+	from, to time.Duration
+	factor   float64
+}
+
 // sim is the virtual host: its clock, its timer, the pin, and the faults.
 // All of it is driven from the polling goroutine; the consumer only reads
 // the candidates that goroutine sends.
@@ -126,6 +132,8 @@ type sim struct {
 	work      time.Duration
 	stalls    []stall
 	nextStall int
+	slows     []slow
+	nextSlow  int
 	rng       *rand.Rand
 	jitter    []time.Duration
 	// Idle slowdown state: when the thread was last active, and how much
@@ -166,6 +174,26 @@ func newSim(cfg Config) *sim {
 		}
 	}
 	sort.Slice(s.stalls, func(i, j int) bool { return s.stalls[i].at < s.stalls[j].at })
+	for _, sl := range cfg.Fault.Slow {
+		if sl.Duration > 0 && sl.Factor > 1 {
+			s.slows = append(s.slows, slow{from: ptime.Seconds(sl.Start), to: ptime.Seconds(sl.Start + sl.Duration), factor: sl.Factor})
+		}
+	}
+	for _, b := range cfg.Fault.Slows {
+		if b.Rate == 0 || b.Factor <= 1 {
+			continue
+		}
+		burstEnd := s.end
+		if b.Duration > 0 {
+			burstEnd = ptime.Seconds(b.Start + b.Duration)
+		}
+		logMin, logMax := math.Log(b.Min), math.Log(b.Max)
+		for t := b.Start + s.rng.ExpFloat64()/b.Rate; ptime.Seconds(t) < burstEnd; t += s.rng.ExpFloat64() / b.Rate {
+			dur := math.Exp(logMin + s.rng.Float64()*(logMax-logMin))
+			s.slows = append(s.slows, slow{from: ptime.Seconds(t), to: ptime.Seconds(t + dur), factor: b.Factor})
+		}
+	}
+	sort.Slice(s.slows, func(i, j int) bool { return s.slows[i].from < s.slows[j].from })
 	return s
 }
 
@@ -218,12 +246,28 @@ func (s *sim) InPulse() (bool, error) {
 	if s.cold {
 		d *= q.Idle.Factor
 	}
+	d *= s.slowFactor()
 	dur := ptime.Seconds(d)
 	before := time.Duration(s.rng.Float64() * float64(dur))
 	s.run(before)
 	on := s.pulseOn(s.now)
 	s.run(dur - before)
 	return on, nil
+}
+
+// slowFactor is the query time multiplier of the slow periods in progress,
+// the largest of them when they overlap.
+func (s *sim) slowFactor() float64 {
+	for s.nextSlow < len(s.slows) && s.slows[s.nextSlow].to <= s.now {
+		s.nextSlow++
+	}
+	factor := 1.0
+	for i := s.nextSlow; i < len(s.slows) && s.slows[i].from <= s.now; i++ {
+		if s.slows[i].to > s.now {
+			factor = max(factor, s.slows[i].factor)
+		}
+	}
+	return factor
 }
 
 // run advances the clock by d of running time, inserting any stall that

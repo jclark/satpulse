@@ -1,7 +1,10 @@
 # The 2026-09-20 incident on the Mac: a few seconds of stalls of the
-# polling thread, from milliseconds to tens of milliseconds, while the
-# pulse is present throughout. The old controller withheld every sample
-# for 5 min 27 s; the objective is a gap of a few seconds.
+# polling thread, from milliseconds to tens of milliseconds, and periods
+# of slowed queries, while the pulse is present throughout. The old
+# controller withheld every sample for 5 min 27 s; the objective is a gap
+# of a few seconds. The stall and slowdown rates are a guess at the load
+# of a display wake and a Time Machine backup; the log only shows their
+# effect on three windows.
 
 [sim]
 duration = 1200
@@ -32,3 +35,11 @@ duration = 4
 rate = 10
 min = 2e-3
 max = 90e-3
+
+[[fault.slows]]
+start = 600
+duration = 4
+rate = 5
+min = 10e-3
+max = 200e-3
+factor = 8

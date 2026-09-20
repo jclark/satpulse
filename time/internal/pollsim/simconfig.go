@@ -102,6 +102,8 @@ type FaultConfig struct {
 	Outage []OutageConfig `toml:"outage" comment:"Periods with no pulse"`
 	Stall  []StallConfig  `toml:"stall" comment:"Single stalls of the polling thread"`
 	Stalls []StallBurst   `toml:"stalls" comment:"Random stalls of the polling thread"`
+	Slow   []SlowConfig   `toml:"slow" comment:"Single periods of slowed queries"`
+	Slows  []SlowBurst    `toml:"slows" comment:"Random periods of slowed queries"`
 }
 
 // OutageConfig is a period during which the pulse is absent.
@@ -130,6 +132,27 @@ type StallBurst struct {
 	Max      Seconds `toml:"max" check:">0,<10" comment:"Longest stall (s)"`
 }
 
+// SlowConfig is a period during which every query takes Factor times
+// longer: host load that slows the thread rather than stopping it, so
+// the two queries around an edge are slowed alike.
+type SlowConfig struct {
+	Start    Seconds `toml:"start" check:">=0" comment:"When the slow period begins (s)"`
+	Duration Seconds `toml:"duration" check:">=0" comment:"How long it lasts (s)"`
+	Factor   float64 `toml:"factor" check:">=1,<=1000" comment:"Query time multiplier"`
+}
+
+// SlowBurst is a Poisson process of slow periods at Rate per second during
+// [Start, Start+Duration), each lasting a log-uniform time between Min and
+// Max with queries taking Factor times longer.
+type SlowBurst struct {
+	Start    Seconds `toml:"start" check:">=0" comment:"When the burst begins (s)"`
+	Duration Seconds `toml:"duration" check:">=0" comment:"How long it lasts (s); 0 means the whole run"`
+	Rate     float64 `toml:"rate" check:">=0" comment:"Slow periods per second"`
+	Min      Seconds `toml:"min" check:">0,<100" comment:"Shortest slow period (s)"`
+	Max      Seconds `toml:"max" check:">0,<100" comment:"Longest slow period (s)"`
+	Factor   float64 `toml:"factor" check:">=1,<=1000" comment:"Query time multiplier"`
+}
+
 // DefaultConfig returns a configuration for a USB serial adapter on macOS:
 // 200 us queries, exact timers, no faults.
 func DefaultConfig() Config {
@@ -140,8 +163,9 @@ func DefaultConfig() Config {
 			Query:     QueryConfig{Duration: 200e-6, Jitter: 30e-6, Idle: IdleConfig{Factor: 1}},
 			ClockRead: 50e-9,
 		},
-		Poll:  PollConfig{MaxUncertainty: 1e-3},
-		Fault: FaultConfig{Outage: []OutageConfig{{}}, Stall: []StallConfig{{}}, Stalls: []StallBurst{{Min: 1e-3, Max: 1e-3}}},
+		Poll: PollConfig{MaxUncertainty: 1e-3},
+		Fault: FaultConfig{Outage: []OutageConfig{{}}, Stall: []StallConfig{{}}, Stalls: []StallBurst{{Min: 1e-3, Max: 1e-3}},
+			Slow: []SlowConfig{{Factor: 1}}, Slows: []SlowBurst{{Min: 1e-3, Max: 1e-3, Factor: 1}}},
 	}
 }
 
@@ -154,6 +178,11 @@ func (c *Config) Validate() error {
 	for i, b := range c.Fault.Stalls {
 		if b.Min > b.Max {
 			errs = append(errs, fmt.Errorf("fault.stalls[%d]: min %g exceeds max %g", i, b.Min, b.Max))
+		}
+	}
+	for i, b := range c.Fault.Slows {
+		if b.Min > b.Max {
+			errs = append(errs, fmt.Errorf("fault.slows[%d]: min %g exceeds max %g", i, b.Min, b.Max))
 		}
 	}
 	if idle := c.Host.Query.Idle; idle.After > 0 && idle.Recover == 0 {
