@@ -20,9 +20,9 @@ of its two uncertainty components is within a fixed limit. The anomaly flag
 has no effect on tracking or acquisition.
 
 "Revisions made" records completed changes. "Current algorithm" describes
-the implementation. "Possible follow-up work" records optional
-investigations into prediction correction, the estimator and coverage. The
-remaining sections preserve the historical design rationale and test
+the implementation. "Remaining fixes and validation" records unfinished
+work; "Possible follow-up work" records optional algorithm investigations.
+The remaining sections preserve the historical design rationale and test
 evidence.
 
 ## Revisions made
@@ -239,6 +239,22 @@ queries faster.
 - The ring of recent settled brackets and `OutlierRatio`. The new width
   history includes all valid tracking catches, independently of forwarding.
 
+## Remaining fixes and validation
+
+- **Warning counters (review point 8).** An anomalous catch returns before
+  resetting the coarse counter, whereas a non-anomalous catch resets the
+  anomalous counter. Alternating coarse and anomalous catches can therefore
+  produce a coarse warning whose `consecutive` count is not consecutive.
+  Make the reset rules match the warning's meaning.
+- **Regression comparison.** Compare the previous and current algorithms
+  under matching hardware, prewarm and load conditions. The completed runs
+  establish current behaviour, but do not by themselves establish whether
+  accuracy, forwarding gaps or CPU use have regressed.
+- **macOS measurements.** Replace the article's measurements with results
+  from the implemented algorithm, covering prewarm on, prewarm off and
+  load. The separate raw-versus-chrony-filtered comparison still needs a
+  daemon run; serial-tool captures alone do not supply it.
+
 ## Possible follow-up work
 
 These are optional investigations, not prerequisites for the implemented
@@ -247,6 +263,33 @@ each must justify its complexity with a concrete problem and measurable
 improvement.
 The four-times-median anomaly flag and removal of rejected catches are
 complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-catches).
+
+### Improve acquisition with short pulses
+
+The K901 on abondance's FT232R has an approximately 1 ms pulse and took
+67 s to acquire; a repeated startup took 57 s. The initial spacing is
+15.625 ms, so polling can repeatedly miss the whole pulse. In 100
+simulations per width, varying startup phase and timing with 130 us
+queries and the Linux timer model, acquisition took a median 25.6 s and
+maximum 111.3 s with 1 ms pulses, versus 5.5 s and 6.0 s with 100 ms
+pulses. This supports checking pulse width as the cause on hardware.
+
+Investigate a simple way to acquire short pulses more reliably. Compare
+acquisition time across startup phases, restarts and CPU cost, including
+the hardware comparison between the existing pulse and a 0.1 s pulse.
+
+### Revisit reacquisition at the maximum extent
+
+Review point 9 remains unresolved: a miss returns to acquisition when
+doubling would exceed `MaxExtent`, even before ten consecutive misses.
+Acquisition can hand tracking an extent already at `MaxExtent`, in which
+case one miss causes reacquisition. From a 15.625 ms extent, four
+consecutive misses suffice to reach this exit.
+
+Decide whether to retain this early exit or cap the extent at `MaxExtent`
+and continue until the failure limit. Compare total polling cost and
+recovery time, including the cost of reacquiring a short pulse; the
+ten-failure limit currently does not guarantee ten tracking attempts.
 
 ### Consider a separate prediction correction guard
 
