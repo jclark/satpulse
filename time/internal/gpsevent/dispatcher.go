@@ -328,9 +328,11 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 		Type: sysPulseEdgeType,
 		T:    ce.TRead,
 		Data: &SysPulseEdge{
-			T:           ce.Timestamp,
-			Uncertainty: gpsprot.Duration(ce.Uncertainty),
-			Rejected:    ce.Rejected,
+			T:              ce.Timestamp,
+			Uncertainty:    gpsprot.Duration(ce.Uncertainty),
+			StartPollWidth: gpsprot.Duration(ce.StartPollWidth),
+			EndPollWidth:   gpsprot.Duration(ce.EndPollWidth),
+			Rejected:       ce.Rejected,
 		},
 	})
 	// A rejected edge's bracket holds a stalled read, so its midpoint can be
@@ -448,9 +450,11 @@ type PHCPulseEdge struct {
 const sysPulseEdgeType = "sysPulseEdge"
 
 type SysPulseEdge struct {
-	T           time.Time        `json:"t"`
-	Uncertainty gpsprot.Duration `json:"uncertainty"`
-	Rejected    bool             `json:"rejected"`
+	T              time.Time        `json:"t"`
+	Uncertainty    gpsprot.Duration `json:"uncertainty"`
+	StartPollWidth gpsprot.Duration `json:"startPollWidth"`
+	EndPollWidth   gpsprot.Duration `json:"endPollWidth"`
+	Rejected       bool             `json:"rejected"`
 }
 
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:

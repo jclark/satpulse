@@ -570,13 +570,27 @@ new code should show the same or slightly more isolated misses and no
 long gaps. Under induced stalls the old code may reproduce a hold; the
 new code should not.
 
-### Later
+### Linux
 
-- Run satpulsed with the new code on the Mac for a day and compare, from
-  chrony's refclock log, the longest gap between CTS samples and the count
-  of gaps over 4 s against the 15 hours before the incident.
-- Confirm on a Linux host with a fast query that the query-paced loop
-  behaves the same, and note the steady-state query count.
+Confirm on a Linux host with a fast query that the query-paced loop
+behaves the same, and note the steady-state query count. Done on
+2026-09-20 on a native UART with 3.6 us queries (PPS on DCD) and an
+FT232R with 116 us queries (PPS on CTS), both with `-m poll` against a
+chrony disciplined from a GPS PHC: in 1200 s, 1186 of 1189 and 1151 of
+1154 edges forwardable, no rejections, isolated misses only, longest gap
+2 s, lateness p90 10 us and 114 us. The UART's steady state is about 350
+reads per window, set by the early open (see the open questions) rather
+than by the extent, which shrinks to 35 us.
+
+### Long run
+
+A day-long run on the Mac, with `satpulsetool serial` rather than
+satpulsed: it needs no privileges or configuration, and its edge times
+are judged against the gPTP-disciplined clock, which the serial PPS does
+not feed. Compare the longest gap between forwardable edges and the
+count of gaps over 4 s against the 15 hours before the incident, which
+had no gap over 5 s, and note the rejected and missed counts and the
+steady-state read rate. Started 2026-09-20 14:05 for 86400 s.
 
 ## Open questions
 

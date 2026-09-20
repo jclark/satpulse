@@ -424,6 +424,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	missed := cur.inPulse
 	prevAtOpen := p.stateReads == 1
 	var edge clockReading
+	var startWidth, endWidth time.Duration
 	rejected := false
 	for !missed && edge.stamp.IsZero() {
 		cur, err = p.readState(prev.start.Add(spacing))
@@ -436,6 +437,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		edge, missed = classify(prev, cur, deadline)
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
+			startWidth, endWidth = prev.poll.duration(), cur.poll.duration()
 			rejected = p.disturbed(prev, cur, prevAtOpen)
 		}
 		prev, prevAtOpen = cur, false
@@ -456,6 +458,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
 	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
+		"startPollWidth", startWidth, "endPollWidth", endWidth,
 		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads,
 		"rejected", rejected)
 	p.stats.addWindow(o, acquired)
@@ -471,8 +474,10 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 			Timestamp: edge.stamp,
 			TRead:     cur.poll.end.mono,
 		},
-		Uncertainty: halfCeil(p.lastBracket),
-		Rejected:    rejected,
+		Uncertainty:    halfCeil(p.lastBracket),
+		StartPollWidth: startWidth,
+		EndPollWidth:   endWidth,
+		Rejected:       rejected,
 	}
 	select {
 	case p.ceCh <- ce:

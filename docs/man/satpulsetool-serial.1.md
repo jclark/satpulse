@@ -100,7 +100,8 @@ for a USB port an `interface` string with the interface number,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
 With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
-and, when the **poll** method is used, optional fields `uncertainty` in seconds and `rejected`.
+and, when the **poll** method is used, optional fields `uncertainty`, `startPollWidth` and `endPollWidth` in seconds, and `rejected`.
+`uncertainty` is half the interval between the midpoints of the two status reads that bracket the edge, and `startPollWidth` and `endPollWidth` are the durations of those two reads, the one that saw the pin before the edge and the one that saw it after.
 A `rejected` value of true means the timing of the two reads bracketing the edge was disturbed, as when host load stalls a read, so the edge's timestamp is not to be trusted.
 
 # EXIT STATUS

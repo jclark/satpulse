@@ -165,8 +165,8 @@ func TestPoll(t *testing.T) {
 					t.Error("Poll did not report any coarse candidates during acquisition")
 				}
 				for i, e := range got {
-					if e.Uncertainty <= 0 {
-						t.Errorf("candidate %d uncertainty = %v, want positive", i, e.Uncertainty)
+					if e.Uncertainty <= 0 || e.StartPollWidth <= 0 || e.EndPollWidth <= 0 {
+						t.Errorf("candidate %d uncertainty = %v poll widths = %v %v, want all positive", i, e.Uncertainty, e.StartPollWidth, e.EndPollWidth)
 					}
 					if !e.TRead.After(e.Timestamp) {
 						t.Errorf("candidate %d read time %v is not after timestamp %v", i, e.TRead, e.Timestamp)

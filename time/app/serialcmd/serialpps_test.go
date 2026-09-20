@@ -36,6 +36,8 @@ func TestEdgePrinter(t *testing.T) {
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
 		{name: "rejected poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Rejected: true}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"rejected\":true}\n"},
+		{name: "poll widths JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, StartPollWidth: 12 * time.Microsecond, EndPollWidth: 14 * time.Microsecond}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"startPollWidth\":0.000012,\"endPollWidth\":0.000014}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer

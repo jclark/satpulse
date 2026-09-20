@@ -252,10 +252,12 @@ func detectEdges(parent context.Context, lg *slog.Logger, conn ppsConn, w serial
 }
 
 type ppsEvent struct {
-	Device      string  `json:"device"`
-	T           string  `json:"t"`
-	Uncertainty float64 `json:"uncertainty,omitzero"`
-	Rejected    bool    `json:"rejected,omitzero"`
+	Device         string  `json:"device"`
+	T              string  `json:"t"`
+	Uncertainty    float64 `json:"uncertainty,omitzero"`
+	StartPollWidth float64 `json:"startPollWidth,omitzero"`
+	EndPollWidth   float64 `json:"endPollWidth,omitzero"`
+	Rejected       bool    `json:"rejected,omitzero"`
 }
 
 func (e *ppsOutputError) Error() string {
@@ -282,10 +284,12 @@ func (p *edgePrinter) print(device string, edge pps.CandidateEdge) error {
 		}
 	} else {
 		event := ppsEvent{
-			Device:      device,
-			T:           t.Format("2006-01-02T15:04:05.000000Z"),
-			Uncertainty: edge.Uncertainty.Seconds(),
-			Rejected:    edge.Rejected,
+			Device:         device,
+			T:              t.Format("2006-01-02T15:04:05.000000Z"),
+			Uncertainty:    edge.Uncertainty.Seconds(),
+			StartPollWidth: edge.StartPollWidth.Seconds(),
+			EndPollWidth:   edge.EndPollWidth.Seconds(),
+			Rejected:       edge.Rejected,
 		}
 		err = json.NewEncoder(p.out).Encode(&event)
 	}

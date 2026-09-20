@@ -32,13 +32,19 @@ type Edge struct {
 // timing of the two queries around the edge looks disturbed, which is what a
 // query stalled by host load produces: the edge is inside the bracket but its
 // midpoint is not a useful estimate. Timing consumers forward a candidate
-// that is not rejected and whose Uncertainty is within their limit. A wait
-// or kernel candidate carries the backend timestamp directly and has no
-// polling uncertainty.
+// that is not rejected and whose Uncertainty is within their limit.
+// StartPollWidth and EndPollWidth are the durations of the two queries
+// around the edge, the one that read the pin off and the one that read it
+// on; with Uncertainty they give the gap between the queries as well, so
+// the three intervals the edge lies across can be studied after the fact.
+// A wait or kernel candidate carries the backend timestamp directly and has
+// no polling uncertainty.
 type CandidateEdge struct {
 	Edge
-	Uncertainty time.Duration
-	Rejected    bool
+	Uncertainty    time.Duration
+	StartPollWidth time.Duration
+	EndPollWidth   time.Duration
+	Rejected       bool
 }
 
 // GeneratorConfig controls how PPS edges are associated with UTC-labelled
