@@ -168,10 +168,10 @@ func (c PHCConfig) IsZero() bool {
 }
 
 // DefaultPHCConfig returns a PHCConfig with zero noise.
-// Includes a zero sinusoid entry so users can see the expected structure.
+// Includes a zero-amplitude sinusoid entry so users can see the expected structure.
 func DefaultPHCConfig() PHCConfig {
 	return PHCConfig{
-		Sinusoid: []FreqSinusoid{{}},
+		Sinusoid: []FreqSinusoid{{Period: 86400}},
 	}
 }
 
@@ -275,14 +275,14 @@ func (c ResonatorConfig) InternalParams() (omegaN, zeta, sigmaNoise float64) {
 // DefaultGPSConfig returns a GPSConfig with zero noise but sensible defaults.
 // Users specifying sawtooth.amp will get working InternalClock values automatically.
 // Drift and Resonator have sensible zeta defaults for when user specifies tau/sigma.
-// Includes zero AR1 and Sinusoid entries so users can see the expected structure.
+// Includes inactive AR1 and Sinusoid entries so users can see the expected structure.
 func DefaultGPSConfig() GPSConfig {
 	return GPSConfig{
 		Sawtooth:  DefaultSawtoothConfig(),
 		Drift:     DefaultDriftConfig(),
 		Resonator: DefaultResonatorConfig(),
 		AR1:       []AR1Config{{}},
-		Sinusoid:  []PhaseSinusoid{{PeakAt: toml.LocalTime{Hour: 6}}},
+		Sinusoid:  []PhaseSinusoid{{Period: 86400, PeakAt: toml.LocalTime{Hour: 6}}},
 	}
 }
 

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/lib/check"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -370,7 +371,7 @@ func TestWriteDefaultConfigRoundTrip(t *testing.T) {
 }
 
 func TestDefaultConfigArrayEntries(t *testing.T) {
-	// Test that default config has zero-valued array entries for documentation
+	// Test that default config has inactive array entries for documentation
 	cfg := DefaultConfig()
 
 	// PHC.Sinusoid should have one zero entry
@@ -403,6 +404,11 @@ func TestDefaultConfigArrayEntries(t *testing.T) {
 	}
 	if !cfg.GPS.IsZero() {
 		t.Errorf("GPS.IsZero() = false, want true (zero entries don't count)")
+	}
+	for _, s := range []any{cfg.PHC.Sinusoid[0], cfg.GPS.Sinusoid[0]} {
+		if errs := check.Validate(s); errs != nil {
+			t.Errorf("invalid default sinusoid %T: %v", s, errs)
+		}
 	}
 }
 
