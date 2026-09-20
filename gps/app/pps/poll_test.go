@@ -514,8 +514,9 @@ func TestTrackLoss(t *testing.T) {
 // TestDisturbed pins the rejection tests on synthetic query pairs: a stall
 // inside either query is rejected, except a long prev that is the read at
 // the window open, a gap before the catching query is rejected only when no
-// sleep was scheduled, and a normal pair is not. The tests read the
-// measurement stamps, not the monotonic readings.
+// sleep was scheduled, a normal pair is not, and with microsecond queries
+// nothing under MinSpacing counts. The tests read the measurement stamps,
+// not the monotonic readings.
 func TestDisturbed(t *testing.T) {
 	// The mono readings are all equal, so a test taken from them instead
 	// of the stamps sees zero durations and gaps and gives the wrong answer.
@@ -540,12 +541,18 @@ func TestDisturbed(t *testing.T) {
 		{name: "gap without sleep", prev: mk(0, 100*time.Microsecond), cur: mk(500*time.Microsecond, 100*time.Microsecond), want: true},
 		{name: "gap after sleep", prev: mk(0, 100*time.Microsecond), cur: mk(500*time.Microsecond, 100*time.Microsecond), slept: true},
 		{name: "gap at the ratio", prev: mk(0, 100*time.Microsecond), cur: mk(400*time.Microsecond, 100*time.Microsecond)},
+		{name: "fast pair", prev: mk(0, 4*time.Microsecond), cur: mk(5*time.Microsecond, 4*time.Microsecond)},
+		{name: "fast pair preempted under the floor", prev: mk(0, 4*time.Microsecond), cur: mk(5*time.Microsecond, 40*time.Microsecond)},
+		{name: "fast pair stalled over the floor", prev: mk(0, 4*time.Microsecond), cur: mk(5*time.Microsecond, 60*time.Microsecond), want: true},
+		{name: "fast pair gap under the floor", prev: mk(0, 4*time.Microsecond), cur: mk(40*time.Microsecond, 4*time.Microsecond)},
+		{name: "fast pair gap over the floor", prev: mk(0, 4*time.Microsecond), cur: mk(60*time.Microsecond, 4*time.Microsecond), want: true},
 	}
+	p := &poller{params: PollParams{MinSpacing: minSpacing}}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			prev := reading{poll: tc.prev}
 			cur := reading{inPulse: true, poll: tc.cur, slept: tc.slept}
-			if got := disturbed(prev, cur, tc.prevAtOpen); got != tc.want {
+			if got := p.disturbed(prev, cur, tc.prevAtOpen); got != tc.want {
 				t.Errorf("disturbed = %v, want %v", got, tc.want)
 			}
 		})

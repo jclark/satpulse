@@ -436,7 +436,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		edge, missed = classify(prev, cur, deadline)
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
-			rejected = disturbed(prev, cur, prevAtOpen)
+			rejected = p.disturbed(prev, cur, prevAtOpen)
 		}
 		prev, prevAtOpen = cur, false
 	}
@@ -488,19 +488,26 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 // them. The duration comparisons see the first two; the gap test sees the
 // third, and applies only when no sleep was scheduled before the catching
 // query, since a sleep's timer overshoot is not a stall and its ordinary
-// size is not something two query durations can reveal. A long prev is not
-// judged when it is the read at the window open: that read follows the idle
-// wait between windows, and on hosts whose queries slow down while idle it
-// is routinely severalfold longer than the reads after it, so its length
-// says nothing about the read that follows; a stall inside it still widens
-// the bracket, which the uncertainty reports. The tests use the measurement
-// stamps, like the bracket: on Windows the monotonic reading is quantised
-// far more coarsely than a query lasts (see now there), and a step of the
-// system clock inside a bracket is already a miss in classify.
-func disturbed(prev, cur reading, prevAtOpen bool) bool {
-	dp, dc := prev.poll.duration(), cur.poll.duration()
-	return !cur.slept && cur.poll.gapAfter(prev.poll) > rejectRatio*dp ||
-		dc > rejectRatio*dp || !prevAtOpen && dp > rejectRatio*dc
+// size is not something two query durations can reveal. Each test is a
+// ratio, so that it needs no hardware timing, with MinSpacing as the floor
+// of the excess it judges: the loop itself idles that long between queries
+// where it can sleep, so a shorter disturbance is within its own pacing and
+// biases the midpoint by at most half of it, while without the floor a
+// microsecond UART query is failed by any preemption at all. A long prev is
+// not judged when it is the read at the window open: that read follows the
+// idle wait between windows, and on hosts whose queries slow down while
+// idle it is routinely severalfold longer than the reads after it, so its
+// length says nothing about the read that follows; a stall inside it still
+// widens the bracket, which the uncertainty reports. The tests use the
+// measurement stamps, like the bracket: on Windows the monotonic reading is
+// quantised far more coarsely than a query lasts (see now there), and a
+// step of the system clock inside a bracket is already a miss in classify.
+func (p *poller) disturbed(prev, cur reading, prevAtOpen bool) bool {
+	dp, dc, floor := prev.poll.duration(), cur.poll.duration(), p.params.MinSpacing
+	if gap := cur.poll.gapAfter(prev.poll); !cur.slept && gap > rejectRatio*dp && gap > floor {
+		return true
+	}
+	return dc > rejectRatio*dp && dc-dp > floor || !prevAtOpen && dp > rejectRatio*dc && dp-dc > floor
 }
 
 func (p *poller) readState(sched time.Time) (reading, error) {

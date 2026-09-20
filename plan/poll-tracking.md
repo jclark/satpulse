@@ -81,10 +81,20 @@ a CPU saving where it can be honoured and nothing where it cannot.
    catch is **rejected** if any of these holds, otherwise it is **good**:
 
    ```
-   !cur.slept && cur.start - prev.end > R * duration(prev)
-   duration(cur)  > R * duration(prev)
-   duration(prev) > R * duration(cur)     unless prev is the read at the open
+   !cur.slept && gap > R * duration(prev)        && gap > MinSpacing
+   duration(cur)  > R * duration(prev)           && duration(cur) - duration(prev) > MinSpacing
+   duration(prev) > R * duration(cur)            && duration(prev) - duration(cur) > MinSpacing
+                                                    unless prev is the read at the open
    ```
+
+   where `gap = cur.start - prev.end`. `MinSpacing` is the floor of the
+   excess each test judges: the loop itself idles that long between
+   queries where it can sleep, so a shorter disturbance is within its own
+   pacing and biases the midpoint by at most half of it. Without the
+   floor a microsecond UART query is failed by any preemption: on a
+   native UART with 3.6 us queries, runs of seven consecutive good
+   catches (brackets of 13 us, prediction errors of 1 to 2 us) were
+   rejected, opening a 14 s gap.
 
    The third test is not applied when `prev` is the read at the window
    open. That read follows the idle wait between windows and, on hosts
@@ -143,6 +153,7 @@ None encodes a hardware timing.
 | `K` | brackets at which shrinking stops | 8 |
 | shrink | fraction of the extent kept per good catch | 31/32 |
 | `R` | ratio for the gap and duration tests | 3 |
+| floor of the excess the tests judge | `MinSpacing` | 50 us |
 | `F` | consecutive failures before giving up | 10 |
 | `MaxExtent` | largest tracking extent, a fraction of the period | 1/8 |
 | `U` | consumer's uncertainty limit | 1 ms, as today |
