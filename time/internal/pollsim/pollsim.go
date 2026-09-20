@@ -49,7 +49,7 @@ type Stats struct {
 	Lost         int
 	TrackMisses  int
 	Queries      int
-	CPU          float64 // fraction of a core: queries, clock reads and stalled time inside them
+	CPU          float64 // fraction of a core: query and clock-read running time, excluding stalls
 }
 
 // String formats the statistics as TOML key/value lines.
@@ -112,7 +112,7 @@ const period = time.Second
 // simBase is the wall-clock time of simulated zero.
 var simBase = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
 
-type stall struct {
+type interval struct {
 	at, dur time.Duration
 }
 
@@ -129,12 +129,15 @@ type sim struct {
 	end       time.Duration
 	now       time.Duration
 	work      time.Duration
-	stalls    []stall
+	stalls    []interval
 	nextStall int
 	slows     []slow
 	nextSlow  int
 	rng       *rand.Rand
 	jitter    []time.Duration
+	clockRead time.Duration
+	idleAfter time.Duration
+	recover   time.Duration
 	// Idle slowdown state: when the thread was last active, and how much
 	// continuous activity has accumulated since it went cold.
 	lastActive time.Duration
@@ -147,29 +150,23 @@ type sim struct {
 }
 
 func newSim(cfg Config) *sim {
-	s := &sim{cfg: cfg, end: ptime.Seconds(cfg.Sim.Duration), rng: rand.New(rand.NewSource(cfg.Sim.Seed))}
+	s := &sim{
+		cfg: cfg, end: ptime.Seconds(cfg.Sim.Duration), rng: rand.New(rand.NewSource(cfg.Sim.Seed)),
+		clockRead: ptime.Seconds(cfg.Host.ClockRead),
+		idleAfter: ptime.Seconds(cfg.Host.Query.Idle.After),
+		recover:   ptime.Seconds(cfg.Host.Query.Idle.Recover),
+	}
 	s.jitter = make([]time.Duration, int(cfg.Sim.Duration)+2)
 	for i := range s.jitter {
 		s.jitter[i] = time.Duration(s.rng.NormFloat64() * cfg.Pulse.Jitter * 1e9)
 	}
 	for _, st := range cfg.Fault.Stall {
 		if st.Duration > 0 {
-			s.stalls = append(s.stalls, stall{at: ptime.Seconds(st.At), dur: ptime.Seconds(st.Duration)})
+			s.stalls = append(s.stalls, interval{at: ptime.Seconds(st.At), dur: ptime.Seconds(st.Duration)})
 		}
 	}
 	for _, b := range cfg.Fault.Stalls {
-		if b.Rate == 0 {
-			continue
-		}
-		burstEnd := s.end
-		if b.Duration > 0 {
-			burstEnd = ptime.Seconds(b.Start + b.Duration)
-		}
-		logMin, logMax := math.Log(b.Min), math.Log(b.Max)
-		for t := b.Start + s.rng.ExpFloat64()/b.Rate; ptime.Seconds(t) < burstEnd; t += s.rng.ExpFloat64() / b.Rate {
-			dur := math.Exp(logMin + s.rng.Float64()*(logMax-logMin))
-			s.stalls = append(s.stalls, stall{at: ptime.Seconds(t), dur: ptime.Seconds(dur)})
-		}
+		s.stalls = append(s.stalls, s.burst(b.Start, b.Duration, b.Rate, b.Min, b.Max)...)
 	}
 	sort.Slice(s.stalls, func(i, j int) bool { return s.stalls[i].at < s.stalls[j].at })
 	for _, sl := range cfg.Fault.Slow {
@@ -178,26 +175,37 @@ func newSim(cfg Config) *sim {
 		}
 	}
 	for _, b := range cfg.Fault.Slows {
-		if b.Rate == 0 || b.Factor <= 1 {
+		if b.Factor <= 1 {
 			continue
 		}
-		burstEnd := s.end
-		if b.Duration > 0 {
-			burstEnd = ptime.Seconds(b.Start + b.Duration)
-		}
-		logMin, logMax := math.Log(b.Min), math.Log(b.Max)
-		for t := b.Start + s.rng.ExpFloat64()/b.Rate; ptime.Seconds(t) < burstEnd; t += s.rng.ExpFloat64() / b.Rate {
-			dur := math.Exp(logMin + s.rng.Float64()*(logMax-logMin))
-			s.slows = append(s.slows, slow{from: ptime.Seconds(t), to: ptime.Seconds(t + dur), factor: b.Factor})
+		for _, v := range s.burst(b.Start, b.Duration, b.Rate, b.Min, b.Max) {
+			s.slows = append(s.slows, slow{from: v.at, to: v.at + v.dur, factor: b.Factor})
 		}
 	}
 	sort.Slice(s.slows, func(i, j int) bool { return s.slows[i].from < s.slows[j].from })
 	return s
 }
 
+func (s *sim) burst(start, duration Seconds, rate float64, lo, hi Seconds) []interval {
+	if rate == 0 {
+		return nil
+	}
+	end := s.end
+	if duration > 0 {
+		end = min(end, ptime.Seconds(start+duration))
+	}
+	logMin, logMax := math.Log(lo), math.Log(hi)
+	var v []interval
+	for t := start + s.rng.ExpFloat64()/rate; ptime.Seconds(t) < end; t += s.rng.ExpFloat64() / rate {
+		dur := math.Exp(logMin + s.rng.Float64()*(logMax-logMin))
+		v = append(v, interval{at: ptime.Seconds(t), dur: ptime.Seconds(dur)})
+	}
+	return v
+}
+
 // time is the loop's clock: reading it is work.
 func (s *sim) time() time.Time {
-	s.run(ptime.Seconds(s.cfg.Host.ClockRead))
+	s.run(s.clockRead)
 	return simBase.Add(s.now)
 }
 
@@ -271,13 +279,12 @@ func (s *sim) slowFactor() float64 {
 // run advances the clock by d of running time, inserting any stall that
 // begins meanwhile, and keeps the idle-slowdown state.
 func (s *sim) run(d time.Duration) {
-	idle := s.cfg.Host.Query.Idle
-	if after := ptime.Seconds(idle.After); after > 0 {
-		if s.now-s.lastActive > after {
+	if s.idleAfter > 0 {
+		if s.now-s.lastActive > s.idleAfter {
 			s.cold, s.warmed = true, 0
 		}
 		if s.cold {
-			if s.warmed += d; s.warmed >= ptime.Seconds(idle.Recover) {
+			if s.warmed += d; s.warmed >= s.recover {
 				s.cold = false
 			}
 		}
@@ -290,7 +297,7 @@ func (s *sim) run(d time.Duration) {
 			d -= st.at - s.now
 			s.now = st.at
 		}
-		s.now += st.dur
+		s.now = max(s.now, st.at+st.dur)
 	}
 	s.now += d
 	s.lastActive = s.now
@@ -300,7 +307,7 @@ func (s *sim) run(d time.Duration) {
 // that is not suppressed by an outage.
 func (s *sim) pulseOn(t time.Duration) bool {
 	width := ptime.Seconds(s.cfg.Pulse.Width)
-	for n := t / period; n >= 0 && n >= t/period-1; n-- {
+	for n := t/period + 1; n >= 0 && n >= t/period-1; n-- {
 		if e := s.edge(n); s.present(n) && t >= e && t < e+width {
 			return true
 		}
