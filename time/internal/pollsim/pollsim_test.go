@@ -13,7 +13,11 @@ var testLog = slog.New(slog.DiscardHandler)
 func TestSimulateQuiet(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sim.Duration = 300
-	st, err := Simulate(cfg, testLog, nil)
+	st, err := Simulate(cfg, testLog, func(e EdgeRecord) {
+		if e.Err < -e.Uncertainty[1] || e.Err > e.Uncertainty[0] {
+			t.Errorf("edge error %g outside uncertainty %v", e.Err, e.Uncertainty)
+		}
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -39,9 +43,9 @@ func TestSimulateQuiet(t *testing.T) {
 // stalls placed where the loop is exposed: one inside the bracket around an
 // edge, one long enough in the pre-warm busy-wait to push the window open
 // past the pulse, and one inside the window that stretches the catching
-// bracket to tens of milliseconds. The stalled catches must be rejected,
-// the late open costs a miss, nothing wrong is forwarded, and forwarding is
-// back within a few seconds.
+// bracket to tens of milliseconds. Caught stalls are flagged as anomalous
+// but still correct prediction, changing where later stalls land. Nothing
+// wrong is forwarded, and forwarding is back within a few seconds.
 func TestSimulateStalls(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sim.Duration = 180
@@ -52,8 +56,8 @@ func TestSimulateStalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log(st)
-	if st.Rejected != 2 || st.TrackMisses != 1 {
-		t.Errorf("rejected = %d trackMisses = %d, want 2 and 1", st.Rejected, st.TrackMisses)
+	if st.Anomalous != 1 || st.TrackMisses != 2 {
+		t.Errorf("anomalous = %d trackMisses = %d, want 1 and 2", st.Anomalous, st.TrackMisses)
 	}
 	if st.Wrong != 0 {
 		t.Errorf("%d forwarded edges wrong by more than the limit, want none", st.Wrong)

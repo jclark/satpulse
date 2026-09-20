@@ -38,7 +38,7 @@ The `configs/pollsim/` directory has example configurations.
 
 A stall of the polling thread lands wherever the loop is at the time: inside a state query, between two queries, or asleep, in which case only the part of the stall after the scheduled wakeup delays it.
 
-At the end of the run the command prints statistics as TOML key/value lines: the number of pulses and of candidate edges, how many edges were forwarded, rejected, or too coarse to forward, how many pulses were missed, how many forwarded edges were in error by more than the uncertainty limit, the median, 90th percentile and maximum error of forwarded edges against the true edge on the pin, the longest gap between forwarded edges and the number of gaps over 4 s, the numbers of acquisitions, losses, tracking misses and rejections, and the number of state queries and the fraction of a core they cost.
+At the end of the run the command prints statistics as TOML key/value lines: the number of pulses and of candidate edges, how many edges were forwarded, anomalous, or too coarse to forward, how many pulses were missed, how many forwarded edges were in error by more than the uncertainty limit, the median, 90th percentile and maximum error of forwarded edges against the true edge on the pin, the longest gap between forwarded edges and the number of gaps over 4 s, the numbers of acquisitions, losses and tracking misses, and the number of state queries and the fraction of a core they cost.
 
 The same log messages that **satpulsed(8)** would write are written to standard error during the simulation, with timestamps corresponding to the simulated time; the track status lines appear with the global **\-v** option.
 
@@ -52,7 +52,10 @@ The same log messages that **satpulsed(8)** would write are written to standard 
 The output includes a comment on every key.
 
 **\-\-edge\-log** *path*
-: Write every candidate edge to *path* in JSON Lines format, with its simulated time `t`, its error `err` against the true edge, its `uncertainty`, whether it was `rejected`, and whether it was `forwarded`.
+: Write every candidate edge to *path* in JSON Lines format, with its simulated time `t`, its error `err` against the true edge, its `uncertainty: [before, after]`, its `pollWidths: [start, end]`, whether it was `anomalous`, and whether it was `forwarded`.
+All times and durations are in seconds.
+The uncertainty reaches the start of the off read and the end of the on read; the poll widths are the durations of those reads.
+Forwarding requires both uncertainty components to be within the configured limit.
 
 # EXAMPLES
 

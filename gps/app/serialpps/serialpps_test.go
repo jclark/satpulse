@@ -66,7 +66,7 @@ func TestWait(t *testing.T) {
 		if candidate.Timestamp != timestamp || candidate.TRead != tRead {
 			t.Fatalf("Wait edge = %+v, want supplied timestamp and read time", candidate.Edge)
 		}
-		if candidate.Uncertainty != 0 {
+		if candidate.Uncertainty != [2]time.Duration{} {
 			t.Errorf("Wait uncertainty = %v, want no polling-bracket uncertainty", candidate.Uncertainty)
 		}
 	case <-time.After(time.Second):

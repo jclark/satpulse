@@ -31,13 +31,13 @@ func TestEdgePrinter(t *testing.T) {
 		{name: "human", edge: pps.CandidateEdge{Edge: edge}, want: "14:23:05.123456\n"},
 		{name: "human with device", edge: pps.CandidateEdge{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
 		{name: "wait JSONL", edge: pps.CandidateEdge{Edge: edge}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\"}\n"},
-		{name: "poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
-		{name: "rejected poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Rejected: true}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"rejected\":true}\n"},
-		{name: "poll widths JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, StartPollWidth: 12 * time.Microsecond, EndPollWidth: 14 * time.Microsecond}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"startPollWidth\":0.000012,\"endPollWidth\":0.000014}\n"},
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\"}\n"},
+		{name: "poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019]}\n"},
+		{name: "anomalous poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}, Anomalous: true}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019],\"anomalous\":true}\n"},
+		{name: "poll widths JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}, PollWidths: [2]time.Duration{12 * time.Microsecond, 14 * time.Microsecond}}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019],\"pollWidths\":[0.000012,0.000014]}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer

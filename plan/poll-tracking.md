@@ -6,23 +6,107 @@ Related: #460 (GPIO polling reuses this loop).
 
 The poll method in `gps/app/pps/poll.go` finds PPS leading edges by
 repeatedly reading a pin around the time the next pulse is expected. Its
-tracking phase adapts a polling window to the measured need. That
-adaptation has grown a set of interacting rules whose combined behaviour
-is hard to predict, and on 2026-09-20 they combined to withhold every
+tracking phase adapts a polling window to the measured need. The original
+adaptation had a set of interacting rules whose combined behaviour
+was hard to predict, and on 2026-09-20 they combined to withhold every
 sample from chrony for 5 min 27 s while the pulse was caught every second.
 
-This plan replaces the tracking controller with a simpler one. The window
+The implemented redesign uses a simpler tracking controller. The window
 no longer sets the polling resolution; it is only coverage. A catch can
-never widen it, only misses can, and a catch whose timing looks disturbed
-is rejected locally without any history. The consumer forwards a catch on
-two conditions only: it was not rejected and its uncertainty is under a
-fixed limit.
+never widen it, only misses can. The poller marks catches anomalous when
+their outer width exceeds four times the median of recent tracking widths.
+The consumer forwards a catch only when it is not anomalous and the larger
+of its two uncertainty components is within a fixed limit. The anomaly flag
+has no effect on tracking or acquisition.
 
-The first part of this document specifies the algorithm. The second part
-explains the problem with the current design and how this one was
-arrived at.
+"Revisions made" records completed changes. "Current algorithm" describes
+the implementation. "Possible follow-up work" records optional
+investigations into prediction correction, the estimator and coverage. The
+remaining sections preserve the historical design rationale and test
+evidence.
 
-## The algorithm
+## Revisions made
+
+### Tracking controller
+
+Tracking cadence is independent of extent. Catches cannot widen the
+extent; misses double it; catches shrink it at 31/32, stopping at eight
+midpoint-to-midpoint brackets. The first redesign replaced settled-bracket
+history with local rejection tests and removed `Settled`. The subsequent
+anomaly-flag revision below has removed those local tests and `Rejected`.
+
+### Asymmetric uncertainty and paired poll widths
+
+The old midpoint-to-midpoint interval understated the possible edge error.
+In a recorded Mac run, an edge 1.33 ms late was forwarded with scalar
+uncertainty of 746 us. The interface now reports the full outer interval.
+
+`CandidateEdge.Uncertainty` is now `[2]time.Duration`, in `[before, after]`
+order. The timestamp remains the midpoint of the two poll midpoints. The
+uncertainty components are measured directly from that timestamp to
+`prev.start` and `cur.end`, so they report the outer interval without
+requiring the estimator to be its midpoint. This bounds the physical edge
+when each call samples fresh pin state; it does not include unmeasured
+delay from cached status.
+
+The two poll durations are now `CandidateEdge.PollWidths`, also
+`[2]time.Duration`, in `[start, end]` order: the off poll followed by the on
+poll. The serial tool, `sysPulseEdge` event records and simulator edge
+records report `uncertainty: [before, after]` and `pollWidths: [start, end]`
+in seconds. The serial tool and event records omit zero pairs for the wait
+and kernel methods. These replace the scalar uncertainty and the separate
+`startPollWidth` and `endPollWidth` fields. The serial tool's JSON timestamp
+now preserves nanoseconds, so rounding the timestamp does not shift the
+reported interval; human-readable timestamps still round to microseconds.
+
+The consumer and simulator apply the existing uncertainty limit to the
+larger component. Interval validity now requires ordered query endpoints and an outer width strictly between
+zero and one period. The controller retains midpoint separation as its
+`bracket`, with the same shrink constant and half-error prediction
+correction.
+
+### Anomaly flag replaces rejected catches
+
+Implemented: the poller now has only caught and missed outcomes.
+`CandidateEdge.Anomalous` replaces `Rejected`, and the serial tool, event
+log and simulator expose `anomalous` instead of `rejected`. The local
+duration/gap tests, their sleep
+gate, opening-read exception and `MinSpacing` floor are removed. There is
+no rejected-catch tracking event or failure path.
+
+For outer width `W = before + after`, the poller sets:
+
+```
+Anomalous = W > 4 * median(previous tracking widths)
+```
+
+The history holds the previous 31 valid tracking catches. Classification
+uses the history before insertion; every valid tracking width is then
+inserted, including anomalous and over-limit catches. The available history
+is used immediately, and an empty history gives `Anomalous = false`.
+Acquisition catches are classified against any existing history but never
+inserted. Misses and reacquisition retain the history. Its age is measured
+in tracking catches, not elapsed seconds.
+
+All catches follow the same prediction and extent rules, reset tracking
+failures, and allow acquisition to progress. Only misses count toward the
+failure limit. The consumer forwards on
+`!Anomalous && max(Uncertainty[0], Uncertainty[1]) <= U`.
+
+The implementation directly imports `time/lib/median` and uses its
+`Window[time.Duration]`. This is an intentional temporary exception to the
+normal dependency direction; the library has not been moved.
+
+A replay of recorded Mac catches motivated the simple factor of four.
+With 31 previous tracking widths, it withheld seven of 585 catches in the
+loaded run, with maximum forwarded absolute error 318 us and a six-second
+gap including four recorded misses. It withheld none of 591 quiet catches.
+In a snapshot of 8,354 tracking catches from the longer run, it withheld
+seven; a factor of two withheld 177 and created a seven-second gap without
+improving the maximum forwarded error. These compare forwarding gates on
+identical recorded catches, not the changed controller's future behaviour.
+
+## Current algorithm
 
 ### Objective
 
@@ -34,7 +118,8 @@ is not. Long-term CPU must stay small.
 
 - `prediction`: monotonic time of the next expected leading edge.
 - `extent`: width of the window polled around the prediction.
-- `failures`: count of consecutive attempts that produced no good catch.
+- `failures`: count of consecutive misses.
+- `widths`: recent tracking widths, used only for anomaly classification.
 
 ### Recorded per query
 
@@ -46,12 +131,11 @@ These are recorded today, in `reading` and `poll`:
   was already past, or nearer than the platform can sleep to.
 - `value`: pin on or off.
 
-The timing tests below measure short intervals through the existing
-`clockReading` abstraction, `poll.duration` and `poll.gapAfter`, as the
-bracket does, so each platform uses the reading appropriate to it: the
-one `time.Now` reading where it carries both wall and monotonic time,
-and on Windows the precise measurement stamp rather than the coarse
-monotonic reading.
+Short intervals, including query durations, gaps and the bracket, use the
+existing `clockReading` abstraction. Each platform uses the reading
+appropriate to it: the one `time.Now` reading where it carries both wall
+and monotonic time, and on Windows the precise measurement stamp rather
+than the coarse monotonic reading.
 
 ### Polling cadence
 
@@ -70,49 +154,21 @@ a CPU saving where it can be honoured and nothing where it cannot.
    until `open`, with `PreWarm` as today.
 2. Poll as today: if the pin is on at the first query, poll through the
    in-progress pulse; then poll until an off-to-on transition is seen or
-   the query midpoint passes `close`. Transition precedence over the
-   deadline and the `0 < bracket < period` check in `classify` are
-   unchanged.
-3. Classify the attempt as one of three outcomes.
-
-   **Miss**: no transition seen.
-
-   **Catch**: a transition seen between query `prev` (off) and query `cur`
-   (on). `bracket` is the interval between their midpoints, as today. The
-   catch is **rejected** if any of these holds, otherwise it is **good**:
-
-   ```
-   !cur.slept && gap > R * duration(prev)        && gap > MinSpacing
-   duration(cur)  > R * duration(prev)           && duration(cur) - duration(prev) > MinSpacing
-   duration(prev) > R * duration(cur)            && duration(prev) - duration(cur) > MinSpacing
-                                                    unless prev is the read at the open
-   ```
-
-   where `gap = cur.start - prev.end`. `MinSpacing` is the floor of the
-   excess each test judges: the loop itself idles that long between
-   queries where it can sleep, so a shorter disturbance is within its own
-   pacing and biases the midpoint by at most half of it. Without the
-   floor a microsecond UART query is failed by any preemption: on a
-   native UART with 3.6 us queries, runs of seven consecutive good
-   catches (brackets of 13 us, prediction errors of 1 to 2 us) were
-   rejected, opening a 14 s gap.
-
-   The third test is not applied when `prev` is the read at the window
-   open. That read follows the idle wait between windows and, on hosts
-   whose queries slow down while idle, is routinely severalfold longer
-   than the reads after it, so its length says nothing about the read
-   that follows; on the Mac, good edges caught in the first bracket
-   (lateness 10 to 130 us) were rejected by it. A stall inside the open
-   read still widens the bracket, which the uncertainty reports.
+   the query midpoint passes `close`. A transition takes precedence over
+   the deadline. For a valid catch, `classify` requires ordered query
+   endpoints and `0 < cur.end - prev.start < period`.
+3. The attempt is a **miss** if no valid transition is seen, otherwise a
+   **catch**. For a catch between `prev` (off) and `cur` (on), `bracket` is
+   their midpoint separation, used by the controller's shrink rule. It is
+   distinct from the outer interval `[prev.start, cur.end]` reported to the
+   consumer.
 
 4. Update the state:
 
    ```
-   good:      prediction += period + predictionError/2      (as today)
+   catch:     prediction += period + predictionError/2
               extent      = min(extent, max(extent * 31/32, K * bracket))
               failures    = 0
-   rejected:  prediction += period
-              failures++
    miss:      prediction += period
               extent      = 2 * extent
               failures++
@@ -120,42 +176,40 @@ a CPU saving where it can be honoured and nothing where it cannot.
 
 5. Give up and return to acquisition if `failures >= F`, or if the
    doubling in step 4 would make `extent` exceed `MaxExtent`. In the
-   second case the doubling is not applied. The candidate from a rejected
-   catch is sent (step 6) before giving up.
-6. Send every catch to the consumer with the bracket midpoint as its
-   timestamp, half the bracket as its `Uncertainty`, and a `Rejected`
-   flag. The consumer forwards a catch to the time daemon only if it is
-   not rejected and `Uncertainty <= U`.
+   second case the doubling is not applied.
+6. Send every catch to the consumer with the midpoint of the two poll
+   midpoints as its timestamp `T`, `Uncertainty = [T - prev.start,
+   cur.end - T]`, `PollWidths = [duration(prev), duration(cur)]`, and a
+   computed `Anomalous` flag. The consumer forwards a catch to the time
+   daemon only if it is not anomalous and
+   `max(Uncertainty[0], Uncertainty[1]) <= U`.
+   The reported interval bounds the physical edge if each query samples
+   fresh pin state during its call; cached status can add unmeasured delay.
 
 ### Acquisition
 
-Structure unchanged: the spacing halves from `period/64` toward
-`MinSpacing` on each catch, the window is 64 spacings, misses sweep the
-poll-grid phase, an in-progress pulse is polled through. Three changes:
+The spacing halves from `period/64` toward `MinSpacing` on each catch;
+the window is 64 spacings. Every catch adopts the caught midpoint as the
+prediction and resets the miss count. A catch at `MinSpacing`, or two
+consecutive caught windows with no scheduled sleep, completes acquisition.
+A slept catch or miss resets the query-paced confirmation. Misses sweep
+the poll-grid phase, and an in-progress pulse is polled through.
 
-- A catch that fails the step 3 tests is rejected in acquisition too. It
-  advances the prediction by one period, resets the consecutive-miss
-  count (a transition was seen, so the pulse is present), resets the
-  query-paced confirmation, and neither halves the spacing nor completes
-  acquisition. A good acquisition catch behaves as today, including a
-  coarse one: acquisition must be able to progress from coarse
-  resolution.
-- The prediction update on a good catch is unchanged (adopt the caught
-  midpoint).
-- The extent handed to tracking is capped at `MaxExtent`.
+Coarse or anomalous catches can advance acquisition normally. The extent
+handed to tracking is capped at `MaxExtent`.
 
 ### Constants
 
 None encodes a hardware timing.
 
-| Constant | Role | Proposed |
+| Constant | Role | Current value |
 |---|---|---|
 | `MinSpacing` | sleep between queries where the platform can | 50 us, as today |
 | `K` | brackets at which shrinking stops | 8 |
-| shrink | fraction of the extent kept per good catch | 31/32 |
-| `R` | ratio for the gap and duration tests | 3 |
-| floor of the excess the tests judge | `MinSpacing` | 50 us |
-| `F` | consecutive failures before giving up | 10 |
+| shrink | fraction of the extent kept per catch | 31/32 |
+| anomaly ratio | outer width relative to the recent median | 4 |
+| history length | previous valid tracking widths | 31 |
+| `F` | consecutive misses before giving up | 10 |
 | `MaxExtent` | largest tracking extent, a fraction of the period | 1/8 |
 | `U` | consumer's uncertainty limit | 1 ms, as today |
 
@@ -165,14 +219,14 @@ the edge, and the gap before the catching query.
 ### Consumer
 
 `sysPulseCandidateEdge` in `time/internal/gpsevent/dispatcher.go`
-forwards on `!Rejected && Uncertainty <= sysPulseMaxUncertainty`. The
-`Settled` field of `CandidateEdge` goes away, from the event log record
-and from the `satpulsetool serial` JSON output as well, and `Outlier` is
-renamed `Rejected` in all three places. The consumer logs a rate-limited warning when good catches are
-consistently above `U`, since hardware too slow for the limit is a
-configuration problem, not a tracking failure.
+forwards on
+`!Anomalous && max(Uncertainty[0], Uncertainty[1]) <= sysPulseMaxUncertainty`.
+The consumer logs rate-limited warnings for consistently anomalous catches
+and for non-anomalous catches consistently above `U`. The latter is a
+configuration problem, not a tracking failure: acquisition cannot make
+queries faster.
 
-### Removed from the current code
+### Removed from the original controller
 
 - Spacing that scales with the window (`window/InitialPolls`) in tracking.
 - The floor `2 * (|predictionError| + bracket)`.
@@ -182,10 +236,89 @@ configuration problem, not a tracking failure.
 - Loss declared by ten misses at the full period (replaced by `F` and
   `MaxExtent`).
 - `atFloor` and `Settled`.
-- The ring of recent settled brackets and `OutlierRatio` (replaced by the
-  local tests).
+- The ring of recent settled brackets and `OutlierRatio`. The new width
+  history includes all valid tracking catches, independently of forwarding.
 
-## Design justification
+## Possible follow-up work
+
+These are optional investigations, not prerequisites for the implemented
+algorithm. Evaluate the current implementation before adding mechanisms;
+each must justify its complexity with a concrete problem and measurable
+improvement.
+The four-times-median anomaly flag and removal of rejected catches are
+complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-catches).
+
+### Consider a separate prediction correction guard
+
+Independently of anomaly classification, consider whether prediction
+correction needs protection from imprecise measurements. A proposed local
+guard would skip correction when `W > extent`: the observation is then
+less precise than the current search scale. On the loaded Mac, a 13 ms
+open poll passed the open-read exception, corrected the prediction by
+5 ms and cost four misses. This width guard would have stopped that
+correction. Width and placement are distinct, though: the guard alone
+does not address a narrow catch far from the prediction.
+
+This guard is not yet chosen. It must earn its place as a prediction
+update rule, without recreating a special catch category with different
+failure counting and acquisition behaviour. The implemented anomaly flag
+does not depend on adopting it. Midpoint separation remains the controller's cadence measure;
+changing uncertainty to outer width is not a reason to change `K` from
+8 to 4.
+
+For context, tests of the former rejection rules produced gaps of 14,
+24 and 44 s for ten, twenty and forty stalled catches, including
+reacquisition. The longest rejection run seen on hardware was seven before
+the absolute floor was added and two since. These results motivate
+checking consecutive forwarding gaps, not just anomaly rates, when
+evaluating the revised controller and forwarding gate together.
+
+### Evaluate the estimator
+
+Keep the midpoint of poll midpoints for now. On catches the consumer would
+forward in the recorded runs, it had about 17 percent less spread than the
+outer midpoint on the Mac; the gap midpoint had about 12 percent less
+spread again. On the two Linux hosts the three were within noise. The
+quiet and loaded Mac runs gave opposite indications about where sampling
+occurred during a long start poll.
+
+Any later estimator comparison should use identical candidate sets and
+measure bias and upper-tail absolute error as well as spread. The paired
+uncertainty interface already permits changing the estimator without
+changing what interval is reported.
+
+### Review coverage and pacing
+
+- **Maximum extent.** Is `MaxExtent = period/8` too generous? At a
+  one-second period, 125 ms costs about 12 percent of a core on the Mac
+  for the few seconds before acquisition takes over.
+- **Minimum coverage.** With 3.6 us UART queries, midpoint separation is
+  about 4.5 us and extent shrinks to about 35 us. Scheduler jitter above
+  roughly 17 us then costs a miss: 11 isolated misses in 20 minutes
+  unloaded. Consider an explicit minimum extent as well as the previously
+  suggested `K * max(bracket, MinSpacing)` floor, which would give 400 us
+  and cost about 90 extra reads per second on the UART. `MinSpacing` is
+  a pacing parameter, so coupling it to coverage needs justification.
+  The same question applies to GPIO (#460), where scheduler jitter can
+  span many query durations.
+- **Window opening on Linux.** `sleepDuration` truncates the opening wait
+  to whole milliseconds, causing up to 1 ms of early polling: about 350
+  reads per window at a 35 us extent on the UART. Options remain accepting
+  the cost, spinning the remainder, or using a finer sleep. Measure reads
+  per window and wake-up overshoot before deciding. Timer slack must not
+  be treated as a bound on total wake-up delay.
+- **Inter-query spacing on Linux.** Enforcing sub-millisecond spacing
+  changes measurement resolution and makes the loop timer-paced. Treat
+  that as a separate decision from improving the window-opening wait.
+  A change to a shared sleep helper would affect both.
+
+## Background and design rationale
+
+This section records the incident and the reasoning behind the initial
+controller redesign. References to the old controller and its scalar
+uncertainty describe the code before that redesign or the later interface
+fix. The local rejection heuristics described here have since been removed;
+"Current algorithm" specifies their replacement.
 
 ### The incident
 
@@ -280,9 +413,9 @@ percent, and a bad timestamp forwarded is a wrong correction that chrony
 can trim only if at most one of the four seconds in its interval was
 lost. The costs are asymmetric: the poller's rejection should be strict,
 and a false rejection costs the same as a miss. The controller should
-optimise the gap between good samples, not the catch rate. The current
-loop optimises the catch rate, and the hold, the two-bracket floor and
-the slow shrink all exist to avoid losing a sample.
+optimise the gap between good samples, not the catch rate. The original
+loop optimised the catch rate, and the hold, the two-bracket floor and
+the slow shrink all existed to avoid losing a sample.
 
 ### Extent and resolution are separate
 
@@ -359,7 +492,9 @@ Ignoring a first miss and doubling only on the second was considered and
 dropped: when misses cluster, waiting for a second one is what chrony's
 filter cannot afford, and the state it needs is not worth keeping.
 
-### Rejected catches are recognised locally
+### Local rejection in the initial redesign
+
+These rules are historical. The implemented anomaly flag has replaced them.
 
 A stall can land in three places relative to the two queries around the
 edge: inside the first, inside the second, or between them. The two
@@ -391,8 +526,9 @@ loop is query-paced and the gate never applies.
 
 The tests are heuristics: they detect asymmetric disturbance, not two
 similarly stalled calls. The uncertainty limit catches the gross cases of
-that. A relative history would discriminate further and is deliberately
-not kept; the design accepts that loss.
+that. The initial redesign deliberately omitted history; the implemented
+anomaly classification revisits this choice without coupling history to
+extent or to whether the consumer forwards a catch.
 
 A rejected catch changes nothing but the failure count. It is not
 evidence about coverage, so it does not widen the extent, and not a
@@ -470,70 +606,48 @@ show; the bracket widths alone do not.
 - Treating spacing-limited brackets specially in the outlier test. Moot
   once spacing does not follow the window.
 
-## Implementation notes
-
-Everything is in `gps/app/pps/poll.go` except the consumer and the
-surfaces that expose the removed fields.
-
-- `track` and its `trackObservation`, `trackEvent` types: the observation
-  gains a rejected outcome; `shrinkAfter`, `absentRun`, `trackRelease`
-  and the `catches`, `misses`, `fullMisses`, `atFloor` state go; the
-  event kinds reduce to started, changed, missed, rejected, lost. The
-  simulated-`attempt` test seam stays.
-- `pollWindow`: the `spacing` argument becomes `MinSpacing` in tracking;
-  the `atFloor` argument and `settled` go; the rejection tests replace
-  `outlierLimit`; `recordBracket`, `settledBrackets`, `nextBracket`,
-  `outlierHistory`, `outlierMinHistory` go. The tests need the monotonic
-  `start`/`end` of `prev` and `cur` and `cur.slept`, all of which
-  `reading` already carries.
-- `acquire`: rejected catches as specified above; cap the extent it
-  returns.
-- `PollParams.OutlierRatio` goes. `CandidateEdge.Settled` goes and
-  `Outlier` becomes `Rejected`, with the same rename in `SysPulseEdge`
-  (`rejected` in the event log) and the tool's JSON edge record.
-- `PollStats`: the outliers count becomes the rejected count; the
-  settled/unsettled distinction in its summary goes.
-- `gps/app/serialpps/config.go`, `serialpps.go`: the `pollOutlierRatio`
-  key and its validation go. `docs/man/satpulse.toml.5.md` loses the key.
-- `time/app/serialcmd/serialflags.go`: `--poll-outlier-ratio` goes.
-  `serialpps.go`'s JSON edge record loses `settling`.
-- `time/internal/gpsevent/dispatcher.go`: the forwarding rule, the
-  `SysPulseEdge` record loses `settled`, and the rate-limited warning for
-  good catches consistently above the limit.
-- Existing tests to revise: `TestTrackSimulation`, `TestTrackFeedback`,
-  `TestTrackLoss`, `TestTrackAbsenceShrinksAtOnce` (its premise is gone),
-  `TestPollOutlier`, `TestPollTrackingConverges`,
-  `TestPollShortOutageKeepsTracking`, `TestPollOutageReacquires`, and
-  the dispatcher tests that set `Settled`.
-- Release notes: serial PPS is new in the unreleased 0.3 and its entry
-  (#402) covers the feature as a whole, so removing `pollOutlierRatio`
-  and `settled` before release needs no entry.
-
 ## Testing
 
 ### Unit tests
 
-- `track` via the simulated `attempt`: a rejected catch changes only
-  `failures`; a good catch never increases the extent and stops shrinking
-  at `K` brackets; every miss doubles; `F` and `MaxExtent` each hand back
-  to acquisition; the candidate of the `F`th rejected catch is still sent.
-- The rejection tests on synthetic `reading` pairs: a long `cur`, a long
-  `prev`, a gap with `slept` false (rejected) and the same gap with
-  `slept` true (not rejected), and a normal pair.
+The full `make test` suite passed after the anomaly-flag revision. The
+incident simulation forwards no sample outside the uncertainty limit and
+has a longest forwarding gap of three seconds, with no reacquisition.
+
+The relevant coverage includes:
+
+- `track` via the simulated `attempt`: catches never increase extent,
+  shrink stops at `K` brackets, every miss doubles, and both `F` and
+  `MaxExtent` hand back to acquisition.
+- The four-times-median boundary, empty and short histories, exclusion of
+  acquisition widths, and adaptation through anomalous catches.
+- Identical polling observations with histories that make all catches
+  anomalous or all ordinary: acquisition, prediction, extent and read
+  counts must match, including more than `F` consecutive anomalous catches.
 - The existing `Poll` tests with the simulated reader and clock, revised
   to the new rules: acquisition still converges, a short outage keeps
   tracking, a long one reacquires, a narrow pulse is still acquired.
+- Exact asymmetric endpoints, odd-nanosecond rounding, ordered query
+  endpoints and rejection of outer intervals at least one period wide.
+- Consumer rejection when either uncertainty component exceeds the limit,
+  paired JSON fields, and simulated errors within the reported interval.
 
-### On the Mac
+### Hardware runs before the interface change
 
-satpulsed is stopped and chrony is disciplining the system clock from
-the gPTP refclock, so `satpulsetool serial` has the port and the edge
-times can be judged against a clock that does not depend on them. The
+The following procedure and results refer to the initial controller
+redesign, before uncertainty became a pair. Scalar uncertainty values and
+old JSON field names below belong to those runs, not the current interface.
+
+#### On the Mac
+
+For these runs, satpulsed was stopped and chrony was disciplining the
+system clock from the gPTP refclock, so `satpulsetool serial` had the port
+and the edge times could be judged against an independent clock. The
 receiver is the ATGM332D-5N at 38400 bps on `/dev/cu.usbserial-BG03U08C`
 with PPS on CTS. Build with `make`; the binary is
 `out/darwin_arm64/satpulsetool`.
 
-1. Baseline with the current code, before changing anything:
+1. Baseline with the original controller:
 
    ```
    satpulsetool -v serial -d /dev/cu.usbserial-BG03U08C -s 38400 -p cts \
@@ -570,7 +684,7 @@ new code should show the same or slightly more isolated misses and no
 long gaps. Under induced stalls the old code may reproduce a hold; the
 new code should not.
 
-### Linux
+#### Linux
 
 Confirm on a Linux host with a fast query that the query-paced loop
 behaves the same, and note the steady-state query count. Done on
@@ -579,10 +693,10 @@ FT232R with 116 us queries (PPS on CTS), both with `-m poll` against a
 chrony disciplined from a GPS PHC: in 1200 s, 1186 of 1189 and 1151 of
 1154 edges forwardable, no rejections, isolated misses only, longest gap
 2 s, lateness p90 10 us and 114 us. The UART's steady state is about 350
-reads per window, set by the early open (see the open questions) rather
-than by the extent, which shrinks to 35 us.
+reads per window, set by the early open (see "Review coverage and pacing")
+rather than by the extent, which shrinks to 35 us.
 
-### Long run
+#### Long run
 
 A day-long run on the Mac, with `satpulsetool serial` rather than
 satpulsed: it needs no privileges or configuration, and its edge times
@@ -590,92 +704,5 @@ are judged against the gPTP-disciplined clock, which the serial PPS does
 not feed. Compare the longest gap between forwardable edges and the
 count of gaps over 4 s against the 15 hours before the incident, which
 had no gap over 5 s, and note the rejected and missed counts and the
-steady-state read rate. Started 2026-09-20 14:05 for 86400 s.
-
-## Open questions
-
-- Whether `MaxExtent` at 1/8 of the period, 125 ms, is too generous: it
-  is about 12 percent of a core on the Mac for the few seconds before
-  acquisition takes over. Revisit from the Mac runs.
-- Whether the same `K` serves the GPIO reader (#460), whose bracket is
-  tens of microseconds and whose scheduler jitter is therefore many
-  brackets; the miss-double-shrink cycle may be more visible there.
-
-The following were raised by review of the implementation and by the
-first day's hardware runs (Mac mini with an FT232R on CTS, a native UART
-on DCD and an FT232R on CTS on a Linux desktop) and are undecided.
-
-- **The bracket interval.** The pin is sampled at an unknown instant
-  inside each query, so the edge is only known to lie between the start
-  of the off query and the end of the on query. The midpoint-to-midpoint
-  bracket understates that interval, by up to 2.5 times at `R = 3`, and
-  so does the `Uncertainty` built from it. This is the "two queries
-  slowed alike" case: both stretched to 2 ms gives `Uncertainty` 1 ms,
-  which the consumer forwards, with an error of up to 2 ms; one such edge
-  (1.33 ms late, `Uncertainty` 746 us) was forwarded in 50 minutes on
-  the Mac. The alternative is timestamp and `Uncertainty` from
-  `[prev.start, cur.end]`: the same midpoint in the symmetric case,
-  double the `Uncertainty`, so the consumer's limit withholds the
-  symmetric slowdown by itself, at the cost of `Uncertainty` about
-  200 us instead of 100 us on the Mac. In simulation of the real loop the
-  x8 symmetric slowdown is then withheld and the quiet-case maximum
-  error falls from 375 to 230 us. `K` would go from 8 to 4 to keep the
-  query count.
-- **Acquisition on rejected catches.** The rule that a rejected catch
-  neither halves the spacing nor completes acquisition is unbounded: a
-  device whose catching query is always more than `R` times longer than
-  its neighbours never acquires. Recorded as implausible: a stall hits
-  one catch and the next is clean, and no known driver does extra work
-  only on the query that first sees a transition; none of the three
-  devices tested shows any such asymmetry. The consumer warns after 30
-  consecutive rejected edges, so the state would at least be visible.
-- **Rejected catches as failures.** The plan counts them, so ten
-  consecutive rejected catches hand back to acquisition, which rejects
-  the same catches and so has no corrective effect; ten, twenty and
-  forty stalled catches cost gaps of 14, 24 and 44 s including the
-  reacquisition, the last past chrony's 32 s reachability. The
-  alternative is to count only misses, on the same reasoning the plan
-  applies to the uncertainty limit, leaving a rejected catch a pure
-  observer. The longest run seen on hardware was 7, before the absolute
-  floor was added to the tests, and 2 since.
-- **The basis of the rejection floor.** The tests need a floor, since
-  on the UART pure ratios rejected runs of good catches over
-  disturbances of a few microseconds. The implementation uses
-  `MinSpacing`, 50 us, but that is the loop's CPU budget, not the thing
-  the floor guards. What the floor stands for is the host's ordinary
-  timing noise, a scheduler tick or an interrupt, tens of microseconds,
-  below which two readings are not distinguishable. The candidates are a
-  constant with that justification, which is a host timing of the kind
-  this plan avoids, or a per-host estimate from the query durations the
-  loop already sees, which reintroduces history into the rejection
-  decision. Neither is attractive; undecided.
-- **The extent floor on a fast UART.** With 3.6 us queries the bracket
-  is about 4.5 us and the extent shrinks to `K` brackets, 35 us, so
-  scheduler jitter above about 17 us costs a miss: 11 isolated misses in
-  20 minutes unloaded. Within the objective, but one pulse in a hundred
-  for a few microseconds of coverage that cost nothing. The alternative
-  is to stop shrinking at `K` times the larger of the bracket and
-  `MinSpacing`, never below 400 us: no change on the Mac or the FT232R,
-  about 90 more reads per second on the UART. `MinSpacing` is already
-  the floor of the rejection tests, the scale below which the loop does
-  not distinguish timing.
-- **The early open on Linux.** `sleepDuration` truncates the wait for
-  the window open to whole milliseconds, so the window opens up to 1 ms
-  early and the loop reads through that millisecond: on the UART about
-  350 reads per window at a 35 us extent, 0.1 percent of a core at
-  3.6 us per read. The old code did the same. It matters only for the
-  GPIO reader (#460), where the read is cheaper still and the count
-  correspondingly higher. Options: accept it; spin the remainder, which
-  the plan rejected for the inter-query spacing on the grounds that
-  spinning costs the same as reading; or sleep the remainder with a
-  direct `nanosleep` from `sleep_linux.go`, the runtime timer taking the
-  whole milliseconds and the syscall the rest. The poller already holds
-  `LockOSThread`, so blocking its thread costs nothing extra. That would
-  also honour `MinSpacing` on Linux, making the UART loop timer-paced at
-  about 10 reads per window instead of query-paced at 350, and flipping
-  the gap test's `slept` gate on as on the Mac. Overshoot is bounded by
-  the thread's timer slack, 50 us by default and reducible with
-  `PR_SET_TIMERSLACK`; the remainder is under a millisecond, so its not
-  being interruptible by the context does not affect shutdown. FreeBSD
-  may want the same. To be measured on the UART for reads per window and
-  overshoot before deciding.
+steady-state read rate. A run was started on 2026-09-20 at 14:05 for
+86400 s; its final results are not recorded here.

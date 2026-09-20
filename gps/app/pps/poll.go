@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"runtime"
 	"time"
+
+	"github.com/jclark/satpulse/time/lib/median"
 )
 
 // PulseReader reads whether a pin is currently in a pulse. Its query time
@@ -52,6 +54,7 @@ type poller struct {
 	stats       *PollStats
 	nextEdge    time.Time
 	lastBracket time.Duration
+	widths      *median.Window[time.Duration]
 	slept       bool
 	stateReads  int
 }
@@ -61,18 +64,18 @@ type poller struct {
 // tracking. Acquisition ends when polling resolution is acquired, or restarts
 // from cold after losing the partly acquired signal. Tracking polls at the
 // finest cadence the host has and adapts only the extent of the window
-// around the predicted edge: a good catch shrinks it toward a few brackets,
+// around the predicted edge: a catch shrinks it toward a few brackets,
 // a miss doubles it, and sustained failure restarts the cycle from
 // acquisition.
 //
-// Every catch is sent, with its bracket midpoint as timestamp, half the
-// bracket as Uncertainty, and Rejected set when the timing of the two
-// queries around the edge looks disturbed. Consumers forward a candidate
-// that is not rejected and whose Uncertainty is within their limit. Every
-// caught edge is logged to lg at debug level. Tracking starts, halvings of
-// the extent, misses, rejections, and loss are logged at info level with
-// actual state-read counts. If stats is non-nil, Poll records timing and
-// outcome statistics in it.
+// Every catch is sent, with the midpoint of the two query midpoints as its
+// timestamp, Uncertainty reaching the outer endpoints of those queries, and
+// Anomalous set when the outer width exceeds four times its recent median.
+// Consumers forward a candidate that is not anomalous and whose larger
+// uncertainty is within their limit. Every caught edge is logged to lg at
+// debug level. Tracking starts, halvings of the extent, misses, and loss are
+// logged at info level with actual state-read counts. If stats is non-nil,
+// Poll records timing and outcome statistics in it.
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -83,7 +86,8 @@ func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams
 	if params.MinSpacing == 0 {
 		params.MinSpacing = minSpacing
 	}
-	p := poller{ctx: ctx, lg: lg, r: r, params: params, ceCh: ceCh, stats: stats}
+	p := poller{ctx: ctx, lg: lg, r: r, params: params, ceCh: ceCh, stats: stats,
+		widths: median.New[time.Duration](widthHistory)}
 	if err := p.init(); err != nil {
 		return err
 	}
@@ -120,28 +124,25 @@ const (
 	minSpacing = 50 * time.Microsecond
 )
 
-// outcome classifies one polling window: no transition seen, a transition
-// whose surrounding queries look disturbed, or a good catch.
+// outcome classifies one polling window: no valid transition seen, or a catch.
 type outcome uint8
 
 const (
 	miss outcome = iota
-	rejectedCatch
-	goodCatch
+	caught
 )
 
 // acquire searches for the pulse while reducing an independent poll spacing.
 // It starts with initialPolls intervals across the full-period window. Every
-// good catch halves the spacing down to minSpacing and sets the next window to
+// catch halves the spacing down to minSpacing and sets the next window to
 // initialPolls times that spacing; a miss leaves the spacing unchanged. The
-// bracket measures candidate uncertainty but does not constrain this descent.
+// caught interval determines candidate uncertainty but does not constrain
+// this descent.
 //
-// A good catch at minSpacing acquires immediately. Two consecutive caught
+// A catch at minSpacing acquires immediately. Two consecutive caught
 // windows with no scheduled sleep also acquire, confirming at successively
 // smaller spacings that the state queries pace the loop. A slept catch or
-// miss resets that confirmation. A rejected catch shows the pulse is present
-// but is not trusted: it resets the miss count and the confirmation and
-// leaves the spacing unchanged. Misses at the full-period window sweep the
+// miss resets that confirmation. Misses at the full-period window sweep the
 // poll-grid phase; missLimit misses after the window narrows abandon this
 // attempt. The returned duration is the extent with which tracking should
 // begin, at most maxExtent.
@@ -155,11 +156,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 		if err != nil {
 			return 0, false, err
 		}
-		if o == rejectedCatch {
-			misses, queryPaced = 0, 0
-			continue
-		}
-		if o == goodCatch {
+		if o == caught {
 			misses = 0
 			acquired := spacing == minSpacing
 			if p.slept {
@@ -218,7 +215,6 @@ const (
 	trackStarted trackEventKind = iota
 	trackChanged
 	trackMissed
-	trackRejected
 	trackLost
 )
 
@@ -244,20 +240,15 @@ func (p *poller) track(extent time.Duration) error {
 // The tracking constants control dynamics only; every time scale comes from
 // observed brackets.
 const (
-	// shrinkStop is the extent, in brackets, at which good catches stop
+	// shrinkStop is the extent, in brackets, at which catches stop
 	// shrinking it. It is in brackets rather than a duration because the
 	// right extent differs by an order of magnitude between a fast UART
 	// query and a USB one.
 	shrinkStop = 8
-	// shrinkDivisor sets the shrink rate: each good catch drops the extent
+	// shrinkDivisor sets the shrink rate: each catch drops the extent
 	// by 1/shrinkDivisor until shrinkStop brackets stop it.
 	shrinkDivisor = 32
-	// rejectRatio is the ratio between the durations of the two queries
-	// around an edge, or between the gap before the catching query and the
-	// preceding query's duration, beyond which the catch is rejected.
-	rejectRatio = 3
-	// failureLimit consecutive attempts without a good catch return tracking
-	// to acquisition.
+	// failureLimit consecutive misses return tracking to acquisition.
 	failureLimit = 10
 	// maxExtent bounds the extent tracking will poll; a miss whose doubling
 	// would exceed it returns to acquisition instead.
@@ -266,19 +257,16 @@ const (
 
 // track maintains the extent of the polling window with one feedback loop.
 // Polling resolution does not depend on the extent, so the extent is
-// coverage and CPU only. A good catch advances the prediction by a period
+// coverage and CPU only. A catch advances the prediction by a period
 // plus half its prediction error, damping the midpoint's quantisation noise,
 // and shrinks the extent by 1/shrinkDivisor down to shrinkStop brackets; it
 // never widens it, so no catch, however wide its bracket, can make the loop
 // work harder. A miss doubles the extent, which is how the loop finds the
-// margin a jittery host needs. A rejected catch is neither evidence about
-// coverage nor a trustworthy measurement: it advances the prediction by a
-// period and changes nothing else. Misses and rejections count as failures;
-// failureLimit consecutive failures, or a doubling that would exceed
-// maxExtent, hand back to acquisition, since catching the pulse in an
-// inflated extent is far more expensive than reacquiring it. Misses and
-// rejections are reported as they happen; shrinking only once per halving,
-// to keep the log quiet.
+// margin a jittery host needs. failureLimit consecutive misses, or a doubling
+// that would exceed maxExtent, hand back to acquisition, since catching the
+// pulse in an inflated extent is far more expensive than reacquiring it.
+// Misses are reported as they happen; shrinking only once per halving, to
+// keep the log quiet.
 func track(extent time.Duration, attempt func(time.Duration) (trackObservation, error),
 	advance func(time.Duration), report func(trackEvent)) error {
 	report(trackEvent{kind: trackStarted, extent: extent})
@@ -289,7 +277,7 @@ func track(extent time.Duration, attempt func(time.Duration) (trackObservation, 
 		if err != nil {
 			return err
 		}
-		if obs.outcome == goodCatch {
+		if obs.outcome == caught {
 			advance(period + obs.predictionError/2)
 			failures = 0
 			next := min(extent, max(extent-extent/shrinkDivisor, shrinkStop*obs.bracket))
@@ -302,15 +290,12 @@ func track(extent time.Duration, attempt func(time.Duration) (trackObservation, 
 		}
 		advance(period)
 		failures++
-		next, kind := extent, trackRejected
-		if obs.outcome == miss {
-			next, kind = 2*extent, trackMissed
-		}
+		next := 2 * extent
 		if failures >= failureLimit || next > maxExtent {
 			report(trackEvent{kind: trackLost, extent: extent, nextExtent: next, observation: obs, failures: failures})
 			return nil
 		}
-		report(trackEvent{kind: kind, extent: extent, nextExtent: next, observation: obs, failures: failures})
+		report(trackEvent{kind: trackMissed, extent: extent, nextExtent: next, observation: obs, failures: failures})
 		logged, extent = next, next
 	}
 }
@@ -329,11 +314,6 @@ func (p *poller) logTrackEvent(e trackEvent) {
 			"extent", e.extent, "nextExtent", e.nextExtent,
 			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
 			"failures", e.failures)
-	case trackRejected:
-		p.lg.Info("serial PPS track status", "reason", "rejected",
-			"extent", e.extent, "stateReads", e.observation.stateReads,
-			"bracket", e.observation.bracket,
-			"predictionError", e.observation.predictionError, "failures", e.failures)
 	case trackLost:
 		cause := "failures"
 		if e.failures < failureLimit {
@@ -383,7 +363,7 @@ func (p *poller) init() error {
 // statistics, and sends a caught candidate. It returns the outcome and, for
 // a catch, its error from the predicted edge. The wait for the window open
 // is excluded from slept. During acquisition it also advances the
-// prediction: to the caught edge for a good catch, by one period otherwise.
+// prediction: to the caught edge for a catch, by one period otherwise.
 func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outcome, time.Duration, error) {
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
@@ -422,10 +402,8 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	}
 	prev := cur
 	missed := cur.inPulse
-	prevAtOpen := p.stateReads == 1
 	var edge clockReading
-	var startWidth, endWidth time.Duration
-	rejected := false
+	var uncertainty, pollWidths [2]time.Duration
 	for !missed && edge.stamp.IsZero() {
 		cur, err = p.readState(prev.start.Add(spacing))
 		if err != nil {
@@ -437,82 +415,62 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		edge, missed = classify(prev, cur, deadline)
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
-			startWidth, endWidth = prev.poll.duration(), cur.poll.duration()
-			rejected = p.disturbed(prev, cur, prevAtOpen)
+			uncertainty = [2]time.Duration{edge.elapsedSince(prev.poll.start), cur.poll.end.elapsedSince(edge)}
+			pollWidths = [2]time.Duration{prev.poll.duration(), cur.poll.duration()}
 		}
-		prev, prevAtOpen = cur, false
+		prev = cur
 	}
 	if edge.stamp.IsZero() {
-		p.stats.addWindow(miss, acquired)
+		p.stats.addWindow(miss, acquired, false)
 		if !acquired {
 			p.nextEdge = nextEdge.Add(period)
 		}
 		return miss, 0, nil
 	}
 	predictionError := edge.mono.Sub(nextEdge)
-	o := goodCatch
-	if rejected {
-		o = rejectedCatch
-	}
+	anomalous := p.anomalous(uncertainty[0]+uncertainty[1], acquired)
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
 	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
-		"startPollWidth", startWidth, "endPollWidth", endWidth,
+		"uncertainty", uncertainty, "pollWidths", pollWidths,
 		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads,
-		"rejected", rejected)
-	p.stats.addWindow(o, acquired)
+		"anomalous", anomalous)
+	p.stats.addWindow(caught, acquired, anomalous)
 	if !acquired {
-		if rejected {
-			p.nextEdge = nextEdge.Add(period)
-		} else {
-			p.nextEdge = edge.mono.Add(period)
-		}
+		p.nextEdge = edge.mono.Add(period)
 	}
 	ce := CandidateEdge{
 		Edge: Edge{
 			Timestamp: edge.stamp,
 			TRead:     cur.poll.end.mono,
 		},
-		Uncertainty:    halfCeil(p.lastBracket),
-		StartPollWidth: startWidth,
-		EndPollWidth:   endWidth,
-		Rejected:       rejected,
+		Uncertainty: uncertainty,
+		PollWidths:  pollWidths,
+		Anomalous:   anomalous,
 	}
 	select {
 	case p.ceCh <- ce:
-		return o, predictionError, nil
+		return caught, predictionError, nil
 	case <-p.ctx.Done():
 		return miss, 0, p.ctx.Err()
 	}
 }
 
-// disturbed reports whether the timing of the two queries around an edge
-// shows a stall. A stall can land inside either query, where the sampling
-// instant within the call is unknown and the midpoint is biased, or between
-// them. The duration comparisons see the first two; the gap test sees the
-// third, and applies only when no sleep was scheduled before the catching
-// query, since a sleep's timer overshoot is not a stall and its ordinary
-// size is not something two query durations can reveal. Each test is a
-// ratio, so that it needs no hardware timing, with MinSpacing as the floor
-// of the excess it judges: the loop itself idles that long between queries
-// where it can sleep, so a shorter disturbance is within its own pacing and
-// biases the midpoint by at most half of it, while without the floor a
-// microsecond UART query is failed by any preemption at all. A long prev is
-// not judged when it is the read at the window open: that read follows the
-// idle wait between windows, and on hosts whose queries slow down while
-// idle it is routinely severalfold longer than the reads after it, so its
-// length says nothing about the read that follows; a stall inside it still
-// widens the bracket, which the uncertainty reports. The tests use the
-// measurement stamps, like the bracket: on Windows the monotonic reading is
-// quantised far more coarsely than a query lasts (see now there), and a
-// step of the system clock inside a bracket is already a miss in classify.
-func (p *poller) disturbed(prev, cur reading, prevAtOpen bool) bool {
-	dp, dc, floor := prev.poll.duration(), cur.poll.duration(), p.params.MinSpacing
-	if gap := cur.poll.gapAfter(prev.poll); !cur.slept && gap > rejectRatio*dp && gap > floor {
-		return true
+const (
+	widthHistory = 31
+	anomalyRatio = 4
+)
+
+// anomalous compares the outer width with previous tracking catches before
+// recording it. Anomalous widths still enter the history so a sustained
+// change can become ordinary; coarse acquisition widths never enter it.
+func (p *poller) anomalous(width time.Duration, acquired bool) bool {
+	anomalous := p.widths.Len() > 0 && width > anomalyRatio*p.widths.Median()
+	if acquired {
+		p.widths.Add(width)
 	}
-	return dc > rejectRatio*dp && dc-dp > floor || !prevAtOpen && dp > rejectRatio*dc && dp-dc > floor
+	return anomalous
 }
 
 func (p *poller) readState(sched time.Time) (reading, error) {
@@ -570,23 +528,21 @@ func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 
 // classify gives a detected transition precedence over the deadline.
 // The deadline says when to stop looking, not whether a measured edge is
-// valid. A bracket spanning a full period or more may contain several
-// leading edges, so its midpoint identifies none of them, and a nonpositive
-// bracket means the measurement clock stepped backward between the reads
-// (its stamps carry no monotonic reading on Windows), so its midpoint is
-// equally meaningless: both are a miss.
+// valid. The outer interval must be shorter than a period to identify one
+// leading edge. The query endpoints must also be in order: a backward step
+// of the measurement clock (whose stamps carry no monotonic reading on
+// Windows) can otherwise produce an invalid interval or poll width.
 func classify(prev, cur reading, deadline time.Time) (clockReading, bool) {
 	if !prev.inPulse && cur.inPulse {
-		if d := cur.poll.midpoint().elapsedSince(prev.poll.midpoint()); d >= period || d <= 0 {
+		if d := cur.poll.end.elapsedSince(prev.poll.start); d >= period || d <= 0 {
+			return clockReading{}, true
+		}
+		if prev.poll.duration() < 0 || cur.poll.gapAfter(prev.poll) < 0 || cur.poll.duration() < 0 {
 			return clockReading{}, true
 		}
 		return prev.poll.midpoint().midpoint(cur.poll.midpoint()), false
 	}
 	return clockReading{}, !cur.poll.midpoint().mono.Before(deadline)
-}
-
-func halfCeil(d time.Duration) time.Duration {
-	return d/2 + d%2
 }
 
 func (p poll) midpoint() clockReading {

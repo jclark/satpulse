@@ -296,24 +296,29 @@ func TestDispatcherSysPulseCandidateWritesAcceptableSamples(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	d.sysPulseCandidateEdge(pps.CandidateEdge{
-		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: sysPulseMaxUncertainty + time.Nanosecond,
-	})
-	if len(shm.writes) != 0 {
-		t.Fatalf("inaccurate candidate produced %d SHM writes, want none", len(shm.writes))
+	for _, uncertainty := range [][2]time.Duration{
+		{sysPulseMaxUncertainty + time.Nanosecond, time.Microsecond},
+		{time.Microsecond, sysPulseMaxUncertainty + time.Nanosecond},
+	} {
+		d.sysPulseCandidateEdge(pps.CandidateEdge{
+			Edge:        pps.Edge{Timestamp: edge, TRead: edge},
+			Uncertainty: uncertainty,
+		})
+		if len(shm.writes) != 0 {
+			t.Fatalf("candidate with uncertainty %v produced %d SHM writes, want none", uncertainty, len(shm.writes))
+		}
 	}
 	d.sysPulseCandidateEdge(pps.CandidateEdge{
 		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: sysPulseMaxUncertainty,
-		Rejected:    true,
+		Uncertainty: [2]time.Duration{sysPulseMaxUncertainty, sysPulseMaxUncertainty},
+		Anomalous:   true,
 	})
 	if len(shm.writes) != 0 {
-		t.Fatalf("rejected candidate produced %d SHM writes, want none", len(shm.writes))
+		t.Fatalf("anomalous candidate produced %d SHM writes, want none", len(shm.writes))
 	}
 	d.sysPulseCandidateEdge(pps.CandidateEdge{
 		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: sysPulseMaxUncertainty,
+		Uncertainty: [2]time.Duration{sysPulseMaxUncertainty, sysPulseMaxUncertainty},
 	})
 	if len(shm.writes) != 1 {
 		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
@@ -370,7 +375,7 @@ func TestDispatcherSHMPrecisionOverride(t *testing.T) {
 
 // TestDispatcherSysPulseWarnings checks the rate-limited warnings for
 // candidates consistently withheld: after sysPulseWarnAfter consecutive
-// rejected candidates, or consecutive good ones over the uncertainty limit,
+// anomalous candidates, or consecutive good ones over the uncertainty limit,
 // one warning each, and a forwardable candidate resets both counts.
 func TestDispatcherSysPulseWarnings(t *testing.T) {
 	var logs bytes.Buffer
@@ -387,22 +392,22 @@ func TestDispatcherSysPulseWarnings(t *testing.T) {
 			d.sysPulseCandidateEdge(ce)
 		}
 	}
-	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: time.Microsecond, Rejected: true})
-	feed(1, pps.CandidateEdge{Uncertainty: time.Microsecond})
-	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: time.Microsecond, Rejected: true})
+	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}, Anomalous: true})
+	feed(1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}})
+	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}, Anomalous: true})
 	if strings.Contains(logs.String(), "level=WARN") {
 		t.Fatalf("warned before %d consecutive withheld candidates: %s", sysPulseWarnAfter, logs.String())
 	}
-	feed(1, pps.CandidateEdge{Uncertainty: time.Microsecond, Rejected: true})
-	feed(sysPulseWarnAfter, pps.CandidateEdge{Uncertainty: sysPulseMaxUncertainty + time.Nanosecond})
-	feed(sysPulseWarnEvery-1, pps.CandidateEdge{Uncertainty: sysPulseMaxUncertainty + time.Nanosecond})
+	feed(1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}, Anomalous: true})
+	feed(sysPulseWarnAfter, pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, sysPulseMaxUncertainty + time.Nanosecond}})
+	feed(sysPulseWarnEvery-1, pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, sysPulseMaxUncertainty + time.Nanosecond}})
 	if n := strings.Count(logs.String(), "level=WARN"); n != 2 {
-		t.Fatalf("%d warnings, want one for rejected and one for coarse candidates: %s", n, logs.String())
+		t.Fatalf("%d warnings, want one for anomalous and one for coarse candidates: %s", n, logs.String())
 	}
-	if !strings.Contains(logs.String(), "consistently rejected") || !strings.Contains(logs.String(), "too uncertain") {
+	if !strings.Contains(logs.String(), "consistently anomalous") || !strings.Contains(logs.String(), "too uncertain") {
 		t.Fatalf("warnings %s, want one of each kind", logs.String())
 	}
-	feed(1, pps.CandidateEdge{Uncertainty: sysPulseMaxUncertainty + time.Nanosecond})
+	feed(1, pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, sysPulseMaxUncertainty + time.Nanosecond}})
 	if n := strings.Count(logs.String(), "level=WARN"); n != 3 {
 		t.Fatalf("%d warnings after %d more coarse candidates, want the coarse warning repeated", n, sysPulseWarnEvery)
 	}

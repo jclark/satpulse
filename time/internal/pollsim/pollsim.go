@@ -5,9 +5,8 @@
 // and its pulse reader. Virtual time advances only when the loop does
 // something that takes time: a query, a clock read, or a sleep. Faults are a
 // pulse outage, a stall of the polling thread, which lands wherever the
-// loop happens to be, inside a query, between queries or at a wakeup, so
-// that the loop's rejection tests are exercised in every placement, and a
-// period of slowed queries, which the rejection tests cannot see. The
+// loop happens to be, inside a query, between queries or at a wakeup, and a
+// period of slowed queries. Both can produce anomalously wide intervals. The
 // consumer applies the daemon's forwarding rule, and the statistics judge
 // what the time daemon would have received: how many edges, how wrong, and
 // with what gaps between them.
@@ -33,46 +32,46 @@ import (
 // uncertainty limit the consumer relied on. Gaps are between consecutive
 // forwarded edges.
 type Stats struct {
-	Duration      Seconds
-	Pulses        int // pulses present during the run
-	Edges         int // candidates the loop sent
-	Forwarded     int // not rejected and within the uncertainty limit
-	Rejected      int
-	Coarse        int // not rejected but over the uncertainty limit
-	Missed        int // pulses present after the first forwarded edge with no candidate
-	Wrong         int // forwarded edges in error by more than the consumer's uncertainty limit
-	ErrMedian     Seconds
-	ErrP90        Seconds
-	ErrMax        Seconds
-	LongestGap    Seconds
-	GapsOver4s    int
-	Acquisitions  int
-	Lost          int
-	TrackMisses   int
-	TrackRejected int
-	Queries       int
-	CPU           float64 // fraction of a core: queries, clock reads and stalled time inside them
+	Duration     Seconds
+	Pulses       int // pulses present during the run
+	Edges        int // candidates the loop sent
+	Forwarded    int // not anomalous and within the uncertainty limit
+	Anomalous    int
+	Coarse       int // not anomalous but over the uncertainty limit
+	Missed       int // pulses present after the first forwarded edge with no candidate
+	Wrong        int // forwarded edges in error by more than the consumer's uncertainty limit
+	ErrMedian    Seconds
+	ErrP90       Seconds
+	ErrMax       Seconds
+	LongestGap   Seconds
+	GapsOver4s   int
+	Acquisitions int
+	Lost         int
+	TrackMisses  int
+	Queries      int
+	CPU          float64 // fraction of a core: queries, clock reads and stalled time inside them
 }
 
 // String formats the statistics as TOML key/value lines.
 func (s Stats) String() string {
-	return fmt.Sprintf("duration = %g\npulses = %d\nedges = %d\nforwarded = %d\nrejected = %d\ncoarse = %d\n"+
+	return fmt.Sprintf("duration = %g\npulses = %d\nedges = %d\nforwarded = %d\nanomalous = %d\ncoarse = %d\n"+
 		"missed = %d\nwrong = %d\nerrMedian = %.6f\nerrP90 = %.6f\nerrMax = %.6f\n"+
-		"longestGap = %.3f\ngapsOver4s = %d\nacquisitions = %d\nlost = %d\ntrackMisses = %d\ntrackRejected = %d\n"+
+		"longestGap = %.3f\ngapsOver4s = %d\nacquisitions = %d\nlost = %d\ntrackMisses = %d\n"+
 		"queries = %d\nqueriesPerSecond = %.1f\ncpu = %.4f\n",
-		s.Duration, s.Pulses, s.Edges, s.Forwarded, s.Rejected, s.Coarse, s.Missed, s.Wrong,
+		s.Duration, s.Pulses, s.Edges, s.Forwarded, s.Anomalous, s.Coarse, s.Missed, s.Wrong,
 		s.ErrMedian, s.ErrP90, s.ErrMax, s.LongestGap, s.GapsOver4s, s.Acquisitions, s.Lost,
-		s.TrackMisses, s.TrackRejected, s.Queries, float64(s.Queries)/s.Duration, s.CPU)
+		s.TrackMisses, s.Queries, float64(s.Queries)/s.Duration, s.CPU)
 }
 
 // EdgeRecord is one candidate as the consumer saw it, with its error against
 // the true edge.
 type EdgeRecord struct {
-	T           Seconds `json:"t"`
-	Err         Seconds `json:"err"`
-	Uncertainty Seconds `json:"uncertainty"`
-	Rejected    bool    `json:"rejected,omitzero"`
-	Forwarded   bool    `json:"forwarded"`
+	T           Seconds    `json:"t"`
+	Err         Seconds    `json:"err"`
+	Uncertainty [2]Seconds `json:"uncertainty"`
+	PollWidths  [2]Seconds `json:"pollWidths"`
+	Anomalous   bool       `json:"anomalous,omitzero"`
+	Forwarded   bool       `json:"forwarded"`
 }
 
 // Simulate runs the poll loop under cfg, which must be valid. lg receives
@@ -145,7 +144,6 @@ type sim struct {
 	acquired   int
 	lost       int
 	misses     int
-	rejected   int
 }
 
 func newSim(cfg Config) *sim {
@@ -348,8 +346,6 @@ func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
 					h.s.lost++
 				case "miss":
 					h.s.misses++
-				case "rejected":
-					h.s.rejected++
 				}
 			}
 			return true
@@ -371,7 +367,7 @@ type consumer struct {
 	record     func(EdgeRecord)
 	edges      int
 	forwarded  int
-	rejected   int
+	anomalous  int
 	coarse     int
 	wrong      int
 	errs       []time.Duration
@@ -388,9 +384,9 @@ func (c *consumer) candidate(ce pps.CandidateEdge) {
 	c.edges++
 	c.caught[int64(n)] = true
 	fwd := false
-	if ce.Rejected {
-		c.rejected++
-	} else if ce.Uncertainty > c.limit {
+	if ce.Anomalous {
+		c.anomalous++
+	} else if max(ce.Uncertainty[0], ce.Uncertainty[1]) > c.limit {
 		c.coarse++
 	} else {
 		fwd = true
@@ -411,16 +407,20 @@ func (c *consumer) candidate(ce pps.CandidateEdge) {
 		c.lastFwd = t
 	}
 	if c.record != nil {
-		c.record(EdgeRecord{T: float64(t) / 1e9, Err: float64(err) / 1e9,
-			Uncertainty: ce.Uncertainty.Seconds(), Rejected: ce.Rejected, Forwarded: fwd})
+		c.record(EdgeRecord{
+			T: t.Seconds(), Err: err.Seconds(),
+			Uncertainty: [2]Seconds{ce.Uncertainty[0].Seconds(), ce.Uncertainty[1].Seconds()},
+			PollWidths:  [2]Seconds{ce.PollWidths[0].Seconds(), ce.PollWidths[1].Seconds()},
+			Anomalous:   ce.Anomalous, Forwarded: fwd,
+		})
 	}
 }
 
 func (c *consumer) stats() Stats {
 	s := c.s
-	st := Stats{Duration: s.cfg.Sim.Duration, Edges: c.edges, Forwarded: c.forwarded, Rejected: c.rejected,
+	st := Stats{Duration: s.cfg.Sim.Duration, Edges: c.edges, Forwarded: c.forwarded, Anomalous: c.anomalous,
 		Coarse: c.coarse, Wrong: c.wrong, LongestGap: c.longestGap.Seconds(), GapsOver4s: c.gapsOver4s,
-		Acquisitions: s.acquired, Lost: s.lost, TrackMisses: s.misses, TrackRejected: s.rejected,
+		Acquisitions: s.acquired, Lost: s.lost, TrackMisses: s.misses,
 		Queries: s.queries, CPU: float64(s.work) / float64(s.end)}
 	for n := time.Duration(0); n*period < s.end; n++ {
 		if !s.present(n) {

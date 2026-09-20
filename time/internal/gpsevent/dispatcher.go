@@ -118,7 +118,7 @@ type Dispatcher struct {
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
 	coarseSysPulses       int
-	rejectedSysPulses     int
+	anomalousSysPulses    int
 	tStart                time.Time
 }
 
@@ -196,11 +196,10 @@ const (
 	sysPulseMaxUncertainty   = time.Millisecond
 	// sysPulseWarnAfter consecutive edges withheld for the same reason draw
 	// a warning, repeated every sysPulseWarnEvery further ones. Polling
-	// already runs at the finest cadence the host has, so good edges
+	// already runs at the finest cadence the host has, so edges
 	// consistently too uncertain to forward mean hardware too slow for the
 	// limit, a configuration problem rather than a tracking failure; edges
-	// consistently rejected mean the host's query timing never looks
-	// undisturbed, which polling cannot recover from by itself.
+	// consistently anomalous have intervals above their recent baseline.
 	sysPulseWarnAfter = 30
 	sysPulseWarnEvery = 3600
 )
@@ -284,7 +283,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 			}
 		case ce, ok := <-ppsCh:
 			if ok {
-				// Any candidate, rejected or not, proves the pin is wired and
+				// Any candidate, anomalous or not, proves the pin is wired and
 				// pulsing, which is all this warning is about.
 				firstSysPulseDeadline = nil
 				d.sysPulseCandidateEdge(ce)
@@ -328,26 +327,21 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 		Type: sysPulseEdgeType,
 		T:    ce.TRead,
 		Data: &SysPulseEdge{
-			T:              ce.Timestamp,
-			Uncertainty:    gpsprot.Duration(ce.Uncertainty),
-			StartPollWidth: gpsprot.Duration(ce.StartPollWidth),
-			EndPollWidth:   gpsprot.Duration(ce.EndPollWidth),
-			Rejected:       ce.Rejected,
+			T:           ce.Timestamp,
+			Uncertainty: [2]gpsprot.Duration{gpsprot.Duration(ce.Uncertainty[0]), gpsprot.Duration(ce.Uncertainty[1])},
+			PollWidths:  [2]gpsprot.Duration{gpsprot.Duration(ce.PollWidths[0]), gpsprot.Duration(ce.PollWidths[1])},
+			Anomalous:   ce.Anomalous,
 		},
 	})
-	// A rejected edge's bracket holds a stalled read, so its midpoint can be
-	// off by most of the bracket; the refclock protocol carries no
-	// uncertainty, so the only protection for the time consumer is not to
-	// send it.
-	if ce.Rejected {
-		if d.rejectedSysPulses++; sysPulseWarnDue(d.rejectedSysPulses) {
-			d.lg.Warn("serial PPS edges are consistently rejected; the host's modem status reads are never undisturbed",
-				"uncertainty", ce.Uncertainty, "consecutive", d.rejectedSysPulses)
+	if ce.Anomalous {
+		if d.anomalousSysPulses++; sysPulseWarnDue(d.anomalousSysPulses) {
+			d.lg.Warn("serial PPS edges are consistently anomalous; polling intervals exceed their recent baseline",
+				"uncertainty", ce.Uncertainty, "consecutive", d.anomalousSysPulses)
 		}
 		return
 	}
-	d.rejectedSysPulses = 0
-	if ce.Uncertainty > sysPulseMaxUncertainty {
+	d.anomalousSysPulses = 0
+	if max(ce.Uncertainty[0], ce.Uncertainty[1]) > sysPulseMaxUncertainty {
 		if d.coarseSysPulses++; sysPulseWarnDue(d.coarseSysPulses) {
 			d.lg.Warn("serial PPS edges are consistently too uncertain for timing; the host's modem status reads may be too slow for the poll method",
 				"uncertainty", ce.Uncertainty, "limit", sysPulseMaxUncertainty, "consecutive", d.coarseSysPulses)
@@ -450,11 +444,10 @@ type PHCPulseEdge struct {
 const sysPulseEdgeType = "sysPulseEdge"
 
 type SysPulseEdge struct {
-	T              time.Time        `json:"t"`
-	Uncertainty    gpsprot.Duration `json:"uncertainty"`
-	StartPollWidth gpsprot.Duration `json:"startPollWidth"`
-	EndPollWidth   gpsprot.Duration `json:"endPollWidth"`
-	Rejected       bool             `json:"rejected"`
+	T           time.Time           `json:"t"`
+	Uncertainty [2]gpsprot.Duration `json:"uncertainty,omitzero"`
+	PollWidths  [2]gpsprot.Duration `json:"pollWidths,omitzero"`
+	Anomalous   bool                `json:"anomalous"`
 }
 
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:

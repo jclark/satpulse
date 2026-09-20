@@ -92,8 +92,8 @@ type PollConfig struct {
 	// MinSpacing is the loop's minimum spacing between queries; 0 means the
 	// loop's default.
 	MinSpacing Seconds `toml:"minSpacing" check:">=0,<0.1" comment:"Minimum spacing between queries (s); 0 means the default"`
-	// MaxUncertainty is the consumer's limit: a catch that is not rejected
-	// and no more uncertain than this is forwarded to the time daemon.
+	// MaxUncertainty is the consumer's limit: a catch that is not anomalous
+	// and has both uncertainty components within this is forwarded to the time daemon.
 	MaxUncertainty Seconds `toml:"maxUncertainty" check:">0,<1" comment:"Consumer's uncertainty limit for forwarding an edge (s)"`
 }
 

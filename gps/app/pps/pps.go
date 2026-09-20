@@ -28,23 +28,24 @@ type Edge struct {
 
 // CandidateEdge is an edge reported by a detection backend. Poll reports
 // every edge it catches so that diagnostic consumers can follow acquisition:
-// Uncertainty is half the width of the polling bracket, and Rejected says the
-// timing of the two queries around the edge looks disturbed, which is what a
-// query stalled by host load produces: the edge is inside the bracket but its
-// midpoint is not a useful estimate. Timing consumers forward a candidate
-// that is not rejected and whose Uncertainty is within their limit.
-// StartPollWidth and EndPollWidth are the durations of the two queries
-// around the edge, the one that read the pin off and the one that read it
-// on; with Uncertainty they give the gap between the queries as well, so
-// the three intervals the edge lies across can be studied after the fact.
+// Uncertainty gives the durations before and after Timestamp reaching the
+// start of the query that read the pin off and the end of the query that
+// read it on. This interval contains the edge if each query samples the pin
+// during its call. Anomalous reports an outer width above four times the
+// median of the previous 31 tracking catches. It affects forwarding only,
+// not tracking or acquisition; an empty history gives no anomaly flag.
+// Timing consumers forward a candidate that is not anomalous and whose larger
+// uncertainty is within their limit.
+// PollWidths gives the durations of the off and on queries, in that order.
+// Subtracting their sum from the sum of Uncertainty gives the gap between
+// the queries.
 // A wait or kernel candidate carries the backend timestamp directly and has
 // no polling uncertainty.
 type CandidateEdge struct {
 	Edge
-	Uncertainty    time.Duration
-	StartPollWidth time.Duration
-	EndPollWidth   time.Duration
-	Rejected       bool
+	Uncertainty [2]time.Duration
+	PollWidths  [2]time.Duration
+	Anomalous   bool
 }
 
 // GeneratorConfig controls how PPS edges are associated with UTC-labelled
