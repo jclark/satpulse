@@ -14,9 +14,8 @@ const pollStatsSampleLimit = 10000
 type PollStats struct {
 	started        bool
 	acquire, track struct {
-		windows, edges int
+		windows, edges, rejected int
 	}
-	rejected  int
 	durations durationSamples
 	gaps      durationSamples
 }
@@ -45,9 +44,8 @@ type durationStats struct {
 
 type pollStatsSummary struct {
 	Acquire, Track struct {
-		Windows, Edges int
+		Windows, Edges, Rejected int
 	}
-	Rejected     int
 	PollDuration durationStats
 	PollGap      durationStats
 }
@@ -85,7 +83,7 @@ func (s *PollStats) addWindow(o outcome, acquired bool) {
 		phase.edges++
 	}
 	if o == rejectedCatch {
-		s.rejected++
+		phase.rejected++
 	}
 }
 
@@ -94,9 +92,8 @@ func (s *PollStats) summary() pollStatsSummary {
 		return pollStatsSummary{}
 	}
 	sum := pollStatsSummary{PollDuration: s.durations.summary(), PollGap: s.gaps.summary()}
-	sum.Acquire.Windows, sum.Acquire.Edges = s.acquire.windows, s.acquire.edges
-	sum.Track.Windows, sum.Track.Edges = s.track.windows, s.track.edges
-	sum.Rejected = s.rejected
+	sum.Acquire.Windows, sum.Acquire.Edges, sum.Acquire.Rejected = s.acquire.windows, s.acquire.edges, s.acquire.rejected
+	sum.Track.Windows, sum.Track.Edges, sum.Track.Rejected = s.track.windows, s.track.edges, s.track.rejected
 	return sum
 }
 
@@ -128,8 +125,8 @@ func (s *PollStats) Log(lg *slog.Logger) {
 	}
 	summary := s.summary()
 	lg.Info("serial PPS polling statistics",
-		slog.Group("acquire", "windows", summary.Acquire.Windows, "edges", summary.Acquire.Edges),
-		slog.Group("track", "windows", summary.Track.Windows, "edges", summary.Track.Edges, "rejected", summary.Rejected))
+		slog.Group("acquire", "windows", summary.Acquire.Windows, "edges", summary.Acquire.Edges, "rejected", summary.Acquire.Rejected),
+		slog.Group("track", "windows", summary.Track.Windows, "edges", summary.Track.Edges, "rejected", summary.Track.Rejected))
 	logDurationStats(lg, "serial PPS state read times", summary.PollDuration)
 	logDurationStats(lg, "serial PPS between-read times", summary.PollGap)
 }

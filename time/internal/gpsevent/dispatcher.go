@@ -118,6 +118,7 @@ type Dispatcher struct {
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
 	coarseSysPulses       int
+	rejectedSysPulses     int
 	tStart                time.Time
 }
 
@@ -193,13 +194,15 @@ const (
 	tickPeriod               = time.Second / 4
 	sysPulseFirstEdgeTimeout = 30 * time.Second
 	sysPulseMaxUncertainty   = time.Millisecond
-	// sysPulseCoarseWarnAfter consecutive good edges too uncertain to
-	// forward draw a warning, repeated every sysPulseCoarseWarnEvery further
-	// ones: polling already runs at the finest cadence the host has, so
-	// hardware too slow for the limit is a configuration problem, not a
-	// tracking failure.
-	sysPulseCoarseWarnAfter = 30
-	sysPulseCoarseWarnEvery = 3600
+	// sysPulseWarnAfter consecutive edges withheld for the same reason draw
+	// a warning, repeated every sysPulseWarnEvery further ones. Polling
+	// already runs at the finest cadence the host has, so good edges
+	// consistently too uncertain to forward mean hardware too slow for the
+	// limit, a configuration problem rather than a tracking failure; edges
+	// consistently rejected mean the host's query timing never looks
+	// undisturbed, which polling cannot recover from by itself.
+	sysPulseWarnAfter = 30
+	sysPulseWarnEvery = 3600
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -335,18 +338,26 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 	// uncertainty, so the only protection for the time consumer is not to
 	// send it.
 	if ce.Rejected {
+		if d.rejectedSysPulses++; sysPulseWarnDue(d.rejectedSysPulses) {
+			d.lg.Warn("serial PPS edges are consistently rejected; the host's modem status reads are never undisturbed",
+				"uncertainty", ce.Uncertainty, "consecutive", d.rejectedSysPulses)
+		}
 		return
 	}
+	d.rejectedSysPulses = 0
 	if ce.Uncertainty > sysPulseMaxUncertainty {
-		d.coarseSysPulses++
-		if n := d.coarseSysPulses; n == sysPulseCoarseWarnAfter || n > sysPulseCoarseWarnAfter && (n-sysPulseCoarseWarnAfter)%sysPulseCoarseWarnEvery == 0 {
-			d.lg.Warn("serial PPS edges are too uncertain for timing; the host's modem status reads are too slow for the poll method",
-				"uncertainty", ce.Uncertainty, "limit", sysPulseMaxUncertainty, "consecutive", n)
+		if d.coarseSysPulses++; sysPulseWarnDue(d.coarseSysPulses) {
+			d.lg.Warn("serial PPS edges are consistently too uncertain for timing; the host's modem status reads may be too slow for the poll method",
+				"uncertainty", ce.Uncertainty, "limit", sysPulseMaxUncertainty, "consecutive", d.coarseSysPulses)
 		}
 		return
 	}
 	d.coarseSysPulses = 0
 	d.sysPulseSample(ce.Edge)
+}
+
+func sysPulseWarnDue(n int) bool {
+	return n == sysPulseWarnAfter || n > sysPulseWarnAfter && (n-sysPulseWarnAfter)%sysPulseWarnEvery == 0
 }
 
 func (d *Dispatcher) sysPulseSample(edge pps.Edge) {

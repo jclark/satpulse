@@ -54,10 +54,8 @@ func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
 // the noise event that made a latch comparing consecutive brackets misfire
 // in the daemon. A nonzero slowCallDur replaces callDur from slowFrom until
 // slowTo, modelling a transient run of slow queries. A nonzero stateRefresh
-// exposes pulse-state changes only on that time grid, and edgeCallDur replaces
-// callDur for the one query that first observes each leading edge, modelling a
-// coarse status-delivery bracket around otherwise fast cached queries. calls
-// counts the state queries.
+// exposes pulse-state changes only on that time grid. calls counts the state
+// queries.
 type fakePulse struct {
 	epoch          time.Time
 	width          time.Duration
@@ -72,10 +70,7 @@ type fakePulse struct {
 	slowTo         time.Duration
 	slowCallDur    time.Duration
 	stateRefresh   time.Duration
-	edgeCallDur    time.Duration
 	stalled        bool
-	haveState      bool
-	lastState      bool
 	seq            uint32
 	calls          atomic.Int64
 }
@@ -103,14 +98,8 @@ func (f *fakePulse) InPulse() (bool, error) {
 	if f.slowCallDur > 0 && since >= f.slowFrom && since < f.slowTo {
 		callDur = f.slowCallDur
 	}
-	if state := f.state(since); f.edgeCallDur > 0 && f.haveState && !f.lastState && state {
-		callDur = f.edgeCallDur
-	}
 	time.Sleep(callDur)
-	state := f.state(time.Since(f.epoch))
-	f.lastState = state
-	f.haveState = true
-	return state, nil
+	return f.state(time.Since(f.epoch)), nil
 }
 
 func (f *fakePulse) state(since time.Duration) bool {
@@ -456,6 +445,32 @@ func TestTrackFeedback(t *testing.T) {
 	}
 }
 
+// TestTrackShrinkReported checks that shrinking is reported once per
+// halving: from 3.2 ms, good catches with a 100 us bracket shrink the extent
+// by 1/32 each, and the first report comes when it passes 1.6 ms.
+func TestTrackShrinkReported(t *testing.T) {
+	done := errors.New("simulation complete")
+	var events []trackEvent
+	attempts := 0
+	err := track(3200*time.Microsecond, func(extent time.Duration) (trackObservation, error) {
+		if attempts++; attempts > 40 {
+			return trackObservation{}, done
+		}
+		return trackObservation{outcome: goodCatch, bracket: 100 * time.Microsecond}, nil
+	}, func(time.Duration) {}, func(e trackEvent) {
+		events = append(events, e)
+	})
+	if !errors.Is(err, done) {
+		t.Fatalf("track error = %v, want simulation completion", err)
+	}
+	if len(events) != 2 || events[1].kind != trackChanged {
+		t.Fatalf("events = %v, want start and one shrink report", events)
+	}
+	if e := events[1]; 2*e.nextExtent > 3200*time.Microsecond || 2*e.extent <= 3200*time.Microsecond {
+		t.Errorf("shrink reported at %v -> %v, want the catch that crosses 1.6 ms", e.extent, e.nextExtent)
+	}
+}
+
 // TestTrackLoss pins the give-up rules: a miss whose doubling would exceed
 // maxExtent, or failureLimit consecutive failures of any kind, hand back to
 // acquisition.
@@ -498,12 +513,15 @@ func TestTrackLoss(t *testing.T) {
 
 // TestDisturbed pins the rejection tests on synthetic query pairs: a stall
 // inside either query is rejected, a gap before the catching query is
-// rejected only when no sleep was scheduled, and a normal pair is not.
+// rejected only when no sleep was scheduled, and a normal pair is not. The
+// tests read the measurement stamps, not the monotonic readings.
 func TestDisturbed(t *testing.T) {
+	// The mono readings are all equal, so a test taken from them instead
+	// of the stamps sees zero durations and gaps and gives the wrong answer.
 	base := time.Unix(1_000, 0)
 	mk := func(start, dur time.Duration) poll {
-		s := clockReading{stamp: base.Add(start), mono: base.Add(start)}
-		e := clockReading{stamp: base.Add(start + dur), mono: base.Add(start + dur)}
+		s := clockReading{stamp: base.Add(start), mono: base}
+		e := clockReading{stamp: base.Add(start + dur), mono: base}
 		return poll{start: s, end: e}
 	}
 	tests := []struct {
@@ -557,10 +575,10 @@ func TestPollShortOutageKeepsTracking(t *testing.T) {
 	})
 }
 
-// TestPollAcquiresWithCoarseStateRefresh exercises the former fixed point: the
-// ordinary cached query takes only 5 us, but the state it reads changes only
-// on a 2 ms grid. The old window-driven acquisition stalled above minSpacing
-// while every caught window remained sleep-paced.
+// TestPollAcquiresWithCoarseStateRefresh models a driver that refreshes the
+// pin state on a 2 ms grid behind 5 us cached queries: each edge becomes
+// visible up to 2 ms late, but the bracket around it is two cached queries,
+// so acquisition must complete and the edges must be usable.
 func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{

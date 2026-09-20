@@ -151,15 +151,15 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 	misses, queryPaced := 0, 0
 	for {
 		window := initialPolls * spacing
-		outcome, _, err := p.pollWindow(window, spacing, false)
+		o, _, err := p.pollWindow(window, spacing, false)
 		if err != nil {
 			return 0, false, err
 		}
-		if outcome == rejectedCatch {
+		if o == rejectedCatch {
 			misses, queryPaced = 0, 0
 			continue
 		}
-		if outcome == goodCatch {
+		if o == goodCatch {
 			misses = 0
 			acquired := spacing == minSpacing
 			if p.slept {
@@ -233,8 +233,8 @@ type trackEvent struct {
 // control. Tests call the same track function with a simulated attempt.
 func (p *poller) track(extent time.Duration) error {
 	attempt := func(extent time.Duration) (trackObservation, error) {
-		outcome, predictionError, err := p.pollWindow(extent, p.params.MinSpacing, true)
-		return trackObservation{outcome: outcome, predictionError: predictionError,
+		o, predictionError, err := p.pollWindow(extent, p.params.MinSpacing, true)
+		return trackObservation{outcome: o, predictionError: predictionError,
 			bracket: p.lastBracket, stateReads: p.stateReads}, err
 	}
 	advance := func(d time.Duration) { p.nextEdge = p.nextEdge.Add(d) }
@@ -307,7 +307,7 @@ func track(extent time.Duration, attempt func(time.Duration) (trackObservation, 
 			next, kind = 2*extent, trackMissed
 		}
 		if failures >= failureLimit || next > maxExtent {
-			report(trackEvent{kind: trackLost, extent: extent, observation: obs, failures: failures})
+			report(trackEvent{kind: trackLost, extent: extent, nextExtent: next, observation: obs, failures: failures})
 			return nil
 		}
 		report(trackEvent{kind: kind, extent: extent, nextExtent: next, observation: obs, failures: failures})
@@ -335,8 +335,12 @@ func (p *poller) logTrackEvent(e trackEvent) {
 			"bracket", e.observation.bracket,
 			"predictionError", e.observation.predictionError, "failures", e.failures)
 	case trackLost:
-		p.lg.Info("serial PPS track status", "reason", "lost",
-			"extent", e.extent, "stateReads", e.observation.stateReads,
+		cause := "failures"
+		if e.failures < failureLimit {
+			cause = "extent"
+		}
+		p.lg.Info("serial PPS track status", "reason", "lost", "cause", cause,
+			"extent", e.extent, "nextExtent", e.nextExtent, "stateReads", e.observation.stateReads,
 			"bracket", e.observation.bracket, "failures", e.failures)
 	}
 }
@@ -443,9 +447,9 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		return miss, 0, nil
 	}
 	predictionError := edge.mono.Sub(nextEdge)
-	outcome := goodCatch
+	o := goodCatch
 	if rejected {
-		outcome = rejectedCatch
+		o = rejectedCatch
 	}
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
@@ -453,7 +457,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
 		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads,
 		"rejected", rejected)
-	p.stats.addWindow(outcome, acquired)
+	p.stats.addWindow(o, acquired)
 	if !acquired {
 		if rejected {
 			p.nextEdge = nextEdge.Add(period)
@@ -471,7 +475,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	}
 	select {
 	case p.ceCh <- ce:
-		return outcome, predictionError, nil
+		return o, predictionError, nil
 	case <-p.ctx.Done():
 		return miss, 0, p.ctx.Err()
 	}
@@ -484,10 +488,12 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 // third, and applies only when no sleep was scheduled before the catching
 // query, since a sleep's timer overshoot is not a stall and its ordinary
 // size is not something two query durations can reveal. The tests use the
-// monotonic readings, which a step in the system clock cannot disturb.
+// measurement stamps, like the bracket: on Windows the monotonic reading is
+// quantised far more coarsely than a query lasts (see now there), and a
+// step of the system clock inside a bracket is already a miss in classify.
 func disturbed(prev, cur reading) bool {
-	dp, dc := prev.poll.monoDuration(), cur.poll.monoDuration()
-	return !cur.slept && cur.poll.start.mono.Sub(prev.poll.end.mono) > rejectRatio*dp ||
+	dp, dc := prev.poll.duration(), cur.poll.duration()
+	return !cur.slept && cur.poll.gapAfter(prev.poll) > rejectRatio*dp ||
 		dc > rejectRatio*dp || dp > rejectRatio*dc
 }
 
@@ -571,10 +577,6 @@ func (p poll) midpoint() clockReading {
 
 func (p poll) duration() time.Duration {
 	return p.end.elapsedSince(p.start)
-}
-
-func (p poll) monoDuration() time.Duration {
-	return p.end.mono.Sub(p.start.mono)
 }
 
 func (p poll) gapAfter(prev poll) time.Duration {

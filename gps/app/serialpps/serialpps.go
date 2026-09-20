@@ -70,9 +70,9 @@ type Wiring struct {
 // method is unsupported or unavailable for the device. Other failures are
 // returned. An explicitly requested method never falls back. cfg.PollPreWarm
 // applies only to polling, the one method whose resolution the host's own
-// speed sets. If stats is non-nil, it records
-// timings only when polling is selected. cfg.MaxWakeupLatency, if set, limits
-// CPU wakeup latency for as long as detection runs.
+// speed sets. If stats is non-nil, it records timings only when polling is
+// selected. cfg.MaxWakeupLatency, if set, limits CPU wakeup latency for as
+// long as detection runs.
 func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- pps.CandidateEdge, stats *pps.PollStats) error {
 	if cfg.MaxWakeupLatency != nil {
 		max := ptime.Seconds(*cfg.MaxWakeupLatency)

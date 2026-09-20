@@ -1,10 +1,12 @@
 package gpsevent
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
+	"strings"
 	"testing"
 	"time"
 
@@ -363,5 +365,45 @@ func TestDispatcherSHMPrecisionOverride(t *testing.T) {
 	}
 	if shm != base {
 		t.Fatalf("explicit precision writer = %T, want base writer", shm)
+	}
+}
+
+// TestDispatcherSysPulseWarnings checks the rate-limited warnings for
+// candidates consistently withheld: after sysPulseWarnAfter consecutive
+// rejected candidates, or consecutive good ones over the uncertainty limit,
+// one warning each, and a forwardable candidate resets both counts.
+func TestDispatcherSysPulseWarnings(t *testing.T) {
+	var logs bytes.Buffer
+	d := &Dispatcher{
+		ppsGen: pps.NewGenerator(pps.DefaultGeneratorConfig()),
+		shm:    &fakeSHM{precision: -9},
+		obs:    &ntpSampleObserver{},
+		lg:     slog.New(slog.NewTextHandler(&logs, nil)),
+	}
+	edge := time.Unix(900, 1_000_000)
+	feed := func(n int, ce pps.CandidateEdge) {
+		ce.Edge = pps.Edge{Timestamp: edge, TRead: edge}
+		for range n {
+			d.sysPulseCandidateEdge(ce)
+		}
+	}
+	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: time.Microsecond, Rejected: true})
+	feed(1, pps.CandidateEdge{Uncertainty: time.Microsecond})
+	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: time.Microsecond, Rejected: true})
+	if strings.Contains(logs.String(), "level=WARN") {
+		t.Fatalf("warned before %d consecutive withheld candidates: %s", sysPulseWarnAfter, logs.String())
+	}
+	feed(1, pps.CandidateEdge{Uncertainty: time.Microsecond, Rejected: true})
+	feed(sysPulseWarnAfter, pps.CandidateEdge{Uncertainty: sysPulseMaxUncertainty + time.Nanosecond})
+	feed(sysPulseWarnEvery-1, pps.CandidateEdge{Uncertainty: sysPulseMaxUncertainty + time.Nanosecond})
+	if n := strings.Count(logs.String(), "level=WARN"); n != 2 {
+		t.Fatalf("%d warnings, want one for rejected and one for coarse candidates: %s", n, logs.String())
+	}
+	if !strings.Contains(logs.String(), "consistently rejected") || !strings.Contains(logs.String(), "too uncertain") {
+		t.Fatalf("warnings %s, want one of each kind", logs.String())
+	}
+	feed(1, pps.CandidateEdge{Uncertainty: sysPulseMaxUncertainty + time.Nanosecond})
+	if n := strings.Count(logs.String(), "level=WARN"); n != 3 {
+		t.Fatalf("%d warnings after %d more coarse candidates, want the coarse warning repeated", n, sysPulseWarnEvery)
 	}
 }
