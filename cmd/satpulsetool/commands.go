@@ -12,6 +12,7 @@ import (
 	"github.com/jclark/satpulse/internal/packcmd"
 	"github.com/jclark/satpulse/internal/replaycmd"
 	"github.com/jclark/satpulse/internal/scancmd"
+	"github.com/jclark/satpulse/time/app/pollsimcmd"
 	"github.com/jclark/satpulse/time/app/serialcmd"
 )
 
@@ -26,6 +27,7 @@ var commands = map[string]cmdFunc{
 	"gps":      gpscmd.Cmd,
 	"ntrip":    ntripcmd.Cmd,
 	"pack":     packcmd.Cmd,
+	"pollsim":  pollsimcmd.Cmd,
 	"replay":   replaycmd.Cmd,
 	"scan":     scancmd.Cmd,
 	"serial":   serialcmd.Cmd,

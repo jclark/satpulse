@@ -1,0 +1,18 @@
+# A native UART on Linux with PPS on DCD: 10 us queries, sub-millisecond
+# timer sleeps truncated to nothing, so the queries pace the loop.
+
+[sim]
+duration = 3600
+
+[pulse]
+width = 0.1
+jitter = 5e-6
+
+[host.query]
+duration = 10e-6
+jitter = 2e-6
+
+[host.timer]
+resolution = 1e-3
+overshoot = 60e-6
+overshootJitter = 40e-6

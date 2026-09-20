@@ -1,0 +1,397 @@
+// Package pollsim simulates the serial PPS polling loop of gps/app/pps
+// against a modelled pulse and host, in virtual time.
+//
+// The real Poll runs unchanged: the simulator supplies its clock, its timer
+// and its pulse reader. Virtual time advances only when the loop does
+// something that takes time: a query, a clock read, or a sleep. Faults are a
+// pulse outage or a stall of the polling thread, which lands wherever the
+// loop happens to be, inside a query, between queries or at a wakeup, so
+// that the loop's rejection tests are exercised in every placement. The
+// consumer applies the daemon's forwarding rule, and the statistics judge
+// what the time daemon would have received: how many edges, how wrong, and
+// with what gaps between them.
+package pollsim
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"log/slog"
+	"math"
+	"math/rand"
+	"slices"
+	"sort"
+	"time"
+
+	"github.com/jclark/satpulse/gps/app/pps"
+	"github.com/jclark/satpulse/gps/ptime"
+)
+
+// Stats summarises a run. Errors are of forwarded edges against the true
+// edge on the pin; a forwarded edge is wrong when its error exceeds the
+// uncertainty limit the consumer relied on. Gaps are between consecutive
+// forwarded edges.
+type Stats struct {
+	Duration      Seconds
+	Pulses        int // pulses present during the run
+	Edges         int // candidates the loop sent
+	Forwarded     int // not rejected and within the uncertainty limit
+	Rejected      int
+	Coarse        int // not rejected but over the uncertainty limit
+	Missed        int // pulses present after the first forwarded edge with no candidate
+	Wrong         int // forwarded edges in error by more than the consumer's uncertainty limit
+	ErrMedian     Seconds
+	ErrP90        Seconds
+	ErrMax        Seconds
+	LongestGap    Seconds
+	GapsOver4s    int
+	Acquisitions  int
+	Lost          int
+	TrackMisses   int
+	TrackRejected int
+	Queries       int
+	CPU           float64 // fraction of a core: queries, clock reads and stalled time inside them
+}
+
+// String formats the statistics as TOML key/value lines.
+func (s Stats) String() string {
+	return fmt.Sprintf("duration = %g\npulses = %d\nedges = %d\nforwarded = %d\nrejected = %d\ncoarse = %d\n"+
+		"missed = %d\nwrong = %d\nerrMedian = %.6f\nerrP90 = %.6f\nerrMax = %.6f\n"+
+		"longestGap = %.3f\ngapsOver4s = %d\nacquisitions = %d\nlost = %d\ntrackMisses = %d\ntrackRejected = %d\n"+
+		"queries = %d\nqueriesPerSecond = %.1f\ncpu = %.4f\n",
+		s.Duration, s.Pulses, s.Edges, s.Forwarded, s.Rejected, s.Coarse, s.Missed, s.Wrong,
+		s.ErrMedian, s.ErrP90, s.ErrMax, s.LongestGap, s.GapsOver4s, s.Acquisitions, s.Lost,
+		s.TrackMisses, s.TrackRejected, s.Queries, float64(s.Queries)/s.Duration, s.CPU)
+}
+
+// EdgeRecord is one candidate as the consumer saw it, with its error against
+// the true edge.
+type EdgeRecord struct {
+	T           Seconds `json:"t"`
+	Err         Seconds `json:"err"`
+	Uncertainty Seconds `json:"uncertainty"`
+	Rejected    bool    `json:"rejected,omitzero"`
+	Forwarded   bool    `json:"forwarded"`
+}
+
+// Simulate runs the poll loop under cfg, which must be valid. lg receives
+// the loop's own log lines with simulated timestamps; edges, if non-nil, is
+// called for every candidate.
+func Simulate(cfg Config, lg *slog.Logger, edges func(EdgeRecord)) (Stats, error) {
+	s := newSim(cfg)
+	ceCh := make(chan pps.CandidateEdge)
+	errCh := make(chan error, 1)
+	params := pps.PollParams{
+		MinSpacing: ptime.Seconds(cfg.Poll.MinSpacing),
+		PreWarm:    ptime.Seconds(cfg.Poll.PreWarm),
+		Wait:       s.wait,
+		Now:        s.time,
+	}
+	go func() {
+		errCh <- pps.Poll(context.Background(), slog.New(&logHandler{Handler: lg.Handler(), s: s}), s, params, ceCh, nil)
+	}()
+	c := consumer{s: s, limit: ptime.Seconds(cfg.Poll.MaxUncertainty), caught: make(map[int64]bool), record: edges}
+	for {
+		select {
+		case ce := <-ceCh:
+			c.candidate(ce)
+		case err := <-errCh:
+			if !errors.Is(err, errDone) {
+				return Stats{}, err
+			}
+			return c.stats(), nil
+		}
+	}
+}
+
+// errDone is the reader's answer once the simulated duration has elapsed.
+var errDone = errors.New("simulation complete")
+
+const period = time.Second
+
+// simBase is the wall-clock time of simulated zero.
+var simBase = time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+
+type stall struct {
+	at, dur time.Duration
+}
+
+// sim is the virtual host: its clock, its timer, the pin, and the faults.
+// All of it is driven from the polling goroutine; the consumer only reads
+// the candidates that goroutine sends.
+type sim struct {
+	cfg       Config
+	end       time.Duration
+	now       time.Duration
+	work      time.Duration
+	stalls    []stall
+	nextStall int
+	rng       *rand.Rand
+	jitter    []time.Duration
+	// Idle slowdown state: when the thread was last active, and how much
+	// continuous activity has accumulated since it went cold.
+	lastActive time.Duration
+	cold       bool
+	warmed     time.Duration
+	queries    int
+	acquired   int
+	lost       int
+	misses     int
+	rejected   int
+}
+
+func newSim(cfg Config) *sim {
+	s := &sim{cfg: cfg, end: ptime.Seconds(cfg.Sim.Duration), rng: rand.New(rand.NewSource(cfg.Sim.Seed))}
+	s.jitter = make([]time.Duration, int(cfg.Sim.Duration)+2)
+	for i := range s.jitter {
+		s.jitter[i] = time.Duration(s.rng.NormFloat64() * cfg.Pulse.Jitter * 1e9)
+	}
+	for _, st := range cfg.Fault.Stall {
+		if st.Duration > 0 {
+			s.stalls = append(s.stalls, stall{at: ptime.Seconds(st.At), dur: ptime.Seconds(st.Duration)})
+		}
+	}
+	for _, b := range cfg.Fault.Stalls {
+		if b.Rate == 0 {
+			continue
+		}
+		burstEnd := s.end
+		if b.Duration > 0 {
+			burstEnd = ptime.Seconds(b.Start + b.Duration)
+		}
+		logMin, logMax := math.Log(b.Min), math.Log(b.Max)
+		for t := b.Start + s.rng.ExpFloat64()/b.Rate; ptime.Seconds(t) < burstEnd; t += s.rng.ExpFloat64() / b.Rate {
+			dur := math.Exp(logMin + s.rng.Float64()*(logMax-logMin))
+			s.stalls = append(s.stalls, stall{at: ptime.Seconds(t), dur: ptime.Seconds(dur)})
+		}
+	}
+	sort.Slice(s.stalls, func(i, j int) bool { return s.stalls[i].at < s.stalls[j].at })
+	return s
+}
+
+// time is the loop's clock: reading it is work.
+func (s *sim) time() time.Time {
+	s.run(ptime.Seconds(s.cfg.Host.ClockRead))
+	return simBase.Add(s.now)
+}
+
+// wait is the loop's timer. A sleep truncated to nothing returns at once,
+// like the runtime on Linux; one that happens overshoots, and a stall in
+// progress at the wakeup delays it further.
+func (s *sim) wait(ctx context.Context, t time.Time) (bool, error) {
+	if s.now >= s.end {
+		return false, errDone
+	}
+	d := t.Sub(simBase) - s.now
+	if res := ptime.Seconds(s.cfg.Host.Timer.Resolution); res > 0 {
+		d = d.Truncate(res)
+	}
+	if d <= 0 {
+		return false, nil
+	}
+	s.now += d
+	tm := s.cfg.Host.Timer
+	if o := tm.Overshoot + s.rng.NormFloat64()*tm.OvershootJitter; o > 0 {
+		s.now += ptime.Seconds(o)
+	}
+	for s.nextStall < len(s.stalls) && s.stalls[s.nextStall].at <= s.now {
+		st := s.stalls[s.nextStall]
+		s.nextStall++
+		if end := st.at + st.dur; end > s.now {
+			s.now = end
+		}
+	}
+	return true, nil
+}
+
+// InPulse is the loop's state query. The pin is sampled at a uniformly
+// random point of the query's own running time, so a stall inside the query
+// falls before or after the sampling instant.
+func (s *sim) InPulse() (bool, error) {
+	if s.now >= s.end {
+		return false, errDone
+	}
+	s.queries++
+	q := s.cfg.Host.Query
+	d := q.Duration + s.rng.NormFloat64()*q.Jitter
+	d = max(d, q.Duration/4)
+	if s.cold {
+		d *= q.Idle.Factor
+	}
+	dur := ptime.Seconds(d)
+	before := time.Duration(s.rng.Float64() * float64(dur))
+	s.run(before)
+	on := s.pulseOn(s.now)
+	s.run(dur - before)
+	return on, nil
+}
+
+// run advances the clock by d of running time, inserting any stall that
+// begins meanwhile, and keeps the idle-slowdown state.
+func (s *sim) run(d time.Duration) {
+	idle := s.cfg.Host.Query.Idle
+	if after := ptime.Seconds(idle.After); after > 0 {
+		if s.now-s.lastActive > after {
+			s.cold, s.warmed = true, 0
+		}
+		if s.cold {
+			if s.warmed += d; s.warmed >= ptime.Seconds(idle.Recover) {
+				s.cold = false
+			}
+		}
+	}
+	s.work += d
+	for s.nextStall < len(s.stalls) && s.stalls[s.nextStall].at < s.now+d {
+		st := s.stalls[s.nextStall]
+		s.nextStall++
+		if st.at > s.now {
+			d -= st.at - s.now
+			s.now = st.at
+		}
+		s.now += st.dur
+	}
+	s.now += d
+	s.lastActive = s.now
+}
+
+// pulseOn reports the pin state at t: inside the width after a leading edge
+// that is not suppressed by an outage.
+func (s *sim) pulseOn(t time.Duration) bool {
+	width := ptime.Seconds(s.cfg.Pulse.Width)
+	for n := t / period; n >= 0 && n >= t/period-1; n-- {
+		if e := s.edge(n); s.present(n) && t >= e && t < e+width {
+			return true
+		}
+	}
+	return false
+}
+
+func (s *sim) edge(n time.Duration) time.Duration {
+	if int(n) >= len(s.jitter) {
+		return n * period
+	}
+	return n*period + s.jitter[n]
+}
+
+func (s *sim) present(n time.Duration) bool {
+	e := float64(s.edge(n)) / 1e9
+	for _, o := range s.cfg.Fault.Outage {
+		if o.Duration > 0 && e >= o.Start && e < o.Start+o.Duration {
+			return false
+		}
+	}
+	return true
+}
+
+// logHandler stamps the loop's log records with simulated time and counts
+// the events the statistics report.
+type logHandler struct {
+	slog.Handler
+	s *sim
+}
+
+func (h *logHandler) Enabled(context.Context, slog.Level) bool { return true }
+
+func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
+	switch r.Message {
+	case "serial PPS acquired":
+		h.s.acquired++
+	case "serial PPS track status":
+		r.Attrs(func(a slog.Attr) bool {
+			if a.Key == "reason" {
+				switch a.Value.String() {
+				case "lost":
+					h.s.lost++
+				case "miss":
+					h.s.misses++
+				case "rejected":
+					h.s.rejected++
+				}
+			}
+			return true
+		})
+	}
+	if !h.Handler.Enabled(ctx, r.Level) {
+		return nil
+	}
+	r.Time = simBase.Add(h.s.now)
+	return h.Handler.Handle(ctx, r)
+}
+
+// consumer applies the daemon's forwarding rule and accumulates the
+// statistics.
+type consumer struct {
+	s          *sim
+	limit      time.Duration
+	caught     map[int64]bool
+	record     func(EdgeRecord)
+	edges      int
+	forwarded  int
+	rejected   int
+	coarse     int
+	wrong      int
+	errs       []time.Duration
+	firstFwd   time.Duration
+	lastFwd    time.Duration
+	longestGap time.Duration
+	gapsOver4s int
+}
+
+func (c *consumer) candidate(ce pps.CandidateEdge) {
+	t := ce.Timestamp.Sub(simBase)
+	n := (t + period/2) / period
+	err := t - c.s.edge(n)
+	c.edges++
+	c.caught[int64(n)] = true
+	fwd := false
+	if ce.Rejected {
+		c.rejected++
+	} else if ce.Uncertainty > c.limit {
+		c.coarse++
+	} else {
+		fwd = true
+		c.forwarded++
+		c.errs = append(c.errs, err.Abs())
+		if err.Abs() > c.limit {
+			c.wrong++
+		}
+		if c.forwarded == 1 {
+			c.firstFwd = t
+		} else {
+			gap := t - c.lastFwd
+			c.longestGap = max(c.longestGap, gap)
+			if gap > 4*period {
+				c.gapsOver4s++
+			}
+		}
+		c.lastFwd = t
+	}
+	if c.record != nil {
+		c.record(EdgeRecord{T: float64(t) / 1e9, Err: float64(err) / 1e9,
+			Uncertainty: ce.Uncertainty.Seconds(), Rejected: ce.Rejected, Forwarded: fwd})
+	}
+}
+
+func (c *consumer) stats() Stats {
+	s := c.s
+	st := Stats{Duration: s.cfg.Sim.Duration, Edges: c.edges, Forwarded: c.forwarded, Rejected: c.rejected,
+		Coarse: c.coarse, Wrong: c.wrong, LongestGap: c.longestGap.Seconds(), GapsOver4s: c.gapsOver4s,
+		Acquisitions: s.acquired, Lost: s.lost, TrackMisses: s.misses, TrackRejected: s.rejected,
+		Queries: s.queries, CPU: float64(s.work) / float64(s.end)}
+	for n := time.Duration(0); n*period < s.end; n++ {
+		if !s.present(n) {
+			continue
+		}
+		st.Pulses++
+		if c.forwarded > 0 && n*period > c.firstFwd && !c.caught[int64(n)] {
+			st.Missed++
+		}
+	}
+	if len(c.errs) > 0 {
+		slices.Sort(c.errs)
+		st.ErrMedian = c.errs[len(c.errs)/2].Seconds()
+		st.ErrP90 = c.errs[len(c.errs)*9/10].Seconds()
+		st.ErrMax = c.errs[len(c.errs)-1].Seconds()
+	}
+	return st
+}

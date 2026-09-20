@@ -35,6 +35,7 @@ _Not yet released_
 
 - SatPulse now supports the NTP SHM protocol in addition to the chrony refclock SOCK protocol for sending time information to an NTP server. `satpulse.toml` has a new `[ntp.shm]` table for configuring this. (#300)
 - The `[serial]` table in `satpulse.toml` has a new `pps.pin` key that lets `satpulsed` detect receiver PPS edges on a serial modem-control input and use them for more precise refclock samples on systems without a PTP hardware clock. Detected edges are logged in the JSONL event log as a new `sysPulseEdge` event type. (#402)
+- `satpulsetool` has a new `pollsim` command, which runs the serial PPS polling loop against a simulated pulse and host, with injected host stalls and pulse outages, and reports what the NTP server would have received. (#402)
 
 ### GPS high-level configuration
 

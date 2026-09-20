@@ -198,6 +198,8 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `gps/app/serialpps`.
 
+`time/app/pollsimcmd` implements the `pollsim` subcommand of satpulsetool, which runs the serial PPS polling loop under a simulated host using `time/internal/pollsim`.
+
 ### time/internal/
 
 These packages are the main building blocks for satpulsed; they are in the application layer and are not importable outside `time/`.
@@ -215,6 +217,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 `time/internal/refclock` provides abstractions for sending clock synchronization samples to external time synchronization services like chrony. It includes a worker goroutine that processes samples from a channel and delivers them to configured refclock implementations.
 
 `time/internal/syncsim` provides a discrete-event simulator for testing the phcsync controller with configurable error models for GPS PPS timing and PHC oscillator characteristics. It generates synthetic pulses, messages, and ticks under various fault conditions and measures controller performance.
+
+`time/internal/pollsim` simulates the serial PPS polling loop of `gps/app/pps` in virtual time. It supplies the loop's clock, timer and pulse reader from a model of the pulse and the host (query time, timer truncation and overshoot, idle slowdown) with injected pulse outages and stalls of the polling thread, applies the daemon's forwarding rule to the candidates, and reports how many edges the time daemon would have received, their error against the true edge, and the gaps between them.
 
 `time/internal/obs` provides unified observability interfaces including `Observer` (which extends `phcsync.Sampler` and `gpsprot.Handler`) for receiving both clock synchronization samples and GPS protocol messages.
 
