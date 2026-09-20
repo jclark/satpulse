@@ -224,9 +224,11 @@ the edge, and the gap before the catching query.
 forwards on
 `!Anomalous && max(Uncertainty[0], Uncertainty[1]) <= sysPulseMaxUncertainty`.
 The consumer logs rate-limited warnings for consistently anomalous catches
-and for non-anomalous catches consistently above `U`. The latter is a
-configuration problem, not a tracking failure: acquisition cannot make
-queries faster.
+and for non-anomalous catches consistently above `U`. When the best
+achievable resolution is coarser than `U`, the current interface does not
+provide the information needed to handle that case; see "Restore support
+for coarse achievable resolution" below. Reacquisition cannot make queries
+faster.
 
 ### Removed from the original controller
 
@@ -257,6 +259,24 @@ queries faster.
   load. The separate raw-versus-chrony-filtered comparison still needs a
   daemon run; serial-tool captures alone do not supply it.
 
+### Restore support for coarse achievable resolution
+
+Removing `Settled` regressed support for readers whose best achievable
+uncertainty is worse than 1 ms. Previously, the poller indicated that no
+further improvement in bracket width was expected, allowing the consumer
+to accept non-outlier samples at that resolution. The current interface
+leaves the consumer withholding every catch when even the best
+measurements exceed the limit. This requires a fix.
+
+Determine what information the poller should expose to distinguish
+achievable resolution from measurements that can still improve. An
+`Acquiring` flag would identify the mode and could be omitted from JSON
+during tracking, but simply using `!Acquiring` to bypass the uncertainty
+limit would disable that check throughout tracking. Recover the useful
+information previously conveyed by `Settled` without restoring the old
+coupling between tracking extent and polling resolution. The interface
+and its semantics remain open.
+
 ## Possible follow-up work
 
 These are optional investigations, not prerequisites for the implemented
@@ -266,7 +286,16 @@ improvement.
 The four-times-median anomaly flag and removal of rejected catches are
 complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-catches).
 
-### Improve acquisition with short pulses
+### Review acquisition and its CPU budget
+
+The redesign has focused on tracking; review acquisition against the new
+CPU budget model too. Its initial allowance of 64 polls comes from the
+previous design, whereas tracking now permits more polls. Consider
+allowing more polls at the start of acquisition to find short pulses
+sooner. Evaluate acquisition time and total CPU cost, as well as sustained
+cost when no pulse is present. The current `InitialPolls` parameter also
+affects later acquisition windows and the extent handed to tracking, so
+review those effects alongside any increase in the initial allowance.
 
 The K901 on abondance's FT232R has an approximately 1 ms pulse and took
 67 s to acquire; a repeated startup took 57 s. The initial spacing is
