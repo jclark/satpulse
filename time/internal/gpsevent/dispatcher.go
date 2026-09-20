@@ -117,6 +117,7 @@ type Dispatcher struct {
 	ggaSynth              *nmeasyn.Synth
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
+	coarseSysPulses       int
 	tStart                time.Time
 }
 
@@ -192,6 +193,13 @@ const (
 	tickPeriod               = time.Second / 4
 	sysPulseFirstEdgeTimeout = 30 * time.Second
 	sysPulseMaxUncertainty   = time.Millisecond
+	// sysPulseCoarseWarnAfter consecutive good edges too uncertain to
+	// forward draw a warning, repeated every sysPulseCoarseWarnEvery further
+	// ones: polling already runs at the finest cadence the host has, so
+	// hardware too slow for the limit is a configuration problem, not a
+	// tracking failure.
+	sysPulseCoarseWarnAfter = 30
+	sysPulseCoarseWarnEvery = 3600
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -273,7 +281,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 			}
 		case ce, ok := <-ppsCh:
 			if ok {
-				// Any candidate, settled or not, proves the pin is wired and
+				// Any candidate, rejected or not, proves the pin is wired and
 				// pulsing, which is all this warning is about.
 				firstSysPulseDeadline = nil
 				d.sysPulseCandidateEdge(ce)
@@ -319,16 +327,26 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 		Data: &SysPulseEdge{
 			T:           ce.Timestamp,
 			Uncertainty: gpsprot.Duration(ce.Uncertainty),
-			Settled:     ce.Settled,
-			Outlier:     ce.Outlier,
+			Rejected:    ce.Rejected,
 		},
 	})
-	// An outlier's bracket is a stalled read, so its midpoint can be off by
-	// most of the bracket; the refclock protocol carries no uncertainty, so
-	// the only protection for the time consumer is not to send it.
-	if (ce.Uncertainty <= sysPulseMaxUncertainty || ce.Settled) && !ce.Outlier {
-		d.sysPulseSample(ce.Edge)
+	// A rejected edge's bracket holds a stalled read, so its midpoint can be
+	// off by most of the bracket; the refclock protocol carries no
+	// uncertainty, so the only protection for the time consumer is not to
+	// send it.
+	if ce.Rejected {
+		return
 	}
+	if ce.Uncertainty > sysPulseMaxUncertainty {
+		d.coarseSysPulses++
+		if n := d.coarseSysPulses; n == sysPulseCoarseWarnAfter || n > sysPulseCoarseWarnAfter && (n-sysPulseCoarseWarnAfter)%sysPulseCoarseWarnEvery == 0 {
+			d.lg.Warn("serial PPS edges are too uncertain for timing; the host's modem status reads are too slow for the poll method",
+				"uncertainty", ce.Uncertainty, "limit", sysPulseMaxUncertainty, "consecutive", n)
+		}
+		return
+	}
+	d.coarseSysPulses = 0
+	d.sysPulseSample(ce.Edge)
 }
 
 func (d *Dispatcher) sysPulseSample(edge pps.Edge) {
@@ -421,8 +439,7 @@ const sysPulseEdgeType = "sysPulseEdge"
 type SysPulseEdge struct {
 	T           time.Time        `json:"t"`
 	Uncertainty gpsprot.Duration `json:"uncertainty"`
-	Settled     bool             `json:"settled"`
-	Outlier     bool             `json:"outlier"`
+	Rejected    bool             `json:"rejected"`
 }
 
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:

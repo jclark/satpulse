@@ -28,27 +28,17 @@ type Edge struct {
 
 // CandidateEdge is an edge reported by a detection backend. Poll reports
 // every edge it catches so that diagnostic consumers can follow acquisition:
-// Uncertainty is half the width of the polling bracket, and Settled says no
-// improvement in accuracy is to be expected, because the polling schedule did
-// not limit this measurement (its spacing was at the floor or the state
-// queries paced the window) or the window has stopped shrinking. Candidates
-// are unsettled during acquisition, including the catch that completes it
-// (Settled records the state in which the edge was captured, and acquisition
-// succeeds as a consequence of that catch), and unsettled again during
-// tracking while a window grown by misses is still shrinking back. Timing
-// consumers can accept unsettled candidates with sufficiently small
-// Uncertainty, and use Settled to accept the resolution the hardware can
-// achieve. Outlier says the bracket is far wider than the hardware's recent
-// settled brackets, which is what a query stalled by host load produces:
-// the edge is inside the bracket but its midpoint is not a useful estimate,
-// so timing consumers should withhold it even though it is settled. A wait
-// or kernel candidate carries the backend timestamp directly, has no polling
-// uncertainty, and is always settled.
+// Uncertainty is half the width of the polling bracket, and Rejected says the
+// timing of the two queries around the edge looks disturbed, which is what a
+// query stalled by host load produces: the edge is inside the bracket but its
+// midpoint is not a useful estimate. Timing consumers forward a candidate
+// that is not rejected and whose Uncertainty is within their limit. A wait
+// or kernel candidate carries the backend timestamp directly and has no
+// polling uncertainty.
 type CandidateEdge struct {
 	Edge
 	Uncertainty time.Duration
-	Settled     bool
-	Outlier     bool
+	Rejected    bool
 }
 
 // GeneratorConfig controls how PPS edges are associated with UTC-labelled

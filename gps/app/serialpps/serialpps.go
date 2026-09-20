@@ -69,8 +69,8 @@ type Wiring struct {
 // method automatically tries kernel, then wait, then poll, moving on when a
 // method is unsupported or unavailable for the device. Other failures are
 // returned. An explicitly requested method never falls back. cfg.PollPreWarm
-// and cfg.PollOutlierRatio apply only to polling, the one method whose
-// resolution the host's own speed sets. If stats is non-nil, it records
+// applies only to polling, the one method whose resolution the host's own
+// speed sets. If stats is non-nil, it records
 // timings only when polling is selected. cfg.MaxWakeupLatency, if set, limits
 // CPU wakeup latency for as long as detection runs.
 func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg Config, ceCh chan<- pps.CandidateEdge, stats *pps.PollStats) error {
@@ -87,7 +87,7 @@ func Detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, cfg C
 			}()
 		}
 	}
-	params := pps.PollParams{PreWarm: ptime.Seconds(cfg.PollPreWarm), OutlierRatio: cfg.PollOutlierRatio}
+	params := pps.PollParams{PreWarm: ptime.Seconds(cfg.PollPreWarm)}
 	if cfg.Method != 0 {
 		return detect(ctx, lg, r, w, cfg.Method, params, ceCh, stats)
 	}
@@ -140,7 +140,7 @@ func detect(ctx context.Context, lg *slog.Logger, r StateReader, w Wiring, metho
 	return Wait(ctx, lg, cw, w, method, ceCh)
 }
 
-// Wait sends settled candidate edges from modem-control change notifications,
+// Wait sends candidate edges from modem-control change notifications,
 // using the wait or kernel method. The backend timestamps each unambiguous
 // transition, so these candidates have no polling uncertainty. The leading
 // edge is the transition into the pulse, as selected by w.Polarity.
@@ -157,10 +157,7 @@ func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method
 			lg.Debug("serial PPS transitions not observed", "atLeast", missed)
 		}
 		if change.Asserted == w.Polarity.Asserted() {
-			ce := pps.CandidateEdge{
-				Edge:    pps.Edge{Timestamp: change.Timestamp, TRead: change.TRead},
-				Settled: true,
-			}
+			ce := pps.CandidateEdge{Edge: pps.Edge{Timestamp: change.Timestamp, TRead: change.TRead}}
 			select {
 			case ceCh <- ce:
 			case <-ctx.Done():

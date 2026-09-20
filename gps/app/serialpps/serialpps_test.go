@@ -69,9 +69,6 @@ func TestWait(t *testing.T) {
 		if candidate.Uncertainty != 0 {
 			t.Errorf("Wait uncertainty = %v, want no polling-bracket uncertainty", candidate.Uncertainty)
 		}
-		if !candidate.Settled {
-			t.Error("Wait candidate is not settled")
-		}
 	case <-time.After(time.Second):
 		t.Fatal("Wait did not emit the deasserting edge")
 	}
