@@ -198,8 +198,6 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `gps/app/serialpps`.
 
-`time/app/pollsimcmd` implements the `pollsim` subcommand of satpulsetool, which runs the serial PPS polling loop under a simulated host using `time/internal/pollsim`.
-
 ### time/internal/
 
 These packages are the main building blocks for satpulsed; they are in the application layer and are not importable outside `time/`.
