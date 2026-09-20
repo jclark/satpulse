@@ -63,4 +63,4 @@ Options that matter when judging timing (all require `-p`):
 - `-m poll|wait|kernel` picks how edges are detected; omitted, the best available method is used.
 - `--poll-pre-warm SECONDS` (0.02 to 0.05 suggested) makes `poll` more precise on hosts that slow down when idle.
 - `--max-wakeup-latency SECONDS` (Linux only) trades power for precision.
-- `-j` gives one JSON object per edge with `t` (RFC 3339 UTC) and, for `poll`, `uncertainty`, `settling`, and `outlier`; ignore edges marked `settling` or `outlier` when assessing quality.
+- `-j` gives one JSON object per edge with `t` (RFC 3339 UTC) and, for `poll`, `uncertainty: [before, after]` and `pollWidths: [start, end]` in seconds, and `anomalous`. The uncertainty reaches back to the start of the read before the edge and forward to the end of the read after it; the poll widths are those reads' durations. Timing consumers withhold anomalous edges and require both uncertainty components to be within their limit.
