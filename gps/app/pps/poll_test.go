@@ -512,9 +512,10 @@ func TestTrackLoss(t *testing.T) {
 }
 
 // TestDisturbed pins the rejection tests on synthetic query pairs: a stall
-// inside either query is rejected, a gap before the catching query is
-// rejected only when no sleep was scheduled, and a normal pair is not. The
-// tests read the measurement stamps, not the monotonic readings.
+// inside either query is rejected, except a long prev that is the read at
+// the window open, a gap before the catching query is rejected only when no
+// sleep was scheduled, and a normal pair is not. The tests read the
+// measurement stamps, not the monotonic readings.
 func TestDisturbed(t *testing.T) {
 	// The mono readings are all equal, so a test taken from them instead
 	// of the stamps sees zero durations and gaps and gives the wrong answer.
@@ -525,14 +526,17 @@ func TestDisturbed(t *testing.T) {
 		return poll{start: s, end: e}
 	}
 	tests := []struct {
-		name      string
-		prev, cur poll
-		slept     bool
-		want      bool
+		name       string
+		prev, cur  poll
+		slept      bool
+		prevAtOpen bool
+		want       bool
 	}{
 		{name: "normal pair", prev: mk(0, 100*time.Microsecond), cur: mk(150*time.Microsecond, 100*time.Microsecond)},
 		{name: "long cur", prev: mk(0, 100*time.Microsecond), cur: mk(150*time.Microsecond, 400*time.Microsecond), want: true},
 		{name: "long prev", prev: mk(0, 400*time.Microsecond), cur: mk(450*time.Microsecond, 100*time.Microsecond), want: true},
+		{name: "long open read", prev: mk(0, 400*time.Microsecond), cur: mk(450*time.Microsecond, 100*time.Microsecond), prevAtOpen: true},
+		{name: "long cur after open read", prev: mk(0, 100*time.Microsecond), cur: mk(150*time.Microsecond, 400*time.Microsecond), prevAtOpen: true, want: true},
 		{name: "gap without sleep", prev: mk(0, 100*time.Microsecond), cur: mk(500*time.Microsecond, 100*time.Microsecond), want: true},
 		{name: "gap after sleep", prev: mk(0, 100*time.Microsecond), cur: mk(500*time.Microsecond, 100*time.Microsecond), slept: true},
 		{name: "gap at the ratio", prev: mk(0, 100*time.Microsecond), cur: mk(400*time.Microsecond, 100*time.Microsecond)},
@@ -541,7 +545,7 @@ func TestDisturbed(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prev := reading{poll: tc.prev}
 			cur := reading{inPulse: true, poll: tc.cur, slept: tc.slept}
-			if got := disturbed(prev, cur); got != tc.want {
+			if got := disturbed(prev, cur, tc.prevAtOpen); got != tc.want {
 				t.Errorf("disturbed = %v, want %v", got, tc.want)
 			}
 		})

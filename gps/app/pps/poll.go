@@ -422,6 +422,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	}
 	prev := cur
 	missed := cur.inPulse
+	prevAtOpen := p.stateReads == 1
 	var edge clockReading
 	rejected := false
 	for !missed && edge.stamp.IsZero() {
@@ -435,9 +436,9 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		edge, missed = classify(prev, cur, deadline)
 		if !edge.stamp.IsZero() {
 			p.lastBracket = cur.poll.midpoint().elapsedSince(prev.poll.midpoint())
-			rejected = disturbed(prev, cur)
+			rejected = disturbed(prev, cur, prevAtOpen)
 		}
-		prev = cur
+		prev, prevAtOpen = cur, false
 	}
 	if edge.stamp.IsZero() {
 		p.stats.addWindow(miss, acquired)
@@ -487,14 +488,19 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 // them. The duration comparisons see the first two; the gap test sees the
 // third, and applies only when no sleep was scheduled before the catching
 // query, since a sleep's timer overshoot is not a stall and its ordinary
-// size is not something two query durations can reveal. The tests use the
-// measurement stamps, like the bracket: on Windows the monotonic reading is
-// quantised far more coarsely than a query lasts (see now there), and a
-// step of the system clock inside a bracket is already a miss in classify.
-func disturbed(prev, cur reading) bool {
+// size is not something two query durations can reveal. A long prev is not
+// judged when it is the read at the window open: that read follows the idle
+// wait between windows, and on hosts whose queries slow down while idle it
+// is routinely severalfold longer than the reads after it, so its length
+// says nothing about the read that follows; a stall inside it still widens
+// the bracket, which the uncertainty reports. The tests use the measurement
+// stamps, like the bracket: on Windows the monotonic reading is quantised
+// far more coarsely than a query lasts (see now there), and a step of the
+// system clock inside a bracket is already a miss in classify.
+func disturbed(prev, cur reading, prevAtOpen bool) bool {
 	dp, dc := prev.poll.duration(), cur.poll.duration()
 	return !cur.slept && cur.poll.gapAfter(prev.poll) > rejectRatio*dp ||
-		dc > rejectRatio*dp || dp > rejectRatio*dc
+		dc > rejectRatio*dp || !prevAtOpen && dp > rejectRatio*dc
 }
 
 func (p *poller) readState(sched time.Time) (reading, error) {

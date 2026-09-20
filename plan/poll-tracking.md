@@ -46,9 +46,11 @@ These are recorded today, in `reading` and `poll`:
   was already past, or nearer than the platform can sleep to.
 - `value`: pin on or off.
 
-The timing tests below use the monotonic readings of `start` and `end`.
-`poll.duration` today subtracts the measurement-clock stamps and is not
-suitable for them.
+The timing tests below use the measurement stamps of `start` and `end`,
+as the bracket does. On Windows the monotonic reading is `time.Now`,
+quantised to about 0.5 ms, far coarser than a query, so it cannot serve;
+a step of the system clock inside a bracket is already a miss in
+`classify`.
 
 ### Polling cadence
 
@@ -81,8 +83,16 @@ a CPU saving where it can be honoured and nothing where it cannot.
    ```
    !cur.slept && cur.start - prev.end > R * duration(prev)
    duration(cur)  > R * duration(prev)
-   duration(prev) > R * duration(cur)
+   duration(prev) > R * duration(cur)     unless prev is the read at the open
    ```
+
+   The third test is not applied when `prev` is the read at the window
+   open. That read follows the idle wait between windows and, on hosts
+   whose queries slow down while idle, is routinely severalfold longer
+   than the reads after it, so its length says nothing about the read
+   that follows; on the Mac, good edges caught in the first bracket
+   (lateness 10 to 130 us) were rejected by it. A stall inside the open
+   read still widens the bracket, which the uncertainty reports.
 
 4. Update the state:
 
