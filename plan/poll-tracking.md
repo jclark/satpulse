@@ -304,9 +304,12 @@ changing what interval is reported.
 - **Window opening on Linux.** `sleepDuration` truncates the opening wait
   to whole milliseconds, causing up to 1 ms of early polling: about 350
   reads per window at a 35 us extent on the UART. Options remain accepting
-  the cost, spinning the remainder, or using a finer sleep. Measure reads
-  per window and wake-up overshoot before deciding. Timer slack must not
-  be treated as a bound on total wake-up delay.
+  the cost, spinning the remainder, or using a direct `nanosleep` system
+  call to sleep the fractional-millisecond remainder. Evaluate whether
+  this reduces early polling without worsening timing. Measure total
+  process CPU, reads per window, wake-up overshoot, timestamp error and
+  forwarding gaps before deciding. Timer slack must not be treated as a
+  bound on total wake-up delay.
 - **Inter-query spacing on Linux.** Enforcing sub-millisecond spacing
   changes measurement resolution and makes the loop timer-paced. Treat
   that as a separate decision from improving the window-opening wait.
