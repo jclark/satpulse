@@ -46,11 +46,12 @@ These are recorded today, in `reading` and `poll`:
   was already past, or nearer than the platform can sleep to.
 - `value`: pin on or off.
 
-The timing tests below use the measurement stamps of `start` and `end`,
-as the bracket does. On Windows the monotonic reading is `time.Now`,
-quantised to about 0.5 ms, far coarser than a query, so it cannot serve;
-a step of the system clock inside a bracket is already a miss in
-`classify`.
+The timing tests below measure short intervals through the existing
+`clockReading` abstraction, `poll.duration` and `poll.gapAfter`, as the
+bracket does, so each platform uses the reading appropriate to it: the
+one `time.Now` reading where it carries both wall and monotonic time,
+and on Windows the precise measurement stamp rather than the coarse
+monotonic reading.
 
 ### Polling cadence
 
@@ -585,3 +586,82 @@ new code should not.
 - Whether the same `K` serves the GPIO reader (#460), whose bracket is
   tens of microseconds and whose scheduler jitter is therefore many
   brackets; the miss-double-shrink cycle may be more visible there.
+
+The following were raised by review of the implementation and by the
+first day's hardware runs (Mac mini with an FT232R on CTS, a native UART
+on DCD and an FT232R on CTS on a Linux desktop) and are undecided.
+
+- **The bracket interval.** The pin is sampled at an unknown instant
+  inside each query, so the edge is only known to lie between the start
+  of the off query and the end of the on query. The midpoint-to-midpoint
+  bracket understates that interval, by up to 2.5 times at `R = 3`, and
+  so does the `Uncertainty` built from it. This is the "two queries
+  slowed alike" case: both stretched to 2 ms gives `Uncertainty` 1 ms,
+  which the consumer forwards, with an error of up to 2 ms; one such edge
+  (1.33 ms late, `Uncertainty` 746 us) was forwarded in 50 minutes on
+  the Mac. The alternative is timestamp and `Uncertainty` from
+  `[prev.start, cur.end]`: the same midpoint in the symmetric case,
+  double the `Uncertainty`, so the consumer's limit withholds the
+  symmetric slowdown by itself, at the cost of `Uncertainty` about
+  200 us instead of 100 us on the Mac. In simulation of the real loop the
+  x8 symmetric slowdown is then withheld and the quiet-case maximum
+  error falls from 375 to 230 us. `K` would go from 8 to 4 to keep the
+  query count.
+- **Acquisition on rejected catches.** The rule that a rejected catch
+  neither halves the spacing nor completes acquisition is unbounded: a
+  device whose catching query is always more than `R` times longer than
+  its neighbours never acquires. Recorded as implausible: a stall hits
+  one catch and the next is clean, and no known driver does extra work
+  only on the query that first sees a transition; none of the three
+  devices tested shows any such asymmetry. The consumer warns after 30
+  consecutive rejected edges, so the state would at least be visible.
+- **Rejected catches as failures.** The plan counts them, so ten
+  consecutive rejected catches hand back to acquisition, which rejects
+  the same catches and so has no corrective effect; ten, twenty and
+  forty stalled catches cost gaps of 14, 24 and 44 s including the
+  reacquisition, the last past chrony's 32 s reachability. The
+  alternative is to count only misses, on the same reasoning the plan
+  applies to the uncertainty limit, leaving a rejected catch a pure
+  observer. The longest run seen on hardware was 7, before the absolute
+  floor was added to the tests, and 2 since.
+- **The basis of the rejection floor.** The tests need a floor, since
+  on the UART pure ratios rejected runs of good catches over
+  disturbances of a few microseconds. The implementation uses
+  `MinSpacing`, 50 us, but that is the loop's CPU budget, not the thing
+  the floor guards. What the floor stands for is the host's ordinary
+  timing noise, a scheduler tick or an interrupt, tens of microseconds,
+  below which two readings are not distinguishable. The candidates are a
+  constant with that justification, which is a host timing of the kind
+  this plan avoids, or a per-host estimate from the query durations the
+  loop already sees, which reintroduces history into the rejection
+  decision. Neither is attractive; undecided.
+- **The extent floor on a fast UART.** With 3.6 us queries the bracket
+  is about 4.5 us and the extent shrinks to `K` brackets, 35 us, so
+  scheduler jitter above about 17 us costs a miss: 11 isolated misses in
+  20 minutes unloaded. Within the objective, but one pulse in a hundred
+  for a few microseconds of coverage that cost nothing. The alternative
+  is to stop shrinking at `K` times the larger of the bracket and
+  `MinSpacing`, never below 400 us: no change on the Mac or the FT232R,
+  about 90 more reads per second on the UART. `MinSpacing` is already
+  the floor of the rejection tests, the scale below which the loop does
+  not distinguish timing.
+- **The early open on Linux.** `sleepDuration` truncates the wait for
+  the window open to whole milliseconds, so the window opens up to 1 ms
+  early and the loop reads through that millisecond: on the UART about
+  350 reads per window at a 35 us extent, 0.1 percent of a core at
+  3.6 us per read. The old code did the same. It matters only for the
+  GPIO reader (#460), where the read is cheaper still and the count
+  correspondingly higher. Options: accept it; spin the remainder, which
+  the plan rejected for the inter-query spacing on the grounds that
+  spinning costs the same as reading; or sleep the remainder with a
+  direct `nanosleep` from `sleep_linux.go`, the runtime timer taking the
+  whole milliseconds and the syscall the rest. The poller already holds
+  `LockOSThread`, so blocking its thread costs nothing extra. That would
+  also honour `MinSpacing` on Linux, making the UART loop timer-paced at
+  about 10 reads per window instead of query-paced at 350, and flipping
+  the gap test's `slept` gate on as on the Mac. Overshoot is bounded by
+  the thread's timer slack, 50 us by default and reducible with
+  `PR_SET_TIMERSLACK`; the remainder is under a millisecond, so its not
+  being interruptible by the context does not affect shutdown. FreeBSD
+  may want the same. To be measured on the UART for reads per window and
+  overshoot before deciding.
