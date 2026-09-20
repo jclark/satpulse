@@ -96,6 +96,8 @@ failure limit. The consumer forwards on
 The implementation directly imports `time/lib/median` and uses its
 `Window[time.Duration]`. This is an intentional temporary exception to the
 normal dependency direction; the library has not been moved.
+The dependency fix is tracked by [#468](https://github.com/jclark/satpulse/issues/468),
+which moves `time/lib/median` to `common/lib/median`.
 
 A replay of recorded Mac catches motivated the simple factor of four.
 With 31 previous tracking widths, it withheld seven of 585 catches in the
