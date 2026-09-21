@@ -300,29 +300,19 @@ func TestDispatcherSysPulseCandidateWritesAcceptableSamples(t *testing.T) {
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	for _, uncertainty := range [][2]time.Duration{
-		{sysPulseMaxUncertainty + time.Nanosecond, time.Microsecond},
-		{time.Microsecond, sysPulseMaxUncertainty + time.Nanosecond},
-	} {
+	for _, reject := range []pps.RejectReason{pps.RejectAcquiring, pps.RejectAnomalous, "other"} {
 		d.sysPulseCandidateEdge(pps.CandidateEdge{
 			Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-			Uncertainty: uncertainty,
+			Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond},
+			Reject:      reject,
 		})
 		if len(shm.writes) != 0 {
-			t.Fatalf("candidate with uncertainty %v produced %d SHM writes, want none", uncertainty, len(shm.writes))
+			t.Fatalf("candidate with reject %q produced %d SHM writes, want none", reject, len(shm.writes))
 		}
 	}
 	d.sysPulseCandidateEdge(pps.CandidateEdge{
 		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: [2]time.Duration{sysPulseMaxUncertainty, sysPulseMaxUncertainty},
-		Anomalous:   true,
-	})
-	if len(shm.writes) != 0 {
-		t.Fatalf("anomalous candidate produced %d SHM writes, want none", len(shm.writes))
-	}
-	d.sysPulseCandidateEdge(pps.CandidateEdge{
-		Edge:        pps.Edge{Timestamp: edge, TRead: edge},
-		Uncertainty: [2]time.Duration{sysPulseMaxUncertainty, sysPulseMaxUncertainty},
+		Uncertainty: [2]time.Duration{2 * time.Millisecond, 3 * time.Millisecond},
 	})
 	if len(shm.writes) != 1 {
 		t.Fatalf("SHM writes = %d, want 1", len(shm.writes))
@@ -384,12 +374,9 @@ func TestDispatcherSysPulseWarnings(t *testing.T) {
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGHUP)
 	defer signal.Stop(sig)
-	anomalous := pps.CandidateEdge{Anomalous: true}
-	uncertain := pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, 0}}
-	uncertainAfter := pps.CandidateEdge{Uncertainty: [2]time.Duration{0, sysPulseMaxUncertainty + time.Nanosecond}}
-	both := uncertain
-	both.Anomalous = true
-	usable := pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty, sysPulseMaxUncertainty}}
+	anomalous := pps.CandidateEdge{Reject: pps.RejectAnomalous}
+	acquiring := pps.CandidateEdge{Reject: pps.RejectAcquiring}
+	usable := pps.CandidateEdge{Uncertainty: [2]time.Duration{2 * time.Millisecond, 3 * time.Millisecond}}
 	for _, tc := range []struct {
 		name       string
 		candidates []pps.CandidateEdge
@@ -397,10 +384,11 @@ func TestDispatcherSysPulseWarnings(t *testing.T) {
 		want       string
 	}{
 		{"no edges", nil, false, `msg="no serial PPS edges received"`},
-		{"anomalous", []pps.CandidateEdge{anomalous}, false, `msg="no usable serial PPS edges received" anomalous=40 uncertain=0`},
-		{"uncertain", []pps.CandidateEdge{uncertain, uncertainAfter}, false, `msg="no usable serial PPS edges received" anomalous=0 uncertain=40`},
-		{"alternating", []pps.CandidateEdge{both, uncertain}, false, `msg="no usable serial PPS edges received" anomalous=20 uncertain=20`},
-		{"usable", []pps.CandidateEdge{anomalous, uncertain, usable}, false, ""},
+		{"anomalous", []pps.CandidateEdge{anomalous}, false, `msg="no usable serial PPS edges received" rejected=map[anomalous:40]`},
+		{"acquiring", []pps.CandidateEdge{acquiring}, false, `msg="no usable serial PPS edges received" rejected=map[acquiring:40]`},
+		{"alternating", []pps.CandidateEdge{anomalous, acquiring}, false, `msg="no usable serial PPS edges received" rejected="map[acquiring:20 anomalous:20]"`},
+		{"unknown reason", []pps.CandidateEdge{{Reject: "other"}}, false, `msg="no usable serial PPS edges received" rejected=map[other:40]`},
+		{"usable", []pps.CandidateEdge{anomalous, acquiring, usable}, false, ""},
 		{"closed", nil, true, ""},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -445,7 +433,7 @@ func TestDispatcherSysPulseWarnings(t *testing.T) {
 				if !tc.closePPS {
 					for range 40 {
 						ppsCh <- anomalous
-						ppsCh <- uncertain
+						ppsCh <- acquiring
 					}
 				}
 				time.Sleep(time.Hour + sysPulseFirstEdgeTimeout)

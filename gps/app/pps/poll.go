@@ -86,11 +86,12 @@ type poller struct {
 //
 // Every catch is sent, with the midpoint of the two query midpoints as its
 // timestamp, Uncertainty reaching the outer endpoints of those queries, and
-// Anomalous set when the outer width exceeds four times its recent median.
-// Consumers forward a candidate that is not anomalous and whose larger
-// uncertainty is within their limit. Every caught edge is logged to lg at
-// debug level. Tracking starts, halvings of the extent, misses, and loss are
-// logged at info level with actual state-read counts. If stats is non-nil,
+// Reject set to acquiring during acquisition, or anomalous when a tracking
+// catch's outer width exceeds four times its recent median. Every other
+// tracking catch is usable, regardless of its uncertainty.
+// Every caught edge is logged to lg at debug level. Tracking starts,
+// halvings of the extent, misses, and loss are logged at info level with
+// actual state-read counts. If stats is non-nil,
 // Poll records timing and outcome statistics in it.
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
@@ -473,22 +474,22 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		"firstPollWidth", first.poll.duration(), "firstInPulse", first.inPulse,
 		"lastStartFromPrediction", cur.start.Sub(nextEdge), "lastPollWidth", cur.poll.duration(), "lastInPulse", cur.inPulse)
 	if edge.stamp.IsZero() {
-		p.stats.addWindow(miss, acquired, false)
+		p.stats.addWindow(miss, acquired, "")
 		if !acquired {
 			p.nextEdge = nextEdge.Add(period)
 		}
 		return miss, 0, nil
 	}
 	predictionError := edge.mono.Sub(nextEdge)
-	anomalous := p.anomalous(p.lastWidth, acquired)
+	reject := p.rejectReason(p.lastWidth, acquired)
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
 	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
 		"uncertainty", uncertainty, "pollWidths", pollWidths,
 		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads,
-		"anomalous", anomalous)
-	p.stats.addWindow(caught, acquired, anomalous)
+		"reject", reject)
+	p.stats.addWindow(caught, acquired, reject)
 	if !acquired {
 		p.nextEdge = edge.mono.Add(period)
 		p.gridOffset = cur.start.Sub(edge.mono)
@@ -500,7 +501,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		},
 		Uncertainty: uncertainty,
 		PollWidths:  pollWidths,
-		Anomalous:   anomalous,
+		Reject:      reject,
 	}
 	select {
 	case p.ceCh <- ce:
@@ -515,15 +516,20 @@ const (
 	anomalyRatio = 4
 )
 
-// anomalous compares the outer width with previous tracking catches before
-// recording it. Anomalous widths still enter the history so a sustained
-// change can become ordinary; coarse acquisition widths never enter it.
-func (p *poller) anomalous(width time.Duration, acquired bool) bool {
-	anomalous := p.widths.Len() > 0 && width > anomalyRatio*p.widths.Median()
-	if acquired {
-		p.widths.Add(width)
+// rejectReason rejects all acquisition catches and compares tracking widths
+// with previous catches before recording them. Anomalous widths still enter
+// the history so a sustained change can become ordinary; acquisition widths
+// never enter it.
+func (p *poller) rejectReason(width time.Duration, acquired bool) RejectReason {
+	if !acquired {
+		return RejectAcquiring
 	}
-	return anomalous
+	var reject RejectReason
+	if p.widths.Len() > 0 && width > anomalyRatio*p.widths.Median() {
+		reject = RejectAnomalous
+	}
+	p.widths.Add(width)
+	return reject
 }
 
 // nextGridPoint is the first point of the poll grid anchored at anchor strictly

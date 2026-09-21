@@ -31,11 +31,11 @@ type Edge struct {
 // Uncertainty gives the durations before and after Timestamp reaching the
 // start of the query that read the pin off and the end of the query that
 // read it on. This interval contains the edge if each query samples the pin
-// during its call. Anomalous reports an outer width above four times the
-// median of the previous 31 tracking catches. It affects forwarding only,
-// not tracking or acquisition; an empty history gives no anomaly flag.
-// Timing consumers forward a candidate that is not anomalous and whose larger
-// uncertainty is within their limit.
+// during its call. Reject gives the reason a timing consumer must withhold
+// the candidate, or is empty when it is usable. Acquisition catches are
+// rejected as acquiring; tracking catches are rejected as anomalous when
+// their outer width exceeds four times the median of the previous 31
+// tracking catches. Rejection does not affect tracking or acquisition.
 // PollWidths gives the durations of the off and on queries, in that order.
 // Subtracting their sum from the sum of Uncertainty gives the gap between
 // the queries.
@@ -45,8 +45,17 @@ type CandidateEdge struct {
 	Edge
 	Uncertainty [2]time.Duration
 	PollWidths  [2]time.Duration
-	Anomalous   bool
+	Reject      RejectReason
 }
+
+// RejectReason explains why a candidate is unsuitable for timing. The zero
+// value means the candidate is usable.
+type RejectReason string
+
+const (
+	RejectAcquiring RejectReason = "acquiring"
+	RejectAnomalous RejectReason = "anomalous"
+)
 
 // GeneratorConfig controls how PPS edges are associated with UTC-labelled
 // receiver messages. Durations are expressed in seconds in TOML.

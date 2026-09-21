@@ -34,8 +34,10 @@ func TestEdgePrinter(t *testing.T) {
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\"}\n"},
 		{name: "poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019]}\n"},
-		{name: "anomalous poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}, Anomalous: true}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019],\"anomalous\":true}\n"},
+		{name: "anomalous poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}, Reject: pps.RejectAnomalous}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019],\"reject\":\"anomalous\"}\n"},
+		{name: "acquiring poll JSONL", edge: pps.CandidateEdge{Edge: edge, Reject: pps.RejectAcquiring}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"reject\":\"acquiring\"}\n"},
 		{name: "poll widths JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}, PollWidths: [2]time.Duration{12 * time.Microsecond, 14 * time.Microsecond}}, jsonl: true,
 			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019],\"pollWidths\":[0.000012,0.000014]}\n"},
 	} {

@@ -15,9 +15,10 @@ The implemented redesign uses a simpler tracking controller. The window
 no longer sets the polling resolution; it is only coverage. A catch can
 never widen it, only misses can. The poller marks catches anomalous when
 their outer width exceeds four times the median of recent tracking widths.
-The consumer forwards a catch only when it is not anomalous and the larger
-of its two uncertainty components is within a fixed limit. The anomaly flag
-has no effect on tracking or acquisition.
+The poller sets a rejection reason for acquisition catches and anomalous
+tracking catches. The consumer accepts every catch without a rejection
+reason, regardless of uncertainty. Rejection has no effect on tracking
+or acquisition.
 
 "Revisions made" records completed changes. "Current algorithm" describes
 the implementation. "Remaining fixes and validation" records unfinished
@@ -34,7 +35,9 @@ extent; misses grow it by 25% while the polling budget allows; catches
 shrink it at 31/32, stopping at eight midpoint-to-midpoint brackets.
 The first redesign replaced settled-bracket history with local rejection
 tests and removed `Settled`. The subsequent
-anomaly-flag revision below has removed those local tests and `Rejected`.
+anomaly-flag revision below removed those local tests and `Rejected`.
+The new `Reject` reason describes suitability for timing without adding
+a rejected-catch controller outcome.
 
 ### Poll-count budget replaces maximum extent
 
@@ -68,7 +71,7 @@ Implemented: tracking applies half the prediction error only when the
 outer interval width `W` is at most half the current extent, before any
 shrinking. A wider catch advances prediction by exactly one period.
 Every catch still resets failures, follows the ordinary shrink rule and
-is sent to the consumer. The controller does not read `Anomalous`.
+is sent to the consumer. The controller does not read `Reject`.
 Acquisition continues to adopt its coarse catches normally.
 
 This protects a narrow search window from an imprecise phase estimate.
@@ -106,20 +109,22 @@ and kernel methods. These replace the scalar uncertainty and the separate
 now preserves nanoseconds, so rounding the timestamp does not shift the
 reported interval; human-readable timestamps still round to microseconds.
 
-The consumer and simulator apply the existing uncertainty limit to the
-larger component. Interval validity now requires ordered query endpoints and an outer width strictly between
-zero and one period. The controller retains midpoint separation as its
+Interval validity now requires ordered query endpoints and an outer width
+strictly between zero and one period. The controller retains midpoint separation as its
 `bracket`, with the same shrink constant. Eligible prediction corrections
 still use half the prediction error.
 
 ### Anomaly flag replaces rejected catches
 
-Implemented: the poller now has only caught and missed outcomes.
-`CandidateEdge.Anomalous` replaces `Rejected`, and the serial tool, event
-log and simulator expose `anomalous` instead of `rejected`. The local
+This revision gave the poller only caught and missed outcomes.
+`CandidateEdge.Anomalous` replaced `Rejected`, and the serial tool, event
+log and simulator exposed `anomalous` instead of `rejected`. The local
 duration/gap tests, their sleep
 gate, opening-read exception and `MinSpacing` floor are removed. There is
-no rejected-catch tracking event or failure path.
+no rejected-catch tracking event or failure path. The later
+[candidate rejection revision](#poller-owns-candidate-rejection) replaces
+the anomaly flag and removes the uncertainty limit; the policy below
+records the earlier revision used for the replay results.
 
 For outer width `W = before + after`, the poller sets:
 
@@ -298,11 +303,55 @@ These changes speed refinement after the first catch. They do not change
 the initial coarse sweep or shorten discovery of a narrow pulse. In the
 steady-query case with the defaults, fast native queries reach handoff
 two pulse periods after the first catch instead of nine; typical USB
-queries take two instead of eight. First usable samples arrive about two
-periods earlier. These are consequences of the spacing and exit rules,
-not measured before/after differences: the
+queries take two instead of eight. These are consequences of the spacing
+and exit rules, not measured before/after differences: the
 [hardware validation](#acquisition-refinement-validation) used only the new
 algorithm and the receivers' existing settings.
+
+### Poller owns candidate rejection
+
+`CandidateEdge.Reject` replaces the anomaly flag with a rejection reason:
+
+- `acquiring` for every acquisition catch, including the catch that
+  completes acquisition.
+- `anomalous` for a tracking catch whose outer width exceeds four times
+  the median of the previous 31 tracking widths.
+- Empty for every other tracking catch: the candidate is usable.
+
+The dispatcher tests only whether `Reject` is empty. The arbitrary 1 ms
+uncertainty limit is removed, with no replacement threshold or poller
+parameter. Uncertainty and paired poll widths remain measurements for
+analysis. The serial tool, event log and simulator expose `reject` only
+when nonempty; they continue to report every catch. The first usable
+candidate now comes from tracking, normally one pulse after acquisition
+completes, rather than from an uncertainty test during acquisition.
+
+Acquisition widths never enter the anomaly history. Every tracking width
+does, including anomalous widths; an empty history accepts the first
+tracking catch. Misses and reacquisition retain the history. Rejection
+does not change prediction, extent or acquisition progress. The startup
+warning counts rejection reasons, retaining its single 30-second timeout.
+
+This restores support for consistently coarse achievable resolution.
+Removing `Settled` had removed the consumer's ability to accept such
+measurements above 1 ms. Tracking already uses the finest polling cadence
+and widening its coverage after a miss does not change that cadence;
+there is no reason to restore the old settled-state test.
+
+The MacBook Air provided a measured example: an FT232R attached directly
+took about 2 ms per query, improving to about 283 us through a high-speed
+USB hub. Using a hub fixes that particular setup. The
+[original measurements](archive/serial-pps.md#measured-basis) establish
+that poor USB timing can impose coarse brackets whose uncertainty exceeds
+1 ms. Finer polling spacing cannot remove time spent inside the queries.
+The poller now accepts these tracking measurements when they are not
+anomalous relative to recent widths.
+
+The simulator uses the same rejection decision and removes its
+`maxUncertainty` setting. Its `wrong` statistic now counts accepted
+candidates whose reported uncertainty interval excludes the true edge;
+it no longer compares timestamp error with a fixed limit. `acquiring`
+replaces the old `coarse` rejection count.
 
 ## Current algorithm
 
@@ -318,11 +367,10 @@ understood across operating conditions, with each rule earning its cost.
 
 Measure against that objective. What matters at startup is the time to
 the first forwarded sample, not the time to the "acquired" log line:
-every catch goes to the consumer, acquisition's included, and it forwards
-any non-anomalous catch whose uncertainty components are within the limit,
-even before acquisition ends. After that, what matters is the gap between
-forwarded samples. Reads per
-window and per second measure work; CPU is process time from
+every catch goes to the consumer, acquisition's included, but only
+non-anomalous tracking catches are usable. After that, what matters is
+the gap between forwarded samples. Reads per window and per second
+measure work; CPU is process time from
 `/usr/bin/time` on the host. The simulator's `blocked` statistic is the
 fraction of the run spent outside queries and clock reads; it is not a
 CPU figure, since a USB query is mostly the process blocked in the
@@ -413,9 +461,9 @@ it cannot.
 6. Send every catch to the consumer with the midpoint of the two poll
    midpoints as its timestamp `T`, `Uncertainty = [T - prev.start,
    cur.end - T]`, `PollWidths = [duration(prev), duration(cur)]`, and a
-   computed `Anomalous` flag. The consumer forwards a catch to the time
-   daemon only if it is not anomalous and
-   `max(Uncertainty[0], Uncertainty[1]) <= U`.
+   computed `Reject` reason. Acquisition catches carry `acquiring`,
+   anomalous tracking catches carry `anomalous`, and all others have no
+   rejection reason. The consumer accepts exactly those without a reason.
    The reported interval bounds the physical edge if each query samples
    fresh pin state during its call; cached status can add unmeasured delay.
 
@@ -423,8 +471,8 @@ it cannot.
 
 Start with a full-period sweep at `period/64` spacing. The window is 64
 spacings. Every catch adopts the caught midpoint as the prediction and
-preserves the catching query's start as the next grid's phase. Coarse or
-anomalous catches advance acquisition normally.
+preserves the catching query's start as the next grid's phase. Every catch
+is rejected for timing as `acquiring` and advances acquisition normally.
 
 An ordinary sleep-paced catch divides the spacing by eight, floored at
 `MinSpacing`, and sets the next extent to 64 times that spacing. Reaching
@@ -461,7 +509,6 @@ None encodes a hardware timing.
 | history length | previous valid tracking widths | 31 |
 | `F` | consecutive misses before giving up | 10 |
 | `leadWeight` | reciprocal weight of the newest observation in the lead average | 8 |
-| `U` | consumer's uncertainty limit | 1 ms, as today |
 
 Measured quantities: state reads per attempt, the bracket, the durations
 of the two queries around the edge, and the gap before the catching query.
@@ -469,19 +516,14 @@ of the two queries around the edge, and the gap before the catching query.
 ### Consumer
 
 `sysPulseCandidateEdge` in `time/internal/gpsevent/dispatcher.go`
-forwards on
-`!Anomalous && max(Uncertainty[0], Uncertainty[1]) <= sysPulseMaxUncertainty`.
+accepts a candidate exactly when `Reject` is empty. Uncertainty does not
+affect acceptance.
 The consumer allows 30 seconds from startup for the first usable edge,
 then warns once if none has arrived. If no candidates arrived it reports
-no edges; otherwise it reports no usable edges with counts of anomalous
-and non-anomalous over-limit candidates. Anomalous takes precedence so
-each withheld candidate is counted once. A usable candidate cancels the
-timeout even if it cannot yet be matched to a receiver time message.
+no edges; otherwise it reports no usable edges with counts by rejection
+reason. A usable candidate cancels the timeout even if it cannot yet be
+matched to a receiver time message.
 There are no repeat warnings, recovery messages or later outage checks.
-When the best achievable resolution is coarser than `U`, the current
-interface does not provide the information needed to handle that case;
-see "Restore support for coarse achievable resolution" below.
-Reacquisition cannot make queries faster.
 
 ### Removed from the original controller
 
@@ -515,41 +557,14 @@ Reacquisition cannot make queries faster.
   load. The separate raw-versus-chrony-filtered comparison still needs a
   daemon run; serial-tool captures alone do not supply it.
 
-### Restore support for coarse achievable resolution
-
-Removing `Settled` regressed support for readers whose best achievable
-uncertainty is worse than 1 ms. Previously, the poller indicated that no
-further improvement in bracket width was expected, allowing the consumer
-to accept non-outlier samples at that resolution. The current interface
-leaves the consumer withholding every catch when even the best
-measurements exceed the limit. This requires a fix.
-
-Whether any supported reader is affected is doubtful. Uncertainty over
-1 ms needs queries slower than about 450 us, since the outer interval
-is two queries plus a spacing, and the recorded query times are 3.6 us
-on a native UART, about 116 us on a Linux FT232R, about 200 us on the
-Mac and on Windows, and microseconds for a GPIO read. The old bypass was
-needed because window size set resolution; that coupling is gone. The
-remaining choices are to drop the requirement and rely on the consumer's
-startup warning about unusable edges, or to define the interface below.
-
-Determine what information the poller should expose to distinguish
-achievable resolution from measurements that can still improve. An
-`Acquiring` flag would identify the mode and could be omitted from JSON
-during tracking, but simply using `!Acquiring` to bypass the uncertainty
-limit would disable that check throughout tracking. Recover the useful
-information previously conveyed by `Settled` without restoring the old
-coupling between tracking extent and polling resolution. The interface
-and its semantics remain open.
-
 ## Possible follow-up work
 
 These are optional investigations, not prerequisites for the implemented
 algorithm. Evaluate the current implementation before adding mechanisms;
 each must justify its complexity with a concrete problem and measurable
 improvement.
-The four-times-median anomaly flag and removal of rejected catches are
-complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-catches).
+The candidate rejection policy is complete, as recorded under
+[Revisions made](#poller-owns-candidate-rejection).
 
 ### Improve first-catch latency for narrow pulses
 
@@ -868,6 +883,9 @@ good catches halve the perturbation each time.
 
 ### U governs forwarding, not tracking
 
+This rationale is historical. The absolute uncertainty limit has since
+been removed; candidate rejection still has no effect on tracking.
+
 An earlier draft reset `failures` only on a forwardable catch. That was
 wrong. In this design tracking already polls at the finest cadence the
 host has, so a good catch whose uncertainty exceeds `U` can only come from
@@ -927,10 +945,10 @@ show; the bracket widths alone do not.
 
 ### Unit tests
 
-The full `make test` suite passed after the poll-budget and prediction-guard
-revision. The synthetic three-stall scenario forwards no sample outside
-the uncertainty limit and has two tracking misses and a longest
-forwarding gap of three seconds, with no reacquisition.
+The full `make test` suite passed after the candidate rejection revision.
+The synthetic three-stall scenario accepts no sample whose reported
+uncertainty interval excludes the true edge and has two tracking misses
+and a longest forwarding gap of three seconds, with no reacquisition.
 
 The relevant coverage includes:
 
@@ -945,18 +963,30 @@ The relevant coverage includes:
   from skipped waits, including a nondefault minimum spacing.
 - The four-times-median boundary, empty and short histories, exclusion of
   acquisition widths, and adaptation through anomalous catches.
-- Identical polling observations with histories that make all catches
-  anomalous or all ordinary: acquisition, prediction, extent and read
+- Identical polling observations with histories that make all tracking
+  catches anomalous or all ordinary: acquisition, prediction, extent and read
   counts must match, including more than `F` consecutive anomalous catches.
 - The existing `Poll` tests with the simulated reader and clock, revised
   to the new rules: acquisition still converges, a short outage keeps
   tracking, a long one reacquires, a narrow pulse is still acquired.
 - Exact asymmetric endpoints, odd-nanosecond rounding, ordered query
   endpoints and rejection of outer intervals at least one period wide.
-- Consumer rejection when either uncertainty component exceeds the limit,
-  paired JSON fields, and simulated errors within the reported interval.
+- Acquisition catches rejected through the final catch, followed by a
+  usable first tracking catch even with 2 ms queries.
+- Consumer rejection of every nonempty reason and acceptance regardless
+  of uncertainty, including simulated 2 ms queries above the former limit.
+- Optional JSON rejection reasons, paired measurement fields, simulated
+  errors within the reported interval, and exact asymmetric boundaries
+  for the simulator's `wrong` count.
+- A single startup warning with counts by rejection reason, cancelled by
+  the first usable candidate even without a matching receiver message.
 
 ### Acquisition refinement validation
+
+The hardware results below predate the candidate rejection revision.
+Their counts and timings of usable samples retain the former
+uncertainty-based acceptance rule; the first usable sample now comes
+from tracking.
 
 The acquisition tests cover initial lead measurement, both exits, a caught
 but unconfirmed window followed by either exit, immediate restart without

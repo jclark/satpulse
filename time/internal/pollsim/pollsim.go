@@ -28,18 +28,18 @@ import (
 )
 
 // Stats summarises a run. Errors are of forwarded edges against the true
-// edge on the pin; a forwarded edge is wrong when its error exceeds the
-// uncertainty limit the consumer relied on. Gaps are between consecutive
+// edge on the pin; a forwarded edge is wrong when its reported uncertainty
+// interval does not contain the true edge. Gaps are between consecutive
 // forwarded edges.
 type Stats struct {
 	Duration     Seconds
 	Pulses       int // pulses present during the run
 	Edges        int // candidates the loop sent
-	Forwarded    int // not anomalous and within the uncertainty limit
+	Forwarded    int // candidates with no rejection reason
+	Acquiring    int
 	Anomalous    int
-	Coarse       int // not anomalous but over the uncertainty limit
 	Missed       int // pulses present after the first forwarded edge with no candidate
-	Wrong        int // forwarded edges in error by more than the consumer's uncertainty limit
+	Wrong        int // forwarded edges whose uncertainty interval excludes the true edge
 	ErrMedian    Seconds
 	ErrP90       Seconds
 	ErrMax       Seconds
@@ -54,11 +54,11 @@ type Stats struct {
 
 // String formats the statistics as TOML key/value lines.
 func (s Stats) String() string {
-	return fmt.Sprintf("duration = %g\npulses = %d\nedges = %d\nforwarded = %d\nanomalous = %d\ncoarse = %d\n"+
+	return fmt.Sprintf("duration = %g\npulses = %d\nedges = %d\nforwarded = %d\nacquiring = %d\nanomalous = %d\n"+
 		"missed = %d\nwrong = %d\nerrMedian = %.6f\nerrP90 = %.6f\nerrMax = %.6f\n"+
 		"longestGap = %.3f\ngapsOver4s = %d\nacquisitions = %d\nlost = %d\ntrackMisses = %d\n"+
 		"queries = %d\nqueriesPerSecond = %.1f\nblocked = %.4f\n",
-		s.Duration, s.Pulses, s.Edges, s.Forwarded, s.Anomalous, s.Coarse, s.Missed, s.Wrong,
+		s.Duration, s.Pulses, s.Edges, s.Forwarded, s.Acquiring, s.Anomalous, s.Missed, s.Wrong,
 		s.ErrMedian, s.ErrP90, s.ErrMax, s.LongestGap, s.GapsOver4s, s.Acquisitions, s.Lost,
 		s.TrackMisses, s.Queries, float64(s.Queries)/s.Duration, s.Blocked)
 }
@@ -66,12 +66,12 @@ func (s Stats) String() string {
 // EdgeRecord is one candidate as the consumer saw it, with its error against
 // the true edge.
 type EdgeRecord struct {
-	T           Seconds    `json:"t"`
-	Err         Seconds    `json:"err"`
-	Uncertainty [2]Seconds `json:"uncertainty"`
-	PollWidths  [2]Seconds `json:"pollWidths"`
-	Anomalous   bool       `json:"anomalous,omitzero"`
-	Forwarded   bool       `json:"forwarded"`
+	T           Seconds          `json:"t"`
+	Err         Seconds          `json:"err"`
+	Uncertainty [2]Seconds       `json:"uncertainty"`
+	PollWidths  [2]Seconds       `json:"pollWidths"`
+	Reject      pps.RejectReason `json:"reject,omitempty"`
+	Forwarded   bool             `json:"forwarded"`
 }
 
 // Simulate runs the poll loop under cfg, which must be valid. lg receives
@@ -90,7 +90,7 @@ func Simulate(cfg Config, lg *slog.Logger, edges func(EdgeRecord)) (Stats, error
 	go func() {
 		errCh <- pps.Poll(context.Background(), slog.New(&logHandler{Handler: lg.Handler(), s: s}), s, params, ceCh, nil)
 	}()
-	c := consumer{s: s, limit: ptime.Seconds(cfg.Poll.MaxUncertainty), caught: make(map[int64]bool), record: edges}
+	c := consumer{s: s, caught: make(map[int64]bool), record: edges}
 	for {
 		select {
 		case ce := <-ceCh:
@@ -371,13 +371,12 @@ func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
 // statistics.
 type consumer struct {
 	s          *sim
-	limit      time.Duration
 	caught     map[int64]bool
 	record     func(EdgeRecord)
 	edges      int
 	forwarded  int
+	acquiring  int
 	anomalous  int
-	coarse     int
 	wrong      int
 	errs       []time.Duration
 	firstFwd   time.Duration
@@ -392,16 +391,17 @@ func (c *consumer) candidate(ce pps.CandidateEdge) {
 	err := t - c.s.edge(n)
 	c.edges++
 	c.caught[int64(n)] = true
-	fwd := false
-	if ce.Anomalous {
+	switch ce.Reject {
+	case pps.RejectAcquiring:
+		c.acquiring++
+	case pps.RejectAnomalous:
 		c.anomalous++
-	} else if max(ce.Uncertainty[0], ce.Uncertainty[1]) > c.limit {
-		c.coarse++
-	} else {
-		fwd = true
+	}
+	fwd := ce.Reject == ""
+	if fwd {
 		c.forwarded++
 		c.errs = append(c.errs, err.Abs())
-		if err.Abs() > c.limit {
+		if err > ce.Uncertainty[0] || err < -ce.Uncertainty[1] {
 			c.wrong++
 		}
 		if c.forwarded == 1 {
@@ -420,15 +420,16 @@ func (c *consumer) candidate(ce pps.CandidateEdge) {
 			T: t.Seconds(), Err: err.Seconds(),
 			Uncertainty: [2]Seconds{ce.Uncertainty[0].Seconds(), ce.Uncertainty[1].Seconds()},
 			PollWidths:  [2]Seconds{ce.PollWidths[0].Seconds(), ce.PollWidths[1].Seconds()},
-			Anomalous:   ce.Anomalous, Forwarded: fwd,
+			Reject:      ce.Reject, Forwarded: fwd,
 		})
 	}
 }
 
 func (c *consumer) stats() Stats {
 	s := c.s
-	st := Stats{Duration: s.cfg.Sim.Duration, Edges: c.edges, Forwarded: c.forwarded, Anomalous: c.anomalous,
-		Coarse: c.coarse, Wrong: c.wrong, LongestGap: c.longestGap.Seconds(), GapsOver4s: c.gapsOver4s,
+	st := Stats{Duration: s.cfg.Sim.Duration, Edges: c.edges, Forwarded: c.forwarded,
+		Acquiring: c.acquiring, Anomalous: c.anomalous,
+		Wrong: c.wrong, LongestGap: c.longestGap.Seconds(), GapsOver4s: c.gapsOver4s,
 		Acquisitions: s.acquired, Lost: s.lost, TrackMisses: s.misses,
 		Queries: s.queries, Blocked: 1 - float64(s.work)/float64(s.end)}
 	for n := time.Duration(0); n*period < s.end; n++ {

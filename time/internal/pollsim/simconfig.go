@@ -93,9 +93,6 @@ type PollConfig struct {
 	// MinSpacing is the loop's minimum spacing between queries; 0 means the
 	// loop's default.
 	MinSpacing Seconds `toml:"minSpacing" check:">=0,<0.1" comment:"Minimum spacing between queries (s); 0 means the default"`
-	// MaxUncertainty is the consumer's limit: a catch that is not anomalous
-	// and has both uncertainty components within this is forwarded to the time daemon.
-	MaxUncertainty Seconds `toml:"maxUncertainty" check:">0,<1" comment:"Consumer's uncertainty limit for forwarding an edge (s)"`
 }
 
 // FaultConfig configures the faults.
@@ -164,7 +161,6 @@ func DefaultConfig() Config {
 			Query:     QueryConfig{Duration: 200e-6, Jitter: 30e-6, Idle: IdleConfig{Factor: 1}},
 			ClockRead: 50e-9,
 		},
-		Poll: PollConfig{MaxUncertainty: 1e-3},
 		Fault: FaultConfig{Outage: []OutageConfig{{}}, Stall: []StallConfig{{}}, Stalls: []StallBurst{{Min: 1e-3, Max: 1e-3}},
 			Slow: []SlowConfig{{Factor: 1}}, Slows: []SlowBurst{{Min: 1e-3, Max: 1e-3, Factor: 1}}},
 	}

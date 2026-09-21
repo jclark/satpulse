@@ -212,9 +212,9 @@ func TestPollStatsSummary(t *testing.T) {
 	for i := 1; i < len(polls); i++ {
 		stats.addPoll(polls[i], &polls[i-1])
 	}
-	stats.addWindow(miss, false, false)
-	stats.addWindow(caught, false, true)
-	stats.addWindow(caught, true, false)
+	stats.addWindow(miss, false, "")
+	stats.addWindow(caught, false, RejectAcquiring)
+	stats.addWindow(caught, true, RejectAnomalous)
 
 	got := stats.summary()
 	want := pollStatsSummary{
@@ -227,8 +227,8 @@ func TestPollStatsSummary(t *testing.T) {
 			Mean: 25 * time.Millisecond, P90: 40 * time.Millisecond, Max: 40 * time.Millisecond,
 		},
 	}
-	want.Acquire.Windows, want.Acquire.Edges, want.Acquire.Anomalous = 2, 1, 1
-	want.Track.Windows, want.Track.Edges = 1, 1
+	want.Acquire.Windows, want.Acquire.Edges = 2, 1
+	want.Track.Windows, want.Track.Edges, want.Track.Anomalous = 1, 1, 1
 	if got != want {
 		t.Errorf("Summary() = %+v, want %+v", got, want)
 	}
@@ -255,12 +255,12 @@ func TestPollStatsLog(t *testing.T) {
 	start := clockReading{stamp: time.Unix(1_700_000_000, 0), mono: time.Unix(1_700_000_000, 0)}
 	end := clockReading{stamp: start.stamp.Add(2 * time.Millisecond), mono: start.mono.Add(2 * time.Millisecond)}
 	stats.addPoll(poll{start: start, end: end}, nil)
-	stats.addWindow(caught, false, true)
+	stats.addWindow(caught, false, RejectAcquiring)
 
 	var output bytes.Buffer
 	stats.Log(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	for _, want := range []string{
-		`msg="serial PPS polling statistics" acquire.windows=1 acquire.edges=1 acquire.anomalous=1 track.windows=0 track.edges=0 track.anomalous=0`,
+		`msg="serial PPS polling statistics" acquire.windows=1 acquire.edges=1 acquire.anomalous=0 track.windows=0 track.edges=0 track.anomalous=0`,
 		`msg="serial PPS state read times" count=1 min=2ms median=2ms mean=2ms p90=2ms max=2ms`,
 		`msg="serial PPS between-read times" count=0`,
 	} {

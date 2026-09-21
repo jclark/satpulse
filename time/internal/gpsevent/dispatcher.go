@@ -191,7 +191,6 @@ func NewDispatcher(
 const (
 	tickPeriod               = time.Second / 4
 	sysPulseFirstEdgeTimeout = 30 * time.Second
-	sysPulseMaxUncertainty   = time.Millisecond
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -215,7 +214,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
 	var firstSysPulseDeadline <-chan time.Time
-	var anomalousSysPulses, uncertainSysPulses int
+	rejectedSysPulses := make(map[pps.RejectReason]int)
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -277,11 +276,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 				if d.sysPulseCandidateEdge(ce) {
 					firstSysPulseDeadline = nil
 				} else if firstSysPulseDeadline != nil {
-					if ce.Anomalous {
-						anomalousSysPulses++
-					} else {
-						uncertainSysPulses++
-					}
+					rejectedSysPulses[ce.Reject]++
 				}
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
@@ -309,10 +304,10 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
 		case <-firstSysPulseDeadline:
-			if anomalousSysPulses == 0 && uncertainSysPulses == 0 {
+			if len(rejectedSysPulses) == 0 {
 				lg.Warn("no serial PPS edges received")
 			} else {
-				lg.Warn("no usable serial PPS edges received", "anomalous", anomalousSysPulses, "uncertain", uncertainSysPulses)
+				lg.Warn("no usable serial PPS edges received", "rejected", rejectedSysPulses)
 			}
 			firstSysPulseDeadline = nil
 		case <-sig:
@@ -322,7 +317,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	}
 }
 
-// sysPulseCandidateEdge reports whether ce passes the PPS quality gate,
+// sysPulseCandidateEdge reports whether ce is usable according to its reader,
 // independently of whether it can be matched to a receiver time message.
 func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) bool {
 	d.logEvent(LogEvent{
@@ -332,10 +327,10 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) bool {
 			T:           ce.Timestamp,
 			Uncertainty: [2]gpsprot.Duration{gpsprot.Duration(ce.Uncertainty[0]), gpsprot.Duration(ce.Uncertainty[1])},
 			PollWidths:  [2]gpsprot.Duration{gpsprot.Duration(ce.PollWidths[0]), gpsprot.Duration(ce.PollWidths[1])},
-			Anomalous:   ce.Anomalous,
+			Reject:      ce.Reject,
 		},
 	})
-	if ce.Anomalous || max(ce.Uncertainty[0], ce.Uncertainty[1]) > sysPulseMaxUncertainty {
+	if ce.Reject != "" {
 		return false
 	}
 	d.sysPulseSample(ce.Edge)
@@ -433,7 +428,7 @@ type SysPulseEdge struct {
 	T           time.Time           `json:"t"`
 	Uncertainty [2]gpsprot.Duration `json:"uncertainty,omitzero"`
 	PollWidths  [2]gpsprot.Duration `json:"pollWidths,omitzero"`
-	Anomalous   bool                `json:"anomalous"`
+	Reject      pps.RejectReason    `json:"reject,omitempty"`
 }
 
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:

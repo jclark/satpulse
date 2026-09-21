@@ -70,7 +70,7 @@ func (s *PollStats) addPoll(p poll, prev *poll) {
 	}
 }
 
-func (s *PollStats) addWindow(o outcome, acquired, anomalous bool) {
+func (s *PollStats) addWindow(o outcome, acquired bool, reject RejectReason) {
 	if s == nil {
 		return
 	}
@@ -82,7 +82,7 @@ func (s *PollStats) addWindow(o outcome, acquired, anomalous bool) {
 	if o != miss {
 		phase.edges++
 	}
-	if anomalous {
+	if reject == RejectAnomalous {
 		phase.anomalous++
 	}
 }

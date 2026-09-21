@@ -5,6 +5,8 @@ import (
 	"log/slog"
 	"testing"
 	"time"
+
+	"github.com/jclark/satpulse/gps/app/pps"
 )
 
 var testLog = slog.New(slog.DiscardHandler)
@@ -31,7 +33,7 @@ func TestSimulateQuiet(t *testing.T) {
 		t.Errorf("forwarded %d of %d pulses, want all but acquisition and a few misses", st.Forwarded, st.Pulses)
 	}
 	if st.Wrong != 0 {
-		t.Errorf("%d forwarded edges wrong by more than the limit, want none", st.Wrong)
+		t.Errorf("%d forwarded edges outside their uncertainty intervals, want none", st.Wrong)
 	}
 	if st.ErrP90 > 200e-6 || st.LongestGap > 3 {
 		t.Errorf("errP90 = %v longestGap = %v, want query resolution and no gap over 3 s", st.ErrP90, st.LongestGap)
@@ -61,7 +63,7 @@ func TestSimulateStalls(t *testing.T) {
 		t.Errorf("anomalous = %d trackMisses = %d, want one window per stall", st.Anomalous, st.TrackMisses)
 	}
 	if st.Wrong != 0 {
-		t.Errorf("%d forwarded edges wrong by more than the limit, want none", st.Wrong)
+		t.Errorf("%d forwarded edges outside their uncertainty intervals, want none", st.Wrong)
 	}
 	if st.LongestGap > 3.001 || st.Lost != 0 {
 		t.Errorf("longestGap = %v s lost = %d, want a gap of at most three pulses without reacquisition", st.LongestGap, st.Lost)
@@ -86,7 +88,7 @@ func TestSimulateOutage(t *testing.T) {
 		t.Errorf("longest gap = %v s, want forwarding back within 15 s of the pulse returning", st.LongestGap)
 	}
 	if st.Wrong != 0 {
-		t.Errorf("%d forwarded edges wrong by more than the limit, want none", st.Wrong)
+		t.Errorf("%d forwarded edges outside their uncertainty intervals, want none", st.Wrong)
 	}
 }
 
@@ -107,6 +109,56 @@ func TestSimulateLinuxUART(t *testing.T) {
 	}
 	if st.ErrP90 > 50e-6 {
 		t.Errorf("errP90 = %v, want query resolution", st.ErrP90)
+	}
+}
+
+func TestSimulateCoarseQueries(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Sim.Duration = 60
+	cfg.Host.Query = QueryConfig{Duration: 2e-3, Idle: IdleConfig{Factor: 1}}
+	cfg.Host.Timer = TimerConfig{}
+	st, err := Simulate(cfg, testLog, func(e EdgeRecord) {
+		if e.Forwarded != (e.Reject == "") {
+			t.Errorf("forwarded = %v for reject %q", e.Forwarded, e.Reject)
+		}
+		if e.Forwarded && max(e.Uncertainty[0], e.Uncertainty[1]) <= 1e-3 {
+			t.Errorf("uncertainty = %v, want coarse accepted measurements", e.Uncertainty)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Forwarded < st.Pulses-5 || st.Acquiring == 0 || st.Wrong != 0 {
+		t.Errorf("coarse queries: %+v, want acquisition then usable tracking catches within their intervals", st)
+	}
+}
+
+func TestConsumerUncertainty(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		err    time.Duration
+		reject pps.RejectReason
+		wrong  int
+	}{
+		{"late at bound", 2 * time.Millisecond, "", 0},
+		{"late outside", 2*time.Millisecond + 1, "", 1},
+		{"early at bound", -3 * time.Millisecond, "", 0},
+		{"early outside", -3*time.Millisecond - 1, "", 1},
+		{"rejected", 4 * time.Millisecond, pps.RejectAnomalous, 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.Pulse.Jitter = 0
+			c := consumer{s: newSim(cfg), caught: make(map[int64]bool)}
+			c.candidate(pps.CandidateEdge{
+				Edge:        pps.Edge{Timestamp: simBase.Add(10*period + tc.err)},
+				Uncertainty: [2]time.Duration{2 * time.Millisecond, 3 * time.Millisecond},
+				Reject:      tc.reject,
+			})
+			if c.wrong != tc.wrong {
+				t.Errorf("wrong = %d, want %d", c.wrong, tc.wrong)
+			}
+		})
 	}
 }
 

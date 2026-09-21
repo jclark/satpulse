@@ -172,17 +172,16 @@ func TestPoll(t *testing.T) {
 		expectLastPulse     int
 		truncatedFirstPulse int // bounds when sub-millisecond sleeps are truncated
 		truncatedLastPulse  int
-		usable              time.Duration // uncertainty limit for an edge at query resolution
 		expectTol           time.Duration // per-edge timestamp error bound
 	}{
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
-			expectFirstPulse: 1, expectLastPulse: 12, usable: 2 * time.Millisecond, expectTol: 3 * time.Millisecond},
+			expectFirstPulse: 1, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
 		{name: "fast query", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 3, expectLastPulse: 18,
-			truncatedFirstPulse: 3, truncatedLastPulse: 15, usable: 100 * time.Microsecond, expectTol: 100 * time.Microsecond},
+			truncatedFirstPulse: 3, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
 		{name: "cold start inside pulse", epochOffset: -20 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 3, expectLastPulse: 18,
-			truncatedFirstPulse: 3, truncatedLastPulse: 15, usable: 100 * time.Microsecond, expectTol: 100 * time.Microsecond},
+			truncatedFirstPulse: 3, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -197,11 +196,11 @@ func TestPoll(t *testing.T) {
 				errCh := make(chan error, 1)
 				go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 				var got []CandidateEdge
-				sawCoarse := false
+				sawAcquiring := false
 				for len(got) < 3 {
 					candidate := <-candidates
-					if candidate.Anomalous || max(candidate.Uncertainty[0], candidate.Uncertainty[1]) > tc.usable {
-						sawCoarse = true
+					if candidate.Reject != "" {
+						sawAcquiring = true
 						continue
 					}
 					got = append(got, candidate)
@@ -210,8 +209,8 @@ func TestPoll(t *testing.T) {
 				if err := <-errCh; err != context.Canceled {
 					t.Fatalf("Poll error = %v, want context.Canceled", err)
 				}
-				if !sawCoarse {
-					t.Error("Poll did not report any coarse candidates during acquisition")
+				if !sawAcquiring {
+					t.Error("Poll did not reject candidates during acquisition")
 				}
 				for i, e := range got {
 					if e.Uncertainty[0] <= 0 || e.Uncertainty[1] <= 0 || e.PollWidths[0] <= 0 || e.PollWidths[1] <= 0 {
@@ -622,31 +621,31 @@ func TestTrackLoss(t *testing.T) {
 	}
 }
 
-// TestAnomalous checks classification against previous tracking widths,
-// including startup, the exact threshold and coarse acquisition catches.
-func TestAnomalous(t *testing.T) {
+// TestRejectReason checks acquisition rejection and classification against
+// previous tracking widths, including startup and the exact threshold.
+func TestRejectReason(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		history  []time.Duration
 		width    time.Duration
 		tracking bool
-		want     bool
+		want     RejectReason
 	}{
-		{name: "first acquisition catch", width: time.Millisecond},
-		{name: "first tracking catch", width: time.Millisecond, tracking: true},
+		{name: "precise acquisition catch", width: time.Microsecond, want: RejectAcquiring},
+		{name: "coarse first tracking catch", width: 4 * time.Millisecond, tracking: true},
 		{name: "at threshold", history: []time.Duration{8 * time.Microsecond}, width: 32 * time.Microsecond, tracking: true},
-		{name: "above threshold", history: []time.Duration{8 * time.Microsecond}, width: 32*time.Microsecond + 1, tracking: true, want: true},
+		{name: "above threshold", history: []time.Duration{8 * time.Microsecond}, width: 32*time.Microsecond + 1, tracking: true, want: RejectAnomalous},
 		{name: "UART upper mode", history: []time.Duration{8 * time.Microsecond}, width: 25 * time.Microsecond, tracking: true},
-		{name: "median tolerates an extreme", history: []time.Duration{8 * time.Microsecond, 9 * time.Microsecond, time.Millisecond}, width: 40 * time.Microsecond, tracking: true, want: true},
-		{name: "acquisition uses tracking history", history: []time.Duration{8 * time.Microsecond}, width: time.Millisecond, want: true},
+		{name: "median tolerates an extreme", history: []time.Duration{8 * time.Microsecond, 9 * time.Microsecond, time.Millisecond}, width: 40 * time.Microsecond, tracking: true, want: RejectAnomalous},
+		{name: "acquisition precedes anomaly", history: []time.Duration{8 * time.Microsecond}, width: time.Millisecond, want: RejectAcquiring},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			p := poller{widths: median.New[time.Duration](widthHistory)}
 			for _, w := range tc.history {
 				p.widths.Add(w)
 			}
-			if got := p.anomalous(tc.width, tc.tracking); got != tc.want {
-				t.Errorf("anomalous = %v, want %v", got, tc.want)
+			if got := p.rejectReason(tc.width, tc.tracking); got != tc.want {
+				t.Errorf("reject = %q, want %q", got, tc.want)
 			}
 			n := len(tc.history)
 			if tc.tracking {
@@ -670,27 +669,30 @@ func TestAnomalousAdapts(t *testing.T) {
 		p.widths.Add(8 * time.Microsecond)
 	}
 	for range widthHistory {
-		p.anomalous(100*time.Millisecond, false)
+		p.rejectReason(100*time.Millisecond, false)
 	}
 	if p.widths.Median() != 8*time.Microsecond {
 		t.Fatal("acquisition changed the tracking baseline")
 	}
 	for i := range widthHistory + 1 {
-		want := i < 16
-		if got := p.anomalous(time.Millisecond, true); got != want {
-			t.Errorf("slow catch %d anomalous = %v, want %v", i+1, got, want)
+		var want RejectReason
+		if i < 16 {
+			want = RejectAnomalous
+		}
+		if got := p.rejectReason(time.Millisecond, true); got != want {
+			t.Errorf("slow catch %d reject = %q, want %q", i+1, got, want)
 		}
 	}
 	if p.widths.Len() != widthHistory || p.widths.Median() != time.Millisecond {
 		t.Errorf("history = %d widths, median %v, want %d and 1ms", p.widths.Len(), p.widths.Median(), widthHistory)
 	}
-	if p.anomalous(8*time.Microsecond, true) {
+	if p.rejectReason(8*time.Microsecond, true) != "" {
 		t.Error("return to narrow widths flagged as anomalous")
 	}
 }
 
 // TestPollAnomaliesDoNotAffectControl gives identical measurements to two
-// pollers whose histories make every catch anomalous in one and ordinary in
+// pollers whose histories make tracking catches anomalous in one and ordinary in
 // the other. Acquisition, prediction updates and extent changes must match.
 func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
 	type result struct {
@@ -723,6 +725,7 @@ func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
 			if p.widths.Median() != baseline {
 				t.Fatal("acquisition changed tracking history")
 			}
+			acquiring := len(candidates)
 			done := errors.New("tracking complete")
 			attempts := 0
 			err = track(extent, p.params.MinSpacing, func(extent time.Duration) (trackObservation, error) {
@@ -743,10 +746,16 @@ func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
 			}
 			close(candidates)
 			for ce := range candidates {
-				if ce.Anomalous != (i == 0) {
-					t.Errorf("Anomalous = %v, want %v", ce.Anomalous, i == 0)
+				var want RejectReason
+				if len(results[i].candidates) < acquiring {
+					want = RejectAcquiring
+				} else if i == 0 {
+					want = RejectAnomalous
 				}
-				ce.Anomalous = false
+				if ce.Reject != want {
+					t.Errorf("Reject = %q, want %q", ce.Reject, want)
+				}
+				ce.Reject = ""
 				results[i].candidates = append(results[i].candidates, ce)
 			}
 			results[i].calls, results[i].nextEdge = f.calls.Load(), p.nextEdge
@@ -778,8 +787,8 @@ func TestPollShortOutageKeepsTracking(t *testing.T) {
 		if p := pulseIndex(first.Timestamp, f.epoch); p != f.offTo {
 			t.Errorf("first edge after outage is pulse %d, want recapture at pulse %d", p, f.offTo)
 		}
-		if first.Anomalous || max(first.Uncertainty[0], first.Uncertainty[1]) > usableUncertainty {
-			t.Errorf("recapture candidate anomalous=%v uncertainty=%v, want a usable catch at query resolution", first.Anomalous, first.Uncertainty)
+		if first.Reject != "" {
+			t.Errorf("recapture candidate reject=%q uncertainty=%v, want a usable catch at query resolution", first.Reject, first.Uncertainty)
 		}
 	})
 }
@@ -806,7 +815,7 @@ func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 		for usable < 3 && !timedOut {
 			select {
 			case candidate := <-candidates:
-				if !candidate.Anomalous && max(candidate.Uncertainty[0], candidate.Uncertainty[1]) <= usableUncertainty {
+				if candidate.Reject == "" {
 					usable++
 				}
 			case <-deadline:
@@ -835,7 +844,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		go func() { errCh <- Poll(ctx, lg, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
-			pulse = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
+			pulse = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
 			seen[pulse] = true
 		}
 		cancel()
@@ -868,7 +877,7 @@ func TestPollOutageReacquires(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var first int
 		for first <= 15 {
-			first = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
+			first = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
 		}
 		cancel()
 		<-errCh
@@ -893,11 +902,11 @@ func TestPollTrackingConverges(t *testing.T) {
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
 		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
-		for pulseIndex(nextUsable(candidates, 2*time.Millisecond).Timestamp, f.epoch) < 100 {
+		for pulseIndex(nextUsable(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
 		for range 50 {
-			nextUsable(candidates, 2*time.Millisecond)
+			nextUsable(candidates)
 		}
 		perPulse := (f.calls.Load() - start) / 50
 		cancel()
@@ -923,7 +932,7 @@ func TestPollDeliveryTailCostsIsolatedMisses(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
-			last = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
+			last = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
 			seen[last] = true
 		}
 		cancel()
@@ -959,7 +968,7 @@ func TestPollLeadCoversSlowOpen(t *testing.T) {
 		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 300; {
-			last = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
+			last = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
 			seen[last] = true
 		}
 		cancel()
@@ -1000,7 +1009,7 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 		go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 20 {
-			got = append(got, nextUsable(candidates, usableUncertainty))
+			got = append(got, nextUsable(candidates))
 		}
 		cancel()
 		<-errCh
@@ -1025,7 +1034,7 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 			// Usable candidates from the timer-paced stages carry the
 			// overshoot inside their bracket; once the queries pace the loop
 			// the edge is located to the query time.
-			tol := usableUncertainty
+			tol := time.Millisecond
 			if i >= 10 {
 				tol = 500 * time.Microsecond
 			}
@@ -1067,7 +1076,8 @@ func TestPollAcquisition(t *testing.T) {
 				capture := &acquireCapture{Handler: slog.DiscardHandler}
 				ctx, cancel := context.WithTimeout(context.Background(), 10*period)
 				defer cancel()
-				p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: make(chan CandidateEdge, 16),
+				candidates := make(chan CandidateEdge, 16)
+				p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: candidates,
 					params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
 					widths: median.New[time.Duration](widthHistory)}
 				if err := p.init(); err != nil {
@@ -1085,6 +1095,17 @@ func TestPollAcquisition(t *testing.T) {
 				}
 				if extent != tc.extent || capture.window != extent {
 					t.Errorf("handoff extent = %v, logged %v, want %v", extent, capture.window, tc.extent)
+				}
+				for len(candidates) > 0 {
+					if ce := <-candidates; ce.Reject != RejectAcquiring {
+						t.Errorf("acquisition catch reject = %q, want acquiring including the final catch", ce.Reject)
+					}
+				}
+				if o, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
+					t.Fatalf("first tracking window = %v, %v, want a catch", o, err)
+				}
+				if ce := <-candidates; ce.Reject != "" {
+					t.Errorf("first tracking catch reject = %q, want usable even with slow queries", ce.Reject)
 				}
 			})
 		})
@@ -1236,7 +1257,7 @@ func testPollNarrowPulse(t *testing.T, epochOffset time.Duration) {
 		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 3 {
-			got = append(got, nextUsable(candidates, 2*time.Millisecond))
+			got = append(got, nextUsable(candidates))
 		}
 		cancel()
 		<-errCh
@@ -1466,14 +1487,10 @@ func pulseIndex(t, epoch time.Time) int {
 	return int((t.Sub(epoch) + period/2) / period)
 }
 
-// usableUncertainty mirrors the dispatcher's limit: a candidate that is not
-// anomalous and is at most this uncertain is forwarded for timing.
-const usableUncertainty = time.Millisecond
-
-func nextUsable(candidates <-chan CandidateEdge, limit time.Duration) CandidateEdge {
+func nextUsable(candidates <-chan CandidateEdge) CandidateEdge {
 	for {
 		candidate := <-candidates
-		if !candidate.Anomalous && max(candidate.Uncertainty[0], candidate.Uncertainty[1]) <= limit {
+		if candidate.Reject == "" {
 			return candidate
 		}
 	}
@@ -1506,7 +1523,7 @@ func TestPollFlagsStalledCatch(t *testing.T) {
 			if pulse < 20 {
 				continue
 			}
-			if e.Anomalous {
+			if e.Reject == RejectAnomalous {
 				anomalous++
 				if pulse != stallPulse || max(e.Uncertainty[0], e.Uncertainty[1]) < 500*time.Microsecond {
 					t.Errorf("anomalous catch at pulse %d with uncertainty %v, want only the stalled catch at pulse %d", pulse, e.Uncertainty, stallPulse)
