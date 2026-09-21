@@ -182,6 +182,29 @@ overshoots several times the typical 1.05 ms, with the extent settling
 near 1.4 ms instead of 2.6 ms, a median of 5 reads per catch instead of
 3, and CPU of 0.205% of one core against 0.218%.
 
+### Queries target the window's grid
+
+Each query was scheduled one spacing after the previous query's start,
+so every query's timing error, a truncated sleep, a wake overshoot or a
+stall, shifted all the later queries of the window. In a timer-paced
+window the errors accumulated: on Linux the truncated sleeps shortened a
+7.8 ms spacing to about 7.2 ms, putting the grid 20 ms off by the
+prediction, and even exact sleeps with a 50 us overshoot drifted 1.6 ms
+over the 32 queries before it. Each halving window relies on its grid
+landing again on the sample that was inside the pulse, so with a pulse
+narrower than that drift each halving was a chance of roughly width over
+spacing, a miss swept the phase away, and ten misses restarted from the
+full period. A 1 ms pulse on an FT232R restarted repeatedly on real
+hardware, and the simulator reproduced it.
+
+Each query now targets the first point after the previous query's start
+of a grid anchored at the window open, so a query's error is its own.
+Fresh starts with the same 1 ms pulse then caught every halving window
+first time with no restart, leaving the coarse sweep as the only
+variable part of the time to the first catch. Tracking is unchanged on
+every measured host: its grid points are always past when the next
+query is due, so the sequence is the same back-to-back one as before.
+
 ### Acquisition sleeps to its deadline
 
 Scheduling each query at a grid point assumes the wait reaches it. On
@@ -232,6 +255,18 @@ is not. Long-term CPU must stay small.
 Prewarm trades CPU usage for timing performance; the user chooses that
 tradeoff. Evaluate both settings. Simplicity means behaviour that can be
 understood across operating conditions, with each rule earning its cost.
+
+Measure against that objective. What matters at startup is the time to
+the first forwarded sample, not the time to the "acquired" log line:
+every catch goes to the consumer, acquisition's included, and it forwards
+any catch whose uncertainty components are within the limit, which the
+halving windows reach about four windows after the first catch. After
+that, what matters is the gap between forwarded samples. Reads per
+window and per second measure work; CPU is process time from
+`/usr/bin/time` on the host. The simulator's `blocked` statistic is the
+fraction of the run spent outside queries and clock reads; it is not a
+CPU figure, since a USB query is mostly the process blocked in the
+kernel.
 
 ### State
 
@@ -394,9 +429,11 @@ faster.
   The September 20-21 Mac tests had roughly 12% tracking misses without
   prewarm, compared with 3.55% in an earlier run before the growth and
   correction changes. The cause was the slow first query after the idle
-  wait, now compensated by the lead (see "Revisions made"); repeat the
-  15-minute prewarm-off and prewarm-on runs with it, and a Linux run on
-  USB serial and a native UART to confirm the lead stays near zero there.
+  wait, now compensated by the lead (see "Revisions made"). The same
+  boundary caused the Mac's slow no-prewarm acquisition, which fresh
+  starts with the lead no longer show. Repeat the 15-minute prewarm-off
+  and prewarm-on runs with the lead, and a Linux run on USB serial and a
+  native UART to confirm the lead stays near zero there.
 - **macOS measurements.** Replace the article's measurements with results
   from the implemented algorithm, covering prewarm on, prewarm off and
   load. The separate raw-versus-chrony-filtered comparison still needs a
@@ -410,6 +447,15 @@ further improvement in bracket width was expected, allowing the consumer
 to accept non-outlier samples at that resolution. The current interface
 leaves the consumer withholding every catch when even the best
 measurements exceed the limit. This requires a fix.
+
+Whether any supported reader is affected is doubtful. Uncertainty over
+1 ms needs queries slower than about 450 us, since the outer interval
+is two queries plus a spacing, and the recorded query times are 3.6 us
+on a native UART, about 116 us on a Linux FT232R, about 200 us on the
+Mac and on Windows, and microseconds for a GPIO read. The old bypass was
+needed because window size set resolution; that coupling is gone. The
+remaining choices are to drop the requirement and rely on the consumer's
+"reads may be too slow" warning, or to define the interface below.
 
 Determine what information the poller should expose to distinguish
 achievable resolution from measurements that can still improve. An
@@ -429,56 +475,68 @@ improvement.
 The four-times-median anomaly flag and removal of rejected catches are
 complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-catches).
 
-### Review acquisition and its CPU budget
+### Acquisition after the grid fix
 
-Conceptually, acquisition reduces poll spacing to obtain good resolution;
-tracking then reduces extent to minimize long-term CPU usage, with misses
-providing feedback about the coverage needed. Both maintain a prediction.
-Acquisition need not also find a narrow tracking extent before handing over.
+Acquisition is two phases. The sweep searches for the pulse with no
+knowledge of its phase: a full-period window of 64 queries at 15.6 ms
+spacing, shifted by 0.618 of a spacing after each miss. It ends with the
+first catch, which bounds the edge to one spacing plus a query. The
+halvings then refine that bracket: each window halves the spacing and
+re-lands its grid on the sample that caught, until the spacing is below
+the query duration or reaches `MinSpacing`, eight or nine windows now
+that every spacing sleeps (see "Acquisition sleeps to its deadline").
+The consumer receives a forwardable sample from about the fourth halving
+on, so the later halvings delay the handoff to tracking, not chrony's
+first sample.
 
-The current acquisition window is `InitialPolls * spacing`, so halving
-spacing also forces coverage to halve. Review whether this coupling is
-still appropriate now that tracking adapts coverage independently. This is
-a direction for investigation, not an agreed replacement algorithm.
+What is known:
 
-The redesign has focused on tracking; review acquisition against the new
-CPU budget model too. Its initial allowance of 64 polls comes from the
-previous design; tracking now uses 50 observed reads as its growth
-threshold rather than a maximum extent. Consider
-allowing more polls at the start of acquisition to find short pulses
-sooner. Evaluate acquisition time and total CPU cost, as well as sustained
-cost when no pulse is present. The current `InitialPolls` parameter also
-affects later acquisition windows and the extent handed to tracking, so
-review those effects alongside any increase in the initial allowance.
+- A pulse at least one spacing wide is caught by the first sweep window.
+  A narrower one is a chance per window of about width over spacing, 6%
+  for a 1 ms pulse, so its first catch takes a few windows to a dozen.
+  The sweep never gives up; it covers every phase in the limit.
+- The halvings re-land within about a query of the previous sample, but
+  half a query late, because the grid is placed around the midpoint
+  estimate rather than the catching query's start. That is nothing for a
+  1 ms pulse. In the simulator a 0.3 ms pulse often restarts from the
+  500 ms window, since one miss sweeps the phase away. The truncated
+  wait used to hide this by polling back to back before each grid point.
+  Not sweeping the phase on a narrowed-window miss makes it worse,
+  because the offset is systematic.
+- The halvings are a leftover of the coupled design, in which resolution
+  came only from shrinking the window. Tracking now polls at
+  `MinSpacing` whatever its extent, so a window over the caught bracket
+  at that spacing is the same operation as tracking with a wide extent.
+- No-pulse cost is set by the sweep alone: one coarse window of reads
+  per second for as long as the pulse is absent.
 
-The September 20-21 Mac tests also exposed slow acquisition without
-prewarm: 53.925 s and 35.986 s in the 15-minute tests, and 26.555 s in
-the overnight test, versus about 8.2 s with prewarm. The first one-minute
-no-prewarm smoke never reached tracking. Its trace shows catches down to
-3.906 ms and 3.2 ms windows followed by misses and acquisition restarts.
-Apart from removing the handoff cap, acquisition was unchanged by the
-tracking revision. These observations do not establish the cause of the
-Mac's misses; they precede entry to the new tracking controller.
+Open questions, in the order they arise:
 
-Separately, the K901 on abondance's FT232R originally had an approximately
-1 ms pulse and took 67 s to acquire. The initial spacing is 15.625 ms,
-so polling can repeatedly miss the whole pulse. A hardware comparison is
-now complete: five starts at the original width took 6.750-56.754 s,
-median 30.989 s. Five starts with a verified 100 ms pulse and matching
-physical polarity took 5.059-5.989 s, median 5.756 s. Every 100 ms run
-caught all six acquisition windows without a restart. This supports the
-short-pulse explanation for the K901; it does not establish a worst-case
-bound or explain the separate Mac results.
+1. **The sweep for narrow pulses.** One finer window after the coarse
+   window misses, then coarse for as long as it takes, catches a 1 ms
+   pulse in that window nearly always at 1024 polls (certain above
+   about 1.1 ms, since the sample lands up to a query after the grid
+   point) and costs its reads once per start, so the no-pulse cost
+   barely changes. Wide pulses never see it. The spacing is the only
+   parameter, trading the narrowest pulse caught at once against the
+   reads of that window. Any spacing is honoured now that acquisition
+   sleeps precisely. Its process CPU on hardware is unmeasured.
+2. **What follows the first catch.** Keep the halvings, with an exit
+   stated in terms of the handoff, for instance a caught interval no
+   wider than a quarter of the extent handed to tracking, which ends
+   after five; or hand tracking an extent covering the bracket and let
+   its controller shrink it, which at 31/32 per catch takes about 110
+   catches from 31 ms unless the controller shrinks faster when the
+   bracket is far below the extent; or poll the bracket once at
+   `MinSpacing` and hand over its catch, which in the simulator forwards
+   a sample one window after the first catch for every pulse width and
+   has no re-landing to fail. The narrow-pulse offset above is fixed by
+   the last of these, or by anchoring the next grid on the catching
+   query's start in the first two.
 
-In 100 simulations per width, varying startup phase and timing with
-130 us queries and the Linux timer model, acquisition took a median
-25.6 s and maximum 111.3 s with 1 ms pulses, versus 5.5 s and 6.0 s
-with 100 ms pulses. This is an assumed timing model, not a replay of
-measured host scheduling.
-
-Investigate a simple way to acquire short pulses more reliably. Compare
-acquisition time across startup phases, restarts and CPU cost, using the
-completed pulse-width comparison as evidence.
+Measure any change by time to the first forwarded sample across start
+phases, restarts, reads per window and process CPU, with and without a
+pulse, on a narrow pulse and on a wide one.
 
 ### Evaluate the estimator
 
@@ -529,9 +587,9 @@ changing what interval is reported.
 - **Inter-query spacing on Linux.** Enforcing sub-millisecond spacing
   changes measurement resolution and makes the loop timer-paced: honouring
   the 50 us `MinSpacing` would replace the UART's 4.5 us bracket with one
-  of about 60 us. Acquisition's precise wait leaves it alone, because a
-  wait too short for the runtime timer is not slept whether or not it is
-  precise; any future change to the shared wait must keep that property.
+  of about 60 us. Acquisition's precise wait leaves it alone because
+  tracking's waits are not precise; any future change to the shared wait
+  must keep that distinction.
 
 ## Background and design rationale
 
