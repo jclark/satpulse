@@ -50,7 +50,9 @@ func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
 // wait, installed as PollParams.Wait, overshoot every timer sleep by that
 // much or an eighth of it alternately, modelling the sleep overshoot
 // observed inside the daemon: queries after a sleep run late by a varying
-// amount, back-to-back queries do not. A nonzero stall delays the single
+// amount, back-to-back queries do not. A nonzero idleCallDur replaces
+// callDur for the first query after a timer sleep, modelling a host whose
+// queries slow while it idles. A nonzero stall delays the single
 // first query at or after
 // stallAfter (relative to epoch) by that much, stretching one bracket --
 // the noise event that made a latch comparing consecutive brackets misfire
@@ -66,6 +68,8 @@ type fakePulse struct {
 	lateEvery      int
 	late           time.Duration
 	wakeJitter     time.Duration
+	idleCallDur    time.Duration
+	idle           bool
 	stallAfter     time.Duration
 	stall          time.Duration
 	slowFrom       time.Duration
@@ -79,6 +83,7 @@ type fakePulse struct {
 
 func (f *fakePulse) wait(ctx context.Context, t time.Time) (bool, error) {
 	slept, err := waitUntil(ctx, t)
+	f.idle = f.idle || slept
 	if slept && f.wakeJitter > 0 {
 		if f.seq++; f.seq%2 == 0 {
 			time.Sleep(f.wakeJitter)
@@ -100,6 +105,10 @@ func (f *fakePulse) InPulse() (bool, error) {
 	if f.slowCallDur > 0 && since >= f.slowFrom && since < f.slowTo {
 		callDur = f.slowCallDur
 	}
+	if f.idle && f.idleCallDur > 0 {
+		callDur = f.idleCallDur
+	}
+	f.idle = false
 	time.Sleep(callDur)
 	return f.state(time.Since(f.epoch)), nil
 }
@@ -892,6 +901,42 @@ func TestPollDeliveryTailCostsIsolatedMisses(t *testing.T) {
 		}
 		if missed > 25 {
 			t.Errorf("%d of pulses 400-499 missed, want at most one per delivery-tail cycle", missed)
+		}
+	})
+}
+
+// TestPollLeadCoversSlowOpen reproduces the Mac's slow window opens: the
+// timer wakes up to half a millisecond late and the first query after the idle
+// wait takes four times a warm one, so an uncompensated first query samples
+// the pulse already on. The lead must move the first query ahead of the
+// open so that the shrunk extent still catches the edge, leaving only
+// isolated misses.
+func TestPollLeadCoversSlowOpen(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 100 * time.Microsecond, idleCallDur: 400 * time.Microsecond, wakeJitter: 500 * time.Microsecond}
+		ctx, cancel := context.WithCancel(context.Background())
+		candidates := make(chan CandidateEdge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
+		seen := make(map[int]bool)
+		for last := 0; last < 300; {
+			last = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
+			seen[last] = true
+		}
+		cancel()
+		<-errCh
+		missed := 0
+		for p := 100; p < 300; p++ {
+			if !seen[p] {
+				missed++
+				if !seen[p-1] {
+					t.Errorf("pulses %d and %d both missed, want misses isolated", p-1, p)
+				}
+			}
+		}
+		if missed > 4 {
+			t.Errorf("%d of pulses 100-299 missed, want the lead to cover the slow open", missed)
 		}
 	})
 }

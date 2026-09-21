@@ -154,6 +154,33 @@ seven; a factor of two withheld 177 and created a seven-second gap without
 improving the maximum forwarded error. These compare forwarding gates on
 identical recorded catches, not the changed controller's future behaviour.
 
+### Windows open early by the measured first-read lead
+
+Without prewarm, the Mac's timer woke about 1 ms late and the first query
+after the idle wait took about 400 us, so the first query of a window
+nominally opening 1.3 ms before the prediction completed after the pulse
+had begun. Every one of the 18 misses in a three-minute debug run had its
+first reading in the pulse. The controller shrank the extent until that
+delayed first sample sat on the edge and bounced off it: the 12% miss
+rate was the shrink/grow ratio at that boundary, not host jitter.
+
+The poller now keeps `lead`, an exponentially weighted moving average of
+how long after its scheduled time a window's first query completes (timer
+overshoot plus the slowed first query), and schedules each window's first
+query that much before the nominal open, so it completes, on average, at
+the open. The lead moves only the first query: the deadline, the
+prediction and the extent controller are unchanged. It is clamped at zero
+so an early wakeup, as Linux's truncated sleeps give, never schedules the
+query later than the open. With prewarm the spin ends at the early time
+and the lead settles to about one warm query. A stall's excess is repaid
+once, spread over later windows, since the average's decay sums to it.
+
+On the same Mac setup a repeat three-minute run without prewarm had 2
+misses in 171 tracking attempts against 18 before, both at timer
+overshoots several times the typical 1.05 ms, with the extent settling
+near 1.4 ms instead of 2.6 ms, a median of 5 reads per catch instead of
+3, and CPU of 0.205% of one core against 0.218%.
+
 ## Current algorithm
 
 ### Objective
@@ -171,6 +198,8 @@ understood across operating conditions, with each rule earning its cost.
 - `prediction`: monotonic time of the next expected leading edge.
 - `extent`: width of the window polled around the prediction.
 - `failures`: count of consecutive misses.
+- `lead`: exponentially weighted moving average of the interval from a
+  window's scheduled first query to that query's completion.
 - `widths`: recent tracking widths, used only for anomaly classification.
 
 ### Recorded per query
@@ -203,7 +232,9 @@ a CPU saving where it can be honoured and nothing where it cannot.
 ### One attempt, once per period
 
 1. `open = prediction - extent/2`, `close = prediction + extent/2`. Wait
-   until `open`, with `PreWarm` as today.
+   until `open - lead`, with `PreWarm` as today, so that the first query
+   completes at about `open`; then update `lead` from that query's
+   completion.
 2. Poll as today: if the pin is on at the first query, poll through the
    in-progress pulse; then poll until an off-to-on transition is seen or
    the query midpoint passes `close`. A transition takes precedence over
@@ -272,6 +303,7 @@ None encodes a hardware timing.
 | anomaly ratio | outer width relative to the recent median | 4 |
 | history length | previous valid tracking widths | 31 |
 | `F` | consecutive misses before giving up | 10 |
+| `leadWeight` | reciprocal weight of the newest observation in the lead average | 8 |
 | `U` | consumer's uncertainty limit | 1 ms, as today |
 
 Measured quantities: state reads per attempt, the bracket, the durations
@@ -315,8 +347,10 @@ faster.
   accuracy, forwarding gaps or CPU use have regressed.
   The September 20-21 Mac tests had roughly 12% tracking misses without
   prewarm, compared with 3.55% in an earlier run before the growth and
-  correction changes. Investigate this difference; absence of tracking
-  loss does not imply a low miss rate. See the latest hardware results below.
+  correction changes. The cause was the slow first query after the idle
+  wait, now compensated by the lead (see "Revisions made"); repeat the
+  15-minute prewarm-off and prewarm-on runs with it, and a Linux run on
+  USB serial and a native UART to confirm the lead stays near zero there.
 - **macOS measurements.** Replace the article's measurements with results
   from the implemented algorithm, covering prewarm on, prewarm off and
   load. The separate raw-versus-chrony-filtered comparison still needs a

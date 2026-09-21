@@ -56,8 +56,14 @@ type poller struct {
 	lastBracket time.Duration
 	lastWidth   time.Duration
 	widths      *median.Window[time.Duration]
-	slept       bool
-	stateReads  int
+	// lead is an exponentially weighted moving average of how long after
+	// its scheduled time a window's first query completes: the timer's
+	// overshoot plus a query slowed by the idle wait before it. Each window
+	// opens that much early, so the first query completes, on average, at
+	// the nominal open.
+	lead       time.Duration
+	slept      bool
+	stateReads int
 }
 
 // Poll adaptively polls for the pulse read by r and sends a candidate for
@@ -67,7 +73,9 @@ type poller struct {
 // finest cadence the host has and adapts only the extent of the window
 // around the predicted edge: a catch shrinks it toward a few brackets,
 // a miss grows it by a quarter while the polling budget allows, and
-// sustained failure restarts the cycle from acquisition.
+// sustained failure restarts the cycle from acquisition. Every window also
+// opens early by the measured lead of its first query, so that the extent
+// before the prediction is actually covered.
 //
 // Every catch is sent, with the midpoint of the two query midpoints as its
 // timestamp, Uncertainty reaching the outer endpoints of those queries, and
@@ -267,7 +275,7 @@ const (
 // than half the extent: a coarse measurement must not displace a narrow
 // search window. Every catch resets failures and shrinks the extent by
 // 1/shrinkDivisor down to shrinkStop brackets; it never widens it, so no
-// catch, however wide its bracket, can make the loop work harder. A miss
+// catch, however wide its bracket, can add coverage. A miss
 // grows the extent by a quarter unless both maxPolls reads and an extent of
 // maxPolls*minSpacing have been reached. Ignoring short sleeps can cost more
 // polls, but must not prevent growth to that coverage.
@@ -370,6 +378,12 @@ func (p *poller) init() error {
 	return nil
 }
 
+// leadWeight is the reciprocal weight of the newest observation in the
+// exponentially weighted moving average that is the lead: a sustained
+// change is two thirds adopted after that many windows, and a single stall
+// moves the lead by only that fraction of its excess.
+const leadWeight = 8
+
 // pollWindow waits for one window to open, polls through a pulse already in
 // progress, hunts for the next leading edge, classifies the outcome, records
 // statistics, and sends a caught candidate. It returns the outcome and, for
@@ -380,20 +394,29 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
 	open := nextEdge.Add(-window / 2)
+	// The first query is scheduled a lead before the open so that it
+	// completes at the open; the lead moves only this query, never the
+	// deadline or the prediction. It is clamped at zero so that an early
+	// wakeup (a truncated sleep) never schedules the query later than the
+	// open.
+	lead := p.lead
+	start := open.Add(-lead)
 	if p.params.PreWarm > 0 {
-		if _, err := p.wait(open.Add(-p.params.PreWarm)); err != nil {
+		if _, err := p.wait(start.Add(-p.params.PreWarm)); err != nil {
 			return miss, 0, err
 		}
-		for p.now().mono.Before(open) {
+		for p.now().mono.Before(start) {
 			if p.ctx.Err() != nil {
 				return miss, 0, p.ctx.Err()
 			}
 		}
 	}
-	cur, err := p.readState(open)
+	cur, err := p.readState(start)
 	if err != nil {
 		return miss, 0, err
 	}
+	first := cur
+	p.lead = max(0, p.lead+(first.poll.end.mono.Sub(start)-p.lead)/leadWeight)
 	p.stats.addPoll(cur.poll, nil)
 	p.slept = false
 	p.stateReads = 1
@@ -435,6 +458,11 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		}
 		prev = cur
 	}
+	p.lg.Debug("serial PPS poll window", "tracking", acquired, "caught", !edge.stamp.IsZero(),
+		"window", window, "spacing", spacing, "stateReads", p.stateReads,
+		"lead", lead, "wakeLate", first.start.Sub(start), "firstEndFromOpen", first.poll.end.mono.Sub(open),
+		"firstPollWidth", first.poll.duration(), "firstInPulse", first.inPulse,
+		"lastStartFromPrediction", cur.start.Sub(nextEdge), "lastPollWidth", cur.poll.duration(), "lastInPulse", cur.inPulse)
 	if edge.stamp.IsZero() {
 		p.stats.addWindow(miss, acquired, false)
 		if !acquired {
