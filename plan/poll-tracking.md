@@ -296,9 +296,11 @@ than the coarse monotonic reading.
 ### Polling cadence
 
 Each query is scheduled at the first point after the previous query's
-start of a grid anchored at the window open, spaced by `MinSpacing` in
-tracking and by the current acquisition spacing in acquisition, so one
-query's timing error does not shift the rest of the window. The wait
+start of a fixed grid, spaced by `MinSpacing` in tracking and by the
+current acquisition spacing in acquisition, so one query's timing error
+does not shift the rest of the window. Tracking and the initial sweep
+anchor the grid at the window open. Each acquisition catch anchors the
+next grid on the catching query's start one period later. The wait
 sleeps where the platform can and returns at once where it cannot: on
 Linux, sub-millisecond waits are truncated to zero, because the runtime
 would otherwise round them up to a millisecond. Acquisition sleeps out
@@ -360,7 +362,8 @@ it cannot.
 
 The spacing halves from `period/64` toward `MinSpacing` on each catch;
 the window is 64 spacings. Every catch adopts the caught midpoint as the
-prediction and resets the miss count. A catch at `MinSpacing`, or two
+prediction, preserves the catching query's start as the next grid's
+phase, and resets the miss count. A catch at `MinSpacing`, or two
 consecutive caught windows with no scheduled sleep, completes acquisition.
 A slept catch or miss resets the query-paced confirmation. Misses sweep
 the poll-grid phase, and an in-progress pulse is polled through.
@@ -495,18 +498,25 @@ What is known:
   A narrower one is a chance per window of about width over spacing, 6%
   for a 1 ms pulse, so its first catch takes a few windows to a dozen.
   The sweep never gives up; it covers every phase in the limit.
-- The halvings re-land within about a query of the previous sample, but
-  half a query late, because the grid is placed around the midpoint
-  estimate rather than the catching query's start. That is nothing for a
-  1 ms pulse. In the simulator a 0.3 ms pulse often restarts from the
-  500 ms window, since one miss sweeps the phase away. The truncated
-  wait used to hide this by polling back to back before each grid point.
-  Not sweeping the phase on a narrowed-window miss makes it worse,
-  because the offset is systematic.
-- The halvings are a leftover of the coupled design, in which resolution
-  came only from shrinking the window. Tracking now polls at
-  `MinSpacing` whatever its extent, so a window over the caught bracket
-  at that spacing is the same operation as tracking with a wide extent.
+- Anchoring the next grid on the midpoint estimate made the repeated
+  query half a query late. In the simulator a 0.3 ms pulse often
+  restarted from the 500 ms window after that offset caused a miss.
+  Acquisition now preserves the catching query's start as a grid point
+  one period later, independently of the midpoint prediction. A
+  regression with a 0.3 ms pulse and 130 us queries catches every
+  refinement, including when the first sample is near the trailing edge.
+- The key handoff challenge is controlling the initial number of tracking
+  polls when the query-paced cadence is not known a priori. An interval
+  located at a fixed sweep spacing may be economical to poll on USB
+  serial but require excessive reads with fast GPIO memory polling.
+  Tracking's poll-count budget only restricts growth after misses; it
+  does not constrain that initial cost. Progressively reducing both the
+  query spacing and the window extent keeps the nominal poll count per
+  refinement fixed while approaching query pacing. This is a reason to
+  retain progressive refinement with the current tracking controller.
+  The reduction factor need not be two: investigate dividing spacing
+  and extent by four or eight to reach the handoff faster while keeping
+  the same nominal poll-count budget.
 - No-pulse cost is set by the sweep alone: one coarse window of reads
   per second for as long as the pulse is absent.
 
@@ -529,10 +539,9 @@ Open questions, in the order they arise:
    catches from 31 ms unless the controller shrinks faster when the
    bracket is far below the extent; or poll the bracket once at
    `MinSpacing` and hand over its catch, which in the simulator forwards
-   a sample one window after the first catch for every pulse width and
-   has no re-landing to fail. The narrow-pulse offset above is fixed by
-   the last of these, or by anchoring the next grid on the catching
-   query's start in the first two.
+   a sample one window after the first catch for every pulse width.
+   Preserving the catching query's phase is independent of this choice
+   and is already implemented.
 
 Measure any change by time to the first forwarded sample across start
 phases, restarts, reads per window and process CPU, with and without a

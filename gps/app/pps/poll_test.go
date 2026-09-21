@@ -1062,6 +1062,40 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 	})
 }
 
+// TestPollAcquisitionPreservesPhase catches a 300 us pulse 20 us before its
+// trailing edge. A grid centred on the edge estimate shifts the next query
+// half a query later, missing the pulse despite having already found it.
+func TestPollAcquisitionPreservesPhase(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(312415 * time.Microsecond), width: 300 * time.Microsecond,
+			callDur: 130 * time.Microsecond}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*period)
+		defer cancel()
+		candidates := make(chan CandidateEdge, 16)
+		stats := &PollStats{}
+		p := poller{ctx: ctx, lg: testLog, r: f, ceCh: candidates, stats: stats,
+			params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+			widths: median.New[time.Duration](widthHistory)}
+		if err := p.init(); err != nil {
+			t.Fatal(err)
+		}
+		_, acquired, err := p.acquire()
+		if err != nil || !acquired {
+			t.Fatalf("acquisition = %v, %v, want success without losing the caught phase", acquired, err)
+		}
+		if stats.acquire.windows != stats.acquire.edges {
+			t.Errorf("acquisition caught %d of %d windows, want every refinement to catch", stats.acquire.edges, stats.acquire.windows)
+		}
+		close(candidates)
+		for ce := range candidates {
+			edge := f.epoch.Add(time.Duration(pulseIndex(ce.Timestamp, f.epoch)) * period)
+			if edge.Before(ce.Timestamp.Add(-ce.Uncertainty[0])) || edge.After(ce.Timestamp.Add(ce.Uncertainty[1])) {
+				t.Errorf("edge %v outside candidate uncertainty: %+v", edge, ce)
+			}
+		}
+	})
+}
+
 // TestPollNarrowPulse sweeps the pulse phase across the 7.8125 ms spacing of
 // the second acquisition stage. The 2 ms pulse fits between the polls of the
 // second and third stages at most phases, and a miss repeats the

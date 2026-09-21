@@ -59,6 +59,10 @@ type poller struct {
 	lastBracket time.Duration
 	lastWidth   time.Duration
 	widths      *median.Window[time.Duration]
+	// gridOffset anchors acquisition queries to the start of the previous
+	// catching query, relative to nextEdge. The midpoint edge estimate alone
+	// would shift their phase by half a query on each refinement.
+	gridOffset time.Duration
 	// lead is an exponentially weighted moving average of how long after
 	// its scheduled time a window's first query completes: the timer's
 	// overshoot plus a query slowed by the idle wait before it. Each window
@@ -152,7 +156,8 @@ const (
 // catch halves the spacing down to minSpacing and sets the next window to
 // initialPolls times that spacing; a miss leaves the spacing unchanged. The
 // caught interval determines candidate uncertainty but does not constrain
-// this descent.
+// this descent. Each refinement retains the catching query's start as a
+// grid point one period later, independently of the midpoint edge estimate.
 //
 // A catch at minSpacing acquires immediately. Two consecutive caught
 // windows with no scheduled sleep also acquire, confirming at successively
@@ -164,6 +169,7 @@ const (
 func (p *poller) acquire() (time.Duration, bool, error) {
 	initialPolls, minSpacing := time.Duration(p.params.InitialPolls), p.params.MinSpacing
 	spacing := maxWindow / initialPolls
+	p.gridOffset = -initialPolls * spacing / 2
 	misses, queryPaced := 0, 0
 	for {
 		window := initialPolls * spacing
@@ -406,6 +412,10 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
 	open := nextEdge.Add(-window / 2)
+	grid := open
+	if !acquired {
+		grid = nextEdge.Add(p.gridOffset)
+	}
 	// The first query is scheduled a lead before the open so that it
 	// completes at the open; the lead moves only this query, never the
 	// deadline or the prediction. It is clamped at zero so that an early
@@ -439,7 +449,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	// excluded: it always sleeps).
 	for cur.inPulse && cur.poll.midpoint().mono.Before(deadline) {
 		prev := cur
-		cur, err = p.readState(nextGridPoint(open, spacing, cur.start), precise)
+		cur, err = p.readState(nextGridPoint(grid, spacing, cur.start), precise)
 		if err != nil {
 			return miss, 0, err
 		}
@@ -453,7 +463,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	var stamp time.Time
 	var uncertainty, pollWidths [2]time.Duration
 	for !missed && edge.stamp.IsZero() {
-		cur, err = p.readState(nextGridPoint(open, spacing, prev.start), precise)
+		cur, err = p.readState(nextGridPoint(grid, spacing, prev.start), precise)
 		if err != nil {
 			return miss, 0, err
 		}
@@ -494,6 +504,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	p.stats.addWindow(caught, acquired, anomalous)
 	if !acquired {
 		p.nextEdge = edge.mono.Add(period)
+		p.gridOffset = cur.start.Sub(edge.mono)
 	}
 	ce := CandidateEdge{
 		Edge: Edge{
@@ -528,17 +539,17 @@ func (p *poller) anomalous(width time.Duration, acquired bool) bool {
 	return anomalous
 }
 
-// nextGridPoint is the first point of the poll grid anchored at open strictly
+// nextGridPoint is the first point of the poll grid anchored at anchor strictly
 // after t. Queries target grid points rather than an interval after the
 // previous query, so that a late or early query, or a stall, does not shift
 // the rest of the window's grid.
-func nextGridPoint(open time.Time, spacing time.Duration, t time.Time) time.Time {
-	d := t.Sub(open)
+func nextGridPoint(anchor time.Time, spacing time.Duration, t time.Time) time.Time {
+	d := t.Sub(anchor)
 	n := d / spacing
 	if d%spacing < 0 {
 		n--
 	}
-	return open.Add(spacing * (n + 1))
+	return anchor.Add(spacing * (n + 1))
 }
 
 func (p *poller) readState(sched time.Time, precise bool) (reading, error) {
