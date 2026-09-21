@@ -19,8 +19,9 @@ import (
 // Read it only after Poll has returned.
 type acquireCapture struct {
 	slog.Handler
-	window  time.Duration
-	windows []time.Duration
+	window   time.Duration
+	windows  []time.Duration
+	spacings []time.Duration
 }
 
 var truncatesSubMillisecondSleeps = sleepDuration(time.Microsecond) == 0
@@ -31,12 +32,14 @@ func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
 	if r.Message != "serial PPS acquired" && r.Message != "serial PPS poll window" {
 		return nil
 	}
-	var window time.Duration
+	var window, spacing time.Duration
 	var tracking bool
 	r.Attrs(func(a slog.Attr) bool {
 		switch a.Key {
 		case "window":
 			window, _ = a.Value.Any().(time.Duration)
+		case "spacing":
+			spacing, _ = a.Value.Any().(time.Duration)
 		case "tracking":
 			tracking = a.Value.Bool()
 		}
@@ -46,6 +49,7 @@ func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
 		h.window = window
 	} else if !tracking {
 		h.windows = append(h.windows, window)
+		h.spacings = append(h.spacings, spacing)
 	}
 	return nil
 }
@@ -1164,8 +1168,8 @@ func TestPollAcquisitionMiss(t *testing.T) {
 	}
 }
 
-// TestPollAcquisitionSweep keeps searching without a pulse and shifts the
-// grid only by the full-period sweep's phase step on each completed miss.
+// TestPollAcquisitionSweep keeps searching without a pulse, tries the fine
+// sweep only once, and retains the coarse phase step on completed misses.
 func TestPollAcquisitionSweep(t *testing.T) {
 	for _, n := range []int{64, 1024} {
 		t.Run(strconv.Itoa(n), func(t *testing.T) {
@@ -1188,9 +1192,16 @@ func TestPollAcquisitionSweep(t *testing.T) {
 					t.Fatalf("swept %d windows, want 12", len(capture.windows))
 				}
 				spacing := period / time.Duration(n)
-				for _, window := range capture.windows {
-					if want := spacing * time.Duration(n); window != want {
+				for i, window := range capture.windows {
+					want, wantSpacing := spacing*time.Duration(n), spacing
+					if i == 1 {
+						want, wantSpacing = period, period/startupPolls
+					}
+					if window != want {
 						t.Errorf("sweep window = %v, want %v", window, want)
+					}
+					if capture.spacings[i] != wantSpacing {
+						t.Errorf("sweep %d spacing = %v, want %v", i, capture.spacings[i], wantSpacing)
 					}
 				}
 				step := period + spacing*618/1000
@@ -1198,6 +1209,170 @@ func TestPollAcquisitionSweep(t *testing.T) {
 					t.Errorf("sweep prediction = %v, want %v including phase shifts", p.nextEdge, want)
 				}
 			})
+		})
+	}
+}
+
+// TestPollStartupFineSweep checks discovery of a 1 ms pulse and both pacing
+// paths back to normal-sized refinement, followed by a usable tracking catch.
+func TestPollStartupFineSweep(t *testing.T) {
+	const spacing = period / startupPolls
+	const refined = initialPolls * (spacing / 8)
+	const held = initialPolls * spacing
+	for _, tc := range []struct {
+		name    string
+		callDur time.Duration
+		windows []time.Duration
+		extent  time.Duration
+	}{
+		{"spacing floor", 20 * time.Microsecond, []time.Duration{period, period, refined}, initialPolls * minSpacing},
+		{"USB confirmation", 130 * time.Microsecond, []time.Duration{period, period, refined, refined}, refined},
+		{"query-paced discovery", 600 * time.Microsecond, []time.Duration{period, period, held, held}, held},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
+				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: time.Millisecond, callDur: tc.callDur}
+				capture := &acquireCapture{Handler: slog.DiscardHandler}
+				ctx, cancel := context.WithTimeout(context.Background(), 8*period)
+				defer cancel()
+				candidates := make(chan CandidateEdge, 16)
+				p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: candidates,
+					params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+					widths: median.New[time.Duration](widthHistory)}
+				if err := p.init(); err != nil {
+					t.Fatal(err)
+				}
+				extent, acquired, err := p.acquire()
+				if !acquired || err != nil {
+					t.Fatalf("acquisition = %v, %v, want success", acquired, err)
+				}
+				if !reflect.DeepEqual(capture.windows, tc.windows) {
+					t.Errorf("acquisition windows = %v, want %v", capture.windows, tc.windows)
+				}
+				if extent != tc.extent {
+					t.Errorf("handoff extent = %v, want %v", extent, tc.extent)
+				}
+				if len(capture.spacings) < 2 || capture.spacings[1] != spacing {
+					t.Fatalf("acquisition spacings = %v, want a fine second sweep", capture.spacings)
+				}
+				for len(candidates) > 0 {
+					if ce := <-candidates; ce.Reject != RejectAcquiring {
+						t.Errorf("acquisition reject = %q, want acquiring", ce.Reject)
+					}
+				}
+				if o, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
+					t.Fatalf("first tracking window = %v, %v, want a catch", o, err)
+				}
+				if ce := <-candidates; ce.Reject != "" {
+					t.Errorf("first tracking reject = %q, want usable", ce.Reject)
+				}
+			})
+		})
+	}
+}
+
+// TestPollStartupFineSweepOnce checks that neither a refinement failure nor
+// tracking loss can enable a fine sweep after the first coarse outcome.
+func TestPollStartupFineSweepOnce(t *testing.T) {
+	for _, width := range []time.Duration{time.Millisecond, 100 * time.Millisecond} {
+		for _, fail := range []bool{false, true} {
+			t.Run(width.String()+"/fail="+strconv.FormatBool(fail), func(t *testing.T) {
+				runBubble(t, func(t *testing.T) {
+					f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: width, callDur: 130 * time.Microsecond}
+					if fail {
+						f.offFrom, f.offTo = 2, 100
+					}
+					capture := &acquireCapture{Handler: slog.DiscardHandler}
+					ctx, cancel := context.WithTimeout(context.Background(), 20*period)
+					defer cancel()
+					p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: make(chan CandidateEdge, 16),
+						params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+						widths: median.New[time.Duration](widthHistory)}
+					if err := p.init(); err != nil {
+						t.Fatal(err)
+					}
+					extent, acquired, err := p.acquire()
+					if acquired == fail || err != nil {
+						t.Fatalf("acquisition = %v, %v, want success %v", acquired, err, !fail)
+					}
+					f.width = 0
+					if acquired {
+						if err := p.track(extent); err != nil {
+							t.Fatal(err)
+						}
+					}
+					capture.windows, capture.spacings = nil, nil
+					if _, acquired, err := p.acquire(); acquired || err != context.DeadlineExceeded {
+						t.Fatalf("reacquisition = %v, %v, want continued coarse sweeping", acquired, err)
+					}
+					if len(capture.spacings) < 3 {
+						t.Fatalf("only %d reacquisition sweeps", len(capture.spacings))
+					}
+					for i, spacing := range capture.spacings {
+						if spacing != period/initialPolls || capture.windows[i] != period {
+							t.Errorf("reacquisition window %d = %v at %v spacing, want coarse", i, capture.windows[i], spacing)
+						}
+					}
+				})
+			})
+		}
+	}
+}
+
+// TestPollStartupPhases checks prompt usable samples across a full period of
+// start phases, and coarse discovery when a narrow pulse starts later.
+func TestPollStartupPhases(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		width  time.Duration
+		offTo  int
+		phases int
+	}{
+		{"narrow", time.Millisecond, 0, 37},
+		{"wide", 100 * time.Millisecond, 0, 37},
+		{"delayed", time.Millisecond, 4, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k := range tc.phases {
+				t.Run(strconv.Itoa(k), func(t *testing.T) {
+					runBubble(t, func(t *testing.T) {
+						start := time.Now()
+						f := &fakePulse{epoch: start.Add(time.Duration(k)*period/time.Duration(tc.phases) + 350*time.Microsecond),
+							width: tc.width, callDur: 130 * time.Microsecond, offTo: tc.offTo}
+						capture := &acquireCapture{Handler: slog.DiscardHandler}
+						limit := 6 * period
+						if tc.offTo > 0 {
+							limit = 40 * period
+						}
+						ctx, cancel := context.WithTimeout(context.Background(), limit)
+						defer cancel()
+						candidates := make(chan CandidateEdge)
+						errCh := make(chan error, 1)
+						go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{Wait: f.wait}, candidates, nil) }()
+						for {
+							select {
+							case ce := <-candidates:
+								if ce.Reject != "" {
+									continue
+								}
+								cancel()
+							case err := <-errCh:
+								if err != context.Canceled {
+									t.Fatalf("Poll ended with %v before a usable sample", err)
+								}
+								for i, window := range capture.windows {
+									if window == period && capture.spacings[i] == period/startupPolls {
+										if i != 1 || tc.width == 100*time.Millisecond {
+											t.Errorf("unexpected fine sweep at window %d", i)
+										}
+									}
+								}
+								return
+							}
+						}
+					})
+				})
+			}
 		})
 	}
 }

@@ -20,9 +20,10 @@ type PulseReader interface {
 // suits serial modem-status queries, which take from tens of microseconds to
 // milliseconds, and sleeps on the runtime's timers.
 type PollParams struct {
-	// InitialPolls is the number of polls across the cold-start window. It
-	// determines the initial acquisition spacing, and with it the narrowest
-	// pulse acquired promptly. Zero means 64.
+	// InitialPolls is the number of polls across a coarse acquisition sweep
+	// and the number of spacings in each refinement window. A missed initial
+	// sweep gets one finer startup sweep before coarse sweeps resume.
+	// Zero means 64.
 	InitialPolls int
 	// MinSpacing bounds the CPU spent when the query is very fast: it is the
 	// sleep between queries where the platform can sleep that briefly, and
@@ -71,6 +72,7 @@ type poller struct {
 	lead       time.Duration
 	slept      bool
 	stateReads int
+	startup    bool
 }
 
 // Poll adaptively polls for the pulse read by r and sends a candidate for
@@ -138,6 +140,7 @@ const (
 // queries.
 const (
 	initialPolls = 64
+	startupPolls = 2048
 	minSpacing   = 50 * time.Microsecond
 )
 
@@ -155,6 +158,9 @@ const (
 // and sets the next window to initialPolls times that spacing. Each refinement
 // retains the catching query's start as a grid point one period later,
 // independently of the midpoint edge estimate.
+// Only a miss in the first sweep of the poller run gets one full-period
+// fine sweep. Its catches return to normal-sized refinement windows before
+// query-paced confirmation; misses return to ordinary coarse sweeps.
 //
 // Reaching minSpacing acquires immediately. A query-paced catch holds the
 // spacing and window for confirmation: a second acquires without reducing
@@ -167,14 +173,24 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 	spacing := maxWindow / initialPolls
 	p.gridOffset = -initialPolls * spacing / 2
 	confirming := false
+	fine := false
 	for {
 		window := initialPolls * spacing
+		if fine {
+			window = maxWindow
+		}
+		startup := p.startup
+		p.startup = false
 		o, _, err := p.pollWindow(window, spacing, false)
 		if err != nil {
 			return 0, false, err
 		}
 		if o == miss {
-			if spacing != maxWindow/initialPolls {
+			if fine {
+				fine = false
+				spacing = maxWindow / initialPolls
+				p.gridOffset = -initialPolls * spacing / 2
+			} else if spacing != maxWindow/initialPolls {
 				p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window)
 				return 0, false, nil
 			}
@@ -182,7 +198,21 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 			// A full-period sweep must change phase after a miss, or its grid
 			// could straddle a pulse narrower than the spacing indefinitely.
 			p.nextEdge = p.nextEdge.Add(spacing * 618 / 1000)
+			if startup {
+				fine = true
+				spacing = min(spacing, max(maxWindow/startupPolls, minSpacing))
+				p.gridOffset = -maxWindow / 2
+				p.lg.Debug("serial PPS startup fine sweep", "spacing", spacing)
+			}
 			continue
+		}
+		if fine {
+			fine = false
+			// Confirmation must hold a refinement window, not repeat the
+			// full-period fine sweep or hand that extent to tracking.
+			if !p.slept && spacing != minSpacing {
+				continue
+			}
 		}
 		if spacing == minSpacing || !p.slept && confirming {
 			break
@@ -375,6 +405,7 @@ func (p *poller) init() error {
 	p.stats.addPoll(first.poll, nil)
 	p.lead = max(0, first.poll.duration())
 	p.nextEdge = first.poll.midpoint().mono.Add(maxWindow / 2)
+	p.startup = true
 	return nil
 }
 

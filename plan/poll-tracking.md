@@ -20,6 +20,13 @@ tracking catches. The consumer accepts every catch without a rejection
 reason, regardless of uncertainty. Rejection has no effect on tracking
 or acquisition.
 
+Startup discovery gets one full-period sweep at 2048 nominal points if
+the initial coarse sweep misses. This opportunity is consumed for the
+poller run; refinement retains its normal 64-spacing windows. The
+[controlled 1 ms USB comparison](#one-shot-startup-sweep-validation)
+reduced median first-usable receipt from 13.668 s to 4.357 s, while all
+five 100 ms controls skipped the fine sweep.
+
 "Revisions made" records completed changes. "Current algorithm" describes
 the implementation. "Remaining fixes and validation" records unfinished
 work; "Possible follow-up work" records optional algorithm investigations.
@@ -308,6 +315,34 @@ and exit rules, not measured before/after differences: the
 [hardware validation](#acquisition-refinement-validation) used only the new
 algorithm and the receivers' existing settings.
 
+### One fine sweep after the initial coarse miss
+
+The first coarse sweep of a poller run gets one opportunity to accelerate
+narrow-pulse discovery. If it catches, acquisition proceeds normally. If
+it misses, the next window is one full-period fine sweep with 2048 nominal
+points, about 488 us apart. This is a one-off startup CPU cost intended to
+find an already-present 1 ms pulse quickly. Actual sampling still depends
+on query duration and wakeup timing.
+
+The opportunity is consumed by the initial coarse sweep's outcome. A fine
+sweep miss returns to the ordinary coarse sweeps and their phase shifts.
+Every full-period miss advances the phase by 0.618 of the coarse spacing,
+including the fine-sweep miss.
+Refinement failures and later tracking loss never enable another fine
+sweep. A receiver that starts pulsing later follows ordinary coarse
+discovery. A normal 100 ms pulse should be found by the initial coarse
+sweep without the extra work.
+
+A fine-sweep catch preserves the catching query's phase and enters normal
+refinement using the fine spacing. The 2048 count applies only to the
+discovery sweep; refinement windows still use `InitialPolls`, normally 64.
+A sleep-paced catch divides spacing by eight as usual. A query-paced
+fine-sweep catch first moves to the normal 64-spacing window without
+reducing spacing; query-paced confirmation begins in that narrowed window
+and holds its extent. It never repeats the full-period fine sweep for
+confirmation. The fine spacing respects `MinSpacing` and is never coarser
+than the configured initial spacing.
+
 ### Poller owns candidate rejection
 
 `CandidateEdge.Reject` replaces the anomaly flag with a rejection reason:
@@ -469,10 +504,16 @@ it cannot.
 
 ### Acquisition
 
-Start with a full-period sweep at `period/64` spacing. The window is 64
-spacings. Every catch adopts the caught midpoint as the prediction and
+Start with a full-period sweep at `period/64` spacing. Only if this first
+sweep of the poller run misses, follow it with one full-period sweep at
+`period/2048` spacing, bounded by `MinSpacing` and the initial spacing.
+A fine-sweep miss returns to ordinary coarse sweeping permanently.
+Every catch adopts the caught midpoint as the prediction and
 preserves the catching query's start as the next grid's phase. Every catch
 is rejected for timing as `acquiring` and advances acquisition normally.
+After a fine-sweep catch, refinement uses 64 spacings again. A query-paced
+fine-sweep catch moves to that narrowed window before starting ordinary
+fixed-extent confirmation.
 
 An ordinary sleep-paced catch divides the spacing by eight, floored at
 `MinSpacing`, and sets the next extent to 64 times that spacing. Reaching
@@ -487,7 +528,7 @@ that reduction also exits immediately if it reaches `MinSpacing`. Neither
 the first query-paced catch nor its successful confirmation reduces the
 window.
 
-A miss in the full-period sweep shifts the phase by 0.618 of a spacing
+A miss in a full-period sweep shifts the phase by 0.618 of the coarse spacing
 and continues sweeping. Any miss after the window has narrowed, including
 a confirmation miss, restarts the full-period sweep immediately, without
 an extra phase shift. Acquisition has no consecutive-miss counter. An
@@ -499,6 +540,8 @@ None encodes a hardware timing.
 
 | Constant | Role | Current value |
 |---|---|---|
+| `InitialPolls` | coarse sweep polls and refinement window spacings | 64 by default |
+| `startupPolls` | nominal points in the one-shot startup fine sweep | 2048 |
 | `MinSpacing` | sleep between queries where the platform can | 50 us, as today |
 | `K` | brackets at which shrinking stops | 8 |
 | shrink | fraction of the extent kept per catch | 31/32 |
@@ -566,16 +609,13 @@ improvement.
 The candidate rejection policy is complete, as recorded under
 [Revisions made](#poller-owns-candidate-rejection).
 
-### Improve first-catch latency for narrow pulses
+### Validate narrow-pulse startup
 
-The initial full-period sweep still uses 64 spacings by default and shifts
-its phase by 0.618 of a spacing after each miss. Faster refinement begins
-only after the first catch; reducing the discovery time for narrow pulses
-remains separate work. Measure it by time to the first usable sample
-across start phases, reads and process CPU, with and without a pulse.
-
-Controlled narrow pulses, no-pulse CPU and acquisition under induced load
-also remain to be measured on hardware.
+The controlled 1 ms USB comparison and 100 ms controls are complete; see
+[One-shot startup sweep validation](#one-shot-startup-sweep-validation).
+No-pulse CPU and acquisition under induced load remain to be measured on
+hardware. Unit tests cover no pulse, delayed pulse startup, refinement
+failure and later reacquisition, including query-paced fine sweeps.
 
 ### Evaluate the estimator
 
@@ -945,13 +985,24 @@ show; the bracket widths alone do not.
 
 ### Unit tests
 
-The full `make test` suite passed after the candidate rejection revision.
+The full `make test` suite passed after the one-shot startup sweep revision.
 The synthetic three-stall scenario accepts no sample whose reported
 uncertainty interval excludes the true edge and has two tracking misses
 and a longest forwarding gap of three seconds, with no reacquisition.
 
 The relevant coverage includes:
 
+- One fine sweep after the initial coarse miss, then continued coarse
+  sweeping without a pulse, with 64 and 1024 initial polls. A coarse catch
+  consumes the opportunity too; neither refinement failure nor tracking
+  loss can enable another fine sweep.
+- Fine-sweep catches followed by the spacing-floor or query-paced exits,
+  including query-paced discovery moving to a normal-sized window before
+  confirmation. Every acquisition candidate remains rejected through
+  handoff, followed by a usable tracking catch.
+- First usable samples within six seconds across 37 simulated start
+  phases of a 1 ms pulse with 130 us queries, 37 phases of a 100 ms pulse
+  without a fine sweep, and coarse discovery of a delayed narrow pulse.
 - `track` via the simulated `attempt`: catches never increase extent,
   shrink stops at `K` brackets, a miss grows by a quarter below 50 reads
   or below `50 * MinSpacing`, and holds when both thresholds are reached.
@@ -980,6 +1031,52 @@ The relevant coverage includes:
   for the simulator's `wrong` count.
 - A single startup warning with counts by rejection reason, cancelled by
   the first usable candidate even without a matching receiver message.
+
+### One-shot startup sweep validation
+
+On September 21, compared `e4999bc5` with the one-shot 2048-point startup
+sweep on abondance's SinoGNSS K901 through FT232R BG03SFLC, `/dev/ttyHUB1`
+(`/dev/ttyUSB0`), PPS on CTS. The receiver's pulse was temporarily changed
+from 100 ms to 1 ms. Twenty fresh starts per binary alternated in order,
+with varied pauses between starts, no prewarm and no induced load. Both
+binaries were built locally and copied to an isolated temporary directory
+on the Linux host. Start phases varied rather than being matched between
+individual runs.
+
+Each run stopped after its third usable serial-tool candidate. Usable means
+an absent or empty `reject`, so all acquisition catches were excluded.
+Times below measure receipt from process launch, not the acquisition log.
+
+| Measurement | Before | One-shot fine sweep |
+|---|---|---|
+| First catch, min / median / max (s) | 0.088 / 10.668 / 17.875 | 1.071 / 1.357 / 2.009 |
+| First usable, min / median / max (s) | 3.087 / 13.668 / 20.874 | 4.070 / 4.357 / 5.009 |
+| Acquisition reads, min / median / max | 79 / 765 / 1238 | 198 / 787.5 / 2124 |
+| Process CPU, median (s) | 0.290 | 0.101 |
+
+CPU is child-process user plus system time, measured with `getrusage`, from
+launch through the third usable candidate. These are startup-run costs,
+not steady-state CPU or the isolated cost of the fine sweep.
+
+All twenty updated runs missed the initial coarse sweep and caught in the
+single fine sweep. Every fine catch reduced spacing from 488.281 us to
+61.035 us, giving a 3.90624 ms refinement window. Two query-paced catches
+confirmed acquisition, and the following tracking catch was usable: three
+pulse periods after discovery. The baseline handed tracking 3.2 ms. One
+baseline start caught in its initial coarse sweep; the others needed more
+coarse sweeps. Neither batch had a refinement restart or tracking miss,
+and every run exited successfully.
+
+The 100 ms pulse was then restored and verified by inverted-edge polling.
+Five further updated starts all caught in the initial coarse sweep and
+never ran a fine sweep. First usable receipt was 3.250 / 3.445 / 3.655 s
+(min / median / max), with no misses or restarts. The independent GPS0
+reference remained selected at all 90 before/after checks across the 45
+starts. These tests did not feed chrony, and the test port was released.
+
+The full local `make test` suite, local and Linux builds, and the polling
+package's cross-built test binary run on Linux all passed. Longer tracking,
+no-pulse CPU and induced-load measurements remain separate validation.
 
 ### Acquisition refinement validation
 
