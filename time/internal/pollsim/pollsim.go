@@ -49,7 +49,7 @@ type Stats struct {
 	Lost         int
 	TrackMisses  int
 	Queries      int
-	CPU          float64 // fraction of a core: query and clock-read running time, excluding stalls
+	Blocked      float64 // fraction of the run not spent in a query or clock read: asleep in the timer, or stalled
 }
 
 // String formats the statistics as TOML key/value lines.
@@ -57,10 +57,10 @@ func (s Stats) String() string {
 	return fmt.Sprintf("duration = %g\npulses = %d\nedges = %d\nforwarded = %d\nanomalous = %d\ncoarse = %d\n"+
 		"missed = %d\nwrong = %d\nerrMedian = %.6f\nerrP90 = %.6f\nerrMax = %.6f\n"+
 		"longestGap = %.3f\ngapsOver4s = %d\nacquisitions = %d\nlost = %d\ntrackMisses = %d\n"+
-		"queries = %d\nqueriesPerSecond = %.1f\ncpu = %.4f\n",
+		"queries = %d\nqueriesPerSecond = %.1f\nblocked = %.4f\n",
 		s.Duration, s.Pulses, s.Edges, s.Forwarded, s.Anomalous, s.Coarse, s.Missed, s.Wrong,
 		s.ErrMedian, s.ErrP90, s.ErrMax, s.LongestGap, s.GapsOver4s, s.Acquisitions, s.Lost,
-		s.TrackMisses, s.Queries, float64(s.Queries)/s.Duration, s.CPU)
+		s.TrackMisses, s.Queries, float64(s.Queries)/s.Duration, s.Blocked)
 }
 
 // EdgeRecord is one candidate as the consumer saw it, with its error against
@@ -428,7 +428,7 @@ func (c *consumer) stats() Stats {
 	st := Stats{Duration: s.cfg.Sim.Duration, Edges: c.edges, Forwarded: c.forwarded, Anomalous: c.anomalous,
 		Coarse: c.coarse, Wrong: c.wrong, LongestGap: c.longestGap.Seconds(), GapsOver4s: c.gapsOver4s,
 		Acquisitions: s.acquired, Lost: s.lost, TrackMisses: s.misses,
-		Queries: s.queries, CPU: float64(s.work) / float64(s.end)}
+		Queries: s.queries, Blocked: 1 - float64(s.work)/float64(s.end)}
 	for n := time.Duration(0); n*period < s.end; n++ {
 		if !s.present(n) {
 			continue
