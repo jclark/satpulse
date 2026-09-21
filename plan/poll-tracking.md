@@ -59,7 +59,8 @@ The budget limits permission to grow rather than imposing a hard read
 limit. Skipped waits, an extent inherited from acquisition, a change in
 query pace, or one expansion can produce more than 50 reads. Growth by
 1.25 reduces the overshoot compared with doubling. Linux
-fractional-millisecond sleeping was measured separately and rejected.
+fractional-millisecond sleeping is now done in acquisition only; see
+"Acquisition sleeps to its deadline".
 
 ### Prediction correction requires a sufficiently narrow interval
 
@@ -181,6 +182,36 @@ overshoots several times the typical 1.05 ms, with the extent settling
 near 1.4 ms instead of 2.6 ms, a median of 5 reads per catch instead of
 3, and CPU of 0.205% of one core against 0.218%.
 
+### Acquisition sleeps to its deadline
+
+Scheduling each query at a grid point assumes the wait reaches it. On
+Linux it does not: `sleepDuration` truncates to whole milliseconds, so a
+15.625 ms wait sleeps 15 and the query starts 0.625 ms short of the point
+it aimed at. That point is still ahead, so the loop targets it again, and
+every wait to it is now sub-millisecond, which on Linux is no wait at
+all. The loop reads back to back until it crosses the point, spending the
+truncation remainder on polling instead of sleeping through it. Measured
+by polling a pin nothing drives on the Linux host's native UART, so that
+acquisition runs indefinitely: a one-second window took 67 state reads
+before grid scheduling and 4192 to 5452 after, and the process went from
+2.53% of one core to 4.79%.
+
+Acquisition now waits precisely. The runtime timer takes the whole
+milliseconds, so the wait stays cancellable, and `clock_nanosleep`
+against an absolute `CLOCK_MONOTONIC` deadline takes the remainder,
+retried when the runtime's preemption signal interrupts it. `Poll` also
+narrows its thread's timer slack, 50 us by default, which the kernel
+would otherwise add to every sleep it makes; that is three quarters of
+the improvement, taking a window open from 62 us after its deadline to
+19 us. A wait too short for the runtime timer is still not slept, so
+acquisition's sub-millisecond spacings, its query-paced confirmation and
+tracking's cadence are all unchanged. The same no-pulse window is back to
+65 state reads and 2.75% of one core.
+
+Tracking keeps the truncated wait. Its spacing never sleeps, so only its
+window open would change, and opening early is the only thing covering
+the extent before the prediction; see "Review coverage and pacing".
+
 ## Current algorithm
 
 ### Objective
@@ -220,14 +251,20 @@ than the coarse monotonic reading.
 
 ### Polling cadence
 
-Unchanged. Each query is scheduled at the previous query's start plus
-`MinSpacing`. The wait sleeps where the platform can and returns at once
-where it cannot: on Linux, sub-millisecond waits are truncated to zero,
-because the runtime would otherwise round them up to a millisecond. The
-loop is therefore timer-paced on hosts that can sleep briefly and
-query-paced elsewhere, including on macOS with a USB serial adapter whose
-query already exceeds `MinSpacing`. There is no spinning. `MinSpacing` is
-a CPU saving where it can be honoured and nothing where it cannot.
+Each query is scheduled at the first point after the previous query's
+start of a grid anchored at the window open, spaced by `MinSpacing` in
+tracking and by the current acquisition spacing in acquisition, so one
+query's timing error does not shift the rest of the window. The wait
+sleeps where the platform can and returns at once where it cannot: on
+Linux, sub-millisecond waits are truncated to zero, because the runtime
+would otherwise round them up to a millisecond. Acquisition, whose
+spacings are longer, also sleeps out the remainder the runtime timer
+truncates, so that it arrives at a grid point instead of polling its way
+to it. The loop is therefore timer-paced on hosts that can sleep briefly
+and query-paced elsewhere, including on macOS with a USB serial adapter
+whose query already exceeds `MinSpacing`. There is no spinning.
+`MinSpacing` is a CPU saving where it can be honoured and nothing where
+it cannot.
 
 ### One attempt, once per period
 
@@ -467,45 +504,25 @@ changing what interval is reported.
   a pacing parameter, so coupling it to coverage needs justification.
   The same question applies to GPIO (#460), where scheduler jitter can
   span many query durations.
-- **Sleeping the truncated remainder on Linux: measured and rejected.**
-  `sleepDuration` truncates every wait to whole milliseconds, so a window
-  opens, and after the grid change each acquisition query starts, up to
-  1 ms early, with state reads polling the remainder away. A prototype
-  finished each wait the runtime timer could not with
-  `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)`, retried on the
-  interruption the preemption signal causes, and narrowed the polling
-  thread's timer slack with `PR_SET_TIMERSLACK`; waits below a millisecond
-  still did not sleep, so tracking cadence and acquisition's query-paced
-  confirmation were untouched. It worked: on the Linux host's native UART
-  a window opened 19 us after its deadline instead of up to 812 us before
-  it, and tracking reads per window fell from 110-145 to 10-15, no longer
-  independent of the extent.
-
-  It is not worth its cost. Across two 300 s pairs the process used 1.155%
-  and 1.162% of a core before, against 1.088% and 1.046% after. On the
-  same port the wait method, which never polls, used 1.03% and 1.20%, so
-  polling accounts for about a tenth of the process total and the saving
-  is around 0.05% of a core, below that method's own run-to-run spread.
-  The rest is the 9600 bps data stream and the runtime's monitor thread,
-  which sleeps 20 us between passes while any thread sits in a syscall. A
-  slower reader does not change the arithmetic: the waste is the
-  truncation remainder, which an expensive query spends in fewer, longer,
-  mostly blocked reads, and the recorded USB runs use half the UART's CPU.
-
-  Accurate sleeping also cost accuracy at `pollPreWarm = 0`. Tracking
-  error's standard deviation rose from 1.51 us to 3.58 us and its largest
-  magnitude from 7.6 us to 20.4 us, with two misses against none in 285 s.
-  The extent shrinks to about ten reads, so the edge is often caught by
-  the first read after the sleep, whose p90 duration rose from 4.5 us to
-  20.7 us while warm reads stayed at 3.7 us. Whether prewarm recovers that
-  is untested. Reopen this only for a reader whose queries are expensive
-  enough for the remainder to matter, and settle minimum coverage first.
+- **Tracking's window open on Linux.** Tracking keeps the truncated wait,
+  so its window opens up to a millisecond early and polls from there. That
+  polling is nearly free, about 100 reads per second at 4.7 us on the
+  native UART, but it is also the only thing covering the extent before
+  the prediction. Opening at the deadline instead, measured at
+  `pollPreWarm = 0`, raised tracking error's standard deviation from
+  1.51 us to 3.58 us and its largest magnitude from 7.6 us to 20.4 us,
+  with two misses in 285 s against none. The extent shrinks to about ten
+  reads, so the edge is then often caught by the first read after the
+  sleep, whose p90 duration rose from 4.5 us to 20.7 us while warm reads
+  stayed at 3.7 us. Whether prewarm recovers that is untested. macOS
+  sleeps exactly and has no such margin, so this is the minimum coverage
+  question above rather than a Linux one; settle that first.
 - **Inter-query spacing on Linux.** Enforcing sub-millisecond spacing
   changes measurement resolution and makes the loop timer-paced: honouring
   the 50 us `MinSpacing` would replace the UART's 4.5 us bracket with one
-  of about 60 us. The rejected prototype above left it alone, because
-  sleeping only what the platform can sleep at all leaves a 50 us wait
-  unslept; any future change to the shared wait must keep that property.
+  of about 60 us. Acquisition's precise wait leaves it alone, because a
+  wait too short for the runtime timer is not slept whether or not it is
+  precise; any future change to the shared wait must keep that property.
 
 ## Background and design rationale
 
