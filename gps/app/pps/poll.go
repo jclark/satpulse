@@ -415,6 +415,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	prev := cur
 	missed := cur.inPulse
 	var edge clockReading
+	var stamp time.Time
 	var uncertainty, pollWidths [2]time.Duration
 	for !missed && edge.stamp.IsZero() {
 		cur, err = p.readState(prev.start.Add(spacing))
@@ -430,6 +431,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 			uncertainty = [2]time.Duration{edge.elapsedSince(prev.poll.start), cur.poll.end.elapsedSince(edge)}
 			p.lastWidth = uncertainty[0] + uncertainty[1]
 			pollWidths = [2]time.Duration{prev.poll.duration(), cur.poll.duration()}
+			stamp = reconciledStamp(prev.poll, cur.poll)
 		}
 		prev = cur
 	}
@@ -455,7 +457,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	}
 	ce := CandidateEdge{
 		Edge: Edge{
-			Timestamp: edge.stamp,
+			Timestamp: stamp,
 			TRead:     cur.poll.end.mono,
 		},
 		Uncertainty: uncertainty,
@@ -556,6 +558,19 @@ func classify(prev, cur reading, deadline time.Time) (clockReading, bool) {
 		return prev.poll.midpoint().midpoint(cur.poll.midpoint()), false
 	}
 	return clockReading{}, !cur.poll.midpoint().mono.Before(deadline)
+}
+
+// reconciledStamp interpolates the edge's wall-clock time from the four clock
+// samples bracketing it. It repeats the interpolation classify performs, but
+// over wall readings reconciled against the monotonic ones. The edge's wall
+// time is otherwise anchored on the single sample the interpolation starts
+// from, so a delay between that sample's two clock reads slides the reported
+// timestamp off the edge while leaving its uncertainty the usual width.
+func reconciledStamp(prev, cur poll) time.Time {
+	w := ReconcileTimes(
+		[]time.Time{prev.start.stamp, prev.end.stamp, cur.start.stamp, cur.end.stamp},
+		[]time.Time{prev.start.mono, prev.end.mono, cur.start.mono, cur.end.mono})
+	return midpoint(midpoint(w[0], w[1]), midpoint(w[2], w[3]))
 }
 
 func (p poll) midpoint() clockReading {
