@@ -174,7 +174,7 @@ func TestOverlappingStalls(t *testing.T) {
 				t.Errorf("work = %v, want 1 ms: stalls do not consume CPU", s.work)
 			}
 			s = newSim(cfg)
-			if _, err := s.wait(context.Background(), simBase.Add(time.Millisecond)); err != nil {
+			if _, err := s.wait(context.Background(), simBase.Add(time.Millisecond), false); err != nil {
 				t.Fatal(err)
 			}
 			if s.now != tc.end || s.work != 0 {

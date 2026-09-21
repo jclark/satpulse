@@ -209,16 +209,22 @@ func (s *sim) time() time.Time {
 	return simBase.Add(s.now)
 }
 
-// wait is the loop's timer. A sleep truncated to nothing returns at once,
-// like the runtime on Linux; one that happens overshoots, and a stall in
-// progress at the wakeup delays it further.
-func (s *sim) wait(ctx context.Context, t time.Time) (bool, error) {
+// wait is the loop's timer. A sleep shorter than Resolution cannot be made
+// and returns at once, like the runtime on Linux below a millisecond; a
+// longer one is truncated to a multiple of Resolution unless it is precise,
+// in which case the loop sleeps the remainder itself. A sleep that happens
+// overshoots, and a stall in progress at the wakeup delays it further.
+func (s *sim) wait(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	if s.now >= s.end {
 		return false, errDone
 	}
 	d := t.Sub(simBase) - s.now
 	if res := ptime.Seconds(s.cfg.Host.Timer.Resolution); res > 0 {
-		d = d.Truncate(res)
+		if d < res {
+			d = 0
+		} else if !precise {
+			d = d.Truncate(res)
+		}
 	}
 	if d <= 0 {
 		return false, nil

@@ -81,8 +81,11 @@ type fakePulse struct {
 	calls          atomic.Int64
 }
 
-func (f *fakePulse) wait(ctx context.Context, t time.Time) (bool, error) {
-	slept, err := waitUntil(ctx, t)
+// wait models waitUntil on the bubble's clock. waitUntil itself must not run
+// in a bubble: a precise wait finishes in a real clock_nanosleep, which the
+// fake clock cannot fake.
+func (f *fakePulse) wait(ctx context.Context, t time.Time, precise bool) (bool, error) {
+	slept, err := bubbleWait(ctx, t, precise)
 	f.idle = f.idle || slept
 	if slept && f.wakeJitter > 0 {
 		if f.seq++; f.seq%2 == 0 {
@@ -92,6 +95,32 @@ func (f *fakePulse) wait(ctx context.Context, t time.Time) (bool, error) {
 		}
 	}
 	return slept, err
+}
+
+// bubbleWait applies waitUntil's rule to the bubble's clock: a wait too short
+// for the platform's timer returns at once, a precise one ends at the
+// deadline, and any other ends where the timer's resolution leaves it.
+func bubbleWait(ctx context.Context, t time.Time, precise bool) (bool, error) {
+	d := sleepDuration(time.Until(t))
+	if d <= 0 {
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		default:
+			return false, nil
+		}
+	}
+	if precise {
+		d = time.Until(t)
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
 }
 
 func (f *fakePulse) InPulse() (bool, error) {
@@ -137,13 +166,8 @@ func TestPoll(t *testing.T) {
 		usable              time.Duration // uncertainty limit for an edge at query resolution
 		expectTol           time.Duration // per-edge timestamp error bound
 	}{
-		// The truncated bounds start at the first pulse because the opening
-		// window wakes early of its grid point and polls back to back, so a
-		// query this slow brackets the edge within the usable limit before
-		// the spacing has halved at all.
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
-			expectFirstPulse: 2, expectLastPulse: 12, truncatedFirstPulse: 1, truncatedLastPulse: 12,
-			usable: 2 * time.Millisecond, expectTol: 3 * time.Millisecond},
+			expectFirstPulse: 2, expectLastPulse: 12, usable: 2 * time.Millisecond, expectTol: 3 * time.Millisecond},
 		{name: "fast query", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 3, expectLastPulse: 18,
 			truncatedFirstPulse: 3, truncatedLastPulse: 15, usable: 100 * time.Microsecond, expectTol: 100 * time.Microsecond},
@@ -162,7 +186,7 @@ func TestPoll(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				candidates := make(chan CandidateEdge)
 				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+				go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 				var got []CandidateEdge
 				sawCoarse := false
 				for len(got) < 3 {
@@ -675,7 +699,7 @@ func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
 			defer cancel()
 			candidates := make(chan CandidateEdge, 40)
 			p := poller{ctx: ctx, lg: testLog, r: f, ceCh: candidates,
-				params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing},
+				params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
 				widths: median.New[time.Duration](widthHistory)}
 			for range widthHistory {
 				p.widths.Add(baseline)
@@ -735,7 +759,7 @@ func TestPollShortOutageKeepsTracking(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var first CandidateEdge
 		for pulseIndex(first.Timestamp, f.epoch) <= 15 || first.Timestamp.IsZero() {
 			first = <-candidates
@@ -766,7 +790,7 @@ func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		deadline := time.After(20 * period)
 		usable := 0
 		timedOut := false
@@ -799,7 +823,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		errCh := make(chan error, 1)
 		var logs bytes.Buffer
 		lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-		go func() { errCh <- Poll(ctx, lg, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, lg, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
 			pulse = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
@@ -832,7 +856,7 @@ func TestPollOutageReacquires(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var first int
 		for first <= 15 {
 			first = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
@@ -859,7 +883,7 @@ func TestPollTrackingConverges(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		for pulseIndex(nextUsable(candidates, 2*time.Millisecond).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
@@ -887,7 +911,7 @@ func TestPollDeliveryTailCostsIsolatedMisses(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
 			last = pulseIndex(nextUsable(candidates, usableUncertainty).Timestamp, f.epoch)
@@ -1036,7 +1060,7 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{Wait: f.wait}, candidates, nil) }()
 		for capture.window == 0 {
 			<-candidates
 		}
@@ -1074,7 +1098,7 @@ func testPollNarrowPulse(t *testing.T, epochOffset time.Duration) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 3 {
 			got = append(got, nextUsable(candidates, 2*time.Millisecond))
@@ -1259,7 +1283,7 @@ func TestPollWindowUncertainty(t *testing.T) {
 						reads = reads[1:]
 						return now
 					},
-					Wait: func(context.Context, time.Time) (bool, error) { return false, nil },
+					Wait: func(context.Context, time.Time, bool) (bool, error) { return false, nil },
 				},
 			}
 			if o, _, err := p.pollWindow(time.Millisecond, minSpacing, true); err != nil || o == miss {
@@ -1332,7 +1356,7 @@ func TestPollFlagsStalledCatch(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) == 0 || pulseIndex(got[len(got)-1].Timestamp, f.epoch) < stallPulse+2 {
 			got = append(got, <-candidates)

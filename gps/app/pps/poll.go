@@ -37,7 +37,10 @@ type PollParams struct {
 	// Wait, if non-nil, replaces the runtime timer that sleeps until a
 	// scheduled poll. It reports whether it actually waited: false means
 	// the scheduled time was already past or nearer than it can sleep to.
-	Wait func(ctx context.Context, t time.Time) (bool, error)
+	// A precise wait must end at the scheduled time rather than before it,
+	// however coarse the host's timer; acquisition asks for one because it
+	// polls its way to any deadline it wakes short of.
+	Wait func(ctx context.Context, t time.Time, precise bool) (bool, error)
 	// Now, if non-nil, replaces the clock the loop reads, so that a
 	// simulation can drive it in virtual time together with Wait. The
 	// reading serves as both the measurement stamp and the pacing
@@ -88,6 +91,9 @@ type poller struct {
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	if err := tightenTimerSlack(); err != nil {
+		lg.Debug("serial PPS could not tighten timer slack", "err", err)
+	}
 	stats.begin()
 	if params.InitialPolls == 0 {
 		params.InitialPolls = initialPolls
@@ -369,7 +375,7 @@ type reading struct {
 }
 
 func (p *poller) init() error {
-	first, err := p.readState(time.Time{})
+	first, err := p.readState(time.Time{}, false)
 	if err != nil {
 		return err
 	}
@@ -388,9 +394,15 @@ const leadWeight = 8
 // progress, hunts for the next leading edge, classifies the outcome, records
 // statistics, and sends a caught candidate. It returns the outcome and, for
 // a catch, its error from the predicted edge. The wait for the window open
-// is excluded from slept. During acquisition it also advances the
-// prediction: to the caught edge for a catch, by one period otherwise.
+// is excluded from slept. Acquisition waits precisely, because its spacings
+// are long enough to sleep and a wait ending short of a grid point is spent
+// reading the rest of the way to it; tracking's spacing is too short to
+// sleep at all, so only its window open would be affected, and opening early
+// is the coverage its extent does not guarantee. During acquisition it also
+// advances the prediction: to the caught edge for a catch, by one period
+// otherwise.
 func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outcome, time.Duration, error) {
+	precise := !acquired
 	nextEdge := p.nextEdge
 	deadline := nextEdge.Add(window / 2)
 	open := nextEdge.Add(-window / 2)
@@ -402,7 +414,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	lead := p.lead
 	start := open.Add(-lead)
 	if p.params.PreWarm > 0 {
-		if _, err := p.wait(start.Add(-p.params.PreWarm)); err != nil {
+		if _, err := p.wait(start.Add(-p.params.PreWarm), precise); err != nil {
 			return miss, 0, err
 		}
 		for p.now().mono.Before(start) {
@@ -411,7 +423,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 			}
 		}
 	}
-	cur, err := p.readState(start)
+	cur, err := p.readState(start, precise)
 	if err != nil {
 		return miss, 0, err
 	}
@@ -427,7 +439,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	// excluded: it always sleeps).
 	for cur.inPulse && cur.poll.midpoint().mono.Before(deadline) {
 		prev := cur
-		cur, err = p.readState(nextGridPoint(open, spacing, cur.start))
+		cur, err = p.readState(nextGridPoint(open, spacing, cur.start), precise)
 		if err != nil {
 			return miss, 0, err
 		}
@@ -441,7 +453,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	var stamp time.Time
 	var uncertainty, pollWidths [2]time.Duration
 	for !missed && edge.stamp.IsZero() {
-		cur, err = p.readState(nextGridPoint(open, spacing, prev.start))
+		cur, err = p.readState(nextGridPoint(open, spacing, prev.start), precise)
 		if err != nil {
 			return miss, 0, err
 		}
@@ -529,8 +541,8 @@ func nextGridPoint(open time.Time, spacing time.Duration, t time.Time) time.Time
 	return open.Add(spacing * (n + 1))
 }
 
-func (p *poller) readState(sched time.Time) (reading, error) {
-	slept, err := p.wait(sched)
+func (p *poller) readState(sched time.Time, precise bool) (reading, error) {
+	slept, err := p.wait(sched, precise)
 	if err != nil {
 		return reading{}, err
 	}
@@ -552,17 +564,20 @@ func (p *poller) now() clockReading {
 	return now()
 }
 
-func (p *poller) wait(t time.Time) (bool, error) {
+func (p *poller) wait(t time.Time, precise bool) (bool, error) {
 	if p.params.Wait != nil {
-		return p.params.Wait(p.ctx, t)
+		return p.params.Wait(p.ctx, t, precise)
 	}
-	return waitUntil(p.ctx, t)
+	return waitUntil(p.ctx, t, precise)
 }
 
 // waitUntil reports whether it actually had to wait: false means the
 // scheduled time was already past, i.e. the previous state query outlasted
-// the poll spacing, or was nearer than the platform can sleep to.
-func waitUntil(ctx context.Context, t time.Time) (bool, error) {
+// the poll spacing, or was nearer than the platform can sleep to. A precise
+// wait additionally sleeps out any remainder the runtime timer truncated, so
+// that it ends at the deadline; a wait too short for the timer at all is not
+// slept either way.
+func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	d := sleepDuration(time.Until(t))
 	if d <= 0 {
 		select {
@@ -576,6 +591,9 @@ func waitUntil(ctx context.Context, t time.Time) (bool, error) {
 	defer timer.Stop()
 	select {
 	case <-timer.C:
+		if precise {
+			sleepRemainder(t)
+		}
 		return true, nil
 	case <-ctx.Done():
 		return false, ctx.Err()
