@@ -137,8 +137,13 @@ func TestPoll(t *testing.T) {
 		usable              time.Duration // uncertainty limit for an edge at query resolution
 		expectTol           time.Duration // per-edge timestamp error bound
 	}{
+		// The truncated bounds start at the first pulse because the opening
+		// window wakes early of its grid point and polls back to back, so a
+		// query this slow brackets the edge within the usable limit before
+		// the spacing has halved at all.
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
-			expectFirstPulse: 2, expectLastPulse: 12, usable: 2 * time.Millisecond, expectTol: 3 * time.Millisecond},
+			expectFirstPulse: 2, expectLastPulse: 12, truncatedFirstPulse: 1, truncatedLastPulse: 12,
+			usable: 2 * time.Millisecond, expectTol: 3 * time.Millisecond},
 		{name: "fast query", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
 			expectFirstPulse: 3, expectLastPulse: 18,
 			truncatedFirstPulse: 3, truncatedLastPulse: 15, usable: 100 * time.Microsecond, expectTol: 100 * time.Microsecond},
