@@ -427,7 +427,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	// excluded: it always sleeps).
 	for cur.inPulse && cur.poll.midpoint().mono.Before(deadline) {
 		prev := cur
-		cur, err = p.readState(cur.start.Add(spacing))
+		cur, err = p.readState(nextGridPoint(open, spacing, cur.start))
 		if err != nil {
 			return miss, 0, err
 		}
@@ -441,7 +441,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	var stamp time.Time
 	var uncertainty, pollWidths [2]time.Duration
 	for !missed && edge.stamp.IsZero() {
-		cur, err = p.readState(prev.start.Add(spacing))
+		cur, err = p.readState(nextGridPoint(open, spacing, prev.start))
 		if err != nil {
 			return miss, 0, err
 		}
@@ -514,6 +514,19 @@ func (p *poller) anomalous(width time.Duration, acquired bool) bool {
 		p.widths.Add(width)
 	}
 	return anomalous
+}
+
+// nextGridPoint is the first point of the poll grid anchored at open strictly
+// after t. Queries target grid points rather than an interval after the
+// previous query, so that a late or early query, or a stall, does not shift
+// the rest of the window's grid.
+func nextGridPoint(open time.Time, spacing time.Duration, t time.Time) time.Time {
+	d := t.Sub(open)
+	n := d / spacing
+	if d%spacing < 0 {
+		n--
+	}
+	return open.Add(spacing * (n + 1))
 }
 
 func (p *poller) readState(sched time.Time) (reading, error) {

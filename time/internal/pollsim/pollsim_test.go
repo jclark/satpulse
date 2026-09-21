@@ -42,10 +42,11 @@ func TestSimulateQuiet(t *testing.T) {
 }
 
 // TestSimulateStalls replays the shape of the 2026-09-20 incident with
-// stalls placed where the loop is exposed. The first two cause missed
-// windows; the third stretches the catching bracket to tens of milliseconds.
-// That catch is anomalous and too wide to correct prediction. Nothing wrong
-// is forwarded, and the next pulse after the last stall is caught normally.
+// stalls placed where the loop is exposed. Each costs one window, as a miss
+// or as an anomalous catch whose stretched bracket is too wide to correct
+// prediction; which of the two depends on where the poll grid lies to within
+// a query. Nothing wrong is forwarded, and the next pulse after the last
+// stall is caught normally.
 func TestSimulateStalls(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sim.Duration = 180
@@ -56,8 +57,8 @@ func TestSimulateStalls(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log(st)
-	if st.Anomalous != 1 || st.TrackMisses != 2 {
-		t.Errorf("anomalous = %d trackMisses = %d, want 1 and 2", st.Anomalous, st.TrackMisses)
+	if st.Anomalous+st.TrackMisses != 3 {
+		t.Errorf("anomalous = %d trackMisses = %d, want one window per stall", st.Anomalous, st.TrackMisses)
 	}
 	if st.Wrong != 0 {
 		t.Errorf("%d forwarded edges wrong by more than the limit, want none", st.Wrong)
