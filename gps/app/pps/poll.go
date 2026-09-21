@@ -137,10 +137,7 @@ const (
 // queries.
 const (
 	initialPolls = 64
-	// missLimit consecutive misses after acquisition's window has narrowed
-	// declare the pulse gone, and acquisition restarts from cold.
-	missLimit  = 10
-	minSpacing = 50 * time.Microsecond
+	minSpacing   = 50 * time.Microsecond
 )
 
 // outcome classifies one polling window: no valid transition seen, or a catch.
@@ -153,72 +150,61 @@ const (
 
 // acquire searches for the pulse while reducing an independent poll spacing.
 // It starts with initialPolls intervals across the full-period window. Every
-// catch halves the spacing down to minSpacing and sets the next window to
-// initialPolls times that spacing; a miss leaves the spacing unchanged. The
-// caught interval determines candidate uncertainty but does not constrain
-// this descent. Each refinement retains the catching query's start as a
-// grid point one period later, independently of the midpoint edge estimate.
+// ordinary sleep-paced catch divides the spacing by eight down to minSpacing
+// and sets the next window to initialPolls times that spacing. Each refinement
+// retains the catching query's start as a grid point one period later,
+// independently of the midpoint edge estimate.
 //
-// A catch at minSpacing acquires immediately. Two consecutive caught
-// windows with no scheduled sleep also acquire, confirming at successively
-// smaller spacings that the state queries pace the loop. A slept catch or
-// miss resets that confirmation. Misses at the full-period window sweep the
-// poll-grid phase; missLimit misses after the window narrows abandon this
-// attempt. The returned duration is the extent with which tracking should
-// begin.
+// Reaching minSpacing acquires immediately. A query-paced catch holds the
+// spacing and window for confirmation: a second acquires without reducing
+// the extent, while a sleep-paced catch halves the spacing and resumes
+// refinement. Misses at the full-period window sweep the poll-grid phase;
+// any miss after the window narrows abandons this attempt. The returned
+// duration is the extent with which tracking should begin.
 func (p *poller) acquire() (time.Duration, bool, error) {
 	initialPolls, minSpacing := time.Duration(p.params.InitialPolls), p.params.MinSpacing
 	spacing := maxWindow / initialPolls
 	p.gridOffset = -initialPolls * spacing / 2
-	misses, queryPaced := 0, 0
+	confirming := false
 	for {
 		window := initialPolls * spacing
 		o, _, err := p.pollWindow(window, spacing, false)
 		if err != nil {
 			return 0, false, err
 		}
-		if o == caught {
-			misses = 0
-			acquired := spacing == minSpacing
-			if p.slept {
-				queryPaced = 0
-			} else {
-				queryPaced++
-				acquired = acquired || queryPaced >= 2
+		if o == miss {
+			if spacing != maxWindow/initialPolls {
+				p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window)
+				return 0, false, nil
 			}
-			if acquired {
-				p.lg.Debug("serial PPS acquired", "window", window, "bracket", p.lastBracket)
-			}
-			if spacing > minSpacing {
-				spacing /= 2
-				if spacing < minSpacing {
-					spacing = minSpacing
-					p.lg.Debug("serial PPS poll window reached spacing floor", "window", initialPolls*spacing)
-				} else {
-					p.lg.Debug("serial PPS poll window halved", "window", initialPolls*spacing)
-				}
-			}
-			if acquired {
-				return initialPolls * spacing, true, nil
-			}
+			confirming = false
+			// A full-period sweep must change phase after a miss, or its grid
+			// could straddle a pulse narrower than the spacing indefinitely.
+			p.nextEdge = p.nextEdge.Add(spacing * 618 / 1000)
 			continue
 		}
-		queryPaced = 0
-		// A miss advances the prediction by exactly one period, matching the
-		// pulse, so a locked poll grid would revisit the same phases every
-		// period and could straddle a pulse narrower than the spacing
-		// indefinitely; advancing the grid by an irregular fraction of the
-		// spacing sweeps the phase instead.
-		p.nextEdge = p.nextEdge.Add(spacing * 618 / 1000)
-		if window == maxWindow {
+		if spacing == minSpacing || !p.slept && confirming {
+			break
+		}
+		if !p.slept {
+			confirming = true
 			continue
 		}
-		misses++
-		if misses >= missLimit {
-			p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window, "misses", misses)
-			return 0, false, nil
+		divisor := 8
+		if confirming {
+			divisor = 2
+			confirming = false
 		}
+		spacing = max(spacing/time.Duration(divisor), minSpacing)
+		if spacing == minSpacing {
+			p.lg.Debug("serial PPS poll window reached spacing floor", "window", initialPolls*spacing)
+			break
+		}
+		p.lg.Debug("serial PPS poll window reduced", "window", initialPolls*spacing, "divisor", divisor)
 	}
+	window := initialPolls * spacing
+	p.lg.Debug("serial PPS acquired", "window", window, "bracket", p.lastBracket)
+	return window, true, nil
 }
 
 type trackObservation struct {
@@ -386,6 +372,7 @@ func (p *poller) init() error {
 		return err
 	}
 	p.stats.addPoll(first.poll, nil)
+	p.lead = max(0, first.poll.duration())
 	p.nextEdge = first.poll.midpoint().mono.Add(maxWindow / 2)
 	return nil
 }

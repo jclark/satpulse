@@ -236,13 +236,73 @@ Acquisition therefore reaches `MinSpacing` on Linux as it does elsewhere,
 rather than stopping early because the loop appeared query-paced when it
 was only unable to sleep. The query-paced confirmation still applies
 where a query genuinely outlasts the spacing, which reports no sleep as
-before. On the Linux UART acquisition now hands tracking a 3.2 ms extent
-instead of 15.62 ms, shortening the shrink that follows, and takes about
-four further halvings, around 10 s against 6 s.
+before. With the halving rule used at that stage, the Linux UART handed
+tracking a 3.2 ms extent instead of 15.62 ms, shortening the shrink that
+followed, but took four further halvings, around 10 s against 6 s. The
+faster refinement below replaces that halving rule.
 
 Tracking keeps the truncated wait. Its spacing never sleeps, so only its
 window open would change, and opening early is the only thing covering
 the extent before the prediction; see "Review coverage and pacing".
+
+### Acquisition preserves the catching query's phase
+
+Anchoring the next grid on the midpoint prediction moved it half a query
+later on each refinement, which could lose a narrow pulse. Each catch now
+anchors the next acquisition grid on the catching query's actual start
+one period later, independently of the midpoint prediction. A regression
+with a 0.3 ms pulse and 130 us queries catches every refinement, including
+when the first catching sample is near the pulse's trailing edge.
+
+### Acquisition refines faster and confirms at a fixed extent
+
+Ordinary refinement now divides spacing and extent by eight, while
+query-paced confirmation holds the window fixed. The nominal poll count
+per window remains fixed at `InitialPolls`, defaulting to 64. Reaching
+`MinSpacing` or confirming query pacing determines the handoff. A
+query-paced catch means that no inter-query wait slept, excluding the
+wait to open the window.
+
+1. **The first query initializes the lead.** Its duration supplies the
+   initial `lead`, replacing zero. The existing per-window updates apply
+   thereafter, with no separate initialization for the first scheduled
+   opening.
+2. **Ordinary refinement divides by eight.** A catch that is not
+   query-paced and is not a confirmation attempt divides the spacing by
+   eight, floored at `MinSpacing`, and reduces the extent accordingly.
+3. **Query-paced confirmation holds the window.** The first query-paced
+   catch holds both spacing and extent for the next window. If that
+   window also catches and is query-paced, acquisition exits with the
+   current extent. Neither catch reduces the window.
+4. **A caught but unconfirmed window halves the spacing.** A confirmation
+   catch that is not query-paced halves the spacing, floored at
+   `MinSpacing`, reduces the extent accordingly, clears confirmation,
+   and resumes ordinary refinement. This retains the conservative
+   reduction when query pacing has not proved consistent.
+5. **Reaching the spacing floor completes acquisition.** Either reduction
+   reaching `MinSpacing` hands tracking an extent of
+   `InitialPolls * MinSpacing`, 3.2 ms with the defaults. No further
+   acquisition catch at the floor or reduction on handoff is required.
+6. **A narrowed-window miss restarts immediately.** Any miss after the
+   window has narrowed, including a confirmation miss, restarts the
+   full-period sweep. Acquisition's consecutive-miss counter is removed.
+   The phase shifts by 0.618 of a spacing only after a full-period sweep
+   miss; the sweep continues indefinitely until it catches.
+
+Preserving the catching query's phase supplies the alignment for
+refinement. An isolated miss can still occur from timing variation;
+restarting the sweep accepts that cost during the short acquisition
+process and removes the separate narrowed-window recovery path.
+
+These changes speed refinement after the first catch. They do not change
+the initial coarse sweep or shorten discovery of a narrow pulse. In the
+steady-query case with the defaults, fast native queries reach handoff
+two pulse periods after the first catch instead of nine; typical USB
+queries take two instead of eight. First usable samples arrive about two
+periods earlier. These are consequences of the spacing and exit rules,
+not measured before/after differences: the
+[hardware validation](#acquisition-refinement-validation) used only the new
+algorithm and the receivers' existing settings.
 
 ## Current algorithm
 
@@ -259,9 +319,9 @@ understood across operating conditions, with each rule earning its cost.
 Measure against that objective. What matters at startup is the time to
 the first forwarded sample, not the time to the "acquired" log line:
 every catch goes to the consumer, acquisition's included, and it forwards
-any catch whose uncertainty components are within the limit, which the
-halving windows reach about four windows after the first catch. After
-that, what matters is the gap between forwarded samples. Reads per
+any non-anomalous catch whose uncertainty components are within the limit,
+even before acquisition ends. After that, what matters is the gap between
+forwarded samples. Reads per
 window and per second measure work; CPU is process time from
 `/usr/bin/time` on the host. The simulator's `blocked` statistic is the
 fraction of the run spent outside queries and clock reads; it is not a
@@ -272,9 +332,10 @@ kernel.
 
 - `prediction`: monotonic time of the next expected leading edge.
 - `extent`: width of the window polled around the prediction.
-- `failures`: count of consecutive misses.
+- `failures`: count of consecutive tracking misses.
 - `lead`: exponentially weighted moving average of the interval from a
-  window's scheduled first query to that query's completion.
+  window's scheduled first query to that query's completion, initialized
+  from the very first query's duration.
 - `widths`: recent tracking widths, used only for anomaly classification.
 
 ### Recorded per query
@@ -360,17 +421,29 @@ it cannot.
 
 ### Acquisition
 
-The spacing halves from `period/64` toward `MinSpacing` on each catch;
-the window is 64 spacings. Every catch adopts the caught midpoint as the
-prediction, preserves the catching query's start as the next grid's
-phase, and resets the miss count. A catch at `MinSpacing`, or two
-consecutive caught windows with no scheduled sleep, completes acquisition.
-A slept catch or miss resets the query-paced confirmation. Misses sweep
-the poll-grid phase, and an in-progress pulse is polled through.
+Start with a full-period sweep at `period/64` spacing. The window is 64
+spacings. Every catch adopts the caught midpoint as the prediction and
+preserves the catching query's start as the next grid's phase. Coarse or
+anomalous catches advance acquisition normally.
 
-Coarse or anomalous catches can advance acquisition normally. The extent
-handed to tracking is 64 times the spacing after the final halving, with
-no separate extent cap. The acquisition spacing policy is unchanged.
+An ordinary sleep-paced catch divides the spacing by eight, floored at
+`MinSpacing`, and sets the next extent to 64 times that spacing. Reaching
+`MinSpacing` completes acquisition immediately, handing tracking
+`64 * MinSpacing` without another acquisition window at the floor.
+
+A query-paced catch, with no inter-query sleep, holds spacing and extent
+for confirmation at the next pulse. A second query-paced catch completes
+acquisition with that same extent. If confirmation catches but is not
+query-paced, halve the spacing, clear confirmation and resume refinement;
+that reduction also exits immediately if it reaches `MinSpacing`. Neither
+the first query-paced catch nor its successful confirmation reduces the
+window.
+
+A miss in the full-period sweep shifts the phase by 0.618 of a spacing
+and continues sweeping. Any miss after the window has narrowed, including
+a confirmation miss, restarts the full-period sweep immediately, without
+an extra phase shift. Acquisition has no consecutive-miss counter. An
+in-progress pulse at the opening is polled through.
 
 ### Constants
 
@@ -478,74 +551,16 @@ improvement.
 The four-times-median anomaly flag and removal of rejected catches are
 complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-catches).
 
-### Acquisition after the grid fix
+### Improve first-catch latency for narrow pulses
 
-Acquisition is two phases. The sweep searches for the pulse with no
-knowledge of its phase: a full-period window of 64 queries at 15.6 ms
-spacing, shifted by 0.618 of a spacing after each miss. It ends with the
-first catch, which bounds the edge to one spacing plus a query. The
-halvings then refine that bracket: each window halves the spacing and
-re-lands its grid on the sample that caught, until the spacing is below
-the query duration or reaches `MinSpacing`, eight or nine windows now
-that every spacing sleeps (see "Acquisition sleeps to its deadline").
-The consumer receives a forwardable sample from about the fourth halving
-on, so the later halvings delay the handoff to tracking, not chrony's
-first sample.
+The initial full-period sweep still uses 64 spacings by default and shifts
+its phase by 0.618 of a spacing after each miss. Faster refinement begins
+only after the first catch; reducing the discovery time for narrow pulses
+remains separate work. Measure it by time to the first usable sample
+across start phases, reads and process CPU, with and without a pulse.
 
-What is known:
-
-- A pulse at least one spacing wide is caught by the first sweep window.
-  A narrower one is a chance per window of about width over spacing, 6%
-  for a 1 ms pulse, so its first catch takes a few windows to a dozen.
-  The sweep never gives up; it covers every phase in the limit.
-- Anchoring the next grid on the midpoint estimate made the repeated
-  query half a query late. In the simulator a 0.3 ms pulse often
-  restarted from the 500 ms window after that offset caused a miss.
-  Acquisition now preserves the catching query's start as a grid point
-  one period later, independently of the midpoint prediction. A
-  regression with a 0.3 ms pulse and 130 us queries catches every
-  refinement, including when the first sample is near the trailing edge.
-- The key handoff challenge is controlling the initial number of tracking
-  polls when the query-paced cadence is not known a priori. An interval
-  located at a fixed sweep spacing may be economical to poll on USB
-  serial but require excessive reads with fast GPIO memory polling.
-  Tracking's poll-count budget only restricts growth after misses; it
-  does not constrain that initial cost. Progressively reducing both the
-  query spacing and the window extent keeps the nominal poll count per
-  refinement fixed while approaching query pacing. This is a reason to
-  retain progressive refinement with the current tracking controller.
-  The reduction factor need not be two: investigate dividing spacing
-  and extent by four or eight to reach the handoff faster while keeping
-  the same nominal poll-count budget.
-- No-pulse cost is set by the sweep alone: one coarse window of reads
-  per second for as long as the pulse is absent.
-
-Open questions, in the order they arise:
-
-1. **The sweep for narrow pulses.** One finer window after the coarse
-   window misses, then coarse for as long as it takes, catches a 1 ms
-   pulse in that window nearly always at 1024 polls (certain above
-   about 1.1 ms, since the sample lands up to a query after the grid
-   point) and costs its reads once per start, so the no-pulse cost
-   barely changes. Wide pulses never see it. The spacing is the only
-   parameter, trading the narrowest pulse caught at once against the
-   reads of that window. Any spacing is honoured now that acquisition
-   sleeps precisely. Its process CPU on hardware is unmeasured.
-2. **What follows the first catch.** Keep the halvings, with an exit
-   stated in terms of the handoff, for instance a caught interval no
-   wider than a quarter of the extent handed to tracking, which ends
-   after five; or hand tracking an extent covering the bracket and let
-   its controller shrink it, which at 31/32 per catch takes about 110
-   catches from 31 ms unless the controller shrinks faster when the
-   bracket is far below the extent; or poll the bracket once at
-   `MinSpacing` and hand over its catch, which in the simulator forwards
-   a sample one window after the first catch for every pulse width.
-   Preserving the catching query's phase is independent of this choice
-   and is already implemented.
-
-Measure any change by time to the first forwarded sample across start
-phases, restarts, reads per window and process CPU, with and without a
-pulse, on a narrow pulse and on a wide one.
+Controlled narrow pulses, no-pulse CPU and acquisition under induced load
+also remain to be measured on hardware.
 
 ### Evaluate the estimator
 
@@ -940,6 +955,54 @@ The relevant coverage includes:
   endpoints and rejection of outer intervals at least one period wide.
 - Consumer rejection when either uncertainty component exceeds the limit,
   paired JSON fields, and simulated errors within the reported interval.
+
+### Acquisition refinement validation
+
+The acquisition tests cover initial lead measurement, both exits, a caught
+but unconfirmed window followed by either exit, immediate restart without
+a phase shift after a refinement or confirmation miss, and continued
+phase sweeping without a pulse. The no-pulse test also covers 1024 initial
+polls, where integer rounding makes the sweep extent slightly shorter
+than a second. Sweep detection uses the initial spacing rather than exact
+equality of the extent with one second. The 0.3 ms phase-preservation
+regression and the polling simulator tests pass.
+
+Hardware validation on September 21 used twenty 12-second starts per
+device, ten without prewarm and ten with 50 ms prewarm. The Mac and the
+three Linux devices ran concurrently, alternating prewarm settings and
+varying the pause between starts. All 80 starts caught every acquisition
+window, with no restart. The table measures receipt of the first usable
+serial-tool candidate: non-anomalous, with both uncertainty components
+at most 1 ms. These runs did not feed chrony.
+
+| Device | Prewarm | First usable, min / median / max (s) | Acquisition reads, min-max | CPU, one core |
+|---|---|---|---|---|
+| Mac FT232R | off | 2.08 / 2.74 / 3.35 | 62-118 | 0.456% |
+| Mac FT232R | 50 ms | 1.45 / 2.33 / 2.90 | 75-129 | 4.699% |
+| Linux native UART | off | 1.44 / 1.74 / 1.96 | 95-129 | 1.265% |
+| Linux native UART | 50 ms | 1.02 / 1.27 / 1.82 | 70-121 | 5.784% |
+| Linux FT232R | off | 1.43 / 2.62 / 2.88 | 87-129 | 0.581% |
+| Linux FT232R | 50 ms | 2.01 / 2.35 / 2.98 | 73-131 | 5.049% |
+| Linux FT232H | off | 1.52 / 2.40 / 2.98 | 82-137 | 0.598% |
+| Linux FT232H | 50 ms | 1.30 / 1.75 / 2.97 | 78-132 | 5.107% |
+
+CPU is total process user plus system time divided by total elapsed time,
+from `/usr/bin/time -p`, across the ten starts in each row. It includes
+startup and acquisition and is not a steady-state measurement.
+
+One Mac start without prewarm exercised the failed-confirmation path:
+it caught at the held 15.625 ms window without confirming query pacing,
+halved to 7.812 ms, and confirmed at that fixed extent. All other starts
+handed tracking 3.2 ms. The main batch had nine isolated tracking misses,
+all on the Mac without prewarm; the longest gap between usable candidates
+was about two seconds. Both hosts retained independent selected clock
+references throughout.
+
+The final binary, including the sweep-rounding check above, was verified
+with another prewarm-off/on pair on each device. All eight starts caught
+every acquisition window, with no restart; there was one further isolated
+Mac tracking miss without prewarm. The 80-start batch used the same
+algorithm at the default initial poll count, before that rounding check.
 
 ### Mac validation after the poll-budget and correction changes
 
