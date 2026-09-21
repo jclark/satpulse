@@ -162,6 +162,10 @@ Deliver good edge timestamps to the time consumer with short gaps between
 them. An occasional missed pulse is acceptable; a bad timestamp forwarded
 is not. Long-term CPU must stay small.
 
+Prewarm trades CPU usage for timing performance; the user chooses that
+tradeoff. Evaluate both settings. Simplicity means behaviour that can be
+understood across operating conditions, with each rule earning its cost.
+
 ### State
 
 - `prediction`: monotonic time of the next expected leading edge.
@@ -309,6 +313,10 @@ faster.
   under matching hardware, prewarm and load conditions. The completed runs
   establish current behaviour, but do not by themselves establish whether
   accuracy, forwarding gaps or CPU use have regressed.
+  The September 20-21 Mac tests had roughly 12% tracking misses without
+  prewarm, compared with 3.55% in an earlier run before the growth and
+  correction changes. Investigate this difference; absence of tracking
+  loss does not imply a low miss rate. See the latest hardware results below.
 - **macOS measurements.** Replace the article's measurements with results
   from the implemented algorithm, covering prewarm on, prewarm off and
   load. The separate raw-versus-chrony-filtered comparison still needs a
@@ -343,6 +351,16 @@ complete, as recorded under [Revisions made](#anomaly-flag-replaces-rejected-cat
 
 ### Review acquisition and its CPU budget
 
+Conceptually, acquisition reduces poll spacing to obtain good resolution;
+tracking then reduces extent to minimize long-term CPU usage, with misses
+providing feedback about the coverage needed. Both maintain a prediction.
+Acquisition need not also find a narrow tracking extent before handing over.
+
+The current acquisition window is `InitialPolls * spacing`, so halving
+spacing also forces coverage to halve. Review whether this coupling is
+still appropriate now that tracking adapts coverage independently. This is
+a direction for investigation, not an agreed replacement algorithm.
+
 The redesign has focused on tracking; review acquisition against the new
 CPU budget model too. Its initial allowance of 64 polls comes from the
 previous design; tracking now uses 50 observed reads as its growth
@@ -353,17 +371,34 @@ cost when no pulse is present. The current `InitialPolls` parameter also
 affects later acquisition windows and the extent handed to tracking, so
 review those effects alongside any increase in the initial allowance.
 
-The K901 on abondance's FT232R has an approximately 1 ms pulse and took
-67 s to acquire; a repeated startup took 57 s. The initial spacing is
-15.625 ms, so polling can repeatedly miss the whole pulse. In 100
-simulations per width, varying startup phase and timing with 130 us
-queries and the Linux timer model, acquisition took a median 25.6 s and
-maximum 111.3 s with 1 ms pulses, versus 5.5 s and 6.0 s with 100 ms
-pulses. This supports checking pulse width as the cause on hardware.
+The September 20-21 Mac tests also exposed slow acquisition without
+prewarm: 53.925 s and 35.986 s in the 15-minute tests, and 26.555 s in
+the overnight test, versus about 8.2 s with prewarm. The first one-minute
+no-prewarm smoke never reached tracking. Its trace shows catches down to
+3.906 ms and 3.2 ms windows followed by misses and acquisition restarts.
+Apart from removing the handoff cap, acquisition was unchanged by the
+tracking revision. These observations do not establish the cause of the
+Mac's misses; they precede entry to the new tracking controller.
+
+Separately, the K901 on abondance's FT232R originally had an approximately
+1 ms pulse and took 67 s to acquire. The initial spacing is 15.625 ms,
+so polling can repeatedly miss the whole pulse. A hardware comparison is
+now complete: five starts at the original width took 6.750-56.754 s,
+median 30.989 s. Five starts with a verified 100 ms pulse and matching
+physical polarity took 5.059-5.989 s, median 5.756 s. Every 100 ms run
+caught all six acquisition windows without a restart. This supports the
+short-pulse explanation for the K901; it does not establish a worst-case
+bound or explain the separate Mac results.
+
+In 100 simulations per width, varying startup phase and timing with
+130 us queries and the Linux timer model, acquisition took a median
+25.6 s and maximum 111.3 s with 1 ms pulses, versus 5.5 s and 6.0 s
+with 100 ms pulses. This is an assumed timing model, not a replay of
+measured host scheduling.
 
 Investigate a simple way to acquire short pulses more reliably. Compare
-acquisition time across startup phases, restarts and CPU cost, including
-the hardware comparison between the existing pulse and a 0.1 s pulse.
+acquisition time across startup phases, restarts and CPU cost, using the
+completed pulse-width comparison as evidence.
 
 ### Evaluate the estimator
 
@@ -753,6 +788,82 @@ The relevant coverage includes:
 - Consumer rejection when either uncertainty component exceeds the limit,
   paired JSON fields, and simulated errors within the reported interval.
 
+### Mac validation after the poll-budget and correction changes
+
+Tests on September 20-21 used commit
+`00a38dbf7420081c64b85d20503ac3eca11eb3c0`: four 900-second runs and
+one overnight run. The binary was pinned for the whole sequence. The
+receiver was an ATGM332D-5N at 38400 baud on FT232R BG03U08C, PPS on CTS,
+on the Mac mini M4 Pro. Chrony disciplined the host clock from an
+independent GPTP source throughout.
+
+Prewarm on means 50 ms. Quiet means no induced load; normal applications
+remained running. Each loaded test used twelve CPU workers during seconds
+300-600, with five minutes quiet before and five minutes recovery.
+The overnight run had no prewarm and no induced load. It was stopped
+gracefully at the user's request after 7 h 39 min 29 s, rather than the
+planned eight hours. All five processes exited successfully.
+
+These are serial-tool measurements. Forwardable means non-anomalous with
+both uncertainty components at most 1 ms; the tool did not feed chrony.
+Error is relative to integral seconds of the independently disciplined
+host clock and includes receiver, cable and reference offsets. CPU is
+process user plus system time divided by elapsed time, including acquisition.
+
+| Run | Duration | Initial acquisition | Tracking misses | Tracking anomalies | Forwardable tracking catches | Longest forwarding gap | Absolute error p99 | CPU, one core |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Prewarm off, quiet | 900 s | 53.925 s | 107 | 0 | 739 | 4 s | 181.062 us | 0.305% |
+| Prewarm on, quiet | 900 s | 8.247 s | 0 | 1 | 890 | 2 s | 131.094 us | 4.986% |
+| Prewarm off, load | 900 s | 35.986 s | 108 | 8 | 748 | 3 s | 175.365 us | 0.248% |
+| Prewarm on, load | 900 s | 8.212 s | 1 | 7 | 883 | 2 s | 151.603 us | 4.959% |
+| Overnight, prewarm off, quiet | 27569.334 s | 26.555 s | 3297 | 54 | 24011 | 4 s | 302.729 us | 0.286% |
+
+Every forwardable interval contained the independently referenced edge.
+All five runs had zero tracking losses. This means none reached ten
+consecutive misses; it does not mean they caught every pulse. Miss rates
+in the two 900-second no-prewarm runs were 107/846 (12.65%) and 108/864
+(12.50%), with at most three and two consecutive misses respectively.
+
+The overnight run completed 27,542 tracking attempts: 24,245 catches and
+3,297 misses (11.97%), at most two consecutive. Of the catches, 234 exceeded
+the uncertainty ceiling, including all 54 anomalies. The 24,011
+forwardable catches had mean error -17.793 us and maximum absolute error
+653.281 us. Extent ranged from 2.486 to 8.794 ms; 52 catches skipped
+phase correction. There was one restart during initial acquisition and
+none after tracking began. All 919 reference checks selected GPTP and
+completed successfully.
+
+The first 60-second no-prewarm smoke had 27 acquisition catches, 33 misses
+and two acquisition restarts, without reaching tracking. A second smoke
+with prewarm acquired in 8.158 s and caught all 51 tracking pulses with
+no anomalies; maximum absolute error was 111.865 us.
+
+Raw candidates, per-catch debug logs, query counts, prediction errors,
+exact load events, process CPU accounting and reference snapshots were
+retained. Reference checks ran every 30 seconds. Final query-time
+distributions use at most the last 10,000 reads; per-catch query widths
+cover the whole run. Gap statistics exclude initial acquisition and the
+trailing interval after the final candidate.
+
+#### Comparison with the preceding controller
+
+Earlier 600-second Mac runs used
+`90c8cae81190d903f50d1235718bc8348d07c7a4`, which already had asymmetric
+uncertainty and the anomaly flag, but doubled extent on misses and lacked
+the phase-correction width guard:
+
+| Run | Tracking misses | Longest forwarding gap | Absolute error p99 | CPU, one core |
+| --- | ---: | ---: | ---: | ---: |
+| Prewarm on, quiet | 0 | 1 s | 112.989 us | 5.132% |
+| Prewarm off, quiet | 21 | 3 s | 356.989 us | 0.314% |
+| Prewarm on, load | 5 | 3 s | 215.302 us | 5.037% |
+
+The earlier no-prewarm miss rate was 21/591 (3.55%). Durations, host
+conditions and debug verbosity were not identical between the two sets;
+neither the new growth factor nor host timing has been isolated as the
+cause of the higher miss rate. The completed tests describe current
+behaviour but do not establish an old-versus-new regression result.
+
 ### Hardware runs before the interface change
 
 The following procedure and results refer to the initial controller
@@ -826,4 +937,6 @@ not feed. Compare the longest gap between forwardable edges and the
 count of gaps over 4 s against the 15 hours before the incident, which
 had no gap over 5 s, and note the rejected and missed counts and the
 steady-state read rate. A run was started on 2026-09-20 at 14:05 for
-86400 s; its final results are not recorded here.
+86400 s, then stopped on September 20 at 18:35 before the interface-change
+tests. Its logs were preserved. It is no longer running; the later
+overnight results above describe the current controller.
