@@ -203,10 +203,19 @@ retried when the runtime's preemption signal interrupts it. `Poll` also
 narrows its thread's timer slack, 50 us by default, which the kernel
 would otherwise add to every sleep it makes; that is three quarters of
 the improvement, taking a window open from 62 us after its deadline to
-19 us. A wait too short for the runtime timer is still not slept, so
-acquisition's sub-millisecond spacings, its query-paced confirmation and
-tracking's cadence are all unchanged. The same no-pulse window is back to
-65 state reads and 2.75% of one core.
+19 us. The remainder is the whole wait where the wait is shorter than the
+runtime timer's resolution, so acquisition honours its sub-millisecond
+spacings too: every window now takes about 34 state reads whatever its
+spacing, and the no-pulse window is back to 65 reads and 2.75% of one
+core.
+
+Acquisition therefore reaches `MinSpacing` on Linux as it does elsewhere,
+rather than stopping early because the loop appeared query-paced when it
+was only unable to sleep. The query-paced confirmation still applies
+where a query genuinely outlasts the spacing, which reports no sleep as
+before. On the Linux UART acquisition now hands tracking a 3.2 ms extent
+instead of 15.62 ms, shortening the shrink that follows, and takes about
+four further halvings, around 10 s against 6 s.
 
 Tracking keeps the truncated wait. Its spacing never sleeps, so only its
 window open would change, and opening early is the only thing covering
@@ -257,12 +266,12 @@ tracking and by the current acquisition spacing in acquisition, so one
 query's timing error does not shift the rest of the window. The wait
 sleeps where the platform can and returns at once where it cannot: on
 Linux, sub-millisecond waits are truncated to zero, because the runtime
-would otherwise round them up to a millisecond. Acquisition, whose
-spacings are longer, also sleeps out the remainder the runtime timer
-truncates, so that it arrives at a grid point instead of polling its way
-to it. The loop is therefore timer-paced on hosts that can sleep briefly
-and query-paced elsewhere, including on macOS with a USB serial adapter
-whose query already exceeds `MinSpacing`. There is no spinning.
+would otherwise round them up to a millisecond. Acquisition sleeps out
+whatever the runtime timer cannot, the whole wait included, so it arrives
+at a grid point instead of polling its way to it. Tracking is therefore
+query-paced wherever `MinSpacing` is below the timer's resolution, and on
+macOS with a USB serial adapter whose query already exceeds `MinSpacing`.
+There is no spinning.
 `MinSpacing` is a CPU saving where it can be honoured and nothing where
 it cannot.
 
