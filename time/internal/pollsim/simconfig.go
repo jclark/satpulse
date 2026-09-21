@@ -75,11 +75,11 @@ type IdleConfig struct {
 	Recover Seconds `toml:"recover" check:">=0,<1" comment:"Continuous activity that restores full speed (s)"`
 }
 
-// TimerConfig configures timer sleeps. A sleep shorter than Resolution
-// cannot be made and returns at once, as on Linux, whose runtime timer has
-// whole-millisecond resolution; a longer one is truncated to a multiple of
-// Resolution except where the loop asks for a precise wait. A sleep that
-// does happen overshoots by a Gaussian amount, never negative.
+// TimerConfig configures timer sleeps. A sleep the loop asks to be precise
+// ends at its deadline; any other is truncated to a multiple of Resolution,
+// as the Go runtime does on Linux at one millisecond, and a truncated-to-zero
+// sleep returns at once. A sleep that does happen overshoots by a Gaussian
+// amount, never negative.
 type TimerConfig struct {
 	Resolution      Seconds `toml:"resolution" check:">=0,<0.1" comment:"Sleep truncation quantum (s); 0 means sleeps are exact to the nanosecond"`
 	Overshoot       Seconds `toml:"overshoot" check:">=0,<0.1" comment:"Mean wakeup overshoot (s)"`

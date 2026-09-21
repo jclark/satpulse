@@ -572,32 +572,29 @@ func (p *poller) wait(t time.Time, precise bool) (bool, error) {
 }
 
 // waitUntil reports whether it actually had to wait: false means the
-// scheduled time was already past, i.e. the previous state query outlasted
-// the poll spacing, or was nearer than the platform can sleep to. A precise
-// wait additionally sleeps out any remainder the runtime timer truncated, so
-// that it ends at the deadline; a wait too short for the timer at all is not
-// slept either way.
+// scheduled time was already past, or, for a wait that is not precise, nearer
+// than the runtime timer can sleep to. A precise wait always ends at the
+// deadline: the runtime timer takes the whole milliseconds, so the wait stays
+// cancellable, and sleepRemainder takes the rest, which is all of it when the
+// wait is shorter than the timer's resolution.
 func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
-	d := sleepDuration(time.Until(t))
-	if d <= 0 {
+	slept := false
+	if d := sleepDuration(time.Until(t)); d > 0 {
+		timer := time.NewTimer(d)
+		defer timer.Stop()
 		select {
+		case <-timer.C:
+			slept = true
 		case <-ctx.Done():
 			return false, ctx.Err()
-		default:
-			return false, nil
 		}
+	} else if err := ctx.Err(); err != nil {
+		return false, err
 	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-timer.C:
-		if precise {
-			sleepRemainder(t)
-		}
-		return true, nil
-	case <-ctx.Done():
-		return false, ctx.Err()
+	if precise && sleepRemainder(t) {
+		slept = true
 	}
+	return slept, nil
 }
 
 // classify gives a detected transition precedence over the deadline.

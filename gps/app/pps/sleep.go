@@ -10,7 +10,7 @@ func sleepDuration(d time.Duration) time.Duration {
 
 // sleepRemainder has nothing to do: sleepDuration asked the runtime timer for
 // the whole wait.
-func sleepRemainder(time.Time) {}
+func sleepRemainder(time.Time) bool { return false }
 
 // tightenTimerSlack has nothing to do: Linux is the only platform here that
 // exposes the knob.

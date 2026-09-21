@@ -97,11 +97,14 @@ func (f *fakePulse) wait(ctx context.Context, t time.Time, precise bool) (bool, 
 	return slept, err
 }
 
-// bubbleWait applies waitUntil's rule to the bubble's clock: a wait too short
-// for the platform's timer returns at once, a precise one ends at the
-// deadline, and any other ends where the timer's resolution leaves it.
+// bubbleWait applies waitUntil's rule to the bubble's clock: a precise wait
+// ends at the deadline however short it is, and any other ends where the
+// timer's resolution leaves it, which for a short enough wait is at once.
 func bubbleWait(ctx context.Context, t time.Time, precise bool) (bool, error) {
-	d := sleepDuration(time.Until(t))
+	d := time.Until(t)
+	if !precise {
+		d = sleepDuration(d)
+	}
 	if d <= 0 {
 		select {
 		case <-ctx.Done():
@@ -109,9 +112,6 @@ func bubbleWait(ctx context.Context, t time.Time, precise bool) (bool, error) {
 		default:
 			return false, nil
 		}
-	}
-	if precise {
-		d = time.Until(t)
 	}
 	timer := time.NewTimer(d)
 	defer timer.Stop()
@@ -998,13 +998,7 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 		if first := pulseIndex(got[0].Timestamp, f.epoch); first > 15 {
 			t.Errorf("first edge published at pulse %d, want acquisition despite the jitter plateau", first)
 		}
-		if truncatesSubMillisecondSleeps {
-			// Once the spacing falls below Linux's sleep resolution, the reads
-			// pace the loop. Two catches confirm that at the 31.25 ms window.
-			if capture.window <= 16*time.Millisecond || capture.window > 32*time.Millisecond {
-				t.Errorf("acquired at window %v, want two caught windows after sub-millisecond sleeps are truncated", capture.window)
-			}
-		} else {
+		{
 			// Acquiring in the jitter plateau leaves the window at 15.625ms or
 			// wider; the query-paced floor is reached at 3.9ms.
 			if capture.window == 0 || capture.window > 8*time.Millisecond {
@@ -1044,10 +1038,6 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		slowAt := 6 * time.Second
 		slowCallDur := 400 * time.Microsecond
-		if truncatesSubMillisecondSleeps {
-			slowAt = 2 * time.Second
-			slowCallDur = 5 * time.Millisecond
-		}
 		f := &fakePulse{
 			epoch:       time.Now().Add(350 * time.Millisecond),
 			width:       100 * time.Millisecond,
@@ -1066,11 +1056,7 @@ func TestPollConfirmsQueryPacing(t *testing.T) {
 		}
 		cancel()
 		<-errCh
-		if truncatesSubMillisecondSleeps {
-			if capture.window <= 16*time.Millisecond || capture.window > 32*time.Millisecond {
-				t.Errorf("acquired at window %v, want the one-window query slowdown suppressed before truncated sleeps pace the loop", capture.window)
-			}
-		} else if capture.window == 0 || capture.window >= 15*time.Millisecond {
+		if capture.window == 0 || capture.window >= 15*time.Millisecond {
 			t.Errorf("acquired at window %v, want the one-window query slowdown suppressed", capture.window)
 		}
 	})
