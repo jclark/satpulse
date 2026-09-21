@@ -59,7 +59,7 @@ The budget limits permission to grow rather than imposing a hard read
 limit. Skipped waits, an extent inherited from acquisition, a change in
 query pace, or one expansion can produce more than 50 reads. Growth by
 1.25 reduces the overshoot compared with doubling. Linux
-fractional-millisecond sleeping remains separate follow-up work.
+fractional-millisecond sleeping was measured separately and rejected.
 
 ### Prediction correction requires a sufficiently narrow interval
 
@@ -467,19 +467,45 @@ changing what interval is reported.
   a pacing parameter, so coupling it to coverage needs justification.
   The same question applies to GPIO (#460), where scheduler jitter can
   span many query durations.
-- **Window opening on Linux.** `sleepDuration` truncates the opening wait
-  to whole milliseconds, causing up to 1 ms of early polling: about 350
-  reads per window at a 35 us extent on the UART. Options remain accepting
-  the cost, spinning the remainder, or using a direct `nanosleep` system
-  call to sleep the fractional-millisecond remainder. Evaluate whether
-  this reduces early polling without worsening timing. Measure total
-  process CPU, reads per window, wake-up overshoot, timestamp error and
-  forwarding gaps before deciding. Timer slack must not be treated as a
-  bound on total wake-up delay.
+- **Sleeping the truncated remainder on Linux: measured and rejected.**
+  `sleepDuration` truncates every wait to whole milliseconds, so a window
+  opens, and after the grid change each acquisition query starts, up to
+  1 ms early, with state reads polling the remainder away. A prototype
+  finished each wait the runtime timer could not with
+  `clock_nanosleep(CLOCK_MONOTONIC, TIMER_ABSTIME)`, retried on the
+  interruption the preemption signal causes, and narrowed the polling
+  thread's timer slack with `PR_SET_TIMERSLACK`; waits below a millisecond
+  still did not sleep, so tracking cadence and acquisition's query-paced
+  confirmation were untouched. It worked: on the Linux host's native UART
+  a window opened 19 us after its deadline instead of up to 812 us before
+  it, and tracking reads per window fell from 110-145 to 10-15, no longer
+  independent of the extent.
+
+  It is not worth its cost. Across two 300 s pairs the process used 1.155%
+  and 1.162% of a core before, against 1.088% and 1.046% after. On the
+  same port the wait method, which never polls, used 1.03% and 1.20%, so
+  polling accounts for about a tenth of the process total and the saving
+  is around 0.05% of a core, below that method's own run-to-run spread.
+  The rest is the 9600 bps data stream and the runtime's monitor thread,
+  which sleeps 20 us between passes while any thread sits in a syscall. A
+  slower reader does not change the arithmetic: the waste is the
+  truncation remainder, which an expensive query spends in fewer, longer,
+  mostly blocked reads, and the recorded USB runs use half the UART's CPU.
+
+  Accurate sleeping also cost accuracy at `pollPreWarm = 0`. Tracking
+  error's standard deviation rose from 1.51 us to 3.58 us and its largest
+  magnitude from 7.6 us to 20.4 us, with two misses against none in 285 s.
+  The extent shrinks to about ten reads, so the edge is often caught by
+  the first read after the sleep, whose p90 duration rose from 4.5 us to
+  20.7 us while warm reads stayed at 3.7 us. Whether prewarm recovers that
+  is untested. Reopen this only for a reader whose queries are expensive
+  enough for the remainder to matter, and settle minimum coverage first.
 - **Inter-query spacing on Linux.** Enforcing sub-millisecond spacing
-  changes measurement resolution and makes the loop timer-paced. Treat
-  that as a separate decision from improving the window-opening wait.
-  A change to a shared sleep helper would affect both.
+  changes measurement resolution and makes the loop timer-paced: honouring
+  the 50 us `MinSpacing` would replace the UART's 4.5 us bracket with one
+  of about 60 us. The rejected prototype above left it alone, because
+  sleeping only what the platform can sleep at all leaves a 50 us wait
+  unslept; any future change to the shared wait must keep that property.
 
 ## Background and design rationale
 
