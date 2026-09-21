@@ -117,8 +117,6 @@ type Dispatcher struct {
 	ggaSynth              *nmeasyn.Synth
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
-	coarseSysPulses       int
-	anomalousSysPulses    int
 	tStart                time.Time
 }
 
@@ -194,14 +192,6 @@ const (
 	tickPeriod               = time.Second / 4
 	sysPulseFirstEdgeTimeout = 30 * time.Second
 	sysPulseMaxUncertainty   = time.Millisecond
-	// sysPulseWarnAfter consecutive edges withheld for the same reason draw
-	// a warning, repeated every sysPulseWarnEvery further ones. Polling
-	// already runs at the finest cadence the host has, so edges
-	// consistently too uncertain to forward mean hardware too slow for the
-	// limit, a configuration problem rather than a tracking failure; edges
-	// consistently anomalous have intervals above their recent baseline.
-	sysPulseWarnAfter = 30
-	sysPulseWarnEvery = 3600
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -225,6 +215,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
 	var firstSysPulseDeadline <-chan time.Time
+	var anomalousSysPulses, uncertainSysPulses int
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -283,10 +274,15 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 			}
 		case ce, ok := <-ppsCh:
 			if ok {
-				// Any candidate, anomalous or not, proves the pin is wired and
-				// pulsing, which is all this warning is about.
-				firstSysPulseDeadline = nil
-				d.sysPulseCandidateEdge(ce)
+				if d.sysPulseCandidateEdge(ce) {
+					firstSysPulseDeadline = nil
+				} else if firstSysPulseDeadline != nil {
+					if ce.Anomalous {
+						anomalousSysPulses++
+					} else {
+						uncertainSysPulses++
+					}
+				}
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
 				ppsCh = nil
@@ -313,7 +309,11 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
 		case <-firstSysPulseDeadline:
-			lg.Warn("no serial PPS edges are being received; check pps.pin in the [serial] table, PPS wiring, and receiver pulse width")
+			if anomalousSysPulses == 0 && uncertainSysPulses == 0 {
+				lg.Warn("no serial PPS edges received")
+			} else {
+				lg.Warn("no usable serial PPS edges received", "anomalous", anomalousSysPulses, "uncertain", uncertainSysPulses)
+			}
 			firstSysPulseDeadline = nil
 		case <-sig:
 			d.obs.ReopenLog()
@@ -322,7 +322,9 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	}
 }
 
-func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
+// sysPulseCandidateEdge reports whether ce passes the PPS quality gate,
+// independently of whether it can be matched to a receiver time message.
+func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) bool {
 	d.logEvent(LogEvent{
 		Type: sysPulseEdgeType,
 		T:    ce.TRead,
@@ -333,27 +335,11 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
 			Anomalous:   ce.Anomalous,
 		},
 	})
-	if ce.Anomalous {
-		if d.anomalousSysPulses++; sysPulseWarnDue(d.anomalousSysPulses) {
-			d.lg.Warn("serial PPS edges are consistently anomalous; polling intervals exceed their recent baseline",
-				"uncertainty", ce.Uncertainty, "consecutive", d.anomalousSysPulses)
-		}
-		return
+	if ce.Anomalous || max(ce.Uncertainty[0], ce.Uncertainty[1]) > sysPulseMaxUncertainty {
+		return false
 	}
-	d.anomalousSysPulses = 0
-	if max(ce.Uncertainty[0], ce.Uncertainty[1]) > sysPulseMaxUncertainty {
-		if d.coarseSysPulses++; sysPulseWarnDue(d.coarseSysPulses) {
-			d.lg.Warn("serial PPS edges are consistently too uncertain for timing; the host's modem status reads may be too slow for the poll method",
-				"uncertainty", ce.Uncertainty, "limit", sysPulseMaxUncertainty, "consecutive", d.coarseSysPulses)
-		}
-		return
-	}
-	d.coarseSysPulses = 0
 	d.sysPulseSample(ce.Edge)
-}
-
-func sysPulseWarnDue(n int) bool {
-	return n == sysPulseWarnAfter || n > sysPulseWarnAfter && (n-sysPulseWarnAfter)%sysPulseWarnEvery == 0
+	return true
 }
 
 func (d *Dispatcher) sysPulseSample(edge pps.Edge) {

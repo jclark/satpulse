@@ -471,12 +471,17 @@ of the two queries around the edge, and the gap before the catching query.
 `sysPulseCandidateEdge` in `time/internal/gpsevent/dispatcher.go`
 forwards on
 `!Anomalous && max(Uncertainty[0], Uncertainty[1]) <= sysPulseMaxUncertainty`.
-The consumer logs rate-limited warnings for consistently anomalous catches
-and for non-anomalous catches consistently above `U`. When the best
-achievable resolution is coarser than `U`, the current interface does not
-provide the information needed to handle that case; see "Restore support
-for coarse achievable resolution" below. Reacquisition cannot make queries
-faster.
+The consumer allows 30 seconds from startup for the first usable edge,
+then warns once if none has arrived. If no candidates arrived it reports
+no edges; otherwise it reports no usable edges with counts of anomalous
+and non-anomalous over-limit candidates. Anomalous takes precedence so
+each withheld candidate is counted once. A usable candidate cancels the
+timeout even if it cannot yet be matched to a receiver time message.
+There are no repeat warnings, recovery messages or later outage checks.
+When the best achievable resolution is coarser than `U`, the current
+interface does not provide the information needed to handle that case;
+see "Restore support for coarse achievable resolution" below.
+Reacquisition cannot make queries faster.
 
 ### Removed from the original controller
 
@@ -493,11 +498,6 @@ faster.
 
 ## Remaining fixes and validation
 
-- **Warning counters (review point 8).** An anomalous catch returns before
-  resetting the coarse counter, whereas a non-anomalous catch resets the
-  anomalous counter. Alternating coarse and anomalous catches can therefore
-  produce a coarse warning whose `consecutive` count is not consecutive.
-  Make the reset rules match the warning's meaning.
 - **Regression comparison.** Compare the previous and current algorithms
   under matching hardware, prewarm and load conditions. The completed runs
   establish current behaviour, but do not by themselves establish whether
@@ -531,7 +531,7 @@ on a native UART, about 116 us on a Linux FT232R, about 200 us on the
 Mac and on Windows, and microseconds for a GPIO read. The old bypass was
 needed because window size set resolution; that coupling is gone. The
 remaining choices are to drop the requirement and rely on the consumer's
-"reads may be too slow" warning, or to define the interface below.
+startup warning about unusable edges, or to define the interface below.
 
 Determine what information the poller should expose to distinguish
 achievable resolution from measurements that can still improve. An

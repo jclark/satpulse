@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/pps"
@@ -373,42 +377,91 @@ func TestDispatcherSHMPrecisionOverride(t *testing.T) {
 	}
 }
 
-// TestDispatcherSysPulseWarnings checks the rate-limited warnings for
-// candidates consistently withheld: after sysPulseWarnAfter consecutive
-// anomalous candidates, or consecutive good ones over the uncertainty limit,
-// one warning each, and a forwardable candidate resets both counts.
+// TestDispatcherSysPulseWarnings checks the single startup warning and its
+// rejection counts, including cancellation before any time message arrives.
 func TestDispatcherSysPulseWarnings(t *testing.T) {
-	var logs bytes.Buffer
-	d := &Dispatcher{
-		ppsGen: pps.NewGenerator(pps.DefaultGeneratorConfig()),
-		shm:    &fakeSHM{precision: -9},
-		obs:    &ntpSampleObserver{},
-		lg:     slog.New(slog.NewTextHandler(&logs, nil)),
-	}
-	edge := time.Unix(900, 1_000_000)
-	feed := func(n int, ce pps.CandidateEdge) {
-		ce.Edge = pps.Edge{Timestamp: edge, TRead: edge}
-		for range n {
-			d.sysPulseCandidateEdge(ce)
-		}
-	}
-	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}, Anomalous: true})
-	feed(1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}})
-	feed(sysPulseWarnAfter-1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}, Anomalous: true})
-	if strings.Contains(logs.String(), "level=WARN") {
-		t.Fatalf("warned before %d consecutive withheld candidates: %s", sysPulseWarnAfter, logs.String())
-	}
-	feed(1, pps.CandidateEdge{Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond}, Anomalous: true})
-	feed(sysPulseWarnAfter, pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, sysPulseMaxUncertainty + time.Nanosecond}})
-	feed(sysPulseWarnEvery-1, pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, sysPulseMaxUncertainty + time.Nanosecond}})
-	if n := strings.Count(logs.String(), "level=WARN"); n != 2 {
-		t.Fatalf("%d warnings, want one for anomalous and one for coarse candidates: %s", n, logs.String())
-	}
-	if !strings.Contains(logs.String(), "consistently anomalous") || !strings.Contains(logs.String(), "too uncertain") {
-		t.Fatalf("warnings %s, want one of each kind", logs.String())
-	}
-	feed(1, pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, sysPulseMaxUncertainty + time.Nanosecond}})
-	if n := strings.Count(logs.String(), "level=WARN"); n != 3 {
-		t.Fatalf("%d warnings after %d more coarse candidates, want the coarse warning repeated", n, sysPulseWarnEvery)
+	// Start the process-wide signal watcher outside the synctest bubbles.
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGHUP)
+	defer signal.Stop(sig)
+	anomalous := pps.CandidateEdge{Anomalous: true}
+	uncertain := pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty + time.Nanosecond, 0}}
+	uncertainAfter := pps.CandidateEdge{Uncertainty: [2]time.Duration{0, sysPulseMaxUncertainty + time.Nanosecond}}
+	both := uncertain
+	both.Anomalous = true
+	usable := pps.CandidateEdge{Uncertainty: [2]time.Duration{sysPulseMaxUncertainty, sysPulseMaxUncertainty}}
+	for _, tc := range []struct {
+		name       string
+		candidates []pps.CandidateEdge
+		closePPS   bool
+		want       string
+	}{
+		{"no edges", nil, false, `msg="no serial PPS edges received"`},
+		{"anomalous", []pps.CandidateEdge{anomalous}, false, `msg="no usable serial PPS edges received" anomalous=40 uncertain=0`},
+		{"uncertain", []pps.CandidateEdge{uncertain, uncertainAfter}, false, `msg="no usable serial PPS edges received" anomalous=0 uncertain=40`},
+		{"alternating", []pps.CandidateEdge{both, uncertain}, false, `msg="no usable serial PPS edges received" anomalous=20 uncertain=20`},
+		{"usable", []pps.CandidateEdge{anomalous, uncertain, usable}, false, ""},
+		{"closed", nil, true, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				var logs bytes.Buffer
+				d := &Dispatcher{
+					ppsGen: pps.NewGenerator(pps.DefaultGeneratorConfig()),
+					obs:    &obs.DefaultObserver{},
+					lg:     slog.New(slog.NewTextHandler(&logs, nil)),
+				}
+				ppsCh := make(chan pps.CandidateEdge)
+				pktCh := make(chan scan.Packet)
+				defer close(pktCh)
+				if !tc.closePPS {
+					defer close(ppsCh)
+				}
+				go d.Run(nil, ppsCh, pktCh, nil)
+				synctest.Wait()
+				if tc.closePPS {
+					close(ppsCh)
+				}
+				if len(tc.candidates) > 0 {
+					for i := range 40 {
+						ppsCh <- tc.candidates[i%len(tc.candidates)]
+					}
+				}
+				time.Sleep(sysPulseFirstEdgeTimeout - time.Second)
+				synctest.Wait()
+				if logs.Len() != 0 {
+					t.Fatalf("logged before startup timeout: %s", logs.String())
+				}
+				time.Sleep(time.Second)
+				synctest.Wait()
+				wantWarnings := 0
+				if tc.want != "" {
+					wantWarnings = 1
+				}
+				if n := strings.Count(logs.String(), "level=WARN"); n != wantWarnings || !strings.Contains(logs.String(), tc.want) {
+					t.Fatalf("logs = %q, want %d warnings containing %q", logs.String(), wantWarnings, tc.want)
+				}
+				before := logs.String()
+				if !tc.closePPS {
+					for range 40 {
+						ppsCh <- anomalous
+						ppsCh <- uncertain
+					}
+				}
+				time.Sleep(time.Hour + sysPulseFirstEdgeTimeout)
+				synctest.Wait()
+				if logs.String() != before {
+					t.Fatalf("logged again after startup: %s", logs.String())
+				}
+				if !tc.closePPS {
+					ppsCh <- usable
+					time.Sleep(sysPulseFirstEdgeTimeout)
+					synctest.Wait()
+					if logs.String() != before {
+						t.Fatalf("logged on recovery or later silence: %s", logs.String())
+					}
+				}
+			})
+		})
 	}
 }
