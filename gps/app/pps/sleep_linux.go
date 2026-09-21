@@ -41,7 +41,15 @@ func sleepRemainder(t time.Time) bool {
 // tightenTimerSlack narrows the calling thread's timer slack, which the
 // kernel adds to every sleep the thread makes: the default 50 us is several
 // times the wakeup delay itself. It applies to the thread, so the caller must
-// already be locked to one.
-func tightenTimerSlack() error {
-	return unix.Prctl(unix.PR_SET_TIMERSLACK, 1, 0, 0, 0)
+// already be locked to one. On success it returns a function that restores
+// the previous slack and must be called before unlocking the thread.
+func tightenTimerSlack() (func(), error) {
+	slack, err := unix.PrctlRetInt(unix.PR_GET_TIMERSLACK, 0, 0, 0, 0)
+	if err != nil {
+		return nil, err
+	}
+	if err := unix.Prctl(unix.PR_SET_TIMERSLACK, 1, 0, 0, 0); err != nil {
+		return nil, err
+	}
+	return func() { unix.Prctl(unix.PR_SET_TIMERSLACK, uintptr(slack), 0, 0, 0) }, nil
 }

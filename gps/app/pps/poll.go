@@ -98,8 +98,10 @@ type poller struct {
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if err := tightenTimerSlack(); err != nil {
+	if restore, err := tightenTimerSlack(); err != nil {
 		lg.Debug("serial PPS could not tighten timer slack", "err", err)
+	} else {
+		defer restore()
 	}
 	stats.begin()
 	if params.InitialPolls == 0 {

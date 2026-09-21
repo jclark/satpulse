@@ -14,4 +14,4 @@ func sleepRemainder(time.Time) bool { return false }
 
 // tightenTimerSlack has nothing to do: Linux is the only platform here that
 // exposes the knob.
-func tightenTimerSlack() error { return nil }
+func tightenTimerSlack() (func(), error) { return func() {}, nil }
