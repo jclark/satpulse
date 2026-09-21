@@ -16,8 +16,8 @@ func sleepDuration(d time.Duration) time.Duration {
 }
 
 // sleepRemainder sleeps until t, the part of a wait sleepDuration truncated,
-// and reports whether it had to. That is the whole wait when the wait is
-// shorter than the runtime timer's resolution. The deadline is absolute
+// and reports whether the sleep succeeded. This covers the whole wait when
+// it is shorter than the runtime timer's resolution. The deadline is absolute
 // because the runtime's preemption signal interrupts the sleep, and the Go
 // monotonic clock is CLOCK_MONOTONIC, so resuming needs no arithmetic.
 func sleepRemainder(t time.Time) bool {
@@ -30,9 +30,12 @@ func sleepRemainder(t time.Time) bool {
 		return false
 	}
 	deadline := unix.NsecToTimespec(unix.TimespecToNsec(ts) + int64(d))
-	for unix.ClockNanosleep(unix.CLOCK_MONOTONIC, unix.TIMER_ABSTIME, &deadline, nil) == unix.EINTR {
+	for {
+		err := unix.ClockNanosleep(unix.CLOCK_MONOTONIC, unix.TIMER_ABSTIME, &deadline, nil)
+		if err != unix.EINTR {
+			return err == nil
+		}
 	}
-	return true
 }
 
 // tightenTimerSlack narrows the calling thread's timer slack, which the
