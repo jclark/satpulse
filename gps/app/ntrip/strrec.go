@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
@@ -123,14 +124,16 @@ func StreamRecordBuilder(
 // msm7NumberRE matches an MSM7 RTCM message number (1077, 1087, 1097,
 // 1107, 1117, 1127, 1137) as a standalone token.  Group 1 captures the
 // three-digit prefix shared with the corresponding MSM4 number.
-var msm7NumberRE = regexp.MustCompile(`\b(10[7-9]|11[0-3])7\b`)
+var msm7NumberRE = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`\b(10[7-9]|11[0-3])7\b`)
+})
 
 // convertFormatDetailsMSM7to4 rewrites any MSM7 RTCM message number
 // in a format-details string to the corresponding MSM4 number (e.g.
 // 1077 -> 1074, 1087 -> 1084).  Non-MSM7 tokens pass through
 // unchanged.
 func convertFormatDetailsMSM7to4(s string) string {
-	return msm7NumberRE.ReplaceAllString(s, "${1}4")
+	return msm7NumberRE().ReplaceAllString(s, "${1}4")
 }
 
 // enabledGNSSAndSignals returns the enabled GNSS set and signal set
