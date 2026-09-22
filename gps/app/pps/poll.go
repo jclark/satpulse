@@ -531,6 +531,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 		Edge: Edge{
 			Timestamp: stamp,
 			TRead:     cur.poll.end.mono,
+			ReadDelay: cur.poll.end.mono.Sub(edge.mono),
 		},
 		Uncertainty: uncertainty,
 		PollWidths:  pollWidths,
@@ -655,14 +656,15 @@ func classify(prev, cur reading, deadline time.Time) (clockReading, bool) {
 
 // reconciledStamp interpolates the edge's wall-clock time from the four clock
 // samples bracketing it. It repeats the interpolation classify performs, but
-// over wall readings reconciled against the monotonic ones. The edge's wall
-// time is otherwise anchored on the single sample the interpolation starts
-// from, so a delay between that sample's two clock reads slides the reported
-// timestamp off the edge while leaving its uncertainty the usual width.
+// over each stamp's wall reading reconciled against its own monotonic reading.
+// Stamps without a monotonic reading, as on Windows or with a model clock,
+// remain unchanged. The edge's wall time is otherwise anchored on the single
+// sample the interpolation starts from, so a delay between that sample's two
+// clock reads slides the reported timestamp off the edge while leaving its
+// uncertainty the usual width.
 func reconciledStamp(prev, cur poll) time.Time {
-	w := ReconcileTimes(
-		[]time.Time{prev.start.stamp, prev.end.stamp, cur.start.stamp, cur.end.stamp},
-		[]time.Time{prev.start.mono, prev.end.mono, cur.start.mono, cur.end.mono})
+	stamps := []time.Time{prev.start.stamp, prev.end.stamp, cur.start.stamp, cur.end.stamp}
+	w := ReconcileTimes(stamps, stamps)
 	return midpoint(midpoint(w[0], w[1]), midpoint(w[2], w[3]))
 }
 

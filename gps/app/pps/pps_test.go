@@ -69,6 +69,7 @@ func TestGeneratorTransfersTimestampThroughReadTime(t *testing.T) {
 		name          string
 		readSinceMsg  time.Duration
 		readAfterEdge time.Duration
+		wallShift     time.Duration
 		wantRef       time.Time
 	}{
 		{
@@ -83,6 +84,13 @@ func TestGeneratorTransfersTimestampThroughReadTime(t *testing.T) {
 			readAfterEdge: 100 * time.Millisecond,
 			wantRef:       time.Unix(1_003, 0).UTC(),
 		},
+		{
+			name:          "wall clock step does not change second label",
+			readSinceMsg:  9 * time.Millisecond,
+			readAfterEdge: 10 * time.Millisecond,
+			wallShift:     2 * time.Second,
+			wantRef:       time.Unix(1_000, 0).UTC(),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,10 +98,11 @@ func TestGeneratorTransfersTimestampThroughReadTime(t *testing.T) {
 			msgRead := time.Now()
 			g.MsgUTCTime(time.Unix(1_000, 0).UTC(), msgRead, ptime.LeapSecondNone)
 			tRead := msgRead.Add(tc.readSinceMsg)
-			// Reconstruct Timestamp from wall time to model a kernel or
-			// Windows timestamp without a monotonic reading.
-			timestamp := time.Unix(0, tRead.UnixNano()).Add(-tc.readAfterEdge)
-			sample, ok := g.Sample(Edge{Timestamp: timestamp, TRead: tRead})
+			// Reconstruct Timestamp without a monotonic reading, as with
+			// reconciled polling or kernel timestamps. A wall shift must not
+			// change the read-to-edge interval used for UTC assignment.
+			timestamp := time.Unix(0, tRead.UnixNano()).Add(tc.wallShift - tc.readAfterEdge)
+			sample, ok := g.Sample(Edge{Timestamp: timestamp, TRead: tRead, ReadDelay: tc.readAfterEdge})
 			if !ok {
 				t.Fatal("Edge returned no sample")
 			}

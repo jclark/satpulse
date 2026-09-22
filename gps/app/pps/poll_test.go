@@ -1637,6 +1637,26 @@ func TestPollWindowUncertainty(t *testing.T) {
 	}
 }
 
+func TestReconciledStampIgnoresCoarseMono(t *testing.T) {
+	// Model Windows FILETIME stamps paired with time.Now readings quantized
+	// to 0.5 ms. Only the closing read crosses a tick; reconciling against
+	// mono would move the midpoint from 495 us to 610 us.
+	wallBase := time.Unix(1_700_000_000, 0)
+	monoBase := time.Now()
+	at := func(d time.Duration) clockReading {
+		return clockReading{
+			stamp: wallBase.Add(d),
+			mono:  monoBase.Add(d.Truncate(500 * time.Microsecond)),
+		}
+	}
+	prev := poll{start: at(480 * time.Microsecond), end: at(490 * time.Microsecond)}
+	cur := poll{start: at(495 * time.Microsecond), end: at(515 * time.Microsecond)}
+	want := wallBase.Add(495 * time.Microsecond)
+	if got := reconciledStamp(prev, cur); !got.Equal(want) {
+		t.Errorf("reconciled stamp = %v, want precise midpoint %v", got, want)
+	}
+}
+
 func TestClockReadingElapsedSinceUsesStamp(t *testing.T) {
 	base := time.Unix(1_700_000_000, 0)
 	start := clockReading{stamp: base, mono: base}

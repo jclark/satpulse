@@ -157,7 +157,11 @@ func Wait(ctx context.Context, lg *slog.Logger, r ChangeWaiter, w Wiring, method
 			lg.Debug("serial PPS transitions not observed", "atLeast", missed)
 		}
 		if change.Asserted == w.Polarity.Asserted() {
-			ce := pps.CandidateEdge{Edge: pps.Edge{Timestamp: change.Timestamp, TRead: change.TRead}}
+			ce := pps.CandidateEdge{Edge: pps.Edge{
+				Timestamp: change.Timestamp,
+				TRead:     change.TRead,
+				ReadDelay: change.TRead.Sub(change.Timestamp),
+			}}
 			select {
 			case ceCh <- ce:
 			case <-ctx.Done():

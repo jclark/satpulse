@@ -18,12 +18,18 @@ const maxMsgAge = 3 * time.Second
 // Edge is a detected leading edge and the time at which the backend read it.
 // Timestamp is the time assigned to the edge: a kernel timestamp, a polling
 // bracket midpoint, or a wait wakeup used as an edge proxy. Its wall reading
-// is always meaningful, and it carries a monotonic reading when the backend
-// can preserve one. TRead is an ordinary time.Now reading captured when the
-// wait or closing poll completed, before subsequent validation.
+// is always meaningful; a reconciled polling timestamp has no monotonic
+// reading. TRead is an ordinary time.Now reading captured when the wait or
+// closing poll completed, before subsequent validation.
 type Edge struct {
 	Timestamp time.Time
 	TRead     time.Time
+	// ReadDelay is the signed interval from the edge to TRead, positive
+	// when the read completes after the edge. Polling measures it using
+	// monotonic readings; wait and kernel backends use TRead.Sub(Timestamp),
+	// which uses wall time when the timestamp has no monotonic reading.
+	// Zero means a zero interval, not an unspecified delay.
+	ReadDelay time.Duration
 }
 
 // CandidateEdge is an edge reported by a detection backend. Poll reports
@@ -128,13 +134,13 @@ func (g *Generator) Sample(edge Edge) (Sample, bool) {
 	if g.msgRead.IsZero() {
 		return Sample{}, false
 	}
-	// Transfer the timestamp onto the message-read timeline through TRead.
-	// The long message-to-read interval is monotonic; the short correction
-	// back to the edge uses Timestamp's monotonic reading when it has one and
-	// otherwise its wall reading. A wall-clock step during that correction can
-	// still corrupt it, but a step anywhere else in the message-to-edge span
-	// cannot. Use the transferred interval for both age and UTC extrapolation.
-	edgeSinceMsg := edge.TRead.Sub(g.msgRead) - edge.TRead.Sub(edge.Timestamp)
+	// Transfer the edge onto the message-read timeline through TRead. The
+	// message-to-read interval is monotonic; subtract the backend's measured
+	// ReadDelay to reach the edge. Polling preserves that correction independently
+	// of its reconciled wall timestamp. Backends using wall time for ReadDelay
+	// remain sensitive to a step during that short interval. Use the result for
+	// both age and UTC extrapolation.
+	edgeSinceMsg := edge.TRead.Sub(g.msgRead) - edge.ReadDelay
 	if edgeSinceMsg > maxMsgAge {
 		return Sample{}, false
 	}
