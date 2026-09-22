@@ -292,6 +292,8 @@ const (
 	// growthDivisor sets miss growth to a quarter of the extent, limiting
 	// how far one expansion can overshoot the polling budget at a steady pace.
 	growthDivisor = 4
+	// maxExtent bounds growth of the tracking window.
+	maxExtent = period / 2
 	// maxPolls is the threshold for further growth, not a limit on an
 	// attempt: polling continues through the full extent or until a catch.
 	maxPolls = 50
@@ -344,7 +346,7 @@ func track(extent, minSpacing time.Duration, attempt func(time.Duration) (trackO
 		failures++
 		next := extent
 		if obs.stateReads < maxPolls || extent < maxPolls*minSpacing {
-			next += extent / growthDivisor
+			next = min(extent+extent/growthDivisor, maxExtent)
 		}
 		if failures >= failureLimit {
 			report(trackEvent{kind: trackLost, extent: extent, nextExtent: next, observation: obs, failures: failures})
