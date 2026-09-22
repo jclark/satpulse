@@ -1652,8 +1652,8 @@ func TestReconciledStampIgnoresCoarseMono(t *testing.T) {
 	prev := poll{start: at(480 * time.Microsecond), end: at(490 * time.Microsecond)}
 	cur := poll{start: at(495 * time.Microsecond), end: at(515 * time.Microsecond)}
 	want := wallBase.Add(495 * time.Microsecond)
-	if got := reconciledStamp(prev, cur); !got.Equal(want) {
-		t.Errorf("reconciled stamp = %v, want precise midpoint %v", got, want)
+	if got, ok := reconciledStamp(prev, cur); !ok || !got.Equal(want) {
+		t.Errorf("reconciled stamp = %v, %v; want precise midpoint %v, true", got, ok, want)
 	}
 }
 

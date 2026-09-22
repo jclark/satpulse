@@ -37,11 +37,14 @@ type Edge struct {
 // Uncertainty gives the durations before and after Timestamp reaching the
 // start of the query that read the pin off and the end of the query that
 // read it on. This interval contains the edge if each query samples the pin
-// during its call. Reject gives the reason a timing consumer must withhold
-// the candidate, or is empty when it is usable. Acquisition catches are
+// during its call and the clock readings can be reconciled. Reject gives
+// the reason a timing consumer must withhold the candidate, or is empty
+// when it is usable. Acquisition catches are
 // rejected as acquiring; tracking catches are rejected as anomalous when
 // their outer width exceeds four times the median of the previous 31
-// tracking catches. Rejection does not affect tracking or acquisition.
+// tracking catches. A clockStep rejection means the clock readings could not
+// be reconciled; Timestamp retains the original estimate for diagnostics.
+// Rejection does not affect tracking or acquisition.
 // PollWidths gives the durations of the off and on queries, in that order.
 // Subtracting their sum from the sum of Uncertainty gives the gap between
 // the queries.
@@ -61,6 +64,7 @@ type RejectReason string
 const (
 	RejectAcquiring RejectReason = "acquiring"
 	RejectAnomalous RejectReason = "anomalous"
+	RejectClockStep RejectReason = "clockStep"
 )
 
 // GeneratorConfig controls how PPS edges are associated with UTC-labelled

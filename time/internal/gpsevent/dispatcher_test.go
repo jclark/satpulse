@@ -292,15 +292,15 @@ func TestDispatcherSysPulseCandidateWritesAcceptableSamples(t *testing.T) {
 	g := pps.NewGenerator(pps.DefaultGeneratorConfig())
 	d := &Dispatcher{
 		ppsGen: g,
-		shm:   shm,
-		obs:   observer,
-		lg:    slog.New(slog.NewTextHandler(io.Discard, nil)),
+		shm:    shm,
+		obs:    observer,
+		lg:     slog.New(slog.NewTextHandler(io.Discard, nil)),
 	}
 	msgUTC := time.Unix(1_000, 0).UTC()
 	msgRead := time.Unix(900, 125_000_000)
 	g.MsgUTCTime(msgUTC, msgRead, ptime.LeapSecondPositive)
 	edge := time.Unix(900, 1_000_000)
-	for _, reject := range []pps.RejectReason{pps.RejectAcquiring, pps.RejectAnomalous, "other"} {
+	for _, reject := range []pps.RejectReason{pps.RejectAcquiring, pps.RejectAnomalous, pps.RejectClockStep, "other"} {
 		d.sysPulseCandidateEdge(pps.CandidateEdge{
 			Edge:        pps.Edge{Timestamp: edge, TRead: edge},
 			Uncertainty: [2]time.Duration{time.Microsecond, time.Microsecond},

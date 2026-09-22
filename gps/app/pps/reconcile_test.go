@@ -1,6 +1,7 @@
 package pps
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
@@ -87,11 +88,87 @@ func TestReconcileTimes(t *testing.T) {
 			for _, at := range tc.expect {
 				expect = append(expect, wallBase.Add(at))
 			}
-			got := ReconcileTimes(wall, mono)
+			got, ok := ReconcileTimes(wall, mono)
+			if !ok {
+				t.Fatal("reconciliation rejected ordinary readings")
+			}
 			if !reflect.DeepEqual(got, expect) {
 				t.Errorf("got  %v\nwant %v", got, expect)
 			}
 		})
+	}
+}
+
+func TestReconcileTimesClockSteps(t *testing.T) {
+	wallBase, monoBase := time.Unix(1_700_000_000, 0), time.Now()
+	// Try both step directions, each position in or outside the four reads,
+	// and both sides of the 1 ms limit. A 2:2 split just above the limit must
+	// fail even though each median correction is only about half a millisecond.
+	for _, magnitude := range []time.Duration{time.Millisecond - 1, time.Millisecond, time.Millisecond + 1, 100 * time.Millisecond} {
+		for _, step := range []time.Duration{-magnitude, magnitude} {
+			for split := 0; split <= 4; split++ {
+				t.Run(fmt.Sprintf("%s/first_post_step_%d", step, split), func(t *testing.T) {
+					var wall, mono []time.Time
+					for i := range 4 {
+						at := time.Duration(i) * 10 * time.Microsecond
+						w := wallBase.Add(at)
+						if i >= split {
+							w = w.Add(step)
+						}
+						wall = append(wall, w)
+						mono = append(mono, monoBase.Add(at))
+					}
+					wantOK := split == 0 || split == 4 || magnitude <= time.Millisecond
+					got, ok := ReconcileTimes(wall, mono)
+					if ok != wantOK {
+						t.Fatalf("ok = %v, want %v", ok, wantOK)
+					}
+					if !ok {
+						if got != nil {
+							t.Fatalf("rejected result = %v, want nil", got)
+						}
+						return
+					}
+					shift := time.Duration(0)
+					if split < 2 {
+						shift = step
+					} else if split == 2 {
+						// medianAndSpread rounds the average toward the lower offset.
+						shift = step / 2
+						if step < 0 && step%2 != 0 {
+							shift--
+						}
+					}
+					for i, v := range got {
+						want := wallBase.Add(time.Duration(i)*10*time.Microsecond + shift)
+						if !v.Equal(want) {
+							t.Errorf("sample %d = %v, want %v", i, v, want)
+						}
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestReconcileTimesExcessiveDiscrepancy(t *testing.T) {
+	wallBase, monoBase := time.Unix(1_700_000_000, 0), time.Now()
+	for _, offsets := range [][4]time.Duration{
+		{0, -750 * time.Microsecond, 750 * time.Microsecond, 0},
+		{-2 * time.Millisecond, 0, 0, 0},
+		{0, -2 * time.Millisecond, 0, 0},
+		{0, 0, -2 * time.Millisecond, 0},
+		{0, 0, 0, -2 * time.Millisecond},
+	} {
+		var wall, mono []time.Time
+		for i, offset := range offsets {
+			at := time.Duration(i) * 10 * time.Microsecond
+			wall = append(wall, wallBase.Add(at+offset))
+			mono = append(mono, monoBase.Add(at))
+		}
+		if got, ok := ReconcileTimes(wall, mono); ok || got != nil {
+			t.Errorf("offsets %v: got %v, %v; want nil, false", offsets, got, ok)
+		}
 	}
 }
 
@@ -102,7 +179,10 @@ func TestReconcileTimesAliased(t *testing.T) {
 	// with the input: each result sits at its monotonic spacing from the
 	// first, and none keeps a monotonic reading.
 	ts := []time.Time{time.Now(), time.Now(), time.Now(), time.Now()}
-	got := ReconcileTimes(ts, ts)
+	got, ok := ReconcileTimes(ts, ts)
+	if !ok {
+		t.Fatal("reconciliation rejected ordinary readings")
+	}
 	if len(got) != len(ts) {
 		t.Fatalf("got %d results, want %d", len(got), len(ts))
 	}
@@ -126,8 +206,8 @@ func TestReconcileTimesModelClock(t *testing.T) {
 	// and the wall times come back unchanged.
 	base := time.Date(2026, 9, 21, 6, 45, 48, 0, time.UTC)
 	ts := []time.Time{base, base.Add(4803), base.Add(6370), base.Add(10810)}
-	if got := ReconcileTimes(ts, ts); !reflect.DeepEqual(got, ts) {
-		t.Errorf("got  %v\nwant %v", got, ts)
+	if got, ok := ReconcileTimes(ts, ts); !ok || !reflect.DeepEqual(got, ts) {
+		t.Errorf("got %v, %v; want %v, true", got, ok, ts)
 	}
 }
 

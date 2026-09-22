@@ -104,10 +104,12 @@ and, when the **poll** method is used, optional arrays `uncertainty` and `pollWi
 The timestamp remains the midpoint of the two status-read midpoints and
 preserves nanosecond precision in JSON output.
 `uncertainty: [before, after]` gives the durations from that timestamp back to the start of the read that saw the pin before the edge and forward to the end of the read that saw it after.
-This interval contains the physical edge if each read samples the pin during its call; it does not account for cached pin status.
+This interval contains the physical edge if each read samples the pin during its call and the clock readings can be reconciled; it does not account for cached pin status.
 `pollWidths: [start, end]` gives the durations of those two reads in the same order.
 `reject: "acquiring"` marks catches during acquisition, including the catch that completes it.
 `reject: "anomalous"` marks a tracking interval wider than four times the median of the previous 31 tracking catches.
+`reject: "clockStep"` marks clock readings whose wall-to-monotonic offsets differ by more than 1 ms.
+For these catches, `t` retains the original estimate for diagnostics and its uncertainty interval is unreliable.
 Timing consumers withhold catches with a rejection reason and accept all other catches, regardless of uncertainty.
 The command reports every catch, including rejected catches.
 

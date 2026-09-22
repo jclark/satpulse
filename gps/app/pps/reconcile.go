@@ -5,6 +5,8 @@ import (
 	"time"
 )
 
+const maxClockDiscrepancy = time.Millisecond
+
 // ReconcileTimes returns wall-clock times for the samples in wall, adjusted so
 // that their spacing matches the monotonic spacing of mono. time.Now reads the
 // wall and monotonic clocks in separate calls with nothing making the pair
@@ -19,15 +21,20 @@ import (
 // reading. One straddled sample is tolerated once there are three samples;
 // with two there is no majority and the error is split between them.
 //
+// If the largest and smallest wall-to-monotonic offsets differ by more than
+// 1 ms, the samples may span a clock step and the result is nil, false. The
+// limit applies to the discrepancy between samples, not their corrections.
+// Otherwise ok is true, including for empty slices.
+//
 // The slices must be the same length, which panics otherwise. Where no mono
 // entry carries a monotonic reading, as with a model clock, there is nothing
 // to reconcile against and the wall times come back unchanged.
-func ReconcileTimes(wall, mono []time.Time) []time.Time {
+func ReconcileTimes(wall, mono []time.Time) ([]time.Time, bool) {
 	if len(wall) != len(mono) {
 		panic("wall and mono differ in length")
 	}
 	if len(wall) == 0 {
-		return nil
+		return nil, true
 	}
 	// Round(0) strips a monotonic reading, so the wall term below compares
 	// wall clocks and a value differs from its stripped self only when it has
@@ -43,20 +50,23 @@ func ReconcileTimes(wall, mono []time.Time) []time.Time {
 		}
 		offsets[i] = wall[i].Round(0).Sub(w0) - mono[i].Sub(m0)
 	}
-	m := medianDuration(offsets)
+	m, discrepancy := medianAndSpread(offsets)
+	if discrepancy > maxClockDiscrepancy {
+		return nil, false
+	}
 	out := make([]time.Time, len(wall))
 	for i := range wall {
 		out[i] = wall[i].Round(0).Add(m - offsets[i])
 	}
-	return out
+	return out, true
 }
 
-// medianDuration returns the median of ds, averaging the middle two when the
-// count is even. It sorts a copy because the caller's order pairs ds with its
-// samples.
-func medianDuration(ds []time.Duration) time.Duration {
+// medianAndSpread returns the median and the difference between the largest
+// and smallest values of ds. It averages the middle two for an even count and
+// sorts a copy because the caller's order pairs ds with its samples.
+func medianAndSpread(ds []time.Duration) (time.Duration, time.Duration) {
 	s := slices.Clone(ds)
 	slices.Sort(s)
 	lo, hi := s[(len(s)-1)/2], s[len(s)/2]
-	return lo + (hi-lo)/2
+	return lo + (hi-lo)/2, s[len(s)-1] - s[0]
 }

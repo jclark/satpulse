@@ -89,7 +89,8 @@ type poller struct {
 // Every catch is sent, with the midpoint of the two query midpoints as its
 // timestamp, Uncertainty reaching the outer endpoints of those queries, and
 // Reject set to acquiring during acquisition, or anomalous when a tracking
-// catch's outer width exceeds four times its recent median. Every other
+// catch's outer width exceeds four times its recent median. A catch whose
+// clock readings cannot be reconciled is rejected as clockStep. Every other
 // tracking catch is usable, regardless of its uncertainty.
 // Every caught edge is logged to lg at debug level. Tracking starts,
 // halvings of the extent, misses, and loss are logged at info level with
@@ -484,6 +485,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	missed := cur.inPulse
 	var edge clockReading
 	var stamp time.Time
+	var reconciled bool
 	var uncertainty, pollWidths [2]time.Duration
 	for !missed && edge.stamp.IsZero() {
 		cur, err = p.readState(nextGridPoint(grid, spacing, prev.start), precise)
@@ -499,7 +501,11 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 			uncertainty = [2]time.Duration{edge.elapsedSince(prev.poll.start), cur.poll.end.elapsedSince(edge)}
 			p.lastWidth = uncertainty[0] + uncertainty[1]
 			pollWidths = [2]time.Duration{prev.poll.duration(), cur.poll.duration()}
-			stamp = reconciledStamp(prev.poll, cur.poll)
+			stamp, reconciled = reconciledStamp(prev.poll, cur.poll)
+			if !reconciled {
+				// Keep the original estimate for diagnostics only.
+				stamp = edge.stamp.Round(0)
+			}
 		}
 		prev = cur
 	}
@@ -517,6 +523,9 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (outco
 	}
 	predictionError := edge.mono.Sub(nextEdge)
 	reject := p.rejectReason(p.lastWidth, acquired)
+	if !reconciled {
+		reject = RejectClockStep
+	}
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
@@ -663,11 +672,15 @@ func classify(prev, cur reading, deadline time.Time) (clockReading, bool) {
 // remain unchanged. The edge's wall time is otherwise anchored on the single
 // sample the interpolation starts from, so a delay between that sample's two
 // clock reads slides the reported timestamp off the edge while leaving its
-// uncertainty the usual width.
-func reconciledStamp(prev, cur poll) time.Time {
+// uncertainty the usual width. It returns false when the readings disagree
+// by more than ReconcileTimes permits.
+func reconciledStamp(prev, cur poll) (time.Time, bool) {
 	stamps := []time.Time{prev.start.stamp, prev.end.stamp, cur.start.stamp, cur.end.stamp}
-	w := ReconcileTimes(stamps, stamps)
-	return midpoint(midpoint(w[0], w[1]), midpoint(w[2], w[3]))
+	w, ok := ReconcileTimes(stamps, stamps)
+	if !ok {
+		return time.Time{}, false
+	}
+	return midpoint(midpoint(w[0], w[1]), midpoint(w[2], w[3])), true
 }
 
 func (p poll) midpoint() clockReading {

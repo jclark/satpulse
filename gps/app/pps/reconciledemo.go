@@ -42,13 +42,19 @@ func main() {
 	}
 	ts := make([]time.Time, 4)
 	corrections := make([]time.Duration, 4)
-	corrected := 0
+	corrected, rejected := 0, 0
 	for g := range groups {
 		for i := range ts {
 			ts[i] = time.Now()
 		}
 		var worst time.Duration
-		for i, v := range pps.ReconcileTimes(ts, ts) {
+		wall, ok := pps.ReconcileTimes(ts, ts)
+		if !ok {
+			rejected++
+			fmt.Printf("group %d: clock discrepancy too large to reconcile\n", g)
+			continue
+		}
+		for i, v := range wall {
 			corrections[i] = v.Sub(ts[i].Round(0))
 			if corrections[i] > worst {
 				worst = corrections[i]
@@ -61,6 +67,7 @@ func main() {
 	}
 	fmt.Printf("%d of %d groups corrected by more than %v (%.6f%%)\n",
 		corrected, groups, threshold, 100*float64(corrected)/float64(groups))
+	fmt.Printf("%d groups could not be reconciled\n", rejected)
 }
 
 func usage() {
