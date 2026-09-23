@@ -279,7 +279,8 @@ func (s *sim) slowFactor() float64 {
 }
 
 // run advances the clock by d of running time, inserting any stall that
-// begins meanwhile, and keeps the idle-slowdown state.
+// begins meanwhile, and keeps the idle-slowdown state. Work is counted only
+// up to the simulation end.
 func (s *sim) run(d time.Duration) {
 	if s.idleAfter > 0 {
 		if s.now-s.lastActive > s.idleAfter {
@@ -291,16 +292,17 @@ func (s *sim) run(d time.Duration) {
 			}
 		}
 	}
-	s.work += d
 	for s.nextStall < len(s.stalls) && s.stalls[s.nextStall].at < s.now+d {
 		st := s.stalls[s.nextStall]
 		s.nextStall++
 		if st.at > s.now {
+			s.work += max(0, min(st.at, s.end)-s.now)
 			d -= st.at - s.now
 			s.now = st.at
 		}
 		s.now = max(s.now, st.at+st.dur)
 	}
+	s.work += max(0, min(d, s.end-s.now))
 	s.now += d
 	s.lastActive = s.now
 }
