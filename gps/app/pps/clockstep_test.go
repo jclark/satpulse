@@ -60,7 +60,7 @@ func TestPollWindowClockStep(t *testing.T) {
 					for cycle := range 2 {
 						prediction := base.Add(time.Duration(cycle) * period)
 						p.nextEdge = prediction
-						o, predictionError, err := p.pollWindow(time.Millisecond, minSpacing, acquired)
+						o, predictionError, width, err := p.pollWindow(time.Millisecond, minSpacing, acquired)
 						if err != nil || o != caught || predictionError != 5495 {
 							t.Fatalf("cycle %d: pollWindow = %v, %v, %v; want catch, 5495ns, nil", cycle, o, predictionError, err)
 						}
@@ -77,8 +77,8 @@ func TestPollWindowClockStep(t *testing.T) {
 						if ce.Reject != wantReject || !ce.Timestamp.Equal(wantStamp) {
 							t.Errorf("cycle %d: stamp %v reject %q; want %v, %q", cycle, ce.Timestamp, ce.Reject, wantStamp, wantReject)
 						}
-						if ce.Uncertainty != [2]time.Duration{5495, 5315} || ce.PollWidths != [2]time.Duration{4803, 4440} || ce.ReadDelay != 5315 || p.lastWidth != 10810 {
-							t.Errorf("clock step changed monotonic intervals: %+v; lastWidth %v", ce, p.lastWidth)
+						if ce.Uncertainty != [2]time.Duration{5495, 5315} || ce.PollWidths != [2]time.Duration{4803, 4440} || ce.ReadDelay != 5315 || width != 10810 {
+							t.Errorf("clock step changed monotonic intervals: %+v; width %v", ce, width)
 						}
 						wantNext := prediction
 						if !acquired {

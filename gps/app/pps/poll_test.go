@@ -737,8 +737,8 @@ func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
 					return trackObservation{}, done
 				}
 				attempts++
-				o, e, err := p.pollWindow(extent, minSpacing, true)
-				return trackObservation{outcome: o, predictionError: e, width: p.lastWidth,
+				o, e, w, err := p.pollWindow(extent, minSpacing, true)
+				return trackObservation{outcome: o, predictionError: e, width: w,
 					bracket: p.lastBracket, stateReads: p.stateReads}, err
 			}, func(d time.Duration) {
 				p.nextEdge = p.nextEdge.Add(d)
@@ -1105,7 +1105,7 @@ func TestPollAcquisition(t *testing.T) {
 						t.Errorf("acquisition catch reject = %q, want acquiring including the final catch", ce.Reject)
 					}
 				}
-				if o, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
+				if o, _, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
 					t.Fatalf("first tracking window = %v, %v, want a catch", o, err)
 				}
 				if ce := <-candidates; ce.Reject != "" {
@@ -1260,7 +1260,7 @@ func TestPollStartupFineSweep(t *testing.T) {
 						t.Errorf("acquisition reject = %q, want acquiring", ce.Reject)
 					}
 				}
-				if o, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
+				if o, _, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
 					t.Fatalf("first tracking window = %v, %v, want a catch", o, err)
 				}
 				if ce := <-candidates; ce.Reject != "" {
@@ -1617,7 +1617,7 @@ func TestPollWindowUncertainty(t *testing.T) {
 					Wait: func(context.Context, time.Time, bool) (bool, error) { return false, nil },
 				},
 			}
-			if o, _, err := p.pollWindow(time.Millisecond, minSpacing, true); err != nil || o == miss {
+			if o, _, _, err := p.pollWindow(time.Millisecond, minSpacing, true); err != nil || o == miss {
 				t.Fatalf("pollWindow = %v, %v, want a catch", o, err)
 			}
 			ce := <-candidates
