@@ -232,15 +232,15 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 	h := p.mh
 	switch m := body.(type) {
 	case *novmsg.BestPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTPOS", tag, tRead)
 	case *novmsg.SinoBestPos:
-		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTPOS", tag, tRead)
 	case *novmsg.BestGNSSPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTGNSSPOS", tag, tRead)
 	case *novmsg.PsrPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "PSRPOS", tag, tRead)
 	case *novmsg.SinoPsrPos:
-		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, "PSRPOS", tag, tRead)
 	case *novmsg.BestVel:
 		if m.SolStatus != novmsg.SolComputed {
 			return false, nil
