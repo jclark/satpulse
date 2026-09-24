@@ -39,10 +39,17 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	if nm, ok := m.(asbin.NavMsg); ok {
 		p.handleNavEpoch(nm, tRead)
 	}
+	nmh := p.GetNativeMsgHandler()
 	if p.dispatch(m, tRead) {
+		// The data path consumed the message; still offer it to an
+		// observer (the rate estimator) via the optional handled
+		// channel, passing the already-parsed message so iTOW comes
+		// for free.
+		if hh, ok := nmh.(gpsprot.HandledNativeMsgHandler); ok {
+			return msgID, hh.HandledNativeMsg(Tag, msgID, m, tRead)
+		}
 		return msgID, nil
 	}
-	nmh := p.GetNativeMsgHandler()
 	if nmh != nil {
 		return msgID, nmh.NativeMsg(Tag, msgID, m, tRead)
 	}
@@ -69,7 +76,8 @@ func (p *PacketProcessor) handleNavEpoch(nm asbin.NavMsg, tRead time.Time) {
 // sameEpoch reports whether two epoch identifiers (iTOW+1) refer to the same
 // navigation epoch. It allows a 1ms tolerance because Allystar NAV-TIMEUTC
 // reports iTOW consistently 1ms less than other NAV messages in the same
-// solution. The minimum epoch interval is 1000ms (1Hz), so a 1ms tolerance
+// solution. A 5Hz-native unit runs epochs 200ms apart and a 10Hz unit
+// 100ms apart, so even at the fastest documented rate the 1ms tolerance
 // cannot merge distinct epochs.
 func sameEpoch(a, b uint32) bool {
 	if a > b {

@@ -1,0 +1,48 @@
+{
+  "defects": {"timePulse.width": {"acceptedButNotApplied": [{"readback": 0.1, "request": 0}]}},
+  "limitations": {
+    "antennaCableDelay": {"unsupported": true},
+    "mode.fixedPosAcc": {"unsupported": true},
+    "mode.fixedPosECEF[0]": {"quantum": 0.01},
+    "mode.fixedPosECEF[1]": {"quantum": 0.01},
+    "mode.fixedPosECEF[2]": {"quantum": 0.01},
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "pvtOut": {"missing": ["leap", "tp"]},
+    "rtcmBaseID": {"unsupported": true},
+    "showPort": {"unsupported": true},
+    "signals": {
+      "observed": [
+        {"gnss": ["GLO"], "result": {}},
+        {
+          "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS"],
+          "result": {"BDS": ["B1I", "B2a"], "GAL": ["E1", "E5a"], "GPS": ["L1", "L5"]}
+        },
+        {"gnss": ["GPS", "QZSS"], "result": {"GPS": ["L1", "L5"]}}
+      ],
+      "signalSet": {"BDS": ["B1I", "B2a"], "GAL": ["E1", "E5a"], "GPS": ["L1", "L5"]}
+    },
+    "timeGNSS": {"unsupported": true},
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "3.018.80db2889",
+    "hardware": "HD9311.32690e91c",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS"],
+    "vendor": "Allystar"
+  },
+  "supports": [
+    "fixedPos",
+    "raw",
+    "reload",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "rtcmQZSS",
+    "signal",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}

@@ -119,6 +119,19 @@ type NativeMsgHandler interface {
 	NativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error
 }
 
+// HandledNativeMsgHandler is optionally implemented by a NativeMsgHandler
+// that also wants to observe messages the data path consumed. The
+// arguments match NativeMsg. A packet processor that consumes a message
+// (routing it to the MsgHandler) emits it here too, so an observer such
+// as a rate estimator sees the whole stream, not just the messages the
+// data path did not recognize. The two channels are mutually exclusive
+// per packet. Implementations that do not need consumed traffic (the
+// normal-operation dispatcher) simply do not implement this, and pay
+// nothing: the emit is guarded by a type assertion.
+type HandledNativeMsgHandler interface {
+	HandledNativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error
+}
+
 type DefaultHandler struct{}
 
 func (h *DefaultHandler) Time(msg *TimeMsg, tRead time.Time)             {}
@@ -295,6 +308,23 @@ func (m *MultiNativeMsgHandler) NativeMsg(tag Tag, msgID string, msg any, tRead 
 	for _, h := range m.handlers {
 		if err := h.NativeMsg(tag, msgID, msg, tRead); err != nil && firstErr == nil {
 			firstErr = err
+		}
+	}
+	return firstErr
+}
+
+// HandledNativeMsg forwards a consumed message to every child that
+// implements HandledNativeMsgHandler. The Multi handler is what is
+// installed during configuration, so without this forwarding the
+// packet processors' type assertion would fail exactly when
+// observations are needed.
+func (m *MultiNativeMsgHandler) HandledNativeMsg(tag Tag, msgID string, msg any, tRead time.Time) error {
+	var firstErr error
+	for _, h := range m.handlers {
+		if hh, ok := h.(HandledNativeMsgHandler); ok {
+			if err := hh.HandledNativeMsg(tag, msgID, msg, tRead); err != nil && firstErr == nil {
+				firstErr = err
+			}
 		}
 	}
 	return firstErr
