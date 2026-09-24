@@ -20,13 +20,14 @@ It also deals with antenna splitters.
 Timing applications have very specific hardware requirements.
 
 The minimum requirement for the host computer is a way to connect the PPS output of the GNSS receiver.
-The typical way to do this is to use a GPIO pin on an ARM-based SBC, such as Raspberry Pi.
+On an ARM-based SBC, such as Raspberry Pi, the typical way to do this is to use a GPIO pin.
 On a desktop or laptop computer which lacks GPIO pins
 the typical approach is to use a modem control pin on a serial port.
 This can work with either an RS-232 DB9 male connector on the computer,
 or, using a suitable [USB serial adapter]({% link hardware/usb-serial.md %}), with a USB port.
 
-But the best possible timing precision requires an ethernet controller with a PPS input pin. At the time of writing, 2026Q2, there are very few such controllers available at low cost, and these can be divided into two categories. For each category, there is a separate page describing how to build a system.
+But the best possible timing precision requires an ethernet controller with a PPS input pin and Linux.
+At the time of writing, 2026Q2, there are very few such controllers available at low cost, and these can be divided into two categories. For each category, there is a separate page describing how to build a system.
 
 - The [RPi CM4/CM5 build]({%link hardware/cm-build.md %}) page describes how to build a system using the ethernet controller in the Raspberry Pi (RPi) Compute Module 4 and 5 (CM4/CM5) (note that the ethernet controller in the RPi 5 and previous models does not have this capability); 
 - The [Intel build]({%link hardware/intel-build.md %}) page describes how to build a system using Intel NICs, specifically the i210 and the i226 (which has replaced the i225). Typically these use a x86 PC, but there is also a hybrid option that uses a Intel NIC in a hat that attaches to a RPi 5 (not a CM5).

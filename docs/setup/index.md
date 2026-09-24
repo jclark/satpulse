@@ -5,6 +5,8 @@ toc: false
 
 This section describes how to set up SatPulse and the software that works with it.
 
+For setup on macOS, see [Setup on macOS]({% link setup/macos.md %}).
+
 Before installing SatPulse, you obviously need a working OS.
 SatPulse runs on Linux, macOS and Windows,
 although not all features are available on every OS.

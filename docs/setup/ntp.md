@@ -4,6 +4,7 @@ title: Basic use with NTP
 
 This page describes how to use SatPulse to build an NTP server using general-purpose hardware.
 This works on both Linux and macOS.
+For macOS-specific setup, see [Setup on macOS]({% link setup/macos.md %}#use-with-ntp).
 If your machine has a network interface with a PTP Hardware Clock (PHC) that can timestamp a PPS signal,
 use the approach in [Precision timing with a PHC]({% link setup/phc.md %}) instead,
 which covers NTP service as well as PTP.
@@ -48,7 +49,7 @@ satpulsed supports three methods of using the operating system to determine the 
 
 Which methods are available depends on the operating system and the driver.
 Generally, the `poll` method is always available if any of the three methods are available.
-The `kernel` and `wait` methods are not available on macOS.
+For macOS, see [Use with NTP on macOS]({% link setup/macos.md %}#use-with-ntp).
 The `kernel` method is available on Linux only when the pin is DCD.
 The `wait` method is not supported by some USB serial drivers on Linux (e.g. CP2102).
 

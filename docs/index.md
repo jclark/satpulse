@@ -28,7 +28,8 @@ The [Setup guide]({% link setup/index.md %}) describes how to get started with S
 SatPulse supports not only timing, but also RTK positioning, and GPS receiver configuration, evaluation and monitoring.
 In particular, you can:
 
-* run a stratum-1 NTP server using chrony, ntpd-rs or NTPsec
+* run a stratum 1 NTP server using chrony, ntpd-rs or NTPsec on Linux
+* run a stratum 1 NTP server using chrony on macOS
 * run a PTP grandmaster with a Raspberry Pi CM4/CM5 or an Intel NIC using linuxptp
 * act as an RTK base station or rover
 * configure, monitor and evaluate a GPS receiver using a web-based GUI {% include new-in-03.html %}
@@ -48,7 +49,7 @@ This is complemented by support for low-level configuration using vendor-specifi
 The three programs all use a shared configuration engine.
 
 Timing is the most mature part of SatPulse.
-A typical NTP stratum-1 server, running on, for example, a Raspberry Pi, connects the PPS (pulse-per-second) output of a GPS receiver to a GPIO or a serial port pin.
+A typical NTP stratum 1 server, running on, for example, a Raspberry Pi, connects the PPS (pulse-per-second) output of a GPS receiver to a GPIO or a serial port pin.
 SatPulse can take advantage of hardware designed for PTP (Precision Time Protocol).
 The key difference is that the PPS output of the GPS receiver is connected to a PPS input pin *on the ethernet controller*.
 This is supported only on Linux.

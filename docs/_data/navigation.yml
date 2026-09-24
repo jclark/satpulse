@@ -53,6 +53,8 @@ docs:
     children:
       - title: "Setup guide"
         url: "/setup/index.html"
+      - title: "Setup on macOS"
+        url: "/setup/macos.html"
       - title: "Raspberry Pi OS"
         url: "/setup/rpi-os.html"
       - title: "Fedora on RPi"
