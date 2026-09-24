@@ -1,14 +1,15 @@
 package gpsevent
 
 import (
-	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"os"
 	"os/signal"
-	"strings"
+	"reflect"
+	"regexp"
 	"syscall"
 	"testing"
 	"testing/synctest"
@@ -19,10 +20,12 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/refclock"
+	"github.com/jclark/satpulse/time/internal/timemsg"
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 )
@@ -367,8 +370,70 @@ func TestDispatcherSHMPrecisionOverride(t *testing.T) {
 	}
 }
 
-// TestDispatcherSysPulseWarnings checks the single startup warning and its
-// rejection counts, including cancellation before any time message arrives.
+// logRecord is a log record reduced to what the tests compare.
+type logRecord struct {
+	level slog.Level
+	msg   string
+	attrs map[string]any
+}
+
+// recordHandler keeps the records logged at INFO or above.
+type recordHandler struct {
+	records []logRecord
+}
+
+func (h *recordHandler) Enabled(_ context.Context, l slog.Level) bool { return l >= slog.LevelInfo }
+
+func (h *recordHandler) Handle(_ context.Context, r slog.Record) error {
+	lr := logRecord{level: r.Level, msg: r.Message}
+	r.Attrs(func(a slog.Attr) bool {
+		if lr.attrs == nil {
+			lr.attrs = make(map[string]any)
+		}
+		lr.attrs[a.Key] = a.Value.Any()
+		return true
+	})
+	h.records = append(h.records, lr)
+	return nil
+}
+
+func (h *recordHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *recordHandler) WithGroup(string) slog.Handler { return h }
+
+// warnExpect matches a warning whose message matches re and whose
+// attributes are attrs.
+type warnExpect struct {
+	re    string
+	attrs map[string]any
+}
+
+func warnRejected(rejected map[pps.RejectReason]int) warnExpect {
+	return warnExpect{`usable .*edges`, map[string]any{"rejected": rejected}}
+}
+
+var (
+	warnNoEdges    = warnExpect{re: `no .*PPS edges`}
+	warnNoTimeMsgs = warnExpect{re: `time messages`}
+)
+
+func matchWarnings(got []logRecord, expect []warnExpect) bool {
+	if len(got) != len(expect) {
+		return false
+	}
+	for i, e := range expect {
+		g := got[i]
+		if g.level != slog.LevelWarn || !regexp.MustCompile(e.re).MatchString(g.msg) || !reflect.DeepEqual(g.attrs, e.attrs) {
+			return false
+		}
+	}
+	return true
+}
+
+// TestDispatcherSysPulseWarnings checks that the startup warnings, with
+// their rejection counts, are given once at the startup timeout. No time
+// messages arrive, so the time message warning is given whenever serial PPS
+// is still running.
 func TestDispatcherSysPulseWarnings(t *testing.T) {
 	// Start the process-wide signal watcher outside the synctest bubbles.
 	sig := make(chan os.Signal, 1)
@@ -381,23 +446,23 @@ func TestDispatcherSysPulseWarnings(t *testing.T) {
 		name       string
 		candidates []pps.CandidateEdge
 		closePPS   bool
-		want       string
+		expect     []warnExpect
 	}{
-		{"no edges", nil, false, `msg="no serial PPS edges received"`},
-		{"anomalous", []pps.CandidateEdge{anomalous}, false, `msg="no usable serial PPS edges received" rejected=map[anomalous:40]`},
-		{"acquiring", []pps.CandidateEdge{acquiring}, false, `msg="no usable serial PPS edges received" rejected=map[acquiring:40]`},
-		{"alternating", []pps.CandidateEdge{anomalous, acquiring}, false, `msg="no usable serial PPS edges received" rejected="map[acquiring:20 anomalous:20]"`},
-		{"unknown reason", []pps.CandidateEdge{{Reject: "other"}}, false, `msg="no usable serial PPS edges received" rejected=map[other:40]`},
-		{"usable", []pps.CandidateEdge{anomalous, acquiring, usable}, false, ""},
-		{"closed", nil, true, ""},
+		{"no edges", nil, false, []warnExpect{warnNoEdges, warnNoTimeMsgs}},
+		{"anomalous", []pps.CandidateEdge{anomalous}, false, []warnExpect{warnRejected(map[pps.RejectReason]int{pps.RejectAnomalous: 40}), warnNoTimeMsgs}},
+		{"acquiring", []pps.CandidateEdge{acquiring}, false, []warnExpect{warnRejected(map[pps.RejectReason]int{pps.RejectAcquiring: 40}), warnNoTimeMsgs}},
+		{"alternating", []pps.CandidateEdge{anomalous, acquiring}, false, []warnExpect{warnRejected(map[pps.RejectReason]int{pps.RejectAcquiring: 20, pps.RejectAnomalous: 20}), warnNoTimeMsgs}},
+		{"unknown reason", []pps.CandidateEdge{{Reject: "other"}}, false, []warnExpect{warnRejected(map[pps.RejectReason]int{"other": 40}), warnNoTimeMsgs}},
+		{"usable", []pps.CandidateEdge{anomalous, acquiring, usable}, false, []warnExpect{warnNoTimeMsgs}},
+		{"closed", nil, true, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				var logs bytes.Buffer
+				h := &recordHandler{}
 				d := &Dispatcher{
 					ppsGen: pps.NewGenerator(pps.DefaultGeneratorConfig()),
 					obs:    &obs.DefaultObserver{},
-					lg:     slog.New(slog.NewTextHandler(&logs, nil)),
+					lg:     slog.New(h),
 				}
 				ppsCh := make(chan pps.CandidateEdge)
 				pktCh := make(chan scan.Packet)
@@ -415,41 +480,104 @@ func TestDispatcherSysPulseWarnings(t *testing.T) {
 						ppsCh <- tc.candidates[i%len(tc.candidates)]
 					}
 				}
-				time.Sleep(sysPulseFirstEdgeTimeout - time.Second)
+				time.Sleep(sysPulseStartupTimeout - time.Second)
 				synctest.Wait()
-				if logs.Len() != 0 {
-					t.Fatalf("logged before startup timeout: %s", logs.String())
+				if len(h.records) != 0 {
+					t.Fatalf("logged before startup timeout: %+v", h.records)
 				}
 				time.Sleep(time.Second)
 				synctest.Wait()
-				wantWarnings := 0
-				if tc.want != "" {
-					wantWarnings = 1
+				if !matchWarnings(h.records, tc.expect) {
+					t.Fatalf("got  %+v\nwant %+v", h.records, tc.expect)
 				}
-				if n := strings.Count(logs.String(), "level=WARN"); n != wantWarnings || !strings.Contains(logs.String(), tc.want) {
-					t.Fatalf("logs = %q, want %d warnings containing %q", logs.String(), wantWarnings, tc.want)
-				}
-				before := logs.String()
+				n := len(h.records)
 				if !tc.closePPS {
 					for range 40 {
 						ppsCh <- anomalous
 						ppsCh <- acquiring
 					}
 				}
-				time.Sleep(time.Hour + sysPulseFirstEdgeTimeout)
+				time.Sleep(time.Hour + sysPulseStartupTimeout)
 				synctest.Wait()
-				if logs.String() != before {
-					t.Fatalf("logged again after startup: %s", logs.String())
+				if len(h.records) != n {
+					t.Fatalf("logged again after startup: %+v", h.records[n:])
 				}
 				if !tc.closePPS {
 					ppsCh <- usable
-					time.Sleep(sysPulseFirstEdgeTimeout)
+					time.Sleep(sysPulseStartupTimeout)
 					synctest.Wait()
-					if logs.String() != before {
-						t.Fatalf("logged on recovery or later silence: %s", logs.String())
+					if len(h.records) != n {
+						t.Fatalf("logged on recovery or later silence: %+v", h.records[n:])
 					}
 				}
 			})
+		})
+	}
+}
+
+// TestDispatcherSysPulseStartupReport checks which startup warnings are
+// given for the edges and time messages received before the timeout.
+func TestDispatcherSysPulseStartupReport(t *testing.T) {
+	utc := &gpsprot.TimeMsg{UTCTime: opt.Make(ptime.UTC(2026, 9, 24, 0, 0, 0, 0))}
+	taiOnly := &gpsprot.TimeMsg{TAITime: ptime.GPS(2385, 0)}
+	prePulse := &gpsprot.TimeMsg{UTCTime: utc.UTCTime, Ref: gpsprot.PrePulse}
+	noTime := &gpsprot.TimeMsg{}
+	tests := []struct {
+		name    string
+		rejects []pps.RejectReason // "" is a usable edge
+		msgs    []*gpsprot.TimeMsg
+		expect  []warnExpect
+	}{
+		{
+			name:   "nothing",
+			expect: []warnExpect{warnNoEdges, warnNoTimeMsgs},
+		},
+		{
+			name:    "rejected edges",
+			rejects: []pps.RejectReason{pps.RejectAnomalous, pps.RejectAnomalous},
+			msgs:    []*gpsprot.TimeMsg{utc},
+			expect:  []warnExpect{warnRejected(map[pps.RejectReason]int{pps.RejectAnomalous: 2})},
+		},
+		{
+			name:    "usable edge and UTC time",
+			rejects: []pps.RejectReason{pps.RejectAcquiring, ""},
+			msgs:    []*gpsprot.TimeMsg{noTime, utc},
+		},
+		{
+			name:    "no time message",
+			rejects: []pps.RejectReason{""},
+			expect:  []warnExpect{warnNoTimeMsgs},
+		},
+		{
+			name:    "time messages without usable UTC time",
+			rejects: []pps.RejectReason{""},
+			msgs:    []*gpsprot.TimeMsg{noTime, taiOnly, prePulse},
+			expect:  []warnExpect{warnNoTimeMsgs},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h := &recordHandler{}
+			lg := slog.New(h)
+			ls := ptime.LeapSecond{UTCOffAfter: 37}
+			observer := &obs.DefaultObserver{}
+			d := &Dispatcher{
+				obs:             observer,
+				lg:              lg,
+				timeMsgBuffer:   timemsg.NewBuffer(lg, 0, ls, gpsprot.GPS),
+				timeTicker:      *gpsprot.NewTimeTicker(&tickHandler{obs: observer}, ls),
+				sysPulseStartup: &sysPulseStartup{rejected: make(map[pps.RejectReason]int)},
+			}
+			for _, r := range tc.rejects {
+				d.sysPulseStartup.edge(r == "", r)
+			}
+			for _, m := range tc.msgs {
+				d.Time(m, time.Unix(1_000, 0))
+			}
+			d.sysPulseStartup.report(lg)
+			if !matchWarnings(h.records, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", h.records, tc.expect)
+			}
 		})
 	}
 }
