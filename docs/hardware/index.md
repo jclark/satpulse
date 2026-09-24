@@ -24,7 +24,7 @@ The typical way to do this is to use a GPIO pin on an ARM-based SBC, such as Ras
 On a desktop or laptop computer which lacks GPIO pins
 the typical approach is to use a modem control pin on a serial port.
 This can work with either an RS-232 DB9 male connector on the computer,
-or, using a suitable [USB-serial adapter]({% link hardware/usb-serial.md %}), with a USB port.
+or, using a suitable [USB serial adapter]({% link hardware/usb-serial.md %}), with a USB port.
 
 But the best possible timing precision requires an ethernet controller with a PPS input pin. At the time of writing, 2026Q2, there are very few such controllers available at low cost, and these can be divided into two categories. For each category, there is a separate page describing how to build a system.
 

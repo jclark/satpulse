@@ -33,7 +33,7 @@ docs:
         url: "/hardware/gnss-enclosed.html"
       - title: "GNSSDOs"
         url: "/hardware/gnssdos.html"
-      - title: "USB-serial adapters"
+      - title: "USB serial adapters"
         url: "/hardware/usb-serial.html"
       - title: "Raspberry Pi CM4/CM5 builds"
         url: "/hardware/cm-build.html"

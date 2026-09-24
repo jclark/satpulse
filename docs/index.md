@@ -56,7 +56,7 @@ The Raspberry Pi CM4 and CM5 have this capability when used with a suitable IO b
 For more details, see the [introduction to precision network timing]({% link intro/timing.md %}).
 Without this special hardware, SatPulse can still supply timing information to an NTP server.
 SatPulse can supply time-of-day information, leaving the NTP server to access the PPS device.
-Alternatively, SatPulse can make use of a PPS signal over the serial connection, including with USB-serial adapters. {% include new-in-03.html %}
+Alternatively, SatPulse can make use of a PPS signal over the serial connection, including with USB serial adapters. {% include new-in-03.html %}
 This means that timing functionality is now available on macOS.
 
 The development of SatPulse started in 2022, before AI coding agents were a thing.

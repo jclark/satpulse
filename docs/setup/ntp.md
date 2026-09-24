@@ -25,8 +25,8 @@ The ones relevant to PPS are ones that go from the DCE (the GPS receiver in our 
 DCD, DSR, CTS, RI. On an RS232 DB9 connector, these use pins 1, 6, 8, 9 respectively.
 Note that modem control lines are the same pin on the DTE and DCE.
 
-[USB-serial adapters]({% link hardware/usb-serial.md %}) vary in which signals they support: some support none at all; some support CTS; some also support DCD and DSR.
-However, with a suitable USB-serial adapter this approach can work for a computer that has a USB port but no serial port and no GPIO pins.
+[USB serial adapters]({% link hardware/usb-serial.md %}) vary in which signals they support: some support none at all; some support CTS; some also support DCD and DSR.
+However, with a suitable USB serial adapter this approach can work for a computer that has a USB port but no serial port and no GPIO pins.
 
 With this approach, satpulsed reads both the PPS signal and messages over the same port.
 It uses the messages to figure out which second a PPS pulse corresponds to and then generates samples that are sent to the NTP daemon.
