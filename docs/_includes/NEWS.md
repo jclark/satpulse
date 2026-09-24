@@ -64,6 +64,10 @@ _Not yet released_
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
 - `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)
 
+### Time synchronization
+
+- The PHC sync controller has a new gap mode, entered from tracking mode when samples go missing during a brief signal loss. The clock runs at the averaged frequency during the gap, and after longer gaps outlier detection is temporarily relaxed so that legitimate samples reflecting clock drift across the gap are no longer rejected. PTP clock quality is unchanged in gap mode. The new `[sync.gap]` table in `satpulse.toml` configures the recovery behaviour. This makes it useful to raise `sync.track.badSampleRunLimit` on hardware whose clock drifts slowly during signal loss, riding out longer gaps at full synchronization quality; the reference configurations in `configs/syncsim` include values derived for specific hardware. (#188)
+
 ### Miscellaneous
 
 - The default `satpulse.toml` no longer specifies a `phc.interface`, so `satpulsed` runs without a PHC by default; using a PHC now requires uncommenting and editing the `interface` line in the `[phc]` table. This will affect only fresh installs. (#309)

@@ -21,3 +21,9 @@ sigma = 3
 track.kp = 0.8
 track.ki = 0.001
 track.ignoreSawtoothCorrection = false
+# The TCXO drifts only ~2-3 ppb during signal loss, so gaps up to 30s stay
+# within a 100ns accuracy budget and gap-mode recovery resumes tracking
+# cleanly (see README). The larger bad-sample window keeps the ratio limit
+# from preempting the run limit during a long gap.
+track.badSampleRunLimit = 30
+track.badSampleWindow = 180

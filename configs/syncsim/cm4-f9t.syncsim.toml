@@ -24,3 +24,6 @@ maxDelay = 0.25
 track.kp = 0.8
 track.ki = 0.3
 track.ignoreSawtoothCorrection = false
+# The CM4 PHC drifts ~8-13 ppb during signal loss, so gaps up to 10s stay
+# within a 100ns accuracy budget (see README).
+track.badSampleRunLimit = 10
