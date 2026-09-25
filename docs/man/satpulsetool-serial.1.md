@@ -100,18 +100,13 @@ for a USB port an `interface` string with the interface number,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
 With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
-and, when the **poll** method is used, optional arrays `uncertainty` and `pollWidths` in seconds, and an optional `reject` string.
-The timestamp remains the midpoint of the two status-read midpoints and
-preserves nanosecond precision in JSON output.
-`uncertainty: [before, after]` gives the durations from that timestamp back to the start of the read that saw the pin before the edge and forward to the end of the read that saw it after.
-This interval contains the physical edge if each read samples the pin during its call and the clock readings can be reconciled; it does not account for cached pin status.
-`pollWidths: [start, end]` gives the durations of those two reads in the same order.
-`reject: "acquiring"` marks catches during acquisition, including the catch that completes it.
-`reject: "anomalous"` marks a tracking interval wider than four times the median of the previous 31 tracking catches.
-`reject: "clockStep"` marks clock readings whose wall-to-monotonic offsets differ by more than 1 ms.
-For these catches, `t` retains the original estimate for diagnostics and its uncertainty interval is unreliable.
-Timing consumers withhold catches with a rejection reason and accept all other catches, regardless of uncertainty.
-The command reports every catch, including rejected catches.
+and, when the **poll** method is used, `uncertainty` and `pollWidths` arrays and an optional `reject` string.
+`uncertainty` gives two durations in seconds: from the start of the status read before the edge to `t`, and from `t` to the end of the status read after the edge.
+`pollWidths` gives the durations in seconds of those two reads.
+A `reject` string gives the reason the edge is unsuitable for timing:
+`acquiring` means the poll window was still being narrowed onto the pulse;
+`anomalous` means the reads spanned far longer than for recent edges, as when host load stalls a read;
+`clockStep` means the system clock was stepped during the reads.
 
 # EXIT STATUS
 
