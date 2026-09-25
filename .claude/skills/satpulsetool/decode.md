@@ -34,6 +34,8 @@ satpulsetool annotate capture.jsonl > decoded.jsonl
 satpulsetool annotate < capture.jsonl
 ```
 
+`--vendor` works as for `decode`.
+
 Typical workflow, capture then annotate:
 
 ```
