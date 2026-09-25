@@ -1291,7 +1291,7 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 // DecodePacket decodes a packet and returns the decoded fields.
 // It returns nil if the packet is not in any of the given formats.
 func DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error) {
-	_, r, err := gpsdecode.Decode(formats, data, out)
+	_, r, err := gpsdecode.Decode(formats, data, out, 0)
 	if err != nil {
 		return nil, nil
 	}

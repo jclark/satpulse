@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/internal/nov"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
@@ -48,7 +49,8 @@ var cfgSchema = ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())
 // Decode parses a packet and returns the PacketFormat and decoded fields.
 // It uses the scanner to identify the format and validate the checksum.
 // Returns PacketFormat so caller can get both Tag() and MsgID(data).
-func Decode(pktFormats []gpsprot.PacketFormat, data []byte, out bool) (gpsprot.PacketFormat, *DecodeResult, error) {
+// The vendor, which may be zero, selects the variant used for NovAtel packets.
+func Decode(pktFormats []gpsprot.PacketFormat, data []byte, out bool, vendor gpsreg.Vendor) (gpsprot.PacketFormat, *DecodeResult, error) {
 	s := scan.New(bytes.NewReader(data), len(data), pktFormats)
 	pkt, err := s.Scan()
 	if err != nil {
@@ -87,10 +89,10 @@ checksumOK:
 		r, err := uncbinDecode(data)
 		return pf, r, err
 	case gpsreg.TagNovAtelBin:
-		r, err := novbinDecode(data)
+		r, err := novbinDecode(data, vendor)
 		return pf, r, err
 	case gpsreg.TagNovAtelAscii:
-		r, err := novasciiDecode(data)
+		r, err := novasciiDecode(data, vendor)
 		return pf, r, err
 	case gpsreg.TagNovAtelAbbrevAscii:
 		r, err := novabbrevDecode(data)
@@ -226,17 +228,17 @@ func uncbinDecode(data []byte) (*DecodeResult, error) {
 	}, nil
 }
 
-func novasciiDecode(data []byte) (*DecodeResult, error) {
-	msg, err := novmsg.ParseAsciiMessage(data)
+func novasciiDecode(data []byte, vendor gpsreg.Vendor) (*DecodeResult, error) {
+	hdr, body, err := nov.ParseAscii(gpsreg.NovVariantFor(vendor), data)
 	if err != nil {
 		return nil, err
 	}
-	if _, isUnknown := msg.Body.(*novmsg.UnknownAsciiMsgBody); isUnknown {
+	if _, isUnknown := body.(*novmsg.UnknownAsciiMsgBody); isUnknown {
 		return nil, ErrUnknownMsg
 	}
 	return &DecodeResult{
-		Payload: msg.Body,
-		Header:  msg.Hdr,
+		Payload: body,
+		Header:  hdr,
 	}, nil
 }
 
@@ -311,16 +313,16 @@ func rtcmDecode(data []byte) (*DecodeResult, error) {
 	return &DecodeResult{Payload: msg}, nil
 }
 
-func novbinDecode(data []byte) (*DecodeResult, error) {
-	msg, err := novmsg.ParseBinMsg(data)
+func novbinDecode(data []byte, vendor gpsreg.Vendor) (*DecodeResult, error) {
+	hdr, body, err := nov.ParseBin(gpsreg.NovVariantFor(vendor), data)
 	if err != nil {
 		return nil, err
 	}
-	if _, isUnknown := msg.Body.(*novmsg.UnknownBinMsgBody); isUnknown {
+	if _, isUnknown := body.(*novmsg.UnknownBinMsgBody); isUnknown {
 		return nil, ErrUnknownMsg
 	}
 	return &DecodeResult{
-		Payload: msg.Body,
-		Header:  msg.Hdr,
+		Payload: body,
+		Header:  hdr,
 	}, nil
 }

@@ -289,7 +289,7 @@ func SetVendor(procs map[gpsprot.Tag]gpsprot.PacketProcessor, vendor Vendor) {
 			nmeaPP.SetSVNumbering(numbering)
 		}
 	}
-	v := novVariantFor(vendor)
+	v := NovVariantFor(vendor)
 	for _, pp := range procs {
 		if vs, ok := pp.(novVariantSetter); ok {
 			vs.SetVariant(v)
@@ -297,7 +297,8 @@ func SetVendor(procs map[gpsprot.Tag]gpsprot.PacketProcessor, vendor Vendor) {
 	}
 }
 
-func novVariantFor(v Vendor) nov.Variant {
+// NovVariantFor returns the variant of the NovAtel protocol used by vendor.
+func NovVariantFor(v Vendor) nov.Variant {
 	switch v {
 	case VendorSinoGNSS:
 		return nov.VariantSinoGNSS
