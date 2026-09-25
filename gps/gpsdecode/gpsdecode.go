@@ -49,8 +49,9 @@ var cfgSchema = ubxcfgval.NewSchemaWithMsgout(ubxcfgval.GetDfltSchema())
 // Decode parses a packet and returns the PacketFormat and decoded fields.
 // It uses the scanner to identify the format and validate the checksum.
 // Returns PacketFormat so caller can get both Tag() and MsgID(data).
-// The vendor, which may be zero, selects the variant used for NovAtel packets.
-func Decode(pktFormats []gpsprot.PacketFormat, data []byte, out bool, vendor gpsreg.Vendor) (gpsprot.PacketFormat, *DecodeResult, error) {
+// The vendors, which may be empty, select the variant used for NovAtel
+// packets, as gpsreg.NovVariant does.
+func Decode(pktFormats []gpsprot.PacketFormat, data []byte, out bool, vendors []gpsreg.Vendor) (gpsprot.PacketFormat, *DecodeResult, error) {
 	s := scan.New(bytes.NewReader(data), len(data), pktFormats)
 	pkt, err := s.Scan()
 	if err != nil {
@@ -89,10 +90,10 @@ checksumOK:
 		r, err := uncbinDecode(data)
 		return pf, r, err
 	case gpsreg.TagNovAtelBin:
-		r, err := novbinDecode(data, vendor)
+		r, err := novbinDecode(data, vendors)
 		return pf, r, err
 	case gpsreg.TagNovAtelAscii:
-		r, err := novasciiDecode(data, vendor)
+		r, err := novasciiDecode(data, vendors)
 		return pf, r, err
 	case gpsreg.TagNovAtelAbbrevAscii:
 		r, err := novabbrevDecode(data)
@@ -228,8 +229,8 @@ func uncbinDecode(data []byte) (*DecodeResult, error) {
 	}, nil
 }
 
-func novasciiDecode(data []byte, vendor gpsreg.Vendor) (*DecodeResult, error) {
-	hdr, body, err := nov.ParseAscii(gpsreg.NovVariant([]gpsreg.Vendor{vendor}), data)
+func novasciiDecode(data []byte, vendors []gpsreg.Vendor) (*DecodeResult, error) {
+	hdr, body, err := nov.ParseAscii(gpsreg.NovVariant(vendors), data)
 	if err != nil {
 		return nil, err
 	}
@@ -313,8 +314,8 @@ func rtcmDecode(data []byte) (*DecodeResult, error) {
 	return &DecodeResult{Payload: msg}, nil
 }
 
-func novbinDecode(data []byte, vendor gpsreg.Vendor) (*DecodeResult, error) {
-	hdr, body, err := nov.ParseBin(gpsreg.NovVariant([]gpsreg.Vendor{vendor}), data)
+func novbinDecode(data []byte, vendors []gpsreg.Vendor) (*DecodeResult, error) {
+	hdr, body, err := nov.ParseBin(gpsreg.NovVariant(vendors), data)
 	if err != nil {
 		return nil, err
 	}

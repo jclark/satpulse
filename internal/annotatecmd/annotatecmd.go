@@ -25,6 +25,7 @@ const summary = `[-h|--help] [--vendor name] [file|-]`
 // (header, payload, cfgData) to each entry.
 // --vendor selects the vendor's variant of the NovAtel protocol for
 // NovAtel packets; it does not restrict the packet formats recognized.
+// Without it, SATPULSE_VENDORS applies, as for other commands.
 func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
 	help := false
 	vendorStr := ""
@@ -45,14 +46,18 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 	if err != nil {
 		return usageFunc(progName), err
 	}
+	vendors, err := cmd.ResolveVendors(vendor)
+	if err != nil {
+		return "", err
+	}
 	path := "-"
 	if flags.NArg() == 1 {
 		path = flags.Arg(0)
 	}
-	return "", run(path, vendor)
+	return "", run(path, vendors)
 }
 
-func run(path string, vendor gpsreg.Vendor) error {
+func run(path string, vendors []gpsreg.Vendor) error {
 	var r io.Reader
 	if path == "-" {
 		r = os.Stdin
@@ -69,14 +74,14 @@ func run(path string, vendor gpsreg.Vendor) error {
 	defer out.Flush()
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		processed := processLine(line, vendor)
+		processed := processLine(line, vendors)
 		out.Write(processed)
 		out.WriteByte('\n')
 	}
 	return scanner.Err()
 }
 
-func processLine(line []byte, vendor gpsreg.Vendor) []byte {
+func processLine(line []byte, vendors []gpsreg.Vendor) []byte {
 	var entry gpsio.PacketLogEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return line
@@ -89,7 +94,7 @@ func processLine(line []byte, vendor gpsreg.Vendor) []byte {
 	} else {
 		return line
 	}
-	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, entry.Out, vendor)
+	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, entry.Out, vendors)
 	if err != nil {
 		var csErr *gpsdecode.ChecksumError
 		if errors.As(err, &csErr) {

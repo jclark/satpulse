@@ -31,6 +31,7 @@ const summary = `[-h|--help] [-c|--compact] [--out] [--vendor name] [--bin|--lin
 // --bin forces hex interpretation; --line forces ASCII interpretation.
 // --vendor selects the vendor's variant of the NovAtel protocol for
 // NovAtel packets; it does not restrict the packet formats recognized.
+// Without it, SATPULSE_VENDORS applies, as for other commands.
 func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
 	help := false
 	compact := false
@@ -66,6 +67,10 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 	if err != nil {
 		return usageFunc(progName), err
 	}
+	vendors, err := cmd.ResolveVendors(vendor)
+	if err != nil {
+		return "", err
+	}
 	data := flags.Arg(0)
 	var pktBytes []byte
 	switch {
@@ -86,7 +91,7 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 			pktBytes = []byte(data + "\r\n")
 		}
 	}
-	return "", runDecode(pktBytes, out, compact, vendor)
+	return "", runDecode(pktBytes, out, compact, vendors)
 }
 
 func isAllHex(s string) bool {
@@ -98,8 +103,8 @@ func isAllHex(s string) bool {
 	return true
 }
 
-func runDecode(data []byte, out, compact bool, vendor gpsreg.Vendor) error {
-	pf, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, out, vendor)
+func runDecode(data []byte, out, compact bool, vendors []gpsreg.Vendor) error {
+	pf, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, out, vendors)
 	if err != nil {
 		return err
 	}

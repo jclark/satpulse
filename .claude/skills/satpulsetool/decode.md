@@ -20,7 +20,7 @@ as one sent to the receiver rather than received from it (affects u-blox
 CFG-VAL* messages, whose meaning depends on direction); `--vendor` to decode
 a NovAtel-format packet (tags `NOVA`, `NOVB`) as the named vendor's variant
 of the protocol, which decides the port encoding and any vendor-specific
-logs.
+logs. Without `--vendor`, `SATPULSE_VENDORS` applies.
 
 Binary replies that `gps -m` prints as hex are decoded this way.
 
