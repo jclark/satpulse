@@ -15,6 +15,13 @@ tag = "get-version"
 text = "LOG VERSION"
 description = "Query firmware and hardware version"
 
+# Query which logs are being output on which ports (UG017 4.3.12)
+# Verified on M10 (V7.82_AB1AD3_T)
+[[line]]
+tag = "get-loglist"
+description = "Query active log list"
+text = "LOG LOGLIST"
+
 # Disable all logging
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
