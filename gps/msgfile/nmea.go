@@ -98,11 +98,15 @@ func (nmeaAnalyzer) analyzeResponse(data string) responseAnalysis {
 		return responseAnalysis{kind: responseData}
 	}
 	// Standard GNSS talker NMEA is not a response, except TXT which
-	// can carry informational messages related to sent commands.
+	// can carry informational messages related to sent commands, and VER,
+	// which is the reply to a version query.
 	flags := nmeamsg.CheckSyntax(data)
 	if flags.IsValidGNSSTalkerNMEA() {
-		if fields[0][2:] == "TXT" {
+		switch fields[0][2:] {
+		case "TXT":
 			return responseAnalysis{kind: responseInfo}
+		case "VER":
+			return responseAnalysis{kind: responseMaybeData}
 		}
 		return responseAnalysis{kind: responseNotData}
 	}
