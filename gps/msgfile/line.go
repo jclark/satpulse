@@ -44,6 +44,8 @@ func (lm *LineMsg) analyzeRequest(data string) requestAnalysis {
 			return lm.analyzeRequestUnicore()
 		case ResponsePatternSeptentrio:
 			return lm.analyzeRequestSeptentrio()
+		case ResponsePatternNovAtel:
+			return lm.analyzeRequestNovAtel()
 		}
 	}
 	eol := "\r\n"
