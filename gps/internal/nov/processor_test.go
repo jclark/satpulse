@@ -1,6 +1,7 @@
 package nov
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -214,6 +215,43 @@ func TestDispatchEpochRTCMBaseIDNonOSR(t *testing.T) {
 		return
 	}
 	t.Fatal("no NavEpoch emitted")
+}
+
+func TestDispatchPosGeoNativeMsgID(t *testing.T) {
+	pos := novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{PSolStatus: novmsg.SolComputed, PosType: novmsg.PosSingle}
+	sinoPos := novmsg.Pos[novmsg.SolStatus, novmsg.SinoPosType]{PSolStatus: novmsg.SolComputed, PosType: novmsg.PosSingle}
+	tests := []struct {
+		name   string
+		body   novmsg.MsgBody
+		expect string
+	}{
+		{"BESTPOS", &novmsg.BestPos{Pos: pos}, "BESTPOS"},
+		{"BESTGNSSPOS", &novmsg.BestGNSSPos{Pos: pos}, "BESTGNSSPOS"},
+		{"PSRPOS", &novmsg.PsrPos{Pos: pos}, "PSRPOS"},
+		{"SinoGNSS BESTPOS", &novmsg.SinoBestPos{Pos: sinoPos}, "BESTPOS"},
+		{"SinoGNSS PSRPOS", &novmsg.SinoPsrPos{Pos: sinoPos}, "PSRPOS"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var pp packetProcessor
+			pp.mgr = gpsprot.NewNavEpochManager()
+			h := &testMsgHandler{}
+			pp.mh = h
+			common := makeCommon(2350, 100000)
+			if _, err := pp.dispatch(&common, tc.body, time.Unix(1, 0), TagBinary); err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, m := range h.msgs {
+				if m.msgType == "posgeo" {
+					got = append(got, m.msg.(*gpsprot.PosGeoMsg).NativeMsgID)
+				}
+			}
+			if !reflect.DeepEqual(got, []string{tc.expect}) {
+				t.Errorf("got %v, want [%s]", got, tc.expect)
+			}
+		})
+	}
 }
 
 func TestDispatchEpochQualityNotComputed(t *testing.T) {
