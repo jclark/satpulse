@@ -151,20 +151,9 @@ func (c *Correlator) NotifyMsgSent(rm RawMsg) {
 	case ExpectAckOrNak, ExpectAckNakOnly:
 		ack = ackWait
 	}
-	var data dataStatus
-	switch a.expectData {
-	case expectDataNone:
+	data := dataWait
+	if a.expectData == expectDataNone {
 		data = dataNotExpected
-	default:
-		if a.expectData != expectDataUnknown || a.expectAck == ExpectAckNone {
-			data = dataWait
-		}
-	}
-	// expectDataUnknown with ack: data status depends on ack type,
-	// but for now we set dataWait -- all expectDataUnknown messages
-	// have ExpectAckNone.
-	if a.expectData == expectDataUnknown {
-		data = dataWait
 	}
 	c.requests = append(c.requests, requestState{
 		msg:      &rm,
@@ -275,8 +264,10 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 			Relevance:    rel,
 		}
 	case responseNak:
+		// A rejected request is finished: nothing that follows is its data.
 		rs.ack = ackFailed
 		rs.ackError = ra.ackError
+		rs.data = dataNotExpected
 		return Correlation{
 			Ack:          AckNak,
 			NakError:     ra.ackError,
@@ -377,7 +368,7 @@ func (c *Correlator) requestComplete(rs *requestState) bool {
 			return true
 		}
 	case expectDataUnknown:
-		return false
+		return rs.ack == ackFailed
 	case expectDataWithAck:
 		return rs.ack == ackSuccess || rs.ack == ackFailed
 	case expectDataAmbig:

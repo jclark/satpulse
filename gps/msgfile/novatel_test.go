@@ -113,6 +113,19 @@ func TestCorrelatorNovAtel(t *testing.T) {
 			},
 		},
 		{
+			name: "rejected LOG is complete and gets no data",
+			tags: []string{"timea"},
+			events: []event{
+				sendEvent{},
+				recvNOVAA(novErrNoLog),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+				recvNOVA(novTimeA),
+				expect{relevance: LevelNotResponse},
+				checkMissing{},
+			},
+		},
+		{
 			name: "OK is not an ack once requests are complete",
 			tags: []string{"pps"},
 			events: []event{
