@@ -38,3 +38,4 @@ but ByNav receivers output them.
 | PSRDOP | 174 | solution quality |
 | BESTGNSSPOS | 1429 | geodetic position, solution quality |
 | BESTGNSSVEL | 1430 | geodetic velocity |
+| BYCHECK | 42272 | decode only |

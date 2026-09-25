@@ -158,7 +158,11 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 		m[novmsg.UnicoreIonUTCID] = reg[novmsg.IonUTCID]
 		delete(m, novmsg.IonUTCID)
 		return m, binParser[novmsg.UnicorePort]()
-	default: // OEM7, ByNav
+	case VariantByNav:
+		m := copyMap(reg)
+		m[novmsg.ByCheckID] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }
+		return m, binParser[novmsg.Port]()
+	default: // OEM7
 		return reg, binParser[novmsg.Port]()
 	}
 }
@@ -177,7 +181,11 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 		return m, asciiParser[novmsg.SinoPort]()
 	case VariantUnicore:
 		return reg, asciiParser[novmsg.UnicorePort]()
-	default: // OEM7, ByNav
+	case VariantByNav:
+		m := copyMap(reg)
+		m["BYCHECKA"] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }
+		return m, asciiParser[novmsg.Port]()
+	default: // OEM7
 		return reg, asciiParser[novmsg.Port]()
 	}
 }
