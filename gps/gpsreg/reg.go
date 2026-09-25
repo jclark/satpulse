@@ -3,6 +3,7 @@ package gpsreg
 import (
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -251,7 +252,9 @@ func (v *Vendor) UnmarshalText(data []byte) error {
 // The processor map is always complete; vendor-specific tuning
 // (SetVendor: NMEA SV numbering, nov dialect) is applied only when
 // exactly one vendor is given, so a singleton declaration acts like an
-// explicit vendor everywhere.
+// explicit vendor everywhere. With several vendors the nov dialect is
+// still that of the one vendor among them, if any, that uses NovAtel
+// packet formats.
 func CreatePacketProcessors(vendors []Vendor) map[gpsprot.Tag]gpsprot.PacketProcessor {
 	mgr := gpsprot.NewNavEpochManager()
 	nmeaPP := nmea.NewPacketProcessor(mgr)
@@ -272,6 +275,8 @@ func CreatePacketProcessors(vendors []Vendor) map[gpsprot.Tag]gpsprot.PacketProc
 	}
 	if len(vendors) == 1 {
 		SetVendor(procs, vendors[0])
+	} else {
+		setNovVariant(procs, NovVariant(vendors))
 	}
 	return procs
 }
@@ -289,7 +294,28 @@ func SetVendor(procs map[gpsprot.Tag]gpsprot.PacketProcessor, vendor Vendor) {
 			nmeaPP.SetSVNumbering(numbering)
 		}
 	}
-	v := NovVariantFor(vendor)
+	setNovVariant(procs, novVariantFor(vendor))
+}
+
+// NovVariant returns the variant of the NovAtel protocol for a receiver
+// from one of vendors: that of the one vendor among them that uses
+// NovAtel packet formats, or the OEM7 variant if there is none or more
+// than one.
+func NovVariant(vendors []Vendor) nov.Variant {
+	var novVendor Vendor
+	for _, v := range vendors {
+		if !slices.ContainsFunc(allVendorPacketFormatsMap[v], func(f gpsprot.PacketFormat) bool { return f.Tag() == nov.TagBinary }) {
+			continue
+		}
+		if novVendor != 0 {
+			return nov.VariantOEM7
+		}
+		novVendor = v
+	}
+	return novVariantFor(novVendor)
+}
+
+func setNovVariant(procs map[gpsprot.Tag]gpsprot.PacketProcessor, v nov.Variant) {
 	for _, pp := range procs {
 		if vs, ok := pp.(novVariantSetter); ok {
 			vs.SetVariant(v)
@@ -297,8 +323,7 @@ func SetVendor(procs map[gpsprot.Tag]gpsprot.PacketProcessor, vendor Vendor) {
 	}
 }
 
-// NovVariantFor returns the variant of the NovAtel protocol used by vendor.
-func NovVariantFor(v Vendor) nov.Variant {
+func novVariantFor(v Vendor) nov.Variant {
 	switch v {
 	case VendorSinoGNSS:
 		return nov.VariantSinoGNSS

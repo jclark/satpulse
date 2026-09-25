@@ -1,6 +1,9 @@
 package nov
 
 import (
+	"encoding/hex"
+	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -214,6 +217,96 @@ func TestDispatchEpochRTCMBaseIDNonOSR(t *testing.T) {
 		return
 	}
 	t.Fatal("no NavEpoch emitted")
+}
+
+func TestDispatchPosGeoNativeMsgID(t *testing.T) {
+	pos := novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{PSolStatus: novmsg.SolComputed, PosType: novmsg.PosSingle}
+	sinoPos := novmsg.Pos[novmsg.SolStatus, novmsg.SinoPosType]{PSolStatus: novmsg.SolComputed, PosType: novmsg.PosSingle}
+	tests := []struct {
+		name   string
+		body   novmsg.MsgBody
+		expect string
+	}{
+		{"BESTPOS", &novmsg.BestPos{Pos: pos}, "BESTPOS"},
+		{"BESTGNSSPOS", &novmsg.BestGNSSPos{Pos: pos}, "BESTGNSSPOS"},
+		{"PSRPOS", &novmsg.PsrPos{Pos: pos}, "PSRPOS"},
+		{"SinoGNSS BESTPOS", &novmsg.SinoBestPos{Pos: sinoPos}, "BESTPOS"},
+		{"SinoGNSS PSRPOS", &novmsg.SinoPsrPos{Pos: sinoPos}, "PSRPOS"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var pp packetProcessor
+			pp.mgr = gpsprot.NewNavEpochManager()
+			h := &testMsgHandler{}
+			pp.mh = h
+			common := makeCommon(2350, 100000)
+			if _, err := pp.dispatch(&common, tc.body, time.Unix(1, 0), TagBinary); err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, m := range h.msgs {
+				if m.msgType == "posgeo" {
+					got = append(got, m.msg.(*gpsprot.PosGeoMsg).NativeMsgID)
+				}
+			}
+			if !reflect.DeepEqual(got, []string{tc.expect}) {
+				t.Errorf("got %v, want [%s]", got, tc.expect)
+			}
+		})
+	}
+}
+
+type testNativeHandler struct{ msgs []any }
+
+func (h *testNativeHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
+	h.msgs = append(h.msgs, msg)
+	return nil
+}
+
+func TestByCheckOnlyForByNav(t *testing.T) {
+	const ascii = "#BYCHECKA,COM1,0,99.9,FINESTEERING,2437,429495.000,00000000,0000,782;7843,2437,429495.000,1,1,1,1,1,1,1,1,1,1,1,1*8c0596c3\r\n"
+	bin, err := hex.DecodeString("aa44121c20a500203c000000c7b48509d89299190000000000000e03a31e000085090000e0b6d148010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000689c42f5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		variant Variant
+		expect  bool
+	}{
+		{VariantOEM7, false},
+		{VariantSinoGNSS, false},
+		{VariantUnicore, false},
+		{VariantByNav, true},
+	}
+	for _, tc := range tests {
+		ap := NewAsciiPacketProcessor(gpsprot.NewNavEpochManager())
+		ap.SetVariant(tc.variant)
+		bp := NewBinPacketProcessor(gpsprot.NewNavEpochManager())
+		bp.SetVariant(tc.variant)
+		h := &testNativeHandler{}
+		ap.SetNativeMsgHandler(h)
+		bp.SetNativeMsgHandler(h)
+		// Other variants may reject the packet; only the decoded body matters.
+		ap.ProcessPacket(ascii, time.Unix(1, 0))
+		bp.ProcessPacket(string(bin), time.Unix(1, 0))
+		var got []bool
+		for _, m := range h.msgs {
+			switch m := m.(type) {
+			case *novmsg.Msg[novmsg.Port]:
+				_, ok := m.Body.(*novmsg.ByCheck)
+				got = append(got, ok)
+			case *novmsg.Msg[novmsg.SinoPort]:
+				_, ok := m.Body.(*novmsg.ByCheck)
+				got = append(got, ok)
+			case *novmsg.Msg[novmsg.UnicorePort]:
+				_, ok := m.Body.(*novmsg.ByCheck)
+				got = append(got, ok)
+			}
+		}
+		if (tc.expect && !reflect.DeepEqual(got, []bool{true, true})) || (!tc.expect && slices.Contains(got, true)) {
+			t.Errorf("variant %d: decoded as BYCHECK %v, want %v", tc.variant, got, tc.expect)
+		}
+	}
 }
 
 func TestDispatchEpochQualityNotComputed(t *testing.T) {

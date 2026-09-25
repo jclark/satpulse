@@ -229,7 +229,7 @@ func uncbinDecode(data []byte) (*DecodeResult, error) {
 }
 
 func novasciiDecode(data []byte, vendor gpsreg.Vendor) (*DecodeResult, error) {
-	hdr, body, err := nov.ParseAscii(gpsreg.NovVariantFor(vendor), data)
+	hdr, body, err := nov.ParseAscii(gpsreg.NovVariant([]gpsreg.Vendor{vendor}), data)
 	if err != nil {
 		return nil, err
 	}
@@ -314,7 +314,7 @@ func rtcmDecode(data []byte) (*DecodeResult, error) {
 }
 
 func novbinDecode(data []byte, vendor gpsreg.Vendor) (*DecodeResult, error) {
-	hdr, body, err := nov.ParseBin(gpsreg.NovVariantFor(vendor), data)
+	hdr, body, err := nov.ParseBin(gpsreg.NovVariant([]gpsreg.Vendor{vendor}), data)
 	if err != nil {
 		return nil, err
 	}
