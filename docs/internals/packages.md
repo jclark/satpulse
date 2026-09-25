@@ -216,6 +216,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 
 `time/internal/syncsim` provides a discrete-event simulator for testing the phcsync controller with configurable error models for GPS PPS timing and PHC oscillator characteristics. It generates synthetic pulses, messages, and ticks under various fault conditions and measures controller performance.
 
+`time/internal/pollsim` simulates the serial PPS polling loop of `gps/app/pps` in virtual time. It supplies the loop's clock, timer and pulse reader from a model of the pulse and the host (query time, timer truncation and overshoot, idle slowdown) with injected pulse outages and stalls of the polling thread, applies the daemon's forwarding rule to the candidates, and reports how many edges the time daemon would have received, their error against the true edge, and the gaps between them.
+
 `time/internal/obs` provides unified observability interfaces including `Observer` (which extends `phcsync.Sampler` and `gpsprot.Handler`) for receiving both clock synchronization samples and GPS protocol messages.
 
 `time/internal/sseobs` implements the `Observer` interface to generate Server-Sent Events data that the daemon uses for the web interface.

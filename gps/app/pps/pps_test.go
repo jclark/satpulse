@@ -69,6 +69,7 @@ func TestGeneratorTransfersTimestampThroughReadTime(t *testing.T) {
 		name          string
 		readSinceMsg  time.Duration
 		readAfterEdge time.Duration
+		wallShift     time.Duration
 		wantRef       time.Time
 	}{
 		{
@@ -83,6 +84,13 @@ func TestGeneratorTransfersTimestampThroughReadTime(t *testing.T) {
 			readAfterEdge: 100 * time.Millisecond,
 			wantRef:       time.Unix(1_003, 0).UTC(),
 		},
+		{
+			name:          "wall clock step does not change second label",
+			readSinceMsg:  9 * time.Millisecond,
+			readAfterEdge: 10 * time.Millisecond,
+			wallShift:     2 * time.Second,
+			wantRef:       time.Unix(1_000, 0).UTC(),
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -90,10 +98,11 @@ func TestGeneratorTransfersTimestampThroughReadTime(t *testing.T) {
 			msgRead := time.Now()
 			g.MsgUTCTime(time.Unix(1_000, 0).UTC(), msgRead, ptime.LeapSecondNone)
 			tRead := msgRead.Add(tc.readSinceMsg)
-			// Reconstruct Timestamp from wall time to model a kernel or
-			// Windows timestamp without a monotonic reading.
-			timestamp := time.Unix(0, tRead.UnixNano()).Add(-tc.readAfterEdge)
-			sample, ok := g.Sample(Edge{Timestamp: timestamp, TRead: tRead})
+			// Reconstruct Timestamp without a monotonic reading, as with
+			// reconciled polling or kernel timestamps. A wall shift must not
+			// change the read-to-edge interval used for UTC assignment.
+			timestamp := time.Unix(0, tRead.UnixNano()).Add(tc.wallShift - tc.readAfterEdge)
+			sample, ok := g.Sample(Edge{Timestamp: timestamp, TRead: tRead, ReadDelay: tc.readAfterEdge})
 			if !ok {
 				t.Fatal("Edge returned no sample")
 			}
@@ -212,9 +221,9 @@ func TestPollStatsSummary(t *testing.T) {
 	for i := 1; i < len(polls); i++ {
 		stats.addPoll(polls[i], &polls[i-1])
 	}
-	stats.addWindow(false, false, false)
-	stats.addWindow(true, false, false)
-	stats.addWindow(true, true, false)
+	stats.addWindow(miss, false, "")
+	stats.addWindow(caught, false, RejectAcquiring)
+	stats.addWindow(caught, true, RejectAnomalous)
 
 	got := stats.summary()
 	want := pollStatsSummary{
@@ -228,7 +237,7 @@ func TestPollStatsSummary(t *testing.T) {
 		},
 	}
 	want.Acquire.Windows, want.Acquire.Edges = 2, 1
-	want.Track.Windows, want.Track.Edges = 1, 1
+	want.Track.Windows, want.Track.Edges, want.Track.Anomalous = 1, 1, 1
 	if got != want {
 		t.Errorf("Summary() = %+v, want %+v", got, want)
 	}
@@ -255,12 +264,12 @@ func TestPollStatsLog(t *testing.T) {
 	start := clockReading{stamp: time.Unix(1_700_000_000, 0), mono: time.Unix(1_700_000_000, 0)}
 	end := clockReading{stamp: start.stamp.Add(2 * time.Millisecond), mono: start.mono.Add(2 * time.Millisecond)}
 	stats.addPoll(poll{start: start, end: end}, nil)
-	stats.addWindow(true, false, false)
+	stats.addWindow(caught, false, RejectAcquiring)
 
 	var output bytes.Buffer
 	stats.Log(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{Level: slog.LevelInfo})))
 	for _, want := range []string{
-		`msg="serial PPS polling statistics" acquire.windows=1 acquire.edges=1 track.windows=0 track.edges=0`,
+		`msg="serial PPS polling statistics" acquire.windows=1 acquire.edges=1 track.windows=0 track.edges=0 track.anomalous=0`,
 		`msg="serial PPS state read times" count=1 min=2ms median=2ms mean=2ms p90=2ms max=2ms`,
 		`msg="serial PPS between-read times" count=0`,
 	} {

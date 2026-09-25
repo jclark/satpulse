@@ -11,7 +11,6 @@ satpulsetool-serial - examine serial ports
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-I**\|**\-\-invert\-polarity**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-m**\|**\-\-pps\-method** **poll**\|**wait**\|**kernel**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-poll\-pre\-warm** *seconds*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-poll\-outlier\-ratio** *ratio*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-max\-wakeup\-latency** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-s**\|**\-\-device\-speed** *bps*] [**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
@@ -68,12 +67,6 @@ This makes the **poll** method more precise on hosts whose modem status reads sl
 The default is 0, which disables it; a value between 0.02 and 0.05 is suggested.
 Requires **\-p**.
 
-**\-\-poll\-outlier\-ratio** *ratio*
-: Mark an edge an outlier when the two reads that bracket it are further apart than *ratio* times the lower quartile of recent edges' brackets.
-A read stalled by host load widens its bracket severalfold, and the mark identifies such edges.
-The default is 3; 0 disables the check.
-Requires **\-p**.
-
 **\-\-max\-wakeup\-latency** *seconds*
 : Limit CPU wakeup latency to *seconds* while detecting PPS.
 This makes edge detection more precise, at the cost of power.
@@ -107,9 +100,13 @@ for a USB port an `interface` string with the interface number,
 and, for a port with aliases, an `aliases` array of paths.
 A detected speed object has a `device` string and a numeric `speed`.
 With **\-p**, an edge object has a `device` string, an RFC 3339 UTC timestamp `t`,
-and, when the **poll** method is used, optional fields `uncertainty` in seconds, `settling` and `outlier`.
-A `settling` value of true means the accuracy of subsequent edges is still expected to improve, during acquisition or while the polling window recovers from missed pulses; it is omitted once `uncertainty` reflects the resolution the hardware can achieve.
-An `outlier` value of true means the reads bracketing the edge were far slower than recent ones, as when host load stalls a read; see **\-\-poll\-outlier\-ratio**.
+and, when the **poll** method is used, `uncertainty` and `pollWidths` arrays and an optional `reject` string.
+`uncertainty` gives two durations in seconds: from the start of the status read before the edge to `t`, and from `t` to the end of the status read after the edge.
+`pollWidths` gives the durations in seconds of those two reads.
+A `reject` string gives the reason the edge is unsuitable for timing:
+`acquiring` means the poll window was still being narrowed onto the pulse;
+`anomalous` means the reads spanned far longer than for recent edges, as when host load stalls a read;
+`clockStep` means the system clock was stepped during the reads.
 
 # EXIT STATUS
 

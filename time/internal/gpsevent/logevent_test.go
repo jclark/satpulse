@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -37,8 +38,9 @@ func TestLogEventRoundTrip(t *testing.T) {
 				Mono: 1500 * gpsprot.Millisecond,
 				Data: &SysPulseEdge{
 					T:           tm.Add(-26 * time.Microsecond),
-					Uncertainty: 26 * gpsprot.Microsecond,
-					Settled:     true,
+					Uncertainty: [2]gpsprot.Duration{26 * gpsprot.Microsecond, 28 * gpsprot.Microsecond},
+					PollWidths:  [2]gpsprot.Duration{20 * gpsprot.Microsecond, 24 * gpsprot.Microsecond},
+					Reject:      pps.RejectAnomalous,
 				},
 			},
 		},
