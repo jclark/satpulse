@@ -466,8 +466,8 @@ text = "UNLOG RANGECMPB"
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "pps"
-description = "Enable PPS with 1ms pulse, rising edge"
-text = "PPSCONTROL ENABLE POSITIVE 1 1000"
+description = "Enable PPS with 0.1s pulse width, rising edge"
+text = "PPSCONTROL ENABLE POSITIVE 1 100000"
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "pps-off"
