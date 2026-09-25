@@ -1,6 +1,7 @@
 package nov
 
 import (
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -214,6 +215,46 @@ func TestDispatchEpochRTCMBaseIDNonOSR(t *testing.T) {
 		return
 	}
 	t.Fatal("no NavEpoch emitted")
+}
+
+func TestByNavBestXYZNotDecoded(t *testing.T) {
+	// BESTXYZA and BESTXYZB from a ByNav M10 in the same epoch.
+	const ascii = "#BESTXYZA,COM1,0,99.9,FINESTEERING,2437,420882.000,00000000,0000,782;SOL_COMPUTED,NONE,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,SOL_COMPUTED,NONE,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,\"\",0.000,0.000,0.000,0,0,0,0,0,00,00,00*6f907c54\r\n"
+	bin, err := hex.DecodeString("aa44121cf100002070000000c7b48509502616190000000000000e03000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008fd3ee5a")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		variant Variant
+		expect  int // position and velocity messages published
+	}{
+		{VariantOEM7, 4},
+		{VariantByNav, 0},
+	}
+	for _, tc := range tests {
+		h := &testMsgHandler{}
+		ap := NewAsciiPacketProcessor(gpsprot.NewNavEpochManager())
+		ap.SetVariant(tc.variant)
+		ap.SetMsgHandler(h)
+		bp := NewBinPacketProcessor(gpsprot.NewNavEpochManager())
+		bp.SetVariant(tc.variant)
+		bp.SetMsgHandler(h)
+		if _, err := ap.ProcessPacket(ascii, time.Unix(1, 0)); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := bp.ProcessPacket(string(bin), time.Unix(1, 0)); err != nil {
+			t.Fatal(err)
+		}
+		got := 0
+		for _, m := range h.msgs {
+			if m.msgType == "posecef" || m.msgType == "velecef" {
+				got++
+			}
+		}
+		if got != tc.expect {
+			t.Errorf("variant %d: %d position and velocity messages, want %d", tc.variant, got, tc.expect)
+		}
+	}
 }
 
 func TestDispatchEpochQualityNotComputed(t *testing.T) {

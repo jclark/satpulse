@@ -142,6 +142,10 @@ func asciiParser[P ~uint8]() func([]byte, map[string]func() novmsg.MsgBody) (par
 }
 
 // binVariant returns the constructor map and parse function for a binary variant.
+// ByNav receivers accept a request for BESTXYZ but, on an M10 (firmware
+// V7.82_AB1AD3_T), output it as a computed solution of type NONE with every
+// field zero, even while BESTPOS has a fix; so the ByNav variant does not
+// decode BESTXYZ, which would otherwise replace BESTPOS's solution quality.
 func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 	func([]byte, map[novmsg.MsgID]func() novmsg.MsgBody) (parseResult, error)) {
 	reg := novmsg.BinRegistry()
@@ -158,7 +162,11 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 		m[novmsg.UnicoreIonUTCID] = reg[novmsg.IonUTCID]
 		delete(m, novmsg.IonUTCID)
 		return m, binParser[novmsg.UnicorePort]()
-	default: // OEM7, ByNav
+	case VariantByNav:
+		m := copyMap(reg)
+		delete(m, novmsg.BestXYZID)
+		return m, binParser[novmsg.Port]()
+	default: // OEM7
 		return reg, binParser[novmsg.Port]()
 	}
 }
@@ -177,7 +185,11 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 		return m, asciiParser[novmsg.SinoPort]()
 	case VariantUnicore:
 		return reg, asciiParser[novmsg.UnicorePort]()
-	default: // OEM7, ByNav
+	case VariantByNav:
+		m := copyMap(reg)
+		delete(m, "BESTXYZA")
+		return m, asciiParser[novmsg.Port]()
+	default: // OEM7
 		return reg, asciiParser[novmsg.Port]()
 	}
 }
