@@ -117,6 +117,7 @@ type Dispatcher struct {
 	ggaSynth              *nmeasyn.Synth
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
+	sysPulseStartup       *sysPulseStartup // nil once the startup check is over
 	tStart                time.Time
 }
 
@@ -189,8 +190,8 @@ func NewDispatcher(
 }
 
 const (
-	tickPeriod               = time.Second / 4
-	sysPulseFirstEdgeTimeout = 30 * time.Second
+	tickPeriod             = time.Second / 4
+	sysPulseStartupTimeout = 30 * time.Second
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -213,8 +214,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
-	var firstSysPulseDeadline <-chan time.Time
-	rejectedSysPulses := make(map[pps.RejectReason]int)
+	var sysPulseStartupDeadline <-chan time.Time
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -227,7 +227,8 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	if ppsCh != nil {
 		// Adaptive polling can take several seconds to acquire a narrow pulse.
 		// Allow comfortably more before warning.
-		firstSysPulseDeadline = time.After(sysPulseFirstEdgeTimeout)
+		sysPulseStartupDeadline = time.After(sysPulseStartupTimeout)
+		d.sysPulseStartup = &sysPulseStartup{rejected: make(map[pps.RejectReason]int)}
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
@@ -273,15 +274,15 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 			}
 		case ce, ok := <-ppsCh:
 			if ok {
-				if d.sysPulseCandidateEdge(ce) {
-					firstSysPulseDeadline = nil
-				} else if firstSysPulseDeadline != nil {
-					rejectedSysPulses[ce.Reject]++
+				usable := d.sysPulseCandidateEdge(ce)
+				if s := d.sysPulseStartup; s != nil {
+					s.edge(usable, ce.Reject)
 				}
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
 				ppsCh = nil
-				firstSysPulseDeadline = nil
+				sysPulseStartupDeadline = nil
+				d.sysPulseStartup = nil
 			}
 
 		case pkt, ok := <-pktCh:
@@ -303,17 +304,50 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
-		case <-firstSysPulseDeadline:
-			if len(rejectedSysPulses) == 0 {
-				lg.Warn("no serial PPS edges received")
-			} else {
-				lg.Warn("no usable serial PPS edges received", "rejected", rejectedSysPulses)
-			}
-			firstSysPulseDeadline = nil
+		case <-sysPulseStartupDeadline:
+			d.sysPulseStartup.report(lg)
+			sysPulseStartupDeadline = nil
+			d.sysPulseStartup = nil
 		case <-sig:
 			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)
 		}
+	}
+}
+
+// sysPulseStartup checks that serial PPS receives what it needs to produce
+// samples: a usable edge and a post-pulse time message with a UTC time,
+// which is what feeds the Generator. It reports once, at the startup timeout.
+type sysPulseStartup struct {
+	rejected      map[pps.RejectReason]int
+	usableEdge    bool
+	usableTimeMsg bool
+}
+
+func (s *sysPulseStartup) edge(usable bool, reject pps.RejectReason) {
+	if usable {
+		s.usableEdge = true
+	} else {
+		s.rejected[reject]++
+	}
+}
+
+func (s *sysPulseStartup) timeMsg(msg *gpsprot.TimeMsg) {
+	if msg.UTCTime.IsSet() && msg.Ref != gpsprot.PrePulse {
+		s.usableTimeMsg = true
+	}
+}
+
+func (s *sysPulseStartup) report(lg *slog.Logger) {
+	if !s.usableEdge {
+		if len(s.rejected) == 0 {
+			lg.Warn("no serial PPS edges being received")
+		} else {
+			lg.Warn("no usable serial PPS edges being received", "rejected", s.rejected)
+		}
+	}
+	if !s.usableTimeMsg {
+		lg.Warn("no usable time messages being received")
 	}
 }
 
@@ -536,6 +570,9 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	d.logMsg(mt, tRead)
 
 	d.timeMsgBuffer.Time(mt, tRead)
+	if s := d.sysPulseStartup; s != nil {
+		s.timeMsg(mt)
+	}
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {

@@ -561,11 +561,10 @@ of the two queries around the edge, and the gap before the catching query.
 `sysPulseCandidateEdge` in `time/internal/gpsevent/dispatcher.go`
 accepts a candidate exactly when `Reject` is empty. Uncertainty does not
 affect acceptance.
-The consumer allows 30 seconds from startup for the first usable edge,
-then warns once if none has arrived. If no candidates arrived it reports
-no edges; otherwise it reports no usable edges with counts by rejection
-reason. A usable candidate cancels the timeout even if it cannot yet be
-matched to a receiver time message.
+The consumer allows 30 seconds from startup for the first usable edge
+and the first post-pulse time message with a UTC time, then warns once
+about each that has not arrived. If no candidates arrived it reports no edges;
+otherwise it reports no usable edges with counts by rejection reason.
 There are no repeat warnings, recovery messages or later outage checks.
 
 ### Removed from the original controller
@@ -1029,8 +1028,8 @@ The relevant coverage includes:
 - Optional JSON rejection reasons, paired measurement fields, simulated
   errors within the reported interval, and exact asymmetric boundaries
   for the simulator's `wrong` count.
-- A single startup warning with counts by rejection reason, cancelled by
-  the first usable candidate even without a matching receiver message.
+- A single startup report at the timeout, covering usable edges, with
+  counts by rejection reason, and usable time messages.
 
 ### One-shot startup sweep validation
 
