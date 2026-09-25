@@ -40,7 +40,7 @@
 					"type": "object",
 					"properties": {
 						"eol": { "type": "string" },
-						"responsePattern": { "type": "string", "enum": ["none", "unicore", "septentrio"] }
+						"responsePattern": { "type": "string", "enum": ["none", "unicore", "septentrio", "novatel"] }
 					},
 					"allOf": [
 						{ "$ref": "#/definitions/common" }
@@ -65,7 +65,7 @@
 				"properties": {
 					"text": { "type": "string" },
 					"eol": { "type": "string" },
-					"responsePattern": { "type": "string", "enum": ["none", "unicore", "septentrio"] },
+					"responsePattern": { "type": "string", "enum": ["none", "unicore", "septentrio", "novatel"] },
 					"description": { "type": "string" }
 				},
 				"required": ["text"],

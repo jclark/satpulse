@@ -5,6 +5,7 @@
 
 [default.line]
 eol = "\r\n"
+responsePattern = "novatel"
 
 # Version / Probe
 
