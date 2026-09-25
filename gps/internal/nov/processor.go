@@ -165,10 +165,12 @@ func asciiParser[P ~uint8]() func([]byte, map[string]func() novmsg.MsgBody) (par
 }
 
 // binVariant returns the constructor map and parse function for a binary variant.
-// ByNav receivers accept a request for BESTXYZ but, on an M10 (firmware
-// V7.82_AB1AD3_T), output it as a computed solution of type NONE with every
-// field zero, even while BESTPOS has a fix; so the ByNav variant does not
-// decode BESTXYZ, which would otherwise replace BESTPOS's solution quality.
+// BESTXYZ is not a documented ByNav log: UG017 names it only as a log
+// affected by OUTPUTSOURCE. ByNav receivers accept a request for it but, on
+// an M10 (firmware V7.82_AB1AD3_T), output it as a computed solution of type
+// NONE with every field zero, even while BESTPOS has a fix; so the ByNav
+// variant does not decode BESTXYZ, which would otherwise replace BESTPOS's
+// solution quality.
 func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 	func([]byte, map[novmsg.MsgID]func() novmsg.MsgBody) (parseResult, error)) {
 	reg := novmsg.BinRegistry()

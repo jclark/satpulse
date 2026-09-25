@@ -133,24 +133,26 @@ description = "Disable BESTGNSSVEL ASCII"
 text = "UNLOG BESTGNSSVELA"
 
 # BESTXYZ (ECEF position and velocity, msg 241)
+# Not a documented ByNav log: UG017 names it only under OUTPUTSOURCE.
 # On an M10 (V7.82_AB1AD3_T), every BESTXYZ is SOL_COMPUTED with type NONE and
-# all fields zero, even while BESTPOS has a fix, so it is of no use there.
-[[line]]
-tag = "nov-bestxyzb"
-description = "Enable BESTXYZ binary at 1Hz"
-text = "LOG BESTXYZB ONTIME 1"
-[[line]]
-tag = "nov-bestxyzb-off"
-description = "Disable BESTXYZ binary"
-text = "UNLOG BESTXYZB"
-[[line]]
-tag = "nov-bestxyza"
-description = "Enable BESTXYZ ASCII at 1Hz"
-text = "LOG BESTXYZA ONTIME 1"
-[[line]]
-tag = "nov-bestxyza-off"
-description = "Disable BESTXYZ ASCII"
-text = "UNLOG BESTXYZA"
+# all fields zero, even while BESTPOS has a fix, so it is of no use there and
+# satpulse does not decode it from ByNav receivers.
+#[[line]]
+#tag = "nov-bestxyzb"
+#description = "Enable BESTXYZ binary at 1Hz"
+#text = "LOG BESTXYZB ONTIME 1"
+#[[line]]
+#tag = "nov-bestxyzb-off"
+#description = "Disable BESTXYZ binary"
+#text = "UNLOG BESTXYZB"
+#[[line]]
+#tag = "nov-bestxyza"
+#description = "Enable BESTXYZ ASCII at 1Hz"
+#text = "LOG BESTXYZA ONTIME 1"
+#[[line]]
+#tag = "nov-bestxyza-off"
+#description = "Disable BESTXYZ ASCII"
+#text = "UNLOG BESTXYZA"
 
 # NMEA Output Control
 
