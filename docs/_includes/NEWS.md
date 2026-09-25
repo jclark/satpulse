@@ -63,6 +63,7 @@ _Not yet released_
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
 - Message files have a new `novatel` response pattern, which allows responses from ByNav receivers to be correlated with the commands sent.
+- `satpulsetool decode` and `satpulsetool annotate` have a new `--vendor` option, which decodes NovAtel-format packets using that vendor's variant of the protocol; without it, `SATPULSE_VENDORS` applies. SatPulse Workbench decodes packets using the vendors it was given in the same way.
 - `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)
 
 ### Miscellaneous
