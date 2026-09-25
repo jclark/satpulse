@@ -5,8 +5,8 @@ default-baud = 115200
 
 # From LOG VERSION:
 # $BDVER,V7.82_AB1AD3_T,24081625,24110741,2408163A,24102627,23060503,,,24081609,00000000*24
-# Captured on COM1 with a single-point fix. default.jsonl is the receiver's
-# configured output (GPGGA, BESTPOSA, BYCHECKA); every other capture replaced
+# Captured on COM1 with a single-point fix. factory.jsonl is the receiver's
+# factory output (GPGGA, BESTPOSA, BYCHECKA); every other capture replaced
 # that output with the logs named in the file, at 1 Hz unless noted.
 # Receiver behaviour seen in these captures:
 # - BESTXYZ is accepted but always reports SOL_COMPUTED/NONE with all-zero
