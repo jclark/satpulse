@@ -11,12 +11,14 @@ import (
 )
 
 func timeMsgFromTime(common *novmsg.CommonHdr, m *novmsg.Time, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
-	if m.ClockStatus != novmsg.ClockStatusValid {
-		return nil, nil
-	}
 	t := gpsprot.TimeMsg{
 		Tag:         tag,
 		NativeMsgID: "TIME",
+	}
+	// A TimeMsg with no time says the receiver has no valid time, as
+	// distinct from sending no time message.
+	if m.ClockStatus != novmsg.ClockStatusValid {
+		return &t, nil
 	}
 	// leave t.GNSS zero; we don't know what the reference GNSS is
 	if common.TimeStatus != novmsg.TimeStatusUnknown {

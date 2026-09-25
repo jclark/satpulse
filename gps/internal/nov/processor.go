@@ -22,6 +22,7 @@ const (
 // parseResult holds the port-type-independent parts of a parsed message.
 type parseResult struct {
 	Common novmsg.CommonHdr
+	Hdr    any // the novmsg.MsgHdr[P], whose port type depends on the variant
 	Body   novmsg.MsgBody
 	Msg    any // original *novmsg.Msg[P] for NativeMsg passthrough
 }
@@ -119,6 +120,28 @@ func (p *AbbrevAsciiPacketProcessor) NativeOnly() bool {
 	return true
 }
 
+// ParseBin parses a binary packet using the messages and port encoding of
+// variant v, returning the header and body.
+func ParseBin(v Variant, pkt []byte) (hdr any, body novmsg.MsgBody, err error) {
+	ctors, parse := binVariant(v)
+	res, err := parse(pkt, ctors)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.Hdr, res.Body, nil
+}
+
+// ParseAscii parses an ASCII packet using the messages and port encoding of
+// variant v, returning the header and body.
+func ParseAscii(v Variant, pkt []byte) (hdr any, body novmsg.MsgBody, err error) {
+	ctors, parse := asciiVariant(v)
+	res, err := parse(pkt, ctors)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.Hdr, res.Body, nil
+}
+
 // binParser returns a parse closure for binary messages with a specific port type.
 func binParser[P ~uint8]() func([]byte, map[novmsg.MsgID]func() novmsg.MsgBody) (parseResult, error) {
 	return func(pkt []byte, ctors map[novmsg.MsgID]func() novmsg.MsgBody) (parseResult, error) {
@@ -126,7 +149,7 @@ func binParser[P ~uint8]() func([]byte, map[novmsg.MsgID]func() novmsg.MsgBody) 
 		if err != nil {
 			return parseResult{}, err
 		}
-		return parseResult{Common: msg.Hdr.CommonHdr, Body: msg.Body, Msg: msg}, nil
+		return parseResult{Common: msg.Hdr.CommonHdr, Hdr: msg.Hdr, Body: msg.Body, Msg: msg}, nil
 	}
 }
 
@@ -137,7 +160,7 @@ func asciiParser[P ~uint8]() func([]byte, map[string]func() novmsg.MsgBody) (par
 		if err != nil {
 			return parseResult{}, err
 		}
-		return parseResult{Common: msg.Hdr.CommonHdr, Body: msg.Body, Msg: msg}, nil
+		return parseResult{Common: msg.Hdr.CommonHdr, Hdr: msg.Hdr, Body: msg.Body, Msg: msg}, nil
 	}
 }
 
@@ -165,6 +188,7 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 	case VariantByNav:
 		m := copyMap(reg)
 		delete(m, novmsg.BestXYZID)
+		m[novmsg.ByCheckID] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }
 		return m, binParser[novmsg.Port]()
 	default: // OEM7
 		return reg, binParser[novmsg.Port]()
@@ -188,6 +212,7 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 	case VariantByNav:
 		m := copyMap(reg)
 		delete(m, "BESTXYZA")
+		m["BYCHECKA"] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }
 		return m, asciiParser[novmsg.Port]()
 	default: // OEM7
 		return reg, asciiParser[novmsg.Port]()
@@ -244,15 +269,15 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 	h := p.mh
 	switch m := body.(type) {
 	case *novmsg.BestPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTPOS", tag, tRead)
 	case *novmsg.SinoBestPos:
-		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTPOS", tag, tRead)
 	case *novmsg.BestGNSSPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTGNSSPOS", tag, tRead)
 	case *novmsg.PsrPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "PSRPOS", tag, tRead)
 	case *novmsg.SinoPsrPos:
-		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, tag, tRead)
+		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, "PSRPOS", tag, tRead)
 	case *novmsg.BestVel:
 		if m.SolStatus != novmsg.SolComputed {
 			return false, nil
