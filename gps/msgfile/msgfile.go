@@ -50,12 +50,14 @@ const (
 	ResponsePatternNone       ResponsePattern = iota // zero value: no response matching
 	ResponsePatternUnicore                           // "unicore"
 	ResponsePatternSeptentrio                        // "septentrio"
+	ResponsePatternNovAtel                           // "novatel"
 )
 
 var responsePatternStrings = [...]string{
 	ResponsePatternNone:       "none",
 	ResponsePatternUnicore:    "unicore",
 	ResponsePatternSeptentrio: "septentrio",
+	ResponsePatternNovAtel:    "novatel",
 }
 
 // String returns the string representation of the ResponsePattern.
