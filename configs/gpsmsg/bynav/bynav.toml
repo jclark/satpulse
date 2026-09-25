@@ -10,6 +10,8 @@ responsePattern = "novatel"
 # Version / Probe
 
 # Query firmware and hardware version
+# The reply is a $BDVER sentence (UG017 4.3.20).
+# On an M10 (V7.82_AB1AD3_T), LOG VERSIONA and LOG VERSIONB are accepted but output nothing.
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "get-version"
@@ -131,6 +133,8 @@ description = "Disable BESTGNSSVEL ASCII"
 text = "UNLOG BESTGNSSVELA"
 
 # BESTXYZ (ECEF position and velocity, msg 241)
+# On an M10 (V7.82_AB1AD3_T), every BESTXYZ is SOL_COMPUTED with type NONE and
+# all fields zero, even while BESTPOS has a fix, so it is of no use there.
 [[line]]
 tag = "nov-bestxyzb"
 description = "Enable BESTXYZ binary at 1Hz"
@@ -172,6 +176,9 @@ tag = "nmea-rmc-off"
 description = "Disable NMEA RMC"
 text = "UNLOG GPRMC"
 
+# With the factory NMEA talker (GP), an M10 (V7.82_AB1AD3_T) outputs only the
+# GPS GSA, so satellites used from other systems are not reported;
+# nmea-talker-auto makes it output a GSA for each system.
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-gsa"
@@ -206,6 +213,7 @@ description = "Disable NMEA ZDA"
 text = "UNLOG GPZDA"
 
 # Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
+# See nmea-gsa about the NMEA talker.
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-daemon"
@@ -421,11 +429,17 @@ text = "WORKFREQS ALL ALL"
 
 # NMEA Talker ID
 
+# AUTO is better than the factory setting, GP. With GP, an M10
+# (V7.82_AB1AD3_T) outputs a GSA only for GPS, listing only GPS satellites;
+# with AUTO it outputs a GNGSA for each system (GNSS ID 1 to 4), so the
+# satellites used from every system are reported. GGA and other sentences
+# then use the GN talker when several systems are used.
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-talker-auto"
 description = "Set NMEA talker ID to AUTO (GP/BD/GN based on constellation)"
 text = "NMEATALKER AUTO"
+# GP is the factory setting.
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-talker-gp"
@@ -469,7 +483,9 @@ description = "Hot start - reload saved config"
 text = "RESET"
 delay = 3
 
-# FRESET STANDARD clears all ephemeris, almanac, and GLONASS bias
+# FRESET STANDARD clears all ephemeris, almanac, and GLONASS bias.
+# On an M10 (V7.82_AB1AD3_T) it also resets the saved log configuration to
+# the factory one (see factory-reset), and gives no <OK.
 [[line]]
 tag = "cold-start"
 description = "Cold start - clears all satellite data"
@@ -597,6 +613,8 @@ text = "UNLOG RTCM1127"
 
 # Port Configuration (SERIALCONFIG)
 
+# The reply is plain text (UG017 4.3.5), not a packet;
+# LOG COMCONFIGA ONCE outputs the same information as a #COMCONFIGA log.
 # Verified OK received on Bynav M2 (V7.84_250E94_T)
 [[line]]
 tag = "get-port"
@@ -644,6 +662,10 @@ description = "Save current configuration to flash"
 text = "SAVECONFIG"
 
 # Factory Reset
+# On an M10 (V7.82_AB1AD3_T), FRESET STANDARD resets the saved log
+# configuration to the factory one: BESTPOSA and GPGGA every second and
+# BYCHECKA every 5 s on each port, with no TIME log. It gives no <OK, only
+# reboot messages.
 
 [[line]]
 tag = "factory-reset"
