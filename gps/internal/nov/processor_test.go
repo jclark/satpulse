@@ -1,7 +1,9 @@
 package nov
 
 import (
+	"encoding/hex"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -251,6 +253,59 @@ func TestDispatchPosGeoNativeMsgID(t *testing.T) {
 				t.Errorf("got %v, want [%s]", got, tc.expect)
 			}
 		})
+	}
+}
+
+type testNativeHandler struct{ msgs []any }
+
+func (h *testNativeHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
+	h.msgs = append(h.msgs, msg)
+	return nil
+}
+
+func TestByCheckOnlyForByNav(t *testing.T) {
+	const ascii = "#BYCHECKA,COM1,0,99.9,FINESTEERING,2437,429495.000,00000000,0000,782;7843,2437,429495.000,1,1,1,1,1,1,1,1,1,1,1,1*8c0596c3\r\n"
+	bin, err := hex.DecodeString("aa44121c20a500203c000000c7b48509d89299190000000000000e03a31e000085090000e0b6d148010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000689c42f5")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tests := []struct {
+		variant Variant
+		expect  bool
+	}{
+		{VariantOEM7, false},
+		{VariantSinoGNSS, false},
+		{VariantUnicore, false},
+		{VariantByNav, true},
+	}
+	for _, tc := range tests {
+		ap := NewAsciiPacketProcessor(gpsprot.NewNavEpochManager())
+		ap.SetVariant(tc.variant)
+		bp := NewBinPacketProcessor(gpsprot.NewNavEpochManager())
+		bp.SetVariant(tc.variant)
+		h := &testNativeHandler{}
+		ap.SetNativeMsgHandler(h)
+		bp.SetNativeMsgHandler(h)
+		// Other variants may reject the packet; only the decoded body matters.
+		ap.ProcessPacket(ascii, time.Unix(1, 0))
+		bp.ProcessPacket(string(bin), time.Unix(1, 0))
+		var got []bool
+		for _, m := range h.msgs {
+			switch m := m.(type) {
+			case *novmsg.Msg[novmsg.Port]:
+				_, ok := m.Body.(*novmsg.ByCheck)
+				got = append(got, ok)
+			case *novmsg.Msg[novmsg.SinoPort]:
+				_, ok := m.Body.(*novmsg.ByCheck)
+				got = append(got, ok)
+			case *novmsg.Msg[novmsg.UnicorePort]:
+				_, ok := m.Body.(*novmsg.ByCheck)
+				got = append(got, ok)
+			}
+		}
+		if (tc.expect && !reflect.DeepEqual(got, []bool{true, true})) || (!tc.expect && slices.Contains(got, true)) {
+			t.Errorf("variant %d: decoded as BYCHECK %v, want %v", tc.variant, got, tc.expect)
+		}
 	}
 }
 
