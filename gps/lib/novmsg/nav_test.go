@@ -2,6 +2,7 @@ package novmsg
 
 import (
 	"fmt"
+	"maps"
 	"strconv"
 	"testing"
 )
@@ -176,12 +177,12 @@ func TestBestPosAscii(t *testing.T) {
 	testDataAscii(t, bestPosTests, AsciiRegistry())
 }
 
-// sinoPosTests are binary and ASCII pairs from a SinoGNSS K901, each
+// sinoNavTests are binary and ASCII pairs from a SinoGNSS K901, each
 // requested with LOG ONCE back to back so that both report the same
 // solution. The ASCII header has fixed values in place of the binary
 // header's idle time, receiver status, reserved and version fields, and the
 // ASCII solution age can be one second more than the binary one.
-var sinoPosTests = []dataTestCase[Port]{
+var sinoNavTests = []dataTestCase[Port]{
 	{
 		name:  "SinoGNSS K901 BESTPOS SINGLE",
 		hex:   "aa44121c2a00022048000000b7b48509a07a50210000100053ff020000000000100000005226d3bfb2762b40ff65ee4f432959400000a01ab1421e406fcef6c13d00000073b55e3e39167f3ecbb26b3f0000000000000000000040401e1d1d1dbf000019b9039eee",
@@ -291,26 +292,99 @@ var sinoPosTests = []dataTestCase[Port]{
 		},
 		fixupHeaderForAscii: sinoHdrForAscii,
 	},
+	{
+		name:  "SinoGNSS K901 BESTVEL DOPPLER_VELOCITY",
+		hex:   "aa44121c630002202c000000b8b485096a835021000010000000204e000000000800000000000000000000009af6b592f7515e3f5b5dcce4e8117240eeead780c473593f01008028898d4b4a",
+		ascii: "#BESTVELA,COM1,0,60.0,FINESTEERING,2437,558924.650,00000000,0000,1114;SOL_COMPUTED,DOPPLER_VELOCITY,0.000,0.000,0.0019,289.119359,0.0016,0.0*896c6970\r\n",
+		hdr:   sinoHdr(184, 558924650, 0, 20000),
+		value: &BestVel{Vel: Vel[PosType]{
+			SolStatus: SolComputed,
+			VelType:   PosDopplerVelocity,
+			HorSpd:    0.0018505971628139163,
+			TrkGnd:    289.11935882406186,
+			VertSpd:   0.0015534800508009666,
+			Reserved:  1.4210856e-14,
+		}},
+		fixupValueForAscii: func(msg MsgBody) MsgBody {
+			r := *msg.(*BestVel)
+			fixupVelForAscii(&r.Vel)
+			return &r
+		},
+		fixupHeaderForAscii: sinoHdrForAscii,
+	},
+	{
+		name:  "SinoGNSS K901 PSRVEL DOPPLER_VELOCITY",
+		hex:   "aa44121c640002202c000000b7b485095e9e5021000010000d00204e00000000080000000000000000000000e6b6d54902eb623f582192d4e8a5754068d159617779553f01009030c7380449",
+		ascii: "#PSRVELA,COM1,0,60.0,FINESTEERING,2437,558931.550,00000000,0000,1114;SOL_COMPUTED,DOPPLER_VELOCITY,0.000,0.000,0.0023,346.369343,0.0013,0.0*cd9555a8\r\n",
+		hdr:   sinoHdr(183, 558931550, 13, 20000),
+		value: &SinoPsrVel{Vel: Vel[SinoPosType]{
+			SolStatus: SolComputed,
+			VelType:   PosDopplerVelocity,
+			HorSpd:    0.0023093266196870686,
+			TrkGnd:    346.3693433483327,
+			VertSpd:   0.001310698110868003,
+			Reserved:  1.047738e-09,
+		}},
+		fixupValueForAscii: func(msg MsgBody) MsgBody {
+			r := *msg.(*SinoPsrVel)
+			fixupVelForAscii(&r.Vel)
+			return &r
+		},
+		fixupHeaderForAscii: sinoHdrForAscii,
+	},
+	{
+		name:  "SinoGNSS K901 PSRDOP",
+		hex:   "aa44121cae00022090000000b8b485095aa7502100001000020001003533a43f73b28c3f1d2d1d3f0d04673fe64d293f000020411d00000008000000040000000900000002000000030000000100000007000000940000008f0000008e000000950000009a000000b3000000a2000000a1000000af000000a900000026000000270000003b0000003c000000000000000000000000000000000000000000000000000000000000000000000009809eea",
+		ascii: "#PSRDOPA,COM1,0,60.0,FINESTEERING,2437,558933.850,00000000,0000,1114;1.2828,1.0992,0.6140,0.9024,0.6613,10.0,29,8,4,9,2,3,1,7,148,143,142,149,154,179,162,161,175,169,38,39,59,60,0,0,0,0,0,0,0,0*718d4809\r\n",
+		hdr:   sinoHdr(184, 558933850, 2, 1),
+		value: &PsrDop{
+			PsrDopInitChunk: PsrDopInitChunk{
+				GDOP:    1.2828127,
+				PDOP:    1.0991958,
+				HDOP:    0.6139696,
+				HTDOP:   0.90240556,
+				TDOP:    0.6613449,
+				Cutoff:  10,
+				NumPRNs: 29,
+			},
+			PRNs: []PsrDopPRN{
+				{8}, {4}, {9}, {2}, {3}, {1}, {7}, {148},
+				{143}, {142}, {149}, {154}, {179}, {162}, {161}, {175},
+				{169}, {38}, {39}, {59}, {60}, {0}, {0}, {0},
+				{0}, {0}, {0}, {0}, {0},
+			},
+		},
+		fixupValueForAscii:  fixupPsrDopForAscii,
+		fixupHeaderForAscii: sinoHdrForAscii,
+	},
 }
 
-var sinoPosBinCtors = map[MsgID]func() MsgBody{
-	BestPosID: func() MsgBody { return &SinoBestPos{} },
-	PsrPosID:  func() MsgBody { return &SinoPsrPos{} },
-	BestXYZID: func() MsgBody { return &SinoBestXYZ{} },
+// sinoBinCtors and sinoAsciiCtors are the registries with the SinoGNSS log
+// types, as the SinoGNSS variant of the NovAtel packet processors uses.
+func sinoBinCtors() map[MsgID]func() MsgBody {
+	m := maps.Clone(BinRegistry())
+	m[BestPosID] = func() MsgBody { return &SinoBestPos{} }
+	m[PsrPosID] = func() MsgBody { return &SinoPsrPos{} }
+	m[PsrVelID] = func() MsgBody { return &SinoPsrVel{} }
+	m[BestXYZID] = func() MsgBody { return &SinoBestXYZ{} }
+	return m
 }
 
-var sinoPosAsciiCtors = map[string]func() MsgBody{
-	"BESTPOSA": func() MsgBody { return &SinoBestPos{} },
-	"PSRPOSA":  func() MsgBody { return &SinoPsrPos{} },
-	"BESTXYZA": func() MsgBody { return &SinoBestXYZ{} },
+func sinoAsciiCtors() map[string]func() MsgBody {
+	m := maps.Clone(AsciiRegistry())
+	m["BESTPOSA"] = func() MsgBody { return &SinoBestPos{} }
+	m["PSRPOSA"] = func() MsgBody { return &SinoPsrPos{} }
+	m["PSRVELA"] = func() MsgBody { return &SinoPsrVel{} }
+	m["BESTXYZA"] = func() MsgBody { return &SinoBestXYZ{} }
+	return m
 }
 
-func TestSinoPosBinary(t *testing.T) {
-	testDataBin(t, sinoPosTests, sinoPosBinCtors)
+func TestSinoNavBinary(t *testing.T) {
+	testDataBin(t, sinoNavTests, sinoBinCtors())
 }
 
-func TestSinoPosAscii(t *testing.T) {
-	testDataAscii(t, sinoPosTests, sinoPosAsciiCtors)
+func TestSinoNavAscii(t *testing.T) {
+	testDataAscii(t, sinoNavTests, sinoAsciiCtors())
 }
 
 // sinoHdr returns the binary header of a K901 log on COM1 in week 2437. The K901
@@ -440,15 +514,18 @@ func fixupXYZForAscii[S, P ~uint32](x *XYZ[S, P]) {
 }
 
 func fixupBestGNSSVelForAscii(msg MsgBody) MsgBody {
-	m := msg.(*BestGNSSVel)
-	r := *m
-	fixupFloat32(&r.Latency, "%.3f")
-	fixupFloat32(&r.Age, "%.3f")
-	fixupFloat(&r.HorSpd, "%.4f")
-	fixupFloat(&r.TrkGnd, "%.6f")
-	fixupFloat(&r.VertSpd, "%.4f")
-	fixupFloat32(&r.Reserved, "%.1f")
+	r := *msg.(*BestGNSSVel)
+	fixupVelForAscii(&r.Vel)
 	return &r
+}
+
+func fixupVelForAscii[P ~uint32](v *Vel[P]) {
+	fixupFloat32(&v.Latency, "%.3f")
+	fixupFloat32(&v.Age, "%.3f")
+	fixupFloat(&v.HorSpd, "%.4f")
+	fixupFloat(&v.TrkGnd, "%.6f")
+	fixupFloat(&v.VertSpd, "%.4f")
+	fixupFloat32(&v.Reserved, "%.1f")
 }
 
 // fixupFloat32 simulates the receiver's float formatting for float32 values
