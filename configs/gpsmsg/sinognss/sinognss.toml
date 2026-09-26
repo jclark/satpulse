@@ -564,11 +564,14 @@ text = "unlog rangecmpb"
 
 # PPS Configuration
 
-# Verified OK response on K902
+# PPSCONTROL takes the pulse width in microseconds (manual 2.2.15)
+# The manual glosses NEGATIVE as rising edge and POSITIVE as falling edge, but the
+# receiver follows the usual meaning: POSITIVE gives an active-high pulse.
+# Verified OK response and 100 ms pulse rising at the start of the second on K901 (fw 8.1.8)
 [[line]]
 tag = "pps"
-description = "Enable PPS with 1ms pulse, rising edge, only with fix"
-text = "PPSCONTROL ENABLE NEGATIVE 1 1000 0"
+description = "Enable PPS with 0.1s pulse width, rising edge, only with fix"
+text = "PPSCONTROL ENABLE POSITIVE 1 100000 0"
 # Verified OK response on K902
 [[line]]
 tag = "pps-off"
