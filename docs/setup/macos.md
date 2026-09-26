@@ -163,6 +163,10 @@ This section is a summary, with additional macOS specifics.
 The only way of connecting a PPS signal on macOS is [via the serial port]({% link setup/ntp.md %}#pps-signal-connected-via-serial-port).
 Note the `kernel` and `wait` methods discussed on that page are not available in macOS: only the `poll` method is.
 
+You will need to download and install chrony.
+I recommend using the version included with [ChronyControl](https://whatroute.net/chronycontrol.html),
+which provides a nice GUI for monitoring chrony.
+
 As mentioned above, the PPS pin on the GPS receiver needs to be connected to the CTS pin on the USB serial adapter.
 You can use `satpulsetool serial` to check that the PPS signal is visible. For example,
 
@@ -190,39 +194,74 @@ Observe that each of the poll widths is ~2ms. They should mostly be less than 50
 So in this case, you should use a hub between the MacBook and the USB serial adapter.
 Not all hubs work equally well.
 
-After you have got PPS working, you need to download and install chrony.
-I recommend using the version included with [ChronyControl](https://whatroute.net/chronycontrol.html),
-which provides a nice GUI for monitoring chrony.
+After you have got PPS working with `satpulsetool serial`,
+configure `satpulsed` to also read a PPS signal over the serial port.
+In the `[serial]` table in `satpulse.toml`, add a line:
+
+```
+pps.pin = "cts"
+```
+
+The next stage is to configure a connection between `satpulsed` and chrony.
+There are two approaches to this.
+Homebrew is oriented towards running services as per-user LaunchAgents,
+whereas chrony expects to run as root.
+
+### Running satpulsed as a normal user
+
+The first approach is to run `satpulsed` as a normal user and not root.
+Usually chrony does not allow normal users to send time information to it.
+But we can make this work by creating a directory with special permissions.
+
+```
+sudo install -d -o root -g wheel -m 0755 /var/db/satpulse
+sudo chmod +a "user:$(id -un) allow write,file_inherit,only_inherit" /var/db/satpulse
+```
+
+The directory cannot be under `/var/run` because that is cleared on boot, so we use `/var/db` instead.
+The `chmod` command sets an ACL so that any file created in the directory inherits permissions for you to write to it.
+
+Add the following line to `/etc/chrony.d/chrony.conf`:
+
+```
+refclock SOCK /var/db/satpulse/chrony.sock refid CTS precision 1e-4
+```
+
+Then in `satpulse.toml`, in the `[ntp]` table, create a matching line
+
+```
+sock.path = "/var/db/satpulse/chrony.sock"
+```
+
+Then restart `satpulsed`:
+
+```sh
+brew services stop satpulse-pre
+brew services run satpulse-pre
+```
+
+If you use `start` rather than `run`, then satpulsed will run automatically when you log in.
+
+### Running satpulsed as root
+
+The other approach is to run satpulsed as a LaunchDaemon.
+This runs as root and has the big advantage that the service launches at boot rather than user login.
+However, it does not work so smoothly with brew.
+In this case we can use the normal location for the chrony socket.
+
 Add the following line to `/etc/chrony.d/chrony.conf`:
 
 ```
 refclock SOCK /var/run/chrony.satpulse.sock refid CTS precision 1e-4
 ```
 
-Then restart the chrony server using the ChronyControl GUI, or with the command
-
-```sh
-sudo launchctl kickstart -k system/org.chrony-project.chronyd
-```
-
-Next we need to make `satpulsed` send timing information to chrony.
-This needs two changes to `satpulse.toml`.
-First, in the `[serial]` table in `satpulse.toml`, add a line:
-
-```
-pps.pin = "cts"
-```
-
-Second, uncomment the following line in the `[ntp]` table:
+Then in `satpulse.toml`, in the `[ntp]` table, create a matching line
 
 ```
 sock.path = "/var/run/chrony.satpulse.sock"
 ```
 
-The path here must match that specified in `chrony.conf`.
-
-Finally, you need to run `satpulsed` as a system LaunchDaemon rather than a per-user LaunchAgent,
-so that it has the necessary permission to connect to chrony.
+With this approach, `brew services` must be run with `sudo`.
 If it was running as a per-user LaunchAgent, then stop it first:
 
 ```sh
@@ -235,8 +274,35 @@ Then start it again using `sudo`:
 sudo brew services start satpulse-pre
 ```
 
+When you do this brew will warn about changing ownership of various files installed by the tap.
+It does this in an effort to keep things secure, but it is not thorough enough to be actually secure.
+So in practice, the root installation is trusting the Homebrew user.
+
+When you upgrade satpulse, you will need to stop satpulsed, and then change the ownership of the files back to yourself, before upgrading:
+
+```sh
+sudo chown -h "$(id -un)" \
+  /opt/homebrew/opt/satpulse-pre \
+  /opt/homebrew/var/homebrew/linked/satpulse-pre \
+  /opt/homebrew/opt/satpulse-pre/bin \
+  /opt/homebrew/opt/satpulse-pre/sbin \
+  /opt/homebrew/opt/satpulse-pre/libexec \
+  /opt/homebrew/opt/satpulse-pre/libexec/satpulse-service
+```
+
 `brew services` does not support `run` with `sudo`, so you must use `start`, which will both start the service and register it to start on boot.
 Use the `stop` subcommand instead to stop and unregister the service.
+
+You can avoid the need to change ownership of files on upgrade by using the `--sudo-service-user=root` option on every use of `sudo brew services` applying to the formula.
+
+### Finishing NTP setup
+
+Finally restart chrony by using the GUI or running the command
+
+```
+sudo launchctl kickstart -k system/org.chrony-project.chronyd
+
+```
 
 If everything is working, then chrony should switch over to using the `CTS` refclock.
 Run
@@ -250,7 +316,6 @@ Within a minute or two, the output should include a line like:
 ```
 #* CTS                           0   4   377    19  -6245ns[-9762ns] +/-  100us
 ```
-
 
 You may be able to get better accuracy by using "pre-warming".
 For example, in `satpulse.toml` add:
