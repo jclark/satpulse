@@ -803,10 +803,13 @@ text = "COM COM1 38400"
 tag = "speed-57600"
 description = "Set COM1 baud rate to 57600"
 text = "COM COM1 57600"
+# Verified on K901: sent at 230400, the receiver returns to 115200
 [[line]]
 tag = "speed-115200"
 description = "Set COM1 baud rate to 115200"
 text = "COM COM1 115200"
+# Verified on K901: the speed changes at once, so the reply is sent at 230400;
+# NMEA output continues at 230400
 [[line]]
 tag = "speed-230400"
 description = "Set COM1 baud rate to 230400"
