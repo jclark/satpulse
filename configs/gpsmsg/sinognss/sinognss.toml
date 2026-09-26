@@ -587,12 +587,9 @@ description = "Hot start - preserves ephemeris and almanac"
 text = "RESET"
 delay = 3
 
-# FRESET clears everything (equivalent to cold start + factory reset)
-[[line]]
-tag = "cold-start"
-description = "Cold start - clears all satellite data and settings"
-text = "FRESET"
-delay = 5
+# No cold-start tag: the manual documents no command that clears satellite
+# data but keeps the configuration. RESET keeps the almanac and ephemeris,
+# and FRESET is a factory reset (see factory-reset).
 
 # Survey-in
 
