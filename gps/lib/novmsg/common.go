@@ -94,7 +94,7 @@ func (ts TimeStatus) MarshalText() ([]byte, error) {
 }
 
 // MsgHdr is the parsed message header, parameterized on port type.
-// OEM7/ByNav use Port, Unicore uses UnicorePort, SinoGNSS uses SinoPort.
+// OEM7, ByNav and SinoGNSS use Port; Unicore uses UnicorePort.
 type MsgHdr[P ~uint8] struct {
 	Port P
 	CommonHdr

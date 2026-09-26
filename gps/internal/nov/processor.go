@@ -181,7 +181,7 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 		m[novmsg.PsrPosID] = func() novmsg.MsgBody { return &novmsg.SinoPsrPos{} }
 		m[novmsg.PsrVelID] = func() novmsg.MsgBody { return &novmsg.SinoPsrVel{} }
 		m[novmsg.BestXYZID] = func() novmsg.MsgBody { return &novmsg.SinoBestXYZ{} }
-		return m, binParser[novmsg.SinoPort]()
+		return m, binParser[novmsg.Port]()
 	case VariantUnicore:
 		m := copyMap(reg)
 		m[novmsg.UnicoreIonUTCID] = reg[novmsg.IonUTCID]
@@ -208,7 +208,7 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 		m["PSRPOSA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrPos{} }
 		m["PSRVELA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrVel{} }
 		m["BESTXYZA"] = func() novmsg.MsgBody { return &novmsg.SinoBestXYZ{} }
-		return m, asciiParser[novmsg.SinoPort]()
+		return m, asciiParser[novmsg.Port]()
 	case VariantUnicore:
 		return reg, asciiParser[novmsg.UnicorePort]()
 	case VariantByNav:
