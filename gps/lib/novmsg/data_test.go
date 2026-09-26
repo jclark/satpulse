@@ -82,8 +82,10 @@ func testDataAscii[P ~uint8](t *testing.T, tests []dataTestCase[P],
 				t.Fatalf("ParseAsciiMsgUsing() error = %v", err)
 			}
 			expectedHeader := tt.hdr
+			// ASCII has no measurement source; only the format bits are set.
+			expectedHeader.MessageType = MsgFormatASCII
 			if tt.fixupHeaderForAscii != nil {
-				expectedHeader = tt.fixupHeaderForAscii(tt.hdr)
+				expectedHeader = tt.fixupHeaderForAscii(expectedHeader)
 			}
 			if !reflect.DeepEqual(msg.Hdr, expectedHeader) {
 				t.Errorf("ParseAsciiMsgUsing() header mismatch:\nGot:  %+v\nWant: %+v", msg.Hdr, expectedHeader)

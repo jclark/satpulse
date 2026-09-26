@@ -176,6 +176,171 @@ func TestBestPosAscii(t *testing.T) {
 	testDataAscii(t, bestPosTests, AsciiRegistry())
 }
 
+// sinoPosTests are binary and ASCII pairs from a SinoGNSS K901, each
+// requested with LOG ONCE back to back so that both report the same
+// solution. The ASCII header has fixed values in place of the binary
+// header's idle time, receiver status, reserved and version fields, and the
+// ASCII solution age can be one second more than the binary one.
+var sinoPosTests = []dataTestCase[Port]{
+	{
+		name:  "SinoGNSS K901 BESTPOS SINGLE",
+		hex:   "aa44121c2a00022048000000b7b48509a07a50210000100053ff020000000000100000005226d3bfb2762b40ff65ee4f432959400000a01ab1421e406fcef6c13d00000073b55e3e39167f3ecbb26b3f0000000000000000000040401e1d1d1dbf000019b9039eee",
+		ascii: "#BESTPOSA,COM1,0,60.0,FINESTEERING,2437,558922.400,00000000,0000,1114;SOL_COMPUTED,SINGLE,13.73183249905,100.64473341256,7.5651,-30.8508,WGS84,0.2175,0.2491,0.9207,\"\",0.000,4.000,30,29,29,29,191,0,0,25*2c24324c\r\n",
+		hdr:   sinoHdr(183, 558922400, 65363, 2),
+		value: &SinoBestPos{
+			Pos: Pos[SolStatus, SinoPosType]{
+				PSolStatus:   SolComputed,
+				PosType:      PosSingle,
+				Lat:          13.731832499051198,
+				Lon:          100.64473341256233,
+				Hgt:          7.565128723159432,
+				Undulation:   -30.850798,
+				DatumID:      DatumWGS84,
+				LatSigma:     0.21748905,
+				LonSigma:     0.24910821,
+				HgtSigma:     0.9206969,
+				StnID:        StationID{},
+				DiffAge:      0,
+				SolAge:       3,
+				NumSVs:       30,
+				NumSolnSVs:   29,
+				NumSolnL1SVs: 29,
+				NumSolnMulti: 29,
+			},
+			SinoPosFlags: SinoPosFlags{Reserved: 191, SigMask: 25},
+		},
+		fixupValueForAscii: func(msg MsgBody) MsgBody {
+			r := *msg.(*SinoBestPos)
+			fixupPosForAscii(&r.Pos)
+			r.SolAge = 4
+			return &r
+		},
+		fixupHeaderForAscii: sinoHdrForAscii,
+	},
+	{
+		name:  "SinoGNSS K901 PSRPOS SINGLE",
+		hex:   "aa44121c2f00022048000000b8b485093095502100001000eeff01000000000010000000d3041cbab2762b408878305143295940000010f723e01d406fcef6c13d00000082485d3efd1b803e348aec3f2020202000000000000000001d1d1d1d0000001995c9209a",
+		ascii: "#PSRPOSA,COM1,0,60.0,FINESTEERING,2437,558929.200,00000000,0000,1114;SOL_COMPUTED,SINGLE,13.73183232872,100.64473371252,7.4689,-30.8508,WGS84,0.2161,0.2502,1.8480,\"    \",0.000,0.000,29,29,29,29,0,0,0,25*085aec4c\r\n",
+		hdr:   sinoHdr(184, 558929200, 65518, 1),
+		value: &SinoPsrPos{
+			Pos: Pos[SolStatus, SinoPosType]{
+				PSolStatus:   SolComputed,
+				PosType:      PosSingle,
+				Lat:          13.73183232872035,
+				Lon:          100.64473371251563,
+				Hgt:          7.468887195922434,
+				Undulation:   -30.850798,
+				DatumID:      DatumWGS84,
+				LatSigma:     0.21609691,
+				LonSigma:     0.25021353,
+				HgtSigma:     1.8479676,
+				StnID:        StationID{' ', ' ', ' ', ' '},
+				DiffAge:      0,
+				SolAge:       0,
+				NumSVs:       29,
+				NumSolnSVs:   29,
+				NumSolnL1SVs: 29,
+				NumSolnMulti: 29,
+			},
+			SinoPosFlags: SinoPosFlags{SigMask: 25},
+		},
+		fixupValueForAscii: func(msg MsgBody) MsgBody {
+			r := *msg.(*SinoPsrPos)
+			fixupPosForAscii(&r.Pos)
+			return &r
+		},
+		fixupHeaderForAscii: sinoHdrForAscii,
+	},
+	{
+		name:  "SinoGNSS K901 BESTXYZ SINGLE",
+		hex:   "aa44121cf100022070000000b7b48509668c502100001000f6ff0100000000001000000002a02f1b7a7731c16a12b890983b5741a420c55dabf3364170b2373ee973013f36f3423e0000000008000000304b28f505c00dbfa1f59716f43e6b3f7a435d6e3b6c703f600a7e3d86cbd23da269763d0000000000000000000000000000803f1e1d1d1d00001f19395cc591",
+		ascii: "#BESTXYZA,COM1,0,60.0,FINESTEERING,2437,558926.950,00000000,0000,1114;SOL_COMPUTED,SINGLE,-1144698.1062,6090338.2612,1504171.3663,0.1794,0.5057,0.1904,SOL_COMPUTED,DOPPLER_VELOCITY,-0.0001,0.0033,0.0040,0.0620,0.1029,0.0602,\"\",0.000,0.000,2.000,30,29,29,29,0,0,31,25*f87430bf\r\n",
+		hdr:   sinoHdr(183, 558926950, 65526, 1),
+		value: &SinoBestXYZ{
+			XYZ: XYZ[SolStatus, SinoPosType]{
+				PSolStatus:   SolComputed,
+				PosType:      PosSingle,
+				PX:           -1144698.1061954503,
+				PY:           6090338.261234859,
+				PZ:           1504171.366289177,
+				PXSigma:      0.17939162,
+				PYSigma:      0.5056749,
+				PZSigma:      0.1903809,
+				VSolStatus:   SolComputed,
+				VelType:      PosDopplerVelocity,
+				VX:           -0.0000567437952164934,
+				VY:           0.003325916991115022,
+				VZ:           0.00400946822431158,
+				VXSigma:      0.062021613,
+				VYSigma:      0.10292725,
+				VZSigma:      0.060159333,
+				StnID:        StationID{},
+				SolAge:       1,
+				NumSVs:       30,
+				NumSolnSVs:   29,
+				NumSolnL1SVs: 29,
+				NumSolnMulti: 29,
+			},
+			SinoPosFlags: SinoPosFlags{SolStatFlag: 31, SigMask: 25},
+		},
+		fixupValueForAscii: func(msg MsgBody) MsgBody {
+			r := *msg.(*SinoBestXYZ)
+			fixupXYZForAscii(&r.XYZ)
+			r.SolAge = 2
+			return &r
+		},
+		fixupHeaderForAscii: sinoHdrForAscii,
+	},
+}
+
+var sinoPosBinCtors = map[MsgID]func() MsgBody{
+	BestPosID: func() MsgBody { return &SinoBestPos{} },
+	PsrPosID:  func() MsgBody { return &SinoPsrPos{} },
+	BestXYZID: func() MsgBody { return &SinoBestXYZ{} },
+}
+
+var sinoPosAsciiCtors = map[string]func() MsgBody{
+	"BESTPOSA": func() MsgBody { return &SinoBestPos{} },
+	"PSRPOSA":  func() MsgBody { return &SinoPsrPos{} },
+	"BESTXYZA": func() MsgBody { return &SinoBestXYZ{} },
+}
+
+func TestSinoPosBinary(t *testing.T) {
+	testDataBin(t, sinoPosTests, sinoPosBinCtors)
+}
+
+func TestSinoPosAscii(t *testing.T) {
+	testDataAscii(t, sinoPosTests, sinoPosAsciiCtors)
+}
+
+// sinoHdr returns the binary header of a K901 log on COM1 in week 2437. The K901
+// sets the message type byte, which its manual calls reserved, to 0x02.
+func sinoHdr(idle Percentage, ms GPSec, reserved uint16, version uint16) MsgHdr[Port] {
+	return MsgHdr[Port]{
+		MessageType: 0x02,
+		Port:        COM1,
+		CommonHdr: CommonHdr{
+			IdleTime:           idle,
+			TimeStatus:         TimeStatusFineSteering,
+			Week:               2437,
+			MillisecondsOfWeek: ms,
+			RecvStatus:         1048576,
+			Reserved:           reserved,
+			Version:            version,
+		},
+	}
+}
+
+// sinoHdrForAscii replaces the binary header fields that a SinoGNSS ASCII
+// header gives fixed values.
+func sinoHdrForAscii(hdr MsgHdr[Port]) MsgHdr[Port] {
+	hdr.IdleTime = 120
+	hdr.RecvStatus = 0
+	hdr.Reserved = 0
+	hdr.Version = 1114
+	return hdr
+}
+
 var psrDopTests = []dataTestCase[Port]{
 	{
 		name:  "Bynav M2 PSRDOP",
@@ -238,34 +403,40 @@ func fixupPsrDopForAscii(msg MsgBody) MsgBody {
 }
 
 func fixupBestPosForAscii(msg MsgBody) MsgBody {
-	m := msg.(*BestPos)
-	r := *m
-	fixupFloat(&r.Lat, "%.11f")
-	fixupFloat(&r.Lon, "%.11f")
-	fixupFloat(&r.Hgt, "%.4f")
-	fixupFloat32(&r.Undulation, "%.4f")
-	fixupFloat32(&r.LatSigma, "%.4f")
-	fixupFloat32(&r.LonSigma, "%.4f")
-	fixupFloat32(&r.HgtSigma, "%.4f")
+	r := *msg.(*BestPos)
+	fixupPosForAscii(&r.Pos)
 	return &r
 }
 
+func fixupPosForAscii[S, P ~uint32](p *Pos[S, P]) {
+	fixupFloat(&p.Lat, "%.11f")
+	fixupFloat(&p.Lon, "%.11f")
+	fixupFloat(&p.Hgt, "%.4f")
+	fixupFloat32(&p.Undulation, "%.4f")
+	fixupFloat32(&p.LatSigma, "%.4f")
+	fixupFloat32(&p.LonSigma, "%.4f")
+	fixupFloat32(&p.HgtSigma, "%.4f")
+}
+
 func fixupBestXYZForAscii(msg MsgBody) MsgBody {
-	m := msg.(*BestXYZ)
-	r := *m
-	fixupFloat(&r.PX, "%.4f")
-	fixupFloat(&r.PY, "%.4f")
-	fixupFloat(&r.PZ, "%.4f")
-	fixupFloat32(&r.PXSigma, "%.4f")
-	fixupFloat32(&r.PYSigma, "%.4f")
-	fixupFloat32(&r.PZSigma, "%.4f")
-	fixupFloat(&r.VX, "%.4f")
-	fixupFloat(&r.VY, "%.4f")
-	fixupFloat(&r.VZ, "%.4f")
-	fixupFloat32(&r.VXSigma, "%.4f")
-	fixupFloat32(&r.VYSigma, "%.4f")
-	fixupFloat32(&r.VZSigma, "%.4f")
+	r := *msg.(*BestXYZ)
+	fixupXYZForAscii(&r.XYZ)
 	return &r
+}
+
+func fixupXYZForAscii[S, P ~uint32](x *XYZ[S, P]) {
+	fixupFloat(&x.PX, "%.4f")
+	fixupFloat(&x.PY, "%.4f")
+	fixupFloat(&x.PZ, "%.4f")
+	fixupFloat32(&x.PXSigma, "%.4f")
+	fixupFloat32(&x.PYSigma, "%.4f")
+	fixupFloat32(&x.PZSigma, "%.4f")
+	fixupFloat(&x.VX, "%.4f")
+	fixupFloat(&x.VY, "%.4f")
+	fixupFloat(&x.VZ, "%.4f")
+	fixupFloat32(&x.VXSigma, "%.4f")
+	fixupFloat32(&x.VYSigma, "%.4f")
+	fixupFloat32(&x.VZSigma, "%.4f")
 }
 
 func fixupBestGNSSVelForAscii(msg MsgBody) MsgBody {

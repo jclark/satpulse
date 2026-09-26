@@ -162,8 +162,9 @@ func ParseBinMsgUsing[P ~uint8](packet []byte, ctors map[MsgID]func() MsgBody) (
 		return nil, fmt.Errorf("parsing NOVB header: %v", err)
 	}
 	msgHdr := MsgHdr[P]{
-		Port:      binHdr.Port,
-		CommonHdr: binHdr.CommonHdr,
+		MessageType: binHdr.MessageType,
+		Port:        binHdr.Port,
+		CommonHdr:   binHdr.CommonHdr,
 	}
 	msgID := MsgID(binHdr.MessageID)
 	payloadLen := int(binHdr.MessageLength)
@@ -219,6 +220,7 @@ func SerializeBinMsg[P ~uint8](msg *Msg[P]) ([]byte, error) {
 		Sync3:         Sync3,
 		HeaderLength:  standardHeaderLength,
 		MessageID:     msgID,
+		MessageType:   msg.Hdr.MessageType&^MsgFormatMask | MsgFormatBinary,
 		Port:          msg.Hdr.Port,
 		MessageLength: uint16(len(payload)),
 		CommonHdr:     msg.Hdr.CommonHdr,

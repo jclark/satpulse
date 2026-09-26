@@ -43,8 +43,9 @@ func ParseAsciiMsgUsing[P ~uint8](packet []byte, ctors map[string]func() MsgBody
 		return nil, fmt.Errorf("parsing header: %v", err)
 	}
 	msgHdr := MsgHdr[P]{
-		Port:      asciiHdr.Port,
-		CommonHdr: asciiHdr.CommonHdr,
+		MessageType: MsgFormatASCII,
+		Port:        asciiHdr.Port,
+		CommonHdr:   asciiHdr.CommonHdr,
 	}
 	ctor := ctors[asciiHdr.MessageName]
 	if ctor == nil {
