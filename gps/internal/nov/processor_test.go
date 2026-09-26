@@ -125,22 +125,26 @@ func TestDispatchEpochQuality(t *testing.T) {
 
 	// Epoch 1: BESTPOS with RTK fixed (NARROW_INT=50)
 	common := makeCommon(2350, 100000)
-	pp.dispatch(&common, &novmsg.BestPos{Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
-		PSolStatus:    novmsg.SolComputed,
-		PosType:       novmsg.PosNarrowInt,
-		Lat:           47.0,
-		Lon:           8.0,
-		Hgt:           400.0,
-		LatSigma:      0.01,
-		LonSigma:      0.01,
-		HgtSigma:      0.02,
-		DiffAge:       1.5,
-		StnID:         novmsg.StationID{'1', '2', '3', 0},
-		NumSVs:        20,
-		NumSolnSVs:    15,
-		GPSGLOBDS2Sig: 0x01, // GPS L1CA
-		GalBDS3Sig:    0x01, // GAL E1
-	}}, time.Unix(1, 0), TagBinary)
+	pp.dispatch(&common, &novmsg.BestPos{
+		Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
+			PSolStatus: novmsg.SolComputed,
+			PosType:    novmsg.PosNarrowInt,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			LatSigma:   0.01,
+			LonSigma:   0.01,
+			HgtSigma:   0.02,
+			DiffAge:    1.5,
+			StnID:      novmsg.StationID{'1', '2', '3', 0},
+			NumSVs:     20,
+			NumSolnSVs: 15,
+		},
+		PosFlags: novmsg.PosFlags{
+			GPSGLOBDS2Sig: 0x01, // GPS L1CA
+			GalBDS3Sig:    0x01, // GAL E1
+		},
+	}, time.Unix(1, 0), TagBinary)
 
 	// Flush with new epoch
 	common2 := makeCommon(2350, 101000)
