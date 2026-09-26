@@ -646,6 +646,24 @@ text = "log rtcm1094b ontime 1"
 tag = "rtcm-msm4"
 text = "log rtcm1124b ontime 1"
 
+# MSM7 messages for all constellations
+# Not in the protocol manual, which lists only MSM4 (Table 3-24)
+# Verified OK response for all 4 commands on K901
+# Verified RTCM 1077, 1087, 1097 and 1127 appear at 1Hz in capture on K901
+[[line]]
+tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 for all constellations at 1Hz"
+text = "log rtcm1077b ontime 1"
+[[line]]
+tag = "rtcm-msm7"
+text = "log rtcm1087b ontime 1"
+[[line]]
+tag = "rtcm-msm7"
+text = "log rtcm1097b ontime 1"
+[[line]]
+tag = "rtcm-msm7"
+text = "log rtcm1127b ontime 1"
+
 # Disable all RTCM output
 # Verified OK response for all 5 unlog commands on K902
 [[line]]
@@ -664,6 +682,19 @@ text = "unlog rtcm1094b"
 [[line]]
 tag = "rtcm-off"
 text = "unlog rtcm1124b"
+# MSM7 unlog verified on K901
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1077b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1087b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1097b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1127b"
 
 # Port Configuration
 
