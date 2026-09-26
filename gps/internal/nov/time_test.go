@@ -72,11 +72,10 @@ func TestConvertUTCOffset(t *testing.T) {
 		// Edge cases that should work
 		{-236.0, 255}, // TAI-UTC = 19 - (-236) = 255 (max valid uint8)
 		
-		// Error cases - fractional values
-		{-18.5, 0},
-		{-17.1, 0},
-		{0.5, 0},
-		
+		// Fractional values include the A0 + A1(t - tot) correction
+		{-17.99999999902, 37},    // SinoGNSS manual example
+		{-18.0000228917541, 37}, // K901 firmware 8.1.8, with t - tot wrapped by 2^32
+
 		// Error cases - out of range (would wrap)
 		{-237.0, 0},  // TAI-UTC = 19 - (-237) = 256, wraps to 0, but check fails
 		{20.0, 0},    // TAI-UTC = 19 - 20 = -1, wraps to 255, but check fails
@@ -120,6 +119,17 @@ func TestTimeMsgFromTime(t *testing.T) {
 				Accuracy:  13 * time.Nanosecond, // 1.298132705e-08 seconds rounded up
 			},
 			expectErr: false,
+		},
+		{
+			name:   "fractional UTC offset (SinoGNSS K901)",
+			packet: "#TIMEA,COM1,0,60.0,FINESTEERING,2437,548371.000,00000000,0000,1114;VALID,-4.078056768e-08,0.000000000e+00,-18.00002289175,2026,9,26,8,19,13000,VALID*ce2e7ae6\r\n",
+			expect: &gpsprot.TimeMsg{
+				Tag:         TagAscii,
+				NativeMsgID: "TIME",
+				TAITime:     ptime.GPS(2437, 548371*time.Second),
+				UTCTime:     opt.Make(ptime.UTC(2026, 9, 26, 8, 19, 13, 0)),
+				UTCOffset:   37,
+			},
 		},
 		{
 			name:   "invalid clock gives no time (ByNav M10 after reset)",
