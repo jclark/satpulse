@@ -1290,8 +1290,13 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 
 // DecodePacket decodes a packet and returns the decoded fields.
 // It returns nil if the packet is not in any of the given formats.
-func DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error) {
-	_, r, err := gpsdecode.Decode(formats, data, out)
+// NovAtel-format packets are decoded with the variant for the vendors
+// given to Connect, as the session's packet processors are.
+func (s *Session) DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error) {
+	s.mu.Lock()
+	vendors := s.vendors
+	s.mu.Unlock()
+	_, r, err := gpsdecode.Decode(formats, data, out, vendors)
 	if err != nil {
 		return nil, nil
 	}

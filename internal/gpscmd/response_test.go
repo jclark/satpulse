@@ -37,6 +37,7 @@ func TestFormatMsgID(t *testing.T) {
 
 func TestFormatAck(t *testing.T) {
 	rm := msgfile.RawMsg{Tag: "cfg", Index: 2, Count: 5}
+	adhoc := msgfile.RawMsg{Count: 1}
 	tests := []struct {
 		name string
 		cor  msgfile.Correlation
@@ -46,6 +47,7 @@ func TestFormatAck(t *testing.T) {
 		{"NAK", msgfile.Correlation{Ack: msgfile.AckNak, InResponseTo: &rm}, "cfg/3: receiver rejected message: NAK\n"},
 		{"NAK with error", msgfile.Correlation{Ack: msgfile.AckNak, NakError: "Invalid parameter", InResponseTo: &rm}, "cfg/3: receiver rejected message: Invalid parameter\n"},
 		{"processing", msgfile.Correlation{Ack: msgfile.AckOther, InResponseTo: &rm}, "cfg/3: processing...\n"},
+		{"untagged single", msgfile.Correlation{Ack: msgfile.AckAck, InResponseTo: &adhoc}, "OK\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

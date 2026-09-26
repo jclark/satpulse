@@ -17,7 +17,10 @@ satpulsetool decode --line '$GNGGA,034418.00,1343.91295,N,...*64'
 
 Options: `-c`/`--compact` for single-line JSON; `--out` to decode the packet
 as one sent to the receiver rather than received from it (affects u-blox
-CFG-VAL* messages, whose meaning depends on direction).
+CFG-VAL* messages, whose meaning depends on direction); `--vendor` to decode
+a NovAtel-format packet (tags `NOVA`, `NOVB`) as the named vendor's variant
+of the protocol, which decides the port encoding and any vendor-specific
+logs. Without `--vendor`, `SATPULSE_VENDORS` applies.
 
 Binary replies that `gps -m` prints as hex are decoded this way.
 
@@ -30,6 +33,8 @@ packet log, as written by `--packet-log`:
 satpulsetool annotate capture.jsonl > decoded.jsonl
 satpulsetool annotate < capture.jsonl
 ```
+
+`--vendor` works as for `decode`.
 
 Typical workflow, capture then annotate:
 

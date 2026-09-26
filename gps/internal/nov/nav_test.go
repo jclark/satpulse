@@ -104,7 +104,7 @@ func TestQualityFields(t *testing.T) {
 		GPSGLOBDS2Sig: 0x01, // GPS L1CA
 		GalBDS3Sig:    0x01, // GAL E1
 	}}
-	posGeoBestPos(&gpsprot.DefaultHandler{}, &ne, &m.Pos, TagBinary, time.Time{})
+	posGeoBestPos(&gpsprot.DefaultHandler{}, &ne, &m.Pos, "BESTPOS", TagBinary, time.Time{})
 	if ne.FixLevel != gpsprot.FixLevelCarrierFixed {
 		t.Errorf("FixLevel = %v, want CarrierFixed", ne.FixLevel)
 	}

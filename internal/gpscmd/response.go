@@ -106,19 +106,27 @@ func formatPacket(pkt scan.Packet) string {
 
 func formatAck(cor msgfile.Correlation) string {
 	mid := cor.InResponseTo.MsgID()
-	prefix := formatMsgID(mid)
 	switch cor.Ack {
 	case msgfile.AckAck:
-		return prefix + ": OK\n"
+		return formatStatus(mid, "OK")
 	case msgfile.AckNak:
 		if cor.NakError != "" {
-			return fmt.Sprintf("%s: receiver rejected message: %s\n", prefix, cor.NakError)
+			return formatStatus(mid, "receiver rejected message: "+cor.NakError)
 		}
-		return prefix + ": receiver rejected message: NAK\n"
+		return formatStatus(mid, "receiver rejected message: NAK")
 	case msgfile.AckOther:
-		return prefix + ": processing...\n"
+		return formatStatus(mid, "processing...")
 	}
 	return ""
+}
+
+// formatStatus returns a status line for the message mid. A single message
+// without a tag (an ad-hoc command) has no ID, so its status stands alone.
+func formatStatus(mid msgfile.MsgID, status string) string {
+	if id := formatMsgID(mid); id != "" {
+		return id + ": " + status + "\n"
+	}
+	return status + "\n"
 }
 
 func formatMsgID(mid msgfile.MsgID) string {
@@ -182,10 +190,10 @@ func (rh *responseHandler) Flush() {
 func (rh *responseHandler) reportMissing() {
 	missingAck, missingData := rh.cor.Missing()
 	for _, rm := range missingAck {
-		fmt.Fprintf(rh.w, "%s: no response received\n", formatMsgID(rm.MsgID()))
+		fmt.Fprint(rh.w, formatStatus(rm.MsgID(), "no response received"))
 	}
 	for _, rm := range missingData {
-		fmt.Fprintf(rh.w, "%s: no data response received\n", formatMsgID(rm.MsgID()))
+		fmt.Fprint(rh.w, formatStatus(rm.MsgID(), "no data response received"))
 	}
 }
 

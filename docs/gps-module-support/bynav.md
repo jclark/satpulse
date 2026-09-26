@@ -16,9 +16,22 @@ For these modules, SatPulse supports:
 - decoding of the ASCII and binary packet formats used for logs (packet format tags are `NOVA` and `NOVB`)
 - decoding of the abbreviated ASCII packet format used for command responses (packet format tag is `NOVAA`)
 - conversion of logs into the SatPulse device-independent data model
-- a message file for low-level configuration
+- low-level configuration
+  - a message file for configuration
+  - a `novatel` response pattern in message files, for correlation of responses
 
 SatPulse has been tested with the M20 and the M10.
+
+## Low-level configuration
+
+A command like the following will configure a receiver suitably for `satpulsed`:
+
+```
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/bynav/bynav.toml \
+    -t msg-all-off,nov-timeb,nov-bestposb,nov-bestvelb,nov-psrdopb,nov-ionutcb,nmea-talker-auto,nmea-gsa,nmea-gsv,pps
+```
+
+Add `save` to the comma-separated list of tags to make it persistent.
 
 ## Supported logs
 
@@ -38,3 +51,4 @@ but ByNav receivers output them.
 | PSRDOP | 174 | solution quality |
 | BESTGNSSPOS | 1429 | geodetic position, solution quality |
 | BESTGNSSVEL | 1430 | geodetic velocity |
+| BYCHECK | 42272 | decode only |
