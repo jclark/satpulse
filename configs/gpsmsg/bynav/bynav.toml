@@ -485,14 +485,9 @@ description = "Hot start - reload saved config"
 text = "RESET"
 delay = 3
 
-# FRESET STANDARD clears all ephemeris, almanac, and GLONASS bias.
-# On an M10 (V7.82_AB1AD3_T) it also resets the saved log configuration to
-# the factory one (see factory-reset), and gives no <OK.
-[[line]]
-tag = "cold-start"
-description = "Cold start - clears all satellite data"
-text = "FRESET STANDARD"
-delay = 5
+# No cold-start tag: every FRESET is a factory reset, which clears the saved
+# configuration as well as the satellite data (see factory-reset). RESET keeps
+# the satellite data.
 
 # Survey-in (FIX BASE)
 # FIX BASE TIME DISTANCE - auto-converge and fix base position
