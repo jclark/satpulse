@@ -684,6 +684,51 @@ text = "log rtcm1097b ontime 1"
 tag = "rtcm-msm7"
 text = "log rtcm1127b ontime 1"
 
+# Ephemeris messages: GPS, GLONASS, BDS, QZSS, Galileo F/NAV and I/NAV
+# (1041 NavIC is rejected). Each gives one satellite per period in turn.
+# Verified OK response for all 6 commands on K901
+# Verified all 6 messages appear at about 1Hz in capture on K901
+[[line]]
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages (1019/1020/1042/1044/1045/1046)"
+text = "log rtcm1019b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1020b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1042b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1044b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1045b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1046b ontime 1"
+
+# Verified OK response for all 6 commands on K901; the messages stop
+[[line]]
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+text = "unlog rtcm1019b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1020b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1042b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1044b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1045b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1046b"
+
 # Disable all RTCM output
 # Verified OK response for all 5 unlog commands on K902
 [[line]]
@@ -702,7 +747,7 @@ text = "unlog rtcm1094b"
 [[line]]
 tag = "rtcm-off"
 text = "unlog rtcm1124b"
-# MSM7 unlog verified on K901
+# MSM7 and ephemeris unlog verified on K901
 [[line]]
 tag = "rtcm-off"
 text = "unlog rtcm1077b"
@@ -715,6 +760,24 @@ text = "unlog rtcm1097b"
 [[line]]
 tag = "rtcm-off"
 text = "unlog rtcm1127b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1019b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1020b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1042b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1044b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1045b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1046b"
 
 # Port Configuration
 
