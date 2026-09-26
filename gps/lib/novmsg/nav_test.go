@@ -158,7 +158,7 @@ func TestBestGNSSVelBinary(t *testing.T) {
 }
 
 func TestBestGNSSVelAscii(t *testing.T) {
-	testDataAscii(t, bestGNSSVelTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, bestGNSSVelTests, AsciiRegistry())
 }
 
 func TestBestXYZBinary(t *testing.T) {
@@ -166,7 +166,7 @@ func TestBestXYZBinary(t *testing.T) {
 }
 
 func TestBestXYZAscii(t *testing.T) {
-	testDataAscii(t, bestXYZTests, AsciiRegistry())
+	testDataAscii[UnicorePort, UnicoreAsciiHdr](t, bestXYZTests, AsciiRegistry())
 }
 
 func TestBestPosBinary(t *testing.T) {
@@ -174,7 +174,7 @@ func TestBestPosBinary(t *testing.T) {
 }
 
 func TestBestPosAscii(t *testing.T) {
-	testDataAscii(t, bestPosTests, AsciiRegistry())
+	testDataAscii[UnicorePort, UnicoreAsciiHdr](t, bestPosTests, AsciiRegistry())
 }
 
 // sinoNavTests are binary and ASCII pairs from a SinoGNSS K901, each
@@ -384,7 +384,7 @@ func TestSinoNavBinary(t *testing.T) {
 }
 
 func TestSinoNavAscii(t *testing.T) {
-	testDataAscii(t, sinoNavTests, sinoAsciiCtors())
+	testDataAscii[Port, AsciiHdr](t, sinoNavTests, sinoAsciiCtors())
 }
 
 // sinoHdr returns the binary header of a K901 log on COM1 in week 2437. The K901
@@ -461,7 +461,7 @@ func TestPsrDopBinary(t *testing.T) {
 }
 
 func TestPsrDopAscii(t *testing.T) {
-	testDataAscii(t, psrDopTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, psrDopTests, AsciiRegistry())
 }
 
 func fixupPsrDopForAscii(msg MsgBody) MsgBody {

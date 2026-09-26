@@ -246,9 +246,9 @@ func TestTimeBinary(t *testing.T) {
 }
 
 func TestTimeAscii(t *testing.T) {
-	testDataAscii(t, um980TimeTests, AsciiRegistry())
-	testDataAscii(t, bynavTimeTests, AsciiRegistry())
-	testDataAscii(t, sinoTimeTests, AsciiRegistry())
+	testDataAscii[UnicorePort, UnicoreAsciiHdr](t, um980TimeTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, bynavTimeTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, sinoTimeTests, AsciiRegistry())
 }
 
 func TestIonUTCBinary(t *testing.T) {
@@ -258,8 +258,8 @@ func TestIonUTCBinary(t *testing.T) {
 }
 
 func TestIonUTCAscii(t *testing.T) {
-	testDataAscii(t, um980IonUTCTests, AsciiRegistry())
-	testDataAscii(t, bynavIonUTCTests, AsciiRegistry())
+	testDataAscii[UnicorePort, UnicoreAsciiHdr](t, um980IonUTCTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, bynavIonUTCTests, AsciiRegistry())
 }
 
 // fixupTimeValueForAscii converts a Time with full binary precision

@@ -72,7 +72,7 @@ func NewAsciiPacketProcessor(mgr *gpsprot.NavEpochManager) *AsciiPacketProcessor
 	return &AsciiPacketProcessor{
 		packetProcessor: packetProcessor{mh: &gpsprot.DefaultHandler{}, mgr: mgr},
 		ctors:           novmsg.AsciiRegistry(),
-		parse:           asciiParser[novmsg.Port](),
+		parse:           asciiParser[novmsg.Port, novmsg.AsciiHdr](),
 	}
 }
 
@@ -153,10 +153,11 @@ func binParser[P ~uint8]() func([]byte, map[novmsg.MsgID]func() novmsg.MsgBody) 
 	}
 }
 
-// asciiParser returns a parse closure for ASCII messages with a specific port type.
-func asciiParser[P ~uint8]() func([]byte, map[string]func() novmsg.MsgBody) (parseResult, error) {
+// asciiParser returns a parse closure for ASCII messages with a specific port
+// type and header type.
+func asciiParser[P ~uint8, H any, PH novmsg.AsciiHeader[P, H]]() func([]byte, map[string]func() novmsg.MsgBody) (parseResult, error) {
 	return func(pkt []byte, ctors map[string]func() novmsg.MsgBody) (parseResult, error) {
-		msg, err := novmsg.ParseAsciiMsgUsing[P](pkt, ctors)
+		msg, err := novmsg.ParseAsciiMsgUsing[P, H, PH](pkt, ctors)
 		if err != nil {
 			return parseResult{}, err
 		}
@@ -208,16 +209,16 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 		m["PSRPOSA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrPos{} }
 		m["PSRVELA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrVel{} }
 		m["BESTXYZA"] = func() novmsg.MsgBody { return &novmsg.SinoBestXYZ{} }
-		return m, asciiParser[novmsg.Port]()
+		return m, asciiParser[novmsg.Port, novmsg.AsciiHdr]()
 	case VariantUnicore:
-		return reg, asciiParser[novmsg.UnicorePort]()
+		return reg, asciiParser[novmsg.UnicorePort, novmsg.UnicoreAsciiHdr]()
 	case VariantByNav:
 		m := copyMap(reg)
 		delete(m, "BESTXYZA")
 		m["BYCHECKA"] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }
-		return m, asciiParser[novmsg.Port]()
+		return m, asciiParser[novmsg.Port, novmsg.AsciiHdr]()
 	default: // OEM7
-		return reg, asciiParser[novmsg.Port]()
+		return reg, asciiParser[novmsg.Port, novmsg.AsciiHdr]()
 	}
 }
 

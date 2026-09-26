@@ -102,12 +102,14 @@ func TestConvertUTCOffset(t *testing.T) {
 func TestTimeMsgFromTime(t *testing.T) {
 	tests := []struct {
 		name      string
+		variant   Variant
 		packet    string
 		expect    *gpsprot.TimeMsg
 		expectErr bool
 	}{
 		{
-			name: "valid TIMEA packet",
+			name:    "valid TIMEA packet",
+			variant: VariantUnicore,
 			packet: "#TIMEA,COM3,17548,97.0,FINE,2381,207960.000,117601205,13,18;VALID,3.107194079e-04,1.298132705e-08,-18.00000000000,2025,8,26,9,45,42000,VALID*14216034\r\n",
 			expect: &gpsprot.TimeMsg{
 				Tag:         TagAscii,
@@ -121,7 +123,8 @@ func TestTimeMsgFromTime(t *testing.T) {
 			expectErr: false,
 		},
 		{
-			name:   "fractional UTC offset (SinoGNSS K901)",
+			name:    "fractional UTC offset (SinoGNSS K901)",
+			variant: VariantSinoGNSS,
 			packet: "#TIMEA,COM1,0,60.0,FINESTEERING,2437,548371.000,00000000,0000,1114;VALID,-4.078056768e-08,0.000000000e+00,-18.00002289175,2026,9,26,8,19,13000,VALID*ce2e7ae6\r\n",
 			expect: &gpsprot.TimeMsg{
 				Tag:         TagAscii,
@@ -132,7 +135,8 @@ func TestTimeMsgFromTime(t *testing.T) {
 			},
 		},
 		{
-			name:   "invalid clock gives no time (ByNav M10 after reset)",
+			name:    "invalid clock gives no time (ByNav M10 after reset)",
+			variant: VariantByNav,
 			packet: "#TIMEA,COM1,0,99.9,FREEWHEELING,2437,421648.000,00000000,0000,782;INVALID,1.443906866e-04,0.000000000e+00,0.00000000000,0,0,0,0,0,0,INVALID*25f87482\r\n",
 			expect: &gpsprot.TimeMsg{
 				Tag:         TagAscii,
@@ -143,17 +147,18 @@ func TestTimeMsgFromTime(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg, err := novmsg.ParseAsciiMessage([]byte(tt.packet))
+			ctors, parse := asciiVariant(tt.variant)
+			res, err := parse([]byte(tt.packet), ctors)
 			if err != nil {
 				t.Fatalf("Failed to parse ASCII packet: %v", err)
 			}
 
-			timeMsg, ok := msg.Body.(*novmsg.Time)
+			timeMsg, ok := res.Body.(*novmsg.Time)
 			if !ok {
-				t.Fatalf("Parsed message is not Time, got %T", msg.Body)
+				t.Fatalf("Parsed message is not Time, got %T", res.Body)
 			}
 
-			got, err := timeMsgFromTime(&msg.Hdr.CommonHdr, timeMsg, TagAscii)
+			got, err := timeMsgFromTime(&res.Common, timeMsg, TagAscii)
 			
 			if tt.expectErr {
 				if err == nil {
