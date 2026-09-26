@@ -19,7 +19,7 @@ const TagAbbrevAscii gpsprot.Tag = "NOVAA"
 //  2. Body consists of printable ASCII (0x20-0x7E) and TAB characters
 //     (continuation lines are indented with spaces or, on Unicore, a TAB)
 //  3. Ends with CR/LF
-//  4. Total length is at most 160 bytes
+//  4. Total length is at most abbrevMaxLength (300) bytes
 //
 // The format has no checksum: NovAtel documents it as intended for viewing
 // by the user. The length cap bounds how much stream a false match in
