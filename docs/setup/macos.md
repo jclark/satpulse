@@ -212,6 +212,7 @@ whereas chrony expects to run as root.
 The first approach is to run `satpulsed` as a normal user and not root.
 Usually chrony does not allow normal users to send time information to it.
 But we can make this work by creating a directory with special permissions.
+I recommend this approach unless you need for `satpulsed` to be started at boot.
 
 ```
 sudo install -d -o root -g wheel -m 0755 /var/db/satpulse
