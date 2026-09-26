@@ -23,6 +23,17 @@ For these modules, SatPulse supports:
 
 SatPulse has been tested with the K901 and the K902.
 
+## Low-level configuration
+
+A command like the following will configure a receiver suitably for `satpulsed`:
+
+```
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/sinognss/sinognss.toml \
+    -t msg-all-off,nov-timeb,nov-bestposb,nov-bestvelb,nov-psrdopb,nov-ionutcb,nmea-ver-411,nmea-gsa,nmea-gsv,pps
+```
+
+Add `save` to the comma-separated list of tags to make it persistent.
+
 ## Supported messages
 
 SatPulse decodes the following messages.

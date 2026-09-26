@@ -474,6 +474,8 @@ func TestEpochQualityFields(t *testing.T) {
 			StnID:         novmsg.StationID{'1', '2', '3', 0},
 			NumSVs:        20,
 			NumSolnSVs:    15,
+		},
+		PosFlags: novmsg.PosFlags{
 			GPSGLOBDS2Sig: 0x01, // GPS L1CA
 			GalBDS3Sig:    0x01, // GAL E1
 		},

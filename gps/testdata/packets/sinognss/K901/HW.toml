@@ -1,0 +1,60 @@
+vendor = "sinognss"
+model = "K901"
+firmware = "650ES-00000-1"
+default-baud = 115200
+
+# From LOG VERSIONA:
+# #VERSIONA,COM1,0,60.0,FINESTEERING,2437,548104.800,00000000,0000,1114;1,GNSSCARD,"S32352K901","0000828700000000","CRDK-901AA-TTT-1","650ES-00000-1","8.1.8","2025/Apr/ 3","14:20:41"*c52ea190
+# (model, PSN, hardware version, software version, boot version, compile date and time)
+# Captured on COM1 through an FT232R USB/UART bridge, with a single-point
+# fix. Each capture replaced the saved output with the logs named in the
+# file, at 1 Hz unless noted. The factory configuration (after FRESET) outputs
+# nothing on COM1, so there is no factory.jsonl.
+# NMEA style depends on SET NMEAV41: nmea.jsonl and the other NMEA captures
+# are NMEA 4.11 (NMEAV41 ON: GB and GQ talkers, GSA system ID, GSV signal ID,
+# RMC navigational status); nmea-400.jsonl is the factory default NMEAV41 OFF
+# style (BD talker, no QZSS GSV, SinoGNSS extended satellite numbers, none of
+# the 4.10 fields).
+# coldstart.jsonl starts with FRESET, which clears the configuration as well
+# as the satellite data, then enables TIMEB, BESTPOSB, BESTVELB, PSRDOPB,
+# IONUTCB, GPGSA, GPGSV and GPRMC. The boot banner follows FRESET; TIME has
+# an unknown time status and invalid clock for about 15 s, then a valid clock
+# and a single-point fix 19 s after FRESET, with UTC valid after 42 s. Before
+# the fix GPRMC is void with the default date 311216. No IONUTC is output
+# during the capture.
+# Receiver behaviour seen in these captures:
+# - A port holds one format per log: requesting a log in a second format
+#   replaces the first, so there are no captures with the same log in ASCII
+#   and binary. Different logs can use different formats at once.
+# - TIME's utc offset includes A0 + A1(t - tot) with t - tot wrapped by 2^32
+#   when tot is in the future: -18.0000228918 s here, where IONUTC gives
+#   about 3.6 ns for the fraction.
+# - IONUTC's utc wn and wn lsf are the 8-bit broadcast values (134 and 137
+#   in week 2437).
+# - In ASCII IONUTC, A1 is printed as a copy of A0 (4.656612873e-09); the
+#   binary log has the real A1 (5.33e-15).
+# - Abbreviated ASCII TIME and PSRDOP have only the header line, followed by
+#   a blank line; other abbreviated logs have body lines (abbrev.jsonl).
+# - The abbreviated IONUTC body line is about 230 bytes.
+# - SBASRAWFRAME and HASMESS reject the ONCHANGED trigger, and ONCE gives
+#   continuing output.
+# - IRNEPHEM, HEADING and B2BRAWNAVSUBFRAME are accepted but produce nothing;
+#   DCBINFO, IONOSCIN, MARKPOS, MARKTIME, METEMESS and TECINFO are rejected.
+# - GPSEPHEM, GALEPHEM, IRNEPHEM and BD2EPHEM share message ID 71, so the
+#   raw-nav captures have at most one of them each.
+# - RTCM MSM7 (1077, 1087, 1097, 1127) is output although the manual lists
+#   only MSM4 (raw-cross.jsonl).
+# - RTCM MSM3-7 are output for GPS, GLONASS, Galileo, QZSS and BDS, and
+#   MSM4 only for SBAS (1104); NavIC MSM, MSM1 and MSM2 are rejected, except
+#   1081, 1111 and 1121, which are accepted but produce nothing. QZSS MSM
+#   appears only in some epochs. BDS MSM is sometimes split into two
+#   messages, the first with the multiple message bit set.
+# - RTCM 1001-1003, 1009, 1011, 1013 and 1041 are rejected; 1010 is accepted
+#   but produces nothing; 1005 is output only in base mode (rtcm-base.jsonl,
+#   with FIX position at the antenna position).
+# - RTCM 1005 and 1006 set the GPS and GLONASS indicators but not Galileo.
+# - POSAVE ON 0.01 completes after about 35 s, when BESTPOS changes from
+#   SINGLE to FIXEDPOS (survey.jsonl).
+# - Ephemeris logs with ONTIME give one satellite per period, cycling through
+#   the satellites, after a dump of all satellites when the log is requested;
+#   the raw-nav and rtcm-eph captures use ONTIME 1.

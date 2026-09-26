@@ -42,6 +42,10 @@ func (h *testMsgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	h.msgs = append(h.msgs, testHandledMsg{"navepoch", msg, tRead})
 }
 
+func (h *testMsgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
+	h.msgs = append(h.msgs, testHandledMsg{"time", msg, tRead})
+}
+
 func makeCommon(week uint16, ms uint32) novmsg.CommonHdr {
 	return novmsg.CommonHdr{
 		Week:               week,
@@ -121,22 +125,26 @@ func TestDispatchEpochQuality(t *testing.T) {
 
 	// Epoch 1: BESTPOS with RTK fixed (NARROW_INT=50)
 	common := makeCommon(2350, 100000)
-	pp.dispatch(&common, &novmsg.BestPos{Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
-		PSolStatus:    novmsg.SolComputed,
-		PosType:       novmsg.PosNarrowInt,
-		Lat:           47.0,
-		Lon:           8.0,
-		Hgt:           400.0,
-		LatSigma:      0.01,
-		LonSigma:      0.01,
-		HgtSigma:      0.02,
-		DiffAge:       1.5,
-		StnID:         novmsg.StationID{'1', '2', '3', 0},
-		NumSVs:        20,
-		NumSolnSVs:    15,
-		GPSGLOBDS2Sig: 0x01, // GPS L1CA
-		GalBDS3Sig:    0x01, // GAL E1
-	}}, time.Unix(1, 0), TagBinary)
+	pp.dispatch(&common, &novmsg.BestPos{
+		Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
+			PSolStatus: novmsg.SolComputed,
+			PosType:    novmsg.PosNarrowInt,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			LatSigma:   0.01,
+			LonSigma:   0.01,
+			HgtSigma:   0.02,
+			DiffAge:    1.5,
+			StnID:      novmsg.StationID{'1', '2', '3', 0},
+			NumSVs:     20,
+			NumSolnSVs: 15,
+		},
+		PosFlags: novmsg.PosFlags{
+			GPSGLOBDS2Sig: 0x01, // GPS L1CA
+			GalBDS3Sig:    0x01, // GAL E1
+		},
+	}, time.Unix(1, 0), TagBinary)
 
 	// Flush with new epoch
 	common2 := makeCommon(2350, 101000)
@@ -335,9 +343,6 @@ func TestByCheckOnlyForByNav(t *testing.T) {
 			case *novmsg.Msg[novmsg.Port]:
 				_, ok := m.Body.(*novmsg.ByCheck)
 				got = append(got, ok)
-			case *novmsg.Msg[novmsg.SinoPort]:
-				_, ok := m.Body.(*novmsg.ByCheck)
-				got = append(got, ok)
 			case *novmsg.Msg[novmsg.UnicorePort]:
 				_, ok := m.Body.(*novmsg.ByCheck)
 				got = append(got, ok)
@@ -346,6 +351,20 @@ func TestByCheckOnlyForByNav(t *testing.T) {
 		if (tc.expect && !reflect.DeepEqual(got, []bool{true, true})) || (!tc.expect && slices.Contains(got, true)) {
 			t.Errorf("variant %d: decoded as BYCHECK %v, want %v", tc.variant, got, tc.expect)
 		}
+	}
+}
+
+func TestSinoGNSSAsciiPortName(t *testing.T) {
+	const ascii = "#TIMEA,COM1,0,60.0,FINESTEERING,2437,548371.000,00000000,0000,1114;VALID,-4.078056768e-08,0.000000000e+00,-18.00002289175,2026,9,26,8,19,13000,VALID*ce2e7ae6\r\n"
+	ap := NewAsciiPacketProcessor(gpsprot.NewNavEpochManager())
+	ap.SetVariant(VariantSinoGNSS)
+	h := &testMsgHandler{}
+	ap.SetMsgHandler(h)
+	if _, err := ap.ProcessPacket(ascii, time.Unix(1, 0)); err != nil {
+		t.Fatalf("ProcessPacket: %v", err)
+	}
+	if !slices.ContainsFunc(h.msgs, func(m testHandledMsg) bool { _, ok := m.msg.(*gpsprot.TimeMsg); return ok }) {
+		t.Errorf("no TimeMsg from SinoGNSS TIMEA with port COM1")
 	}
 }
 

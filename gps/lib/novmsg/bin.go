@@ -115,32 +115,8 @@ func (p *UnicorePort) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// SinoPort represents the port address encoding used by SinoGNSS receivers.
-// Same binary byte values as OEM7 (0x20, 0x40, 0x60) but serialized as
-// decimal strings in ASCII ("32", "64", "96") instead of "COM1", "COM2", "COM3".
-type SinoPort uint8
-
-func (p SinoPort) String() string {
-	return strconv.Itoa(int(p))
-}
-
-// MarshalText implements encoding.TextMarshaler for fieldenc support.
-func (p SinoPort) MarshalText() ([]byte, error) {
-	return []byte(p.String()), nil
-}
-
-// UnmarshalText implements encoding.TextUnmarshaler for fieldenc support.
-func (p *SinoPort) UnmarshalText(text []byte) error {
-	n, err := strconv.ParseUint(string(text), 10, 8)
-	if err != nil {
-		return fmt.Errorf("invalid port: %s", text)
-	}
-	*p = SinoPort(n)
-	return nil
-}
-
 // BinaryHdr represents the standard 28-byte header of a NovAtel binary packet.
-// Parameterized on port type: Port, UnicorePort, or SinoPort.
+// Parameterized on port type: Port or UnicorePort.
 type BinaryHdr[P ~uint8] struct {
 	Sync1         byte // 0xAA
 	Sync2         byte // 0x44
@@ -186,8 +162,9 @@ func ParseBinMsgUsing[P ~uint8](packet []byte, ctors map[MsgID]func() MsgBody) (
 		return nil, fmt.Errorf("parsing NOVB header: %v", err)
 	}
 	msgHdr := MsgHdr[P]{
-		Port:      binHdr.Port,
-		CommonHdr: binHdr.CommonHdr,
+		MessageType: binHdr.MessageType,
+		Port:        binHdr.Port,
+		CommonHdr:   binHdr.CommonHdr,
 	}
 	msgID := MsgID(binHdr.MessageID)
 	payloadLen := int(binHdr.MessageLength)
@@ -243,6 +220,7 @@ func SerializeBinMsg[P ~uint8](msg *Msg[P]) ([]byte, error) {
 		Sync3:         Sync3,
 		HeaderLength:  standardHeaderLength,
 		MessageID:     msgID,
+		MessageType:   msg.Hdr.MessageType&^MsgFormatMask | MsgFormatBinary,
 		Port:          msg.Hdr.Port,
 		MessageLength: uint16(len(payload)),
 		CommonHdr:     msg.Hdr.CommonHdr,

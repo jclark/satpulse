@@ -72,7 +72,7 @@ func NewAsciiPacketProcessor(mgr *gpsprot.NavEpochManager) *AsciiPacketProcessor
 	return &AsciiPacketProcessor{
 		packetProcessor: packetProcessor{mh: &gpsprot.DefaultHandler{}, mgr: mgr},
 		ctors:           novmsg.AsciiRegistry(),
-		parse:           asciiParser[novmsg.Port](),
+		parse:           asciiParser[novmsg.Port, novmsg.AsciiHdr](),
 	}
 }
 
@@ -153,10 +153,11 @@ func binParser[P ~uint8]() func([]byte, map[novmsg.MsgID]func() novmsg.MsgBody) 
 	}
 }
 
-// asciiParser returns a parse closure for ASCII messages with a specific port type.
-func asciiParser[P ~uint8]() func([]byte, map[string]func() novmsg.MsgBody) (parseResult, error) {
+// asciiParser returns a parse closure for ASCII messages with a specific port
+// type and header type.
+func asciiParser[P ~uint8, H any, PH novmsg.AsciiHeader[P, H]]() func([]byte, map[string]func() novmsg.MsgBody) (parseResult, error) {
 	return func(pkt []byte, ctors map[string]func() novmsg.MsgBody) (parseResult, error) {
-		msg, err := novmsg.ParseAsciiMsgUsing[P](pkt, ctors)
+		msg, err := novmsg.ParseAsciiMsgUsing[P, H, PH](pkt, ctors)
 		if err != nil {
 			return parseResult{}, err
 		}
@@ -181,7 +182,7 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 		m[novmsg.PsrPosID] = func() novmsg.MsgBody { return &novmsg.SinoPsrPos{} }
 		m[novmsg.PsrVelID] = func() novmsg.MsgBody { return &novmsg.SinoPsrVel{} }
 		m[novmsg.BestXYZID] = func() novmsg.MsgBody { return &novmsg.SinoBestXYZ{} }
-		return m, binParser[novmsg.SinoPort]()
+		return m, binParser[novmsg.Port]()
 	case VariantUnicore:
 		m := copyMap(reg)
 		m[novmsg.UnicoreIonUTCID] = reg[novmsg.IonUTCID]
@@ -208,16 +209,16 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 		m["PSRPOSA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrPos{} }
 		m["PSRVELA"] = func() novmsg.MsgBody { return &novmsg.SinoPsrVel{} }
 		m["BESTXYZA"] = func() novmsg.MsgBody { return &novmsg.SinoBestXYZ{} }
-		return m, asciiParser[novmsg.SinoPort]()
+		return m, asciiParser[novmsg.Port, novmsg.AsciiHdr]()
 	case VariantUnicore:
-		return reg, asciiParser[novmsg.UnicorePort]()
+		return reg, asciiParser[novmsg.UnicorePort, novmsg.UnicoreAsciiHdr]()
 	case VariantByNav:
 		m := copyMap(reg)
 		delete(m, "BESTXYZA")
 		m["BYCHECKA"] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }
-		return m, asciiParser[novmsg.Port]()
+		return m, asciiParser[novmsg.Port, novmsg.AsciiHdr]()
 	default: // OEM7
-		return reg, asciiParser[novmsg.Port]()
+		return reg, asciiParser[novmsg.Port, novmsg.AsciiHdr]()
 	}
 }
 
@@ -271,13 +272,13 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 	h := p.mh
 	switch m := body.(type) {
 	case *novmsg.BestPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTPOS", tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, &m.PosFlags, "BESTPOS", tag, tRead)
 	case *novmsg.SinoBestPos:
 		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTPOS", tag, tRead)
 	case *novmsg.BestGNSSPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "BESTGNSSPOS", tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, &m.PosFlags, "BESTGNSSPOS", tag, tRead)
 	case *novmsg.PsrPos:
-		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, "PSRPOS", tag, tRead)
+		return posGeoBestPos(h, p.curEpochMsg, &m.Pos, &m.PosFlags, "PSRPOS", tag, tRead)
 	case *novmsg.SinoPsrPos:
 		return sinoPosGeoBestPos(h, p.curEpochMsg, &m.Pos, "PSRPOS", tag, tRead)
 	case *novmsg.BestVel:
@@ -313,7 +314,7 @@ func (p *packetProcessor) dispatch(common *novmsg.CommonHdr, body novmsg.MsgBody
 		h.VelGeo(velG, tRead)
 		return true, nil
 	case *novmsg.BestXYZ:
-		return posVelECEFBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
+		return posVelECEFBestXYZ(h, p.curEpochMsg, &m.XYZ, &m.PosFlags, tag, tRead)
 	case *novmsg.SinoBestXYZ:
 		return sinoPosVelECEFBestXYZ(h, p.curEpochMsg, &m.XYZ, tag, tRead)
 	case *novmsg.Time:

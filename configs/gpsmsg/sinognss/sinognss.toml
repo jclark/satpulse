@@ -23,6 +23,7 @@ description = "Query active log list"
 text = "log loglista once"
 
 # Disable all logging (UNLOGALL with no port stops output on all ports)
+# Verified OK response on K901; all output stops
 [[line]]
 tag = "msg-all-off"
 description = "Disable all message output"
@@ -51,18 +52,22 @@ description = "Disable BESTPOS ASCII"
 text = "unlog bestposa"
 
 # PSRPOS (pseudorange position, msg 47)
+# Verified OK response and PSRPOSB at 1Hz in capture on K901
 [[line]]
 tag = "nov-psrposb"
 description = "Enable PSRPOS binary at 1Hz"
 text = "log psrposb ontime 1"
+# Verified OK response on K901; PSRPOSB stops
 [[line]]
 tag = "nov-psrposb-off"
 description = "Disable PSRPOS binary"
 text = "unlog psrposb"
+# Verified OK response and PSRPOSA at 1Hz in capture on K901
 [[line]]
 tag = "nov-psrposa"
 description = "Enable PSRPOS ASCII at 1Hz"
 text = "log psrposa ontime 1"
+# Verified OK response on K901; PSRPOSA stops
 [[line]]
 tag = "nov-psrposa-off"
 description = "Disable PSRPOS ASCII"
@@ -174,36 +179,44 @@ description = "Disable BESTVEL ASCII"
 text = "unlog bestvela"
 
 # PSRVEL (pseudorange velocity, msg 100)
+# Verified OK response and PSRVELB at 1Hz in capture on K901
 [[line]]
 tag = "nov-psrvelb"
 description = "Enable PSRVEL binary at 1Hz"
 text = "log psrvelb ontime 1"
+# Verified OK response on K901; PSRVELB stops
 [[line]]
 tag = "nov-psrvelb-off"
 description = "Disable PSRVEL binary"
 text = "unlog psrvelb"
+# Verified OK response and PSRVELA at 1Hz in capture on K901
 [[line]]
 tag = "nov-psrvela"
 description = "Enable PSRVEL ASCII at 1Hz"
 text = "log psrvela ontime 1"
+# Verified OK response on K901; PSRVELA stops
 [[line]]
 tag = "nov-psrvela-off"
 description = "Disable PSRVEL ASCII"
 text = "unlog psrvela"
 
 # PSRDOP (pseudorange DOP, msg 174)
+# Verified OK response and PSRDOPB at 1Hz in capture on K901
 [[line]]
 tag = "nov-psrdopb"
 description = "Enable PSRDOP binary at 1Hz"
 text = "log psrdopb ontime 1"
+# Verified OK response on K901; PSRDOPB stops
 [[line]]
 tag = "nov-psrdopb-off"
 description = "Disable PSRDOP binary"
 text = "unlog psrdopb"
+# Verified OK response and PSRDOPA at 1Hz in capture on K901
 [[line]]
 tag = "nov-psrdopa"
 description = "Enable PSRDOP ASCII at 1Hz"
 text = "log psrdopa ontime 1"
+# Verified OK response on K901; PSRDOPA stops
 [[line]]
 tag = "nov-psrdopa-off"
 description = "Disable PSRDOP ASCII"
@@ -407,6 +420,7 @@ tag = "gnss-gal"
 text = "SET SIGNAL IRNSS OFF"
 
 # GLONASS only
+# Verified OK response for all 6 commands on K901; GSV shows only GLONASS satellites
 [[line]]
 tag = "gnss-glo"
 description = "Enable GLONASS only"
@@ -428,6 +442,7 @@ tag = "gnss-glo"
 text = "SET SIGNAL IRNSS OFF"
 
 # BeiDou only (BD2 + BD3)
+# Verified OK response for all 6 commands on K901; GSV shows only BDS satellites
 [[line]]
 tag = "gnss-bds"
 description = "Enable BeiDou only (BD2 + BD3)"
@@ -449,6 +464,7 @@ tag = "gnss-bds"
 text = "SET SIGNAL IRNSS OFF"
 
 # GPS + Galileo
+# Verified OK response for all 6 commands on K901; GSV shows GPS, Galileo and QZSS satellites
 [[line]]
 tag = "gnss-gps-gal"
 description = "Enable GPS and Galileo"
@@ -513,6 +529,7 @@ text = "SET NMEAV41 OFF"
 # Works on K902 fw 8.2.4 but requires gnss-all (not just gnss-bds).
 # Convergence takes about an hour. Achieved ~20cm horizontal, ~1cm vertical.
 
+# Verified OK response for all 3 commands on K901
 [[line]]
 tag = "ppp-has"
 description = "Enable PPP with Galileo HAS source at 1Hz"
@@ -524,6 +541,7 @@ text = "SET PPPSOURCE HAS"
 tag = "ppp-has"
 text = "SET PPPFREQ 1"
 
+# Verified OK response for all 3 commands on K901
 [[line]]
 tag = "ppp-b2b"
 description = "Enable PPP with BeiDou B2b source at 1Hz"
@@ -535,6 +553,7 @@ text = "SET PPPSOURCE B2B"
 tag = "ppp-b2b"
 text = "SET PPPFREQ 1"
 
+# Verified OK response for all 3 commands on K901
 [[line]]
 tag = "ppp-has-b2b"
 description = "Enable PPP with fused HAS+B2b source at 1Hz"
@@ -546,6 +565,7 @@ text = "SET PPPSOURCE BHS"
 tag = "ppp-has-b2b"
 text = "SET PPPFREQ 1"
 
+# Verified OK response on K901
 [[line]]
 tag = "ppp-off"
 description = "Disable PPP"
@@ -553,10 +573,12 @@ text = "SET PPP OFF"
 
 # Raw Observations
 
+# Verified OK response on K901; LOGLIST shows RANGECMP BINARY ONTIME 30
 [[line]]
 tag = "nov-rangecmpb"
 description = "Enable RANGECMP binary every 30s"
 text = "log rangecmpb ontime 30"
+# Verified OK response on K901; RANGECMP removed from LOGLIST
 [[line]]
 tag = "nov-rangecmpb-off"
 description = "Disable RANGECMP binary"
@@ -581,18 +603,16 @@ text = "PPSCONTROL DISABLE NEGATIVE 1 1000 -1"
 # Reset Commands
 
 # RESET preserves ephemeris/almanac (equivalent to hot start)
+# Verified on K901: no response (the receiver restarts), then the saved output resumes
 [[line]]
 tag = "hot-start"
 description = "Hot start - preserves ephemeris and almanac"
 text = "RESET"
 delay = 3
 
-# FRESET clears everything (equivalent to cold start + factory reset)
-[[line]]
-tag = "cold-start"
-description = "Cold start - clears all satellite data and settings"
-text = "FRESET"
-delay = 5
+# No cold-start tag: the manual documents no command that clears satellite
+# data but keeps the configuration. RESET keeps the almanac and ephemeris,
+# and FRESET is a factory reset (see factory-reset).
 
 # Survey-in
 
@@ -646,6 +666,69 @@ text = "log rtcm1094b ontime 1"
 tag = "rtcm-msm4"
 text = "log rtcm1124b ontime 1"
 
+# MSM7 messages for all constellations
+# Not in the protocol manual, which lists only MSM4 (Table 3-24)
+# Verified OK response for all 4 commands on K901
+# Verified RTCM 1077, 1087, 1097 and 1127 appear at 1Hz in capture on K901
+[[line]]
+tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 for all constellations at 1Hz"
+text = "log rtcm1077b ontime 1"
+[[line]]
+tag = "rtcm-msm7"
+text = "log rtcm1087b ontime 1"
+[[line]]
+tag = "rtcm-msm7"
+text = "log rtcm1097b ontime 1"
+[[line]]
+tag = "rtcm-msm7"
+text = "log rtcm1127b ontime 1"
+
+# Ephemeris messages: GPS, GLONASS, BDS, QZSS, Galileo F/NAV and I/NAV
+# (1041 NavIC is rejected). Each gives one satellite per period in turn.
+# Verified OK response for all 6 commands on K901
+# Verified all 6 messages appear at about 1Hz in capture on K901
+[[line]]
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages (1019/1020/1042/1044/1045/1046)"
+text = "log rtcm1019b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1020b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1042b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1044b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1045b ontime 1"
+[[line]]
+tag = "rtcm-eph"
+text = "log rtcm1046b ontime 1"
+
+# Verified OK response for all 6 commands on K901; the messages stop
+[[line]]
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+text = "unlog rtcm1019b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1020b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1042b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1044b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1045b"
+[[line]]
+tag = "rtcm-eph-off"
+text = "unlog rtcm1046b"
+
 # Disable all RTCM output
 # Verified OK response for all 5 unlog commands on K902
 [[line]]
@@ -664,6 +747,37 @@ text = "unlog rtcm1094b"
 [[line]]
 tag = "rtcm-off"
 text = "unlog rtcm1124b"
+# MSM7 and ephemeris unlog verified on K901
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1077b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1087b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1097b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1127b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1019b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1020b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1042b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1044b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1045b"
+[[line]]
+tag = "rtcm-off"
+text = "unlog rtcm1046b"
 
 # Port Configuration
 
@@ -689,10 +803,13 @@ text = "COM COM1 38400"
 tag = "speed-57600"
 description = "Set COM1 baud rate to 57600"
 text = "COM COM1 57600"
+# Verified on K901: sent at 230400, the receiver returns to 115200
 [[line]]
 tag = "speed-115200"
 description = "Set COM1 baud rate to 115200"
 text = "COM COM1 115200"
+# Verified on K901: the speed changes at once, so the reply is sent at 230400;
+# NMEA output continues at 230400
 [[line]]
 tag = "speed-230400"
 description = "Set COM1 baud rate to 230400"
@@ -708,6 +825,7 @@ text = "COM COM1 921600"
 
 # Save Configuration
 
+# Verified OK response on K901; the saved output returns after RESET
 [[line]]
 tag = "save"
 description = "Save current configuration to NVM"
@@ -715,6 +833,7 @@ text = "SAVECONFIG"
 
 # Factory Reset
 
+# Verified on K901: LOGLIST is empty after FRESET (no output on COM1)
 [[line]]
 tag = "factory-reset"
 description = "Factory reset - clears all settings and satellite data"
