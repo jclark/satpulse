@@ -495,6 +495,23 @@ Run the RINEX from the long K901 capture through PPP (CSRS-PPP) as an
 end-to-end check of carrier phase, and compare the result with the
 antenna's known position.
 
+Result: the two-hour K901 capture converted twice, with `--from novb
+--vendor sinognss` and with `--from rtcm`, each with `--ppp-ar
+--interval 30` and antenna `HXCGPS1000      NONE`, and submitted to
+CSRS-PPP (version 5.15.5, ultra-rapid products, a float solution, GPS
+and GLONASS; Galileo was skipped, having no ultra-rapid products). The
+RANGE and MSM7 positions agree within 5 mm. Both differ from the
+antenna's known position by -0.121 m north, -0.04 m east and -0.005 m up,
+with 95% sigmas of 0.024, 0.11 and 0.19 m; the north offset, common to
+both inputs, is a limitation of a two-hour ultra-rapid float solution,
+not of the conversion. CSRS-PPP used C2X/L2X for GPS L2C alongside
+C2W/L2W, and 3 to 4 mm phase residuals for both inputs.
+
+A K901 logging RANGE with `ontime 30` outputs epochs on the GPS-time
+30 s grid (time of week a multiple of 30 s, whenever the log was
+requested), so a longer capture for PPP can log at 30 s rather than
+decimating 1 Hz output.
+
 ## Open decisions
 
 None.
