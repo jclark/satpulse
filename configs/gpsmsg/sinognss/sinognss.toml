@@ -635,11 +635,13 @@ text = "POSAVE off"
 tag = "fixed-pos-example"
 description = "Set fixed position (example coordinates - replace with yours)"
 text = "FIX position 13.7305 100.6405 50.0"
-# Verified OK response on K902
+# FIX NONE is not in the manual (OEM7 syntax). FIX auto does not clear the
+# fixed position: it fixes the current single-point position.
+# Verified on K803 and K901: BESTPOS changes from FIXEDPOS to SINGLE
 [[line]]
 tag = "fixed-pos-off"
 description = "Clear fixed position, return to auto mode"
-text = "FIX auto"
+text = "FIX NONE"
 
 # RTCM Output
 
