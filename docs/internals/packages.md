@@ -136,6 +136,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/rinex` defines an intermediate, RINEX-adjacent representation of observation data as JSON-serializable Go types, and reads and writes it as RINEX observation files.
 
+`gps/lib/rnxnov` converts NovAtel-format RANGE raw observation logs to `gps/lib/rinex` records. It uses `gps/lib/novmsg` to decode the source logs and to map their satellites and signals to RINEX.
+
 `gps/lib/rnxrtcm` converts RTCM MSM7 observation messages to `gps/lib/rinex` records. It uses `gps/lib/rtcmbin` to decode the source messages.
 
 `gps/lib/rnxubx` converts u-blox raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/ubxbin` to decode the source messages.
