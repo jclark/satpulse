@@ -22,7 +22,9 @@ receiver to test with, so only SinoGNSS is tested; OEM7 RANGE should
 convert correctly with the OEM7 mapping, but is untested, and the
 documentation says so.
 
-The work goes in stages, each usable on its own:
+First, start a long K901 capture of RANGE and MSM7, which stage 5 needs
+and which runs in the background while stages 1 to 4 are implemented.
+The work then goes in stages, each usable on its own:
 
 1. RANGE decoder in `novmsg`.
 2. RINEX mapping in `novmsg`: the OEM7 base, and the SinoGNSS layer.
@@ -46,6 +48,62 @@ signal set.
   and RANGE) and `raw-cross.jsonl` (RANGE and MSM7 for GPS, GLONASS,
   Galileo and BDS in the same epochs, 30 s), and the same two files for
   the K803. All RANGE in the corpus is binary.
+
+## First: start the K901 capture
+
+`raw-cross.jsonl` has RANGE and MSM7 from the same epochs, but only 30 s,
+which is too short to see arcs, slips and satellites rising and setting,
+or to go through PPP. Stage 5 needs a long capture from the K901, which
+is on the antenna with the known position; start it at the beginning so
+that it is ready by then.
+
+Configure the K901 with this message file, and check the output for
+`Error!`:
+
+```
+[default.line]
+eol = "\r\n"
+[[line]]
+text = "UNLOGALL"
+[[line]]
+text = "log timeb ontime 1"
+[[line]]
+text = "log rangeb ontime 1"
+[[line]]
+text = "log rtcm1077b ontime 1"
+[[line]]
+text = "log rtcm1087b ontime 1"
+[[line]]
+text = "log rtcm1097b ontime 1"
+[[line]]
+text = "log rtcm1117b ontime 1"
+[[line]]
+text = "log rtcm1127b ontime 1"
+```
+
+```
+satpulsetool gps -d <device> -s 115200 -m k901-range-msm7.toml
+```
+
+Then capture passively for two hours, in the background:
+
+```
+satpulsetool serial -d <device> -s 115200 --packet-log k901-range-msm7-<date>.jsonl -t 7200
+```
+
+and afterwards restore the saved configuration with the message file's
+`reload` tag.
+
+- MSM7 is requested for every system the K901 outputs it for: GPS,
+  GLONASS, Galileo, QZSS and BDS.
+- In the K901's `raw-cross.jsonl` a RANGE averages 3.6 kB and the MSM7
+  messages together 1.1 kB per epoch, so this is about 5 kB/s, inside
+  the 11.5 kB/s of 115200 baud; check the capture has every RANGE and
+  MSM7 epoch.
+- The capture is too large for the repository (the packet log holds
+  each byte as two hex digits, about 35 MB per hour); keep it outside
+  the repository. The golden fixtures are 15-minute slices of it, as
+  for the other `convobs` fixtures.
 
 ## Stage 1: RANGE decoder
 
@@ -272,23 +330,8 @@ Two independent references:
 
 ### Capture
 
-`raw-cross.jsonl` has RANGE and MSM7 from the same epochs, but only 30 s,
-which is too short to see arcs, slips and satellites rising and setting.
-Validation uses a dedicated K901 capture:
-
-- `log timeb ontime 1`, `log rangeb ontime 1`, and MSM7 at 1 Hz for
-  every system the K901 outputs it for: `rtcm1077b`, `rtcm1087b`,
-  `rtcm1097b`, `rtcm1117b`, `rtcm1127b`.
-- In the K901's `raw-cross.jsonl` a RANGE averages 3.6 kB and the MSM7
-  messages together 1.1 kB per epoch, so this is about 5 kB/s, inside
-  the 11.5 kB/s of 115200 baud; check the capture has every RANGE and
-  MSM7 epoch.
-- An hour or more, captured passively with `satpulsetool serial
-  --packet-log`, so that it can also go through PPP.
-- The full capture is too large for the repository (the packet log holds
-  each byte as two hex digits, about 35 MB per hour); keep it with the
-  working files. The golden fixtures are 15-minute slices of it, as for
-  the other `convobs` fixtures.
+The K901 capture started before stage 1 (see "First: start the K901
+capture").
 
 ### RTKLIB
 
