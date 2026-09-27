@@ -19,7 +19,6 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
-	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
@@ -270,14 +269,14 @@ func TestParseFlagsVendor(t *testing.T) {
 		name      string
 		env       string
 		args      []string
-		expect    novmsg.RangeMapping
+		expect    bool
 		expectErr bool
 	}{
-		{name: "default", args: []string{"--from", "novb", "input.novb"}, expect: novmsg.RangeMappingOEM7},
-		{name: "sinognss", args: []string{"--from", "nova", "--vendor", "sinognss", "input.nova"}, expect: novmsg.RangeMappingSinoGNSS},
-		{name: "raw", args: []string{"--vendor", "sinognss", "input.jsonl"}, expect: novmsg.RangeMappingSinoGNSS},
-		{name: "other vendor", args: []string{"--from", "novb", "--vendor", "bynav", "input.novb"}, expect: novmsg.RangeMappingOEM7},
-		{name: "environment", env: "sinognss", args: []string{"--from", "novb", "input.novb"}, expect: novmsg.RangeMappingSinoGNSS},
+		{name: "default", args: []string{"--from", "novb", "input.novb"}, expect: false},
+		{name: "sinognss", args: []string{"--from", "nova", "--vendor", "sinognss", "input.nova"}, expect: true},
+		{name: "raw", args: []string{"--vendor", "sinognss", "input.jsonl"}, expect: true},
+		{name: "other vendor", args: []string{"--from", "novb", "--vendor", "bynav", "input.novb"}, expect: false},
+		{name: "environment", env: "sinognss", args: []string{"--from", "novb", "input.novb"}, expect: true},
 		{name: "unknown vendor", args: []string{"--from", "novb", "--vendor", "nosuch", "input.novb"}, expectErr: true},
 		{name: "not NovAtel input", args: []string{"--from", "ubx", "--vendor", "sinognss", "input.ubx"}, expectErr: true},
 	}
@@ -294,8 +293,8 @@ func TestParseFlagsVendor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if v.format.nov != tc.expect {
-				t.Errorf("mapping = %d, want %d", v.format.nov, tc.expect)
+			if v.format.novSino != tc.expect {
+				t.Errorf("novSino = %v, want %v", v.format.novSino, tc.expect)
 			}
 		})
 	}
@@ -1020,14 +1019,14 @@ func TestRunRangePacketLog(t *testing.T) {
 	tests := []struct {
 		name       string
 		from       inputFormat
-		mapping    novmsg.RangeMapping
+		sino       bool
 		expect     map[byte]int
 		expectWarn string
 	}{
-		{name: "novb", from: inputNOVB, mapping: novmsg.RangeMappingSinoGNSS, expect: sino},
-		{name: "nova", from: inputNOVA, mapping: novmsg.RangeMappingSinoGNSS, expect: sino},
-		{name: "raw selects novb", from: inputRaw, mapping: novmsg.RangeMappingSinoGNSS, expect: sino, expectWarn: `got="NOVA RANGE" selected="NOVB RANGE"`},
-		{name: "novb without vendor", from: inputNOVB, mapping: novmsg.RangeMappingOEM7, expect: oem7, expectWarn: "no OEM7 RINEX mapping"},
+		{name: "novb", from: inputNOVB, sino: true, expect: sino},
+		{name: "nova", from: inputNOVA, sino: true, expect: sino},
+		{name: "raw selects novb", from: inputRaw, sino: true, expect: sino, expectWarn: `got="NOVA RANGE" selected="NOVB RANGE"`},
+		{name: "novb without vendor", from: inputNOVB, expect: oem7, expectWarn: `hint="use --vendor sinognss for a SinoGNSS receiver"`},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -1045,7 +1044,7 @@ func TestRunRangePacketLog(t *testing.T) {
 					from:      tc.from,
 					to:        outputObsJSON,
 					packetLog: true,
-					format:    formatOptions{nov: tc.mapping},
+					format:    formatOptions{novSino: tc.sino},
 				},
 			}
 			if err := cj.run(testLogger(&log), time.Now().UTC()); err != nil {

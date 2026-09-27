@@ -1,24 +1,49 @@
 package novmsg
 
-// RangeMapping selects how RANGE satellite numbers and signal types map to
-// RINEX. RANGE has the same layout for OEM7 and SinoGNSS, but SinoGNSS
-// numbers QZSS, BDS and NavIC satellites differently and has signal types
-// that OEM7 does not.
-type RangeMapping uint8
+import "fmt"
 
-// RANGE mappings.
-const (
-	// RangeMappingOEM7 is the mapping documented for OEM7 (Tables 12, 164
-	// and 167 of the OEM7 Commands and Logs Reference Manual).
-	RangeMappingOEM7 RangeMapping = iota
-	// RangeMappingSinoGNSS is the SinoGNSS mapping: the OEM7 mapping with
-	// the SinoGNSS differences overriding it.
-	RangeMappingSinoGNSS
-)
+// prnRange is the range of RANGE PRNs for a satellite system, and the
+// offset to subtract to get the RINEX satellite number.
+type prnRange struct {
+	first, last, offset uint16
+}
 
-// RINEXSys returns the RINEX satellite system letter for a RANGE satellite
+// RangeRINEX maps the satellite system, PRN and signal type of a RANGE
+// record to a RINEX satellite, such as "C01", a RINEX signal code, such as
+// "2I", and the phase shift, in cycles, to add to the carrier phase (the
+// negated ADR) to align it as RINEX requires. It uses the OEM7 numbering
+// (Tables 12, 164 and 167 of the OEM7 Commands and Logs Reference Manual),
+// which applies no phase shifts. It returns an empty satellite for a record
+// it has no mapping for.
+func RangeRINEX(sys SatSystem, prn uint16, sigType uint8) (sat, sig string, phaseShift float64) {
+	return rangeRINEX(sys, prn, prnRanges[sys], obsSigMap[sys][sigType], 0)
+}
+
+// SinoRangeRINEX is RangeRINEX for SinoGNSS receivers: the OEM7 numbering
+// with the SinoGNSS differences overriding it.
+func SinoRangeRINEX(sys SatSystem, prn uint16, sigType uint8) (sat, sig string, phaseShift float64) {
+	r, ok := sinoPRNRanges[sys]
+	if !ok {
+		r = prnRanges[sys]
+	}
+	sig = sinoObsSigMap[sys][sigType]
+	if sig == "" {
+		sig = obsSigMap[sys][sigType]
+	}
+	return rangeRINEX(sys, prn, r, sig, sinoPhaseShift[sys][sigType])
+}
+
+func rangeRINEX(sys SatSystem, prn uint16, r prnRange, sig string, phaseShift float64) (string, string, float64) {
+	letter := rinexSys(sys)
+	if letter == "" || sig == "" || r.first == 0 || prn < r.first || prn > r.last {
+		return "", "", 0
+	}
+	return fmt.Sprintf("%s%02d", letter, prn-r.offset), sig, phaseShift
+}
+
+// rinexSys returns the RINEX satellite system letter for a RANGE satellite
 // system. It returns "" for SatSystemOther and unknown values.
-func RINEXSys(sys SatSystem) string {
+func rinexSys(sys SatSystem) string {
 	switch sys {
 	case SatSystemGPS:
 		return "G"
@@ -38,28 +63,9 @@ func RINEXSys(sys SatSystem) string {
 	return ""
 }
 
-// RINEXSatNum converts a RANGE PRN/slot to a RINEX satellite number. It
-// returns 0 for a PRN outside the mapping's range for the system.
-func (m RangeMapping) RINEXSatNum(sys SatSystem, prn uint16) uint8 {
-	r, ok := sinoPRNRanges[sys]
-	if !ok || m != RangeMappingSinoGNSS {
-		r = oem7PRNRanges[sys]
-	}
-	if r.first == 0 || prn < r.first || prn > r.last {
-		return 0
-	}
-	return uint8(prn - r.offset)
-}
-
-// prnRange is the range of RANGE PRNs for a satellite system, and the
-// offset to subtract to get the RINEX satellite number.
-type prnRange struct {
-	first, last, offset uint16
-}
-
-// oem7PRNRanges is OEM7 Table 12. QZSS L1S (SBAS PRN 183-191) is left out,
+// prnRanges is OEM7 Table 12. QZSS L1S (SBAS PRN 183-191) is left out,
 // since RINEX gives it the QZSS satellite numbers.
-var oem7PRNRanges = map[SatSystem]prnRange{
+var prnRanges = map[SatSystem]prnRange{
 	SatSystemGPS:     {1, 32, 0},
 	SatSystemSBAS:    {120, 158, 100},
 	SatSystemGLONASS: {38, 61, 37},
@@ -78,20 +84,8 @@ var sinoPRNRanges = map[SatSystem]prnRange{
 	SatSystemNavIC:  {62, 70, 61},
 }
 
-// RINEXObsSig returns the RINEX two-character signal identifier for a
-// RANGE satellite system and signal type. It returns "" for a combination
-// the mapping does not have.
-func (m RangeMapping) RINEXObsSig(sys SatSystem, sigType uint8) string {
-	if m == RangeMappingSinoGNSS {
-		if s := sinoObsSigMap[sys][sigType]; s != "" {
-			return s
-		}
-	}
-	return oem7ObsSigMap[sys][sigType]
-}
-
-// oem7ObsSigMap is OEM7 Tables 164 and 167.
-var oem7ObsSigMap = map[SatSystem]map[uint8]string{
+// obsSigMap is OEM7 Tables 164 and 167.
+var obsSigMap = map[SatSystem]map[uint8]string{
 	SatSystemGPS: {
 		0:  "1C", // L1C/A
 		5:  "2P", // L2P
@@ -163,16 +157,6 @@ var sinoObsSigMap = map[SatSystem]map[uint8]string{
 		17: "7I", // B2I (BDS-2)
 		19: "7D", // B2b (BDS-3)
 	},
-}
-
-// RINEXPhaseShift returns the phase shift, in cycles, to add to the carrier
-// phase (the negated ADR) of a RANGE signal to align it with the reference
-// signal of its frequency band, as RINEX requires (RINEX 4.02 Table A45).
-func (m RangeMapping) RINEXPhaseShift(sys SatSystem, sigType uint8) float64 {
-	if m == RangeMappingSinoGNSS {
-		return sinoPhaseShift[sys][sigType]
-	}
-	return 0
 }
 
 // sinoPhaseShift has the SinoGNSS phase shifts. On the same satellite, a

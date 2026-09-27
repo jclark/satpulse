@@ -137,7 +137,8 @@ type convertOptions struct {
 type formatOptions struct {
 	rtcm rnxrtcm.Options
 	ubx  rnxubx.Options
-	nov  novmsg.RangeMapping
+	// novSino selects the SinoGNSS mapping of RANGE satellites and signals.
+	novSino bool
 }
 
 type inputReader struct {
@@ -229,6 +230,7 @@ type rawPacketInput struct {
 	ubx     *rnxubx.Converter
 	unc     *rnxunc.Converter
 	nov     *rnxnov.Converter
+	novHint string
 }
 
 var _ packetInput = (*rawPacketInput)(nil)
@@ -365,7 +367,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if err != nil {
 		return nil, usageFunc, err
 	}
-	v.format.nov = gpsreg.NovRangeMapping(vendors)
+	v.format.novSino = gpsreg.SinoNovVariant(vendors)
 	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
 		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")
 	}
@@ -757,14 +759,14 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, form
 			return convertObsVMData(data, conv, uncmsg.ParseAsciiMessage)
 		}}, nil
 	case inputNOVB:
-		conv := rnxnov.New(sink, format.nov)
+		conv, hint := newRangeConverter(sink, format.novSino)
 		return &tagInput{tag: gpsreg.TagNovAtelBin, accept: isRawObsTag, convert: func(data []byte, _ WeekConstraint) (bool, error) {
-			return convertRangeData(data, conv, novmsg.ParseBinMsg, lg)
+			return convertRangeData(data, conv, novmsg.ParseBinMsg, lg, hint)
 		}}, nil
 	case inputNOVA:
-		conv := rnxnov.New(sink, format.nov)
+		conv, hint := newRangeConverter(sink, format.novSino)
 		return &tagInput{tag: gpsreg.TagNovAtelAscii, accept: isRawObsTag, convert: func(data []byte, _ WeekConstraint) (bool, error) {
-			return convertRangeData(data, conv, novmsg.ParseAsciiMessage, lg)
+			return convertRangeData(data, conv, novmsg.ParseAsciiMessage, lg, hint)
 		}}, nil
 	default:
 		return newRawPacketInput(sink, meta, format, lg), nil
@@ -773,7 +775,7 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, form
 
 func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, format formatOptions, lg *slog.Logger) *rawPacketInput {
 	buf := &metadataBufferSink{dst: sink}
-	return &rawPacketInput{
+	in := &rawPacketInput{
 		sink:    sink,
 		lg:      lg,
 		meta:    meta,
@@ -781,8 +783,19 @@ func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, format formatOption
 		rtcm:    rnxrtcm.New(buf, format.rtcm),
 		ubx:     rnxubx.New(sink, format.ubx),
 		unc:     rnxunc.New(sink),
-		nov:     rnxnov.New(sink, format.nov),
 	}
+	in.nov, in.novHint = newRangeConverter(sink, format.novSino)
+	return in
+}
+
+// newRangeConverter creates a RANGE converter, with the SinoGNSS mapping if
+// sino is set, and returns it with the hint to give when it cannot map a
+// record.
+func newRangeConverter(sink rinex.Sink, sino bool) (*rnxnov.Converter, string) {
+	if sino {
+		return rnxnov.NewSino(sink), ""
+	}
+	return rnxnov.New(sink), "use --vendor sinognss for a SinoGNSS receiver"
 }
 
 func (s *metadataBufferSink) Metadata(m rinex.Metadata) error {
@@ -1050,9 +1063,9 @@ func (in *rawPacketInput) convertNonRTCMObservation(tag gpsprot.Tag, data []byte
 	case gpsreg.TagUnicoreAscii:
 		return convertObsVMData(data, in.unc, uncmsg.ParseAsciiMessage)
 	case gpsreg.TagNovAtelBin:
-		return convertRangeData(data, in.nov, novmsg.ParseBinMsg, in.lg)
+		return convertRangeData(data, in.nov, novmsg.ParseBinMsg, in.lg, in.novHint)
 	case gpsreg.TagNovAtelAscii:
-		return convertRangeData(data, in.nov, novmsg.ParseAsciiMessage, in.lg)
+		return convertRangeData(data, in.nov, novmsg.ParseAsciiMessage, in.lg, in.novHint)
 	}
 	return false, nil
 }
@@ -1129,9 +1142,9 @@ func convertObsVMData(data []byte, conv *rnxunc.Converter, parse func([]byte) (*
 	return conv.ConvertObsVM(&msg.Hdr, obs)
 }
 
-// convertRangeData converts a NovAtel RANGE log, warning the first time
-// conv skips records it cannot map.
-func convertRangeData(data []byte, conv *rnxnov.Converter, parse func([]byte) (*novmsg.Msg[novmsg.Port], error), lg *slog.Logger) (bool, error) {
+// convertRangeData converts a NovAtel RANGE log, warning, with hint if it is
+// not empty, the first time conv skips records it cannot map.
+func convertRangeData(data []byte, conv *rnxnov.Converter, parse func([]byte) (*novmsg.Msg[novmsg.Port], error), lg *slog.Logger, hint string) (bool, error) {
 	msg, err := parse(data)
 	if err != nil {
 		return false, err
@@ -1143,10 +1156,11 @@ func convertRangeData(data []byte, conv *rnxnov.Converter, parse func([]byte) (*
 	n := conv.Unmapped()
 	ok, err = conv.ConvertRange(&msg.Hdr, rng)
 	if n == 0 && conv.Unmapped() > 0 {
-		if conv.Mapping() == novmsg.RangeMappingSinoGNSS {
-			lg.Warn("skipping RANGE observations with no RINEX mapping")
+		const msg = "skipping RANGE observations with no RINEX mapping"
+		if hint != "" {
+			lg.Warn(msg, "hint", hint)
 		} else {
-			lg.Warn("skipping RANGE observations with no OEM7 RINEX mapping; use --vendor sinognss for a SinoGNSS receiver")
+			lg.Warn(msg)
 		}
 	}
 	return ok, err

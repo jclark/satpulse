@@ -35,14 +35,13 @@ func TestConvertRange(t *testing.T) {
 	t0 := rinex.TimeFromGPSWeekMillis(2438, 1000)
 	tests := []struct {
 		name           string
-		mapping        novmsg.RangeMapping
+		sino           bool
 		obs            []novmsg.RangeObs
 		expect         []rinex.SignalObservation
 		expectUnmapped int
 	}{
 		{
-			name:    "GPS L1C/A",
-			mapping: novmsg.RangeMappingOEM7,
+			name: "GPS L1C/A",
 			obs: []novmsg.RangeObs{{
 				PRN: 7, PSR: 23956830.53, ADR: -125893980.172, Dopp: -12.5, CN0: 45.3, LockTime: 100,
 				Status: status(novmsg.SatSystemGPS, 0, true, true, true),
@@ -55,8 +54,7 @@ func TestConvertRange(t *testing.T) {
 			}},
 		},
 		{
-			name:    "validity bits",
-			mapping: novmsg.RangeMappingOEM7,
+			name: "validity bits",
 			obs: []novmsg.RangeObs{
 				{PRN: 7, PSR: 1, ADR: -2, Dopp: 3, LockTime: 100, Status: status(novmsg.SatSystemGPS, 0, false, true, true)},
 				{PRN: 8, PSR: 1, ADR: -2, Dopp: 3, LockTime: 100, Status: status(novmsg.SatSystemGPS, 0, true, false, true)},
@@ -68,8 +66,7 @@ func TestConvertRange(t *testing.T) {
 			},
 		},
 		{
-			name:    "half cycle",
-			mapping: novmsg.RangeMappingOEM7,
+			name: "half cycle",
 			obs: []novmsg.RangeObs{
 				{PRN: 7, PSR: 1, ADR: -2, LockTime: 100, Status: status(novmsg.SatSystemGPS, 0, true, true, false)},
 				{PRN: 8, PSR: 1, LockTime: 100, Status: status(novmsg.SatSystemGPS, 0, true, false, false)},
@@ -80,8 +77,7 @@ func TestConvertRange(t *testing.T) {
 			},
 		},
 		{
-			name:    "GLONASS frequency channel",
-			mapping: novmsg.RangeMappingOEM7,
+			name: "GLONASS frequency channel",
 			obs: []novmsg.RangeObs{
 				{PRN: 38, GloFreq: 0, PSR: 1, Status: status(novmsg.SatSystemGLONASS, 0, true, false, true)},
 				{PRN: 39, GloFreq: 13, PSR: 1, Status: status(novmsg.SatSystemGLONASS, 5, true, false, true)},
@@ -94,8 +90,8 @@ func TestConvertRange(t *testing.T) {
 			},
 		},
 		{
-			name:    "SinoGNSS mapping",
-			mapping: novmsg.RangeMappingSinoGNSS,
+			name: "SinoGNSS mapping",
+			sino: true,
 			obs: []novmsg.RangeObs{
 				{PRN: 141, PSR: 1, Status: status(novmsg.SatSystemBeiDou, 19, true, false, true)},
 				{PRN: 132, PSR: 1, Status: status(novmsg.SatSystemQZSS, 0, true, false, true)},
@@ -110,8 +106,7 @@ func TestConvertRange(t *testing.T) {
 			},
 		},
 		{
-			name:    "SinoGNSS log with OEM7 mapping",
-			mapping: novmsg.RangeMappingOEM7,
+			name: "SinoGNSS log with OEM7 mapping",
 			obs: []novmsg.RangeObs{
 				{PRN: 141, PSR: 1, Status: status(novmsg.SatSystemBeiDou, 19, true, false, true)},
 				{PRN: 132, PSR: 1, Status: status(novmsg.SatSystemQZSS, 0, true, false, true)},
@@ -120,8 +115,7 @@ func TestConvertRange(t *testing.T) {
 			expectUnmapped: 3,
 		},
 		{
-			name:    "no values",
-			mapping: novmsg.RangeMappingOEM7,
+			name: "no values",
 			obs: []novmsg.RangeObs{
 				{PRN: 7, Dopp: float32(math.NaN()), Status: status(novmsg.SatSystemGPS, 0, false, false, false)},
 			},
@@ -130,7 +124,10 @@ func TestConvertRange(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &testSink{}
-			c := New(s, tc.mapping)
+			c := New(s)
+			if tc.sino {
+				c = NewSino(s)
+			}
 			ok, err := c.ConvertRange(hdr(1000), rangeLog(tc.obs...))
 			if err != nil {
 				t.Fatalf("ConvertRange: %v", err)
@@ -173,7 +170,7 @@ func TestConvertRangeArcs(t *testing.T) {
 		{15000, 2.94, noPhase, 7},
 	}
 	s := &testSink{}
-	c := New(s, novmsg.RangeMappingOEM7)
+	c := New(s)
 	var expect []uint32
 	for _, e := range epochs {
 		if _, err := c.ConvertRange(hdr(e.ms), rangeLog(novmsg.RangeObs{PRN: 7, PSR: 1, ADR: -2, LockTime: e.lock, Status: e.st})); err != nil {
@@ -195,7 +192,7 @@ func TestConvertRangeArcs(t *testing.T) {
 func TestConvertRangeK901(t *testing.T) {
 	h, m := readRange(t, "../../testdata/packets/sinognss/K901/raw-obs-ascii.jsonl")
 	s := &testSink{}
-	c := New(s, novmsg.RangeMappingSinoGNSS)
+	c := NewSino(s)
 	if _, err := c.ConvertRange(h, m); err != nil {
 		t.Fatalf("ConvertRange: %v", err)
 	}

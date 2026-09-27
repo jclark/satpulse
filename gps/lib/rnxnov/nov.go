@@ -3,7 +3,6 @@
 package rnxnov
 
 import (
-	"fmt"
 	"math"
 
 	"github.com/jclark/satpulse/gps/lib/novmsg"
@@ -18,7 +17,7 @@ const lockTimeTolerance = 0.05
 // order.
 type Converter struct {
 	sink     rinex.Sink
-	mapping  novmsg.RangeMapping
+	rinex    func(novmsg.SatSystem, uint16, uint8) (sat, sig string, phaseShift float64)
 	state    map[signalKey]signalState
 	unmapped int
 }
@@ -35,17 +34,28 @@ type signalState struct {
 	pending bool
 }
 
-// New creates a Converter that writes records to sink, using the given
-// mapping of satellites and signals.
+// New creates a Converter that writes records to sink, mapping satellites
+// and signals with novmsg.RangeRINEX.
 // It panics if sink is nil.
-func New(sink rinex.Sink, mapping novmsg.RangeMapping) *Converter {
+func New(sink rinex.Sink) *Converter {
+	return newConverter(sink, novmsg.RangeRINEX)
+}
+
+// NewSino creates a Converter for SinoGNSS receivers, which maps satellites
+// and signals with novmsg.SinoRangeRINEX.
+// It panics if sink is nil.
+func NewSino(sink rinex.Sink) *Converter {
+	return newConverter(sink, novmsg.SinoRangeRINEX)
+}
+
+func newConverter(sink rinex.Sink, f func(novmsg.SatSystem, uint16, uint8) (string, string, float64)) *Converter {
 	if sink == nil {
 		panic("nil RINEX sink")
 	}
 	return &Converter{
-		sink:    sink,
-		mapping: mapping,
-		state:   make(map[signalKey]signalState),
+		sink:  sink,
+		rinex: f,
+		state: make(map[signalKey]signalState),
 	}
 }
 
@@ -66,13 +76,8 @@ func (c *Converter) ConvertRange(h *novmsg.MsgHdr[novmsg.Port], m *novmsg.Range)
 	return seen, nil
 }
 
-// Mapping returns the mapping of satellites and signals that c uses.
-func (c *Converter) Mapping() novmsg.RangeMapping {
-	return c.mapping
-}
-
 // Unmapped returns the number of RANGE records skipped so far because the
-// mapping has no RINEX satellite or signal for them.
+// Converter has no RINEX satellite or signal for them.
 func (c *Converter) Unmapped() int {
 	return c.unmapped
 }
@@ -80,16 +85,14 @@ func (c *Converter) Unmapped() int {
 func (c *Converter) convertObs(t rinex.Time, rec novmsg.RangeObs) (bool, error) {
 	st := rec.Status
 	sysID := st.SatSystem()
-	sys := novmsg.RINEXSys(sysID)
-	satNum := c.mapping.RINEXSatNum(sysID, rec.PRN)
-	sig := c.mapping.RINEXObsSig(sysID, st.SignalType())
-	if sys == "" || satNum == 0 || sig == "" {
+	sat, sig, phaseShift := c.rinex(sysID, rec.PRN, st.SignalType())
+	if sat == "" {
 		c.unmapped++
 		return false, nil
 	}
 	obs := rinex.SignalObservation{
 		T:   t,
-		Sat: rinex.SatelliteID(fmt.Sprintf("%s%02d", sys, satNum)),
+		Sat: rinex.SatelliteID(sat),
 		Sig: rinex.SignalID(sig),
 	}
 	if sysID == novmsg.SatSystemGLONASS && rec.GloFreq <= 13 {
@@ -103,7 +106,7 @@ func (c *Converter) convertObs(t rinex.Time, rec novmsg.RangeObs) (bool, error) 
 	if cpOK {
 		// ADR is accumulated Doppler range, opposite in sign to RINEX
 		// carrier phase.
-		obs.CP = opt.Make(-rec.ADR + c.mapping.RINEXPhaseShift(sysID, st.SignalType()))
+		obs.CP = opt.Make(-rec.ADR + phaseShift)
 		obs.HC = !st.ParityKnown()
 	}
 	if finite32(rec.Dopp) {

@@ -179,9 +179,12 @@ SinoGNSS tables, which list only the differences and fall back to
 OEM7. This is the same layering as the NovAtel variants in
 `gps/internal/nov/processor.go`, where the SinoGNSS variant is the OEM7
 registry with its own entries overriding. The converter lives in
-`gps/lib`, so it cannot use `gps/internal/nov`'s `Variant`; it takes a
-small `novmsg` type naming the mapping (OEM7 or SinoGNSS), which
-`convobs` sets from the vendor.
+`gps/lib`, so it cannot use `gps/internal/nov`'s `Variant`. Following
+the `novmsg` naming, where OEM7 has the plain name and a vendor's
+variant a prefix (`PosType`, `SinoPosType`), there are two functions,
+`RangeRINEX` and `SinoRangeRINEX`, each giving the RINEX satellite,
+signal code and phase shift; `convobs` chooses between them from the
+vendor.
 
 ### Satellite numbering
 
@@ -256,9 +259,10 @@ New package `gps/lib/rnxnov`, modelled on `gps/lib/rnxunc`, whose OBSVM
 record and status bits are the same as RANGE's:
 
 ```go
-// New creates a Converter that writes records to sink, using the given
-// mapping of satellites and signals.
-func New(sink rinex.Sink, mapping novmsg.RangeMapping) *Converter
+// New creates a Converter that writes records to sink, using
+// novmsg.RangeRINEX; NewSino uses novmsg.SinoRangeRINEX.
+func New(sink rinex.Sink) *Converter
+func NewSino(sink rinex.Sink) *Converter
 
 // ConvertRange converts one RANGE log.
 func (c *Converter) ConvertRange(h *novmsg.MsgHdr, m *novmsg.Range) (bool, error)
@@ -493,5 +497,4 @@ antenna's known position.
 
 ## Open decisions
 
-- The name and form of the `novmsg` type selecting the mapping
-  (`RangeMapping` above).
+None.
