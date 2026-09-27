@@ -436,6 +436,20 @@ Against MSM7, on both receivers:
   L2C the K901's is 3.0 dB above the mosaic's L2C(L) on GPS and 2.9 dB
   on QZSS, the doubling of power of tracking M and L together. So the
   SinoGNSS layer maps type 17 to 2X for GPS and QZSS.
+- The same comparison, against the mosaic-G5 with GPS L1C, QZSS L1C and
+  B2b added to its tracking, and against the UM980 on SIGNALGROUP 2,
+  over 15 minutes, gives (K901 gap less reference gap, median over
+  satellites): L2C +3.1 dB (mosaic L2C-L) and +3.3 dB (UM980 2L); B2b
+  -0.9 and -0.5 dB against B2b_I (7D); B1C, which the K901 declares
+  pilot (MSM7 signal ID 31, 1P), +0.5 and +0.7 dB against B1C pilot;
+  GPS and QZSS L1C +1.0 and +1.1 dB against L1C-P. The controls (GPS L5Q,
+  Galileo E5a and E5b, BDS B2I, B3I and B2a) are within -0.8 to +0.3 dB.
+  So B2b stays 7D and B1C 1P. L1C is not settled: it is 0.4 to 0.6 dB
+  above B1C, which is pilot, and 1.5 dB above the other controls. None of
+  the lab's receivers reports L1C data separately (the mosaic and UM980
+  report the pilot, the X20P has no L1C in any signal plan, and the
+  K901's MSM7 carries no L1C), so deciding between 1L and 1X needs the
+  L1C data/pilot power split, which is not in the local documentation.
 - MSM7 in these captures has no QZSS, so QZSS is not checked.
 
 Against `convbin`, the OEM7 mapping (no `--vendor`) agrees on every
@@ -462,6 +476,7 @@ antenna's known position.
   (`RangeMapping` above).
 - Whether the input format names should be `novb`/`nova` or name the
   log (`range`).
+- Whether GPS and QZSS type 16 is 1L (pilot) or 1X (data and pilot).
 - Whether `convobs` gets an option to drop Doppler without phase lock, as
   `--unc-omit-do-without-cp` does for OBSVM, or the golden test ignores
   those records.
