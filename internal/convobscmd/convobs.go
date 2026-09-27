@@ -24,7 +24,9 @@ import (
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/ascii"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/rinex"
+	"github.com/jclark/satpulse/gps/lib/rnxnov"
 	"github.com/jclark/satpulse/gps/lib/rnxrtcm"
 	"github.com/jclark/satpulse/gps/lib/rnxubx"
 	"github.com/jclark/satpulse/gps/lib/rnxunc"
@@ -50,17 +52,18 @@ var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
 var packetLogRTCMMarker = []byte("RTCM")
 var packetLogUBXObsMarker = []byte("RXM-RAWX")
 var packetLogUNCObsMarker = []byte("OBSVM")
+var packetLogNOVObsMarker = []byte("RANGE")
 var packetLogJSONEscapeMarker = []byte(`\u`)
 
 const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
-           [-r|--from raw|ubx|rtcm|uncb|unca|rinex|obsj] [--packet-log] [--to rinex|obsj]
+           [-r|--from raw|ubx|rtcm|uncb|unca|novb|nova|rinex|obsj] [--packet-log] [--to rinex|obsj]
            [--date YYYYMMDD|--recent|-f|--date-from-filename]
            [--interval seconds] [-p|--ppp-ar]
            [--rinex-version version] [--program name] [--run-by name]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
            [--rtcm-strict-prr] [--rtcm-omit-zero-do]
            [--ubx-slip-threshold n] [--ubx-bds-geo-half-cycle]
-           [--unc-omit-do-without-cp]
+           [--unc-omit-do-without-cp] [--vendor name]
            input...`
 
 type inputFormat string
@@ -71,6 +74,8 @@ const (
 	inputRTCM    inputFormat = "rtcm"
 	inputUNCB    inputFormat = "uncb"
 	inputUNCA    inputFormat = "unca"
+	inputNOVB    inputFormat = "novb"
+	inputNOVA    inputFormat = "nova"
 	inputRINEX   inputFormat = "rinex"
 	inputObsJSON inputFormat = "obsj"
 )
@@ -80,6 +85,8 @@ var inputPacketTags = map[inputFormat]gpsprot.Tag{
 	inputRTCM: gpsreg.TagRTCM,
 	inputUNCB: gpsreg.TagUnicoreBin,
 	inputUNCA: gpsreg.TagUnicoreAscii,
+	inputNOVB: gpsreg.TagNovAtelBin,
+	inputNOVA: gpsreg.TagNovAtelAscii,
 }
 
 var rawObservationNames = map[gpsprot.Tag]string{
@@ -87,6 +94,8 @@ var rawObservationNames = map[gpsprot.Tag]string{
 	gpsreg.TagRTCM:         "RTCM MSM7",
 	gpsreg.TagUnicoreBin:   "UNCB OBSVM",
 	gpsreg.TagUnicoreAscii: "UNCA OBSVM",
+	gpsreg.TagNovAtelBin:   "NOVB RANGE",
+	gpsreg.TagNovAtelAscii: "NOVA RANGE",
 }
 
 var noPacketObservationMsgs = map[inputFormat]string{
@@ -94,7 +103,9 @@ var noPacketObservationMsgs = map[inputFormat]string{
 	inputRTCM: "no RTCM MSM7 messages found",
 	inputUNCB: "no Unicore UNCB OBSVM messages found",
 	inputUNCA: "no Unicore UNCA OBSVM messages found",
-	inputRaw:  "no raw observation packets found (UBX RAWX, RTCM MSM7, UNCB OBSVM, UNCA OBSVM)",
+	inputNOVB: "no NovAtel NOVB RANGE messages found",
+	inputNOVA: "no NovAtel NOVA RANGE messages found",
+	inputRaw:  "no raw observation packets found (UBX RAWX, RTCM MSM7, UNCB OBSVM, UNCA OBSVM, NOVB RANGE, NOVA RANGE)",
 }
 
 type outputFormat string
@@ -126,6 +137,7 @@ type formatOptions struct {
 	rtcm rnxrtcm.Options
 	ubx  rnxubx.Options
 	unc  rnxunc.Options
+	nov  novmsg.RangeMapping
 }
 
 type inputReader struct {
@@ -216,6 +228,7 @@ type rawPacketInput struct {
 	rtcm    *rnxrtcm.Converter
 	ubx     *rnxubx.Converter
 	unc     *rnxunc.Converter
+	nov     *rnxnov.Converter
 }
 
 var _ packetInput = (*rawPacketInput)(nil)
@@ -301,6 +314,8 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.Uint8Var(&v.format.ubx.SlipThreshold, "ubx-slip-threshold", 15, "RAWX cpStdev index that marks a cycle slip")
 	flags.BoolVar(&v.format.ubx.BDSGeoHalfCycle, "ubx-bds-geo-half-cycle", false, "apply RTKLIB-compatible BDS GEO half-cycle carrier phase correction")
 	flags.BoolVar(&v.format.unc.OmitDoWithoutCP, "unc-omit-do-without-cp", false, "omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase")
+	vendorStr := ""
+	flags.StringVar(&vendorStr, "vendor", "", "GPS vendor `name` whose variant of the NovAtel protocol to use for NovAtel RANGE logs")
 	v.metadataFlags = flags
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
@@ -342,6 +357,18 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if flags.Changed("ubx-bds-geo-half-cycle") && !v.from.mayUseUBX() {
 		return nil, usageFunc, errors.New("--ubx-bds-geo-half-cycle is valid only with raw or UBX input")
 	}
+	if flags.Changed("vendor") && !v.from.mayUseNovAtel() {
+		return nil, usageFunc, errors.New("--vendor is valid only with raw, NOVB, or NOVA input")
+	}
+	vendor, err := gpsreg.ParseVendor(vendorStr)
+	if err != nil {
+		return nil, usageFunc, err
+	}
+	vendors, err := cmd.ResolveVendors(vendor)
+	if err != nil {
+		return nil, usageFunc, err
+	}
+	v.format.nov = gpsreg.NovRangeMapping(vendors)
 	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
 		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")
 	}
@@ -401,7 +428,7 @@ func packetFormatsByTag(fmts []gpsprot.PacketFormat) map[gpsprot.Tag][]gpsprot.P
 func (v *flagVars) setInputFormat(s string) error {
 	s = strings.ToLower(s)
 	switch inputFormat(s) {
-	case inputRaw, inputUBX, inputRTCM, inputUNCB, inputUNCA, inputRINEX, inputObsJSON:
+	case inputRaw, inputUBX, inputRTCM, inputUNCB, inputUNCA, inputNOVB, inputNOVA, inputRINEX, inputObsJSON:
 		v.from = inputFormat(s)
 		return nil
 	default:
@@ -434,6 +461,10 @@ func (f inputFormat) mayUseUBX() bool {
 
 func (f inputFormat) mayUseUnicore() bool {
 	return f == inputRaw || f == inputUNCB || f == inputUNCA
+}
+
+func (f inputFormat) mayUseNovAtel() bool {
+	return f == inputRaw || f == inputNOVB || f == inputNOVA
 }
 
 func (v *flagVars) setWeekOptions(date string, recent, dateFromFilename bool) error {
@@ -729,6 +760,16 @@ func newPacketInput(from inputFormat, sink rinex.Sink, meta rinex.Metadata, form
 		return &tagInput{tag: gpsreg.TagUnicoreAscii, accept: isRawObsTag, convert: func(data []byte, _ WeekConstraint) (bool, error) {
 			return convertObsVMData(data, conv, uncmsg.ParseAsciiMessage)
 		}}, nil
+	case inputNOVB:
+		conv := rnxnov.New(sink, format.nov)
+		return &tagInput{tag: gpsreg.TagNovAtelBin, accept: isRawObsTag, convert: func(data []byte, _ WeekConstraint) (bool, error) {
+			return convertRangeData(data, conv, novmsg.ParseBinMsg, lg)
+		}}, nil
+	case inputNOVA:
+		conv := rnxnov.New(sink, format.nov)
+		return &tagInput{tag: gpsreg.TagNovAtelAscii, accept: isRawObsTag, convert: func(data []byte, _ WeekConstraint) (bool, error) {
+			return convertRangeData(data, conv, novmsg.ParseAsciiMessage, lg)
+		}}, nil
 	default:
 		return newRawPacketInput(sink, meta, format, lg), nil
 	}
@@ -744,6 +785,7 @@ func newRawPacketInput(sink rinex.Sink, meta rinex.Metadata, format formatOption
 		rtcm:    rnxrtcm.New(buf, format.rtcm),
 		ubx:     rnxubx.New(sink, format.ubx),
 		unc:     rnxunc.New(sink, format.unc),
+		nov:     rnxnov.New(sink, format.nov),
 	}
 }
 
@@ -885,13 +927,15 @@ func readPacketLogLine(r *bufio.Reader, buf *[]byte) ([]byte, error) {
 func maybeSignificantPacketLogLine(b []byte) bool {
 	// This is a conservative prefilter: false means the packet log line cannot
 	// contain a message convobs uses, while true only means it needs full decoding.
-	// All literal markers contain M; \u keeps escaped JSON names on the safe path.
-	if bytes.IndexAny(b, "M\\") < 0 {
+	// All literal markers contain M or R; \u keeps escaped JSON names on the
+	// safe path.
+	if bytes.IndexAny(b, "MR\\") < 0 {
 		return false
 	}
 	return bytes.Contains(b, packetLogRTCMMarker) ||
 		bytes.Contains(b, packetLogUBXObsMarker) ||
 		bytes.Contains(b, packetLogUNCObsMarker) ||
+		bytes.Contains(b, packetLogNOVObsMarker) ||
 		bytes.Contains(b, packetLogJSONEscapeMarker)
 }
 
@@ -919,7 +963,8 @@ func packetLogEntryData(entry *gpsio.PacketLogEntry) ([]byte, bool) {
 }
 
 func supportedRawPacketLogTag(tag gpsprot.Tag) bool {
-	return tag == gpsreg.TagUBX || tag == gpsreg.TagRTCM || tag == gpsreg.TagUnicoreBin || tag == gpsreg.TagUnicoreAscii
+	return tag == gpsreg.TagUBX || tag == gpsreg.TagRTCM || tag == gpsreg.TagUnicoreBin || tag == gpsreg.TagUnicoreAscii ||
+		tag == gpsreg.TagNovAtelBin || tag == gpsreg.TagNovAtelAscii
 }
 
 func convertPacketData(data []byte, fmts []gpsprot.PacketFormat, in packetInput, week WeekConstraint) (bool, error) {
@@ -973,6 +1018,8 @@ func isRawObs(pkt obsPacket) (gpsprot.Tag, bool) {
 		return tag, uncmsg.BinPacketMsgID(pkt.data) == uncmsg.ObsvMID
 	case gpsreg.TagUnicoreAscii:
 		return tag, pkt.format.MsgID(pkt.data) == uncmsg.ObsvMID.String()
+	case gpsreg.TagNovAtelBin, gpsreg.TagNovAtelAscii:
+		return tag, pkt.format.MsgID(pkt.data) == novmsg.RangeID.String()
 	default:
 		return gpsprot.EmptyTag, false
 	}
@@ -1006,6 +1053,10 @@ func (in *rawPacketInput) convertNonRTCMObservation(tag gpsprot.Tag, data []byte
 		return convertObsVMData(data, in.unc, uncmsg.ParseBinMsg)
 	case gpsreg.TagUnicoreAscii:
 		return convertObsVMData(data, in.unc, uncmsg.ParseAsciiMessage)
+	case gpsreg.TagNovAtelBin:
+		return convertRangeData(data, in.nov, novmsg.ParseBinMsg, in.lg)
+	case gpsreg.TagNovAtelAscii:
+		return convertRangeData(data, in.nov, novmsg.ParseAsciiMessage, in.lg)
 	}
 	return false, nil
 }
@@ -1080,6 +1131,29 @@ func convertObsVMData(data []byte, conv *rnxunc.Converter, parse func([]byte) (*
 		return false, nil
 	}
 	return conv.ConvertObsVM(&msg.Hdr, obs)
+}
+
+// convertRangeData converts a NovAtel RANGE log, warning the first time
+// conv skips records it cannot map.
+func convertRangeData(data []byte, conv *rnxnov.Converter, parse func([]byte) (*novmsg.Msg[novmsg.Port], error), lg *slog.Logger) (bool, error) {
+	msg, err := parse(data)
+	if err != nil {
+		return false, err
+	}
+	rng, ok := msg.Body.(*novmsg.Range)
+	if !ok {
+		return false, nil
+	}
+	n := conv.Unmapped()
+	ok, err = conv.ConvertRange(&msg.Hdr, rng)
+	if n == 0 && conv.Unmapped() > 0 {
+		if conv.Mapping() == novmsg.RangeMappingSinoGNSS {
+			lg.Warn("skipping RANGE observations with no RINEX mapping")
+		} else {
+			lg.Warn("skipping RANGE observations with no OEM7 RINEX mapping; use --vendor sinognss for a SinoGNSS receiver")
+		}
+	}
+	return ok, err
 }
 
 func (in *rawPacketInput) noteWeek(week WeekConstraint) {

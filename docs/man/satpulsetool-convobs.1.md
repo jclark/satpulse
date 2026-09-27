@@ -6,7 +6,7 @@ satpulsetool-convobs - convert GNSS observation data
 
 **satpulsetool** [*global options*] **convobs** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-o**\|**\-\-output** *path*] [**\-H**\|**\-\-header\-file** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-r**\|**\-\-from** **raw**\|**ubx**\|**rtcm**\|**uncb**\|**unca**\|**rinex**\|**obsj**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-r**\|**\-\-from** **raw**\|**ubx**\|**rtcm**\|**uncb**\|**unca**\|**novb**\|**nova**\|**rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log**] [**\-\-to** **rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-date** *YYYYMMDD*\|**\-\-recent**\|**\-f**\|**\-\-date\-from\-filename**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-interval** *seconds*] [**\-p**\|**\-\-ppp\-ar**]\
@@ -14,7 +14,7 @@ satpulsetool-convobs - convert GNSS observation data
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-antenna** *type*] [**\-\-approx\-pos** *X,Y,Z*] [**\-\-comment** *text*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**] [**\-\-rtcm\-omit\-zero\-do**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-slip\-threshold** *n*] [**\-\-ubx\-bds\-geo\-half\-cycle**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-unc\-omit\-do\-without\-cp**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-unc\-omit\-do\-without\-cp**] [**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;*file*...
 
 # DESCRIPTION
@@ -27,6 +27,7 @@ Currently, the following raw observation data formats are supported:
 
 * u-blox UBX-RXM-RAWX
 * Unicore OBSVM (in either binary or ASCII format)
+* NovAtel-format RANGE (in either binary or ASCII format)
 * RTCM MSM7
 
 The *convobs* command also supports a JSON Lines format called `obsj`,
@@ -59,6 +60,9 @@ The following formats are supported:
 
   **uncb**, **unca**
   : Unicore OBSVM messages in binary or ASCII format
+
+  **novb**, **nova**
+  : NovAtel-format RANGE logs in binary or ASCII format; see **\-\-vendor**
 
   **raw**
   : Auto-select between the above formats based on which kind of packet occurs in the stream first
@@ -165,6 +169,17 @@ This option is valid only with **raw** or **ubx** input.
 By default, **convobs** preserves these Doppler values.
 This option is valid only with **raw**, **uncb**, or **unca** input.
 
+**\-\-vendor** *name*
+: Select the vendor whose variant of the NovAtel protocol the RANGE logs use.
+The value is case-insensitive.
+**SinoGNSS** selects the SinoGNSS numbering of QZSS, BDS and NavIC satellites and the SinoGNSS signal types;
+any other vendor selects the NovAtel OEM7 numbering and signal types.
+If this option is omitted, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, the OEM7 variant is used.
+A RANGE observation whose satellite or signal the variant does not map to RINEX is skipped with a warning;
+without **\-\-vendor** **SinoGNSS**, a SinoGNSS receiver loses its QZSS, BDS, NavIC and GPS L5 observations.
+RANGE conversion has been tested with SinoGNSS receivers only; OEM7 RANGE should convert, but has not been tested.
+This option is valid only with **raw**, **novb**, or **nova** input.
+
 # HEADER FILE FORMAT
 
 The file specified by **\-\-header\-file** is a TOML file.
@@ -250,6 +265,11 @@ Convert `.obsj` to RINEX:
 Convert RINEX to `.obsj`:
 
     satpulsetool convobs --from rinex --to obsj -o um980.obsj um980.obs
+
+# ENVIRONMENT
+
+**SATPULSE_VENDORS**
+: The possible vendors of the GPS receiver, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It can be overridden by **\-\-vendor**.
 
 # SEE ALSO
 

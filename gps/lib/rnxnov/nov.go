@@ -66,6 +66,11 @@ func (c *Converter) ConvertRange(h *novmsg.MsgHdr[novmsg.Port], m *novmsg.Range)
 	return seen, nil
 }
 
+// Mapping returns the mapping of satellites and signals that c uses.
+func (c *Converter) Mapping() novmsg.RangeMapping {
+	return c.mapping
+}
+
 // Unmapped returns the number of RANGE records skipped so far because the
 // mapping has no RINEX satellite or signal for them.
 func (c *Converter) Unmapped() int {

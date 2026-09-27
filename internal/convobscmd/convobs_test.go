@@ -19,6 +19,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
@@ -273,6 +274,42 @@ func TestParseFlagsFormats(t *testing.T) {
 	}
 	if _, _, err := parseFlags("", []string{"--from", "rtcm", "-f", "-"}); err == nil {
 		t.Fatal("parseFlags accepted date-from-filename with stdin")
+	}
+}
+
+func TestParseFlagsVendor(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       string
+		args      []string
+		expect    novmsg.RangeMapping
+		expectErr bool
+	}{
+		{name: "default", args: []string{"--from", "novb", "input.novb"}, expect: novmsg.RangeMappingOEM7},
+		{name: "sinognss", args: []string{"--from", "nova", "--vendor", "sinognss", "input.nova"}, expect: novmsg.RangeMappingSinoGNSS},
+		{name: "raw", args: []string{"--vendor", "sinognss", "input.jsonl"}, expect: novmsg.RangeMappingSinoGNSS},
+		{name: "other vendor", args: []string{"--from", "novb", "--vendor", "bynav", "input.novb"}, expect: novmsg.RangeMappingOEM7},
+		{name: "environment", env: "sinognss", args: []string{"--from", "novb", "input.novb"}, expect: novmsg.RangeMappingSinoGNSS},
+		{name: "unknown vendor", args: []string{"--from", "novb", "--vendor", "nosuch", "input.novb"}, expectErr: true},
+		{name: "not NovAtel input", args: []string{"--from", "ubx", "--vendor", "sinognss", "input.ubx"}, expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SATPULSE_VENDORS", tc.env)
+			v, _, err := parseFlags("", tc.args)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if v.format.nov != tc.expect {
+				t.Errorf("mapping = %d, want %d", v.format.nov, tc.expect)
+			}
+		})
 	}
 }
 
@@ -682,6 +719,7 @@ func TestMaybeSignificantPacketLogLine(t *testing.T) {
 	}{
 		{name: "ubx rawx", line: `{"tag":"UBX","msg":"RXM-RAWX"}`, want: true},
 		{name: "unc obsvm", line: `{"tag":"UNCB","msg":"OBSVM"}`, want: true},
+		{name: "nov range", line: `{"tag":"NOVB","msg":"RANGE"}`, want: true},
 		{name: "rtcm", line: `{"tag":"RTCM","msg":"1005"}`, want: true},
 		{name: "unicode escape", line: `{"tag":"UBX","msg":"RX\u004d-RAWX"}`, want: true},
 		{name: "escaped crlf", line: `{"tag":"UNCA","msg":"MODE","ascii":"#MODE\\r\\n"}`, want: false},
@@ -981,6 +1019,65 @@ func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 	}
 	if len(obs) != 1 || obs[0].Sat != "G03" || obs[0].Sig != "1C" || !obs[0].PR.IsSet() || !obs[0].CP.IsSet() {
 		t.Fatalf("observations = %#v", obs)
+	}
+}
+
+// TestRunRangePacketLog converts the K901 binary and ASCII RANGE pair, a
+// NOVB and a NOVA RANGE of the same epoch.
+func TestRunRangePacketLog(t *testing.T) {
+	path := filepath.Join("..", "..", "gps", "testdata", "packets", "sinognss", "K901", "raw-obs-ascii.jsonl")
+	sino := map[byte]int{'C': 40, 'E': 42, 'G': 24, 'I': 2, 'J': 12, 'R': 7, 'S': 5}
+	// Without the SinoGNSS mapping, BDS, QZSS, NavIC and GPS L5 are lost.
+	oem7 := map[byte]int{'E': 42, 'G': 19, 'R': 7, 'S': 5}
+	tests := []struct {
+		name       string
+		from       inputFormat
+		mapping    novmsg.RangeMapping
+		expect     map[byte]int
+		expectWarn string
+	}{
+		{name: "novb", from: inputNOVB, mapping: novmsg.RangeMappingSinoGNSS, expect: sino},
+		{name: "nova", from: inputNOVA, mapping: novmsg.RangeMappingSinoGNSS, expect: sino},
+		{name: "raw selects novb", from: inputRaw, mapping: novmsg.RangeMappingSinoGNSS, expect: sino, expectWarn: `got="NOVA RANGE" selected="NOVB RANGE"`},
+		{name: "novb without vendor", from: inputNOVB, mapping: novmsg.RangeMappingOEM7, expect: oem7, expectWarn: "no OEM7 RINEX mapping"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			var got bytes.Buffer
+			var log bytes.Buffer
+			cj := convJob{
+				inputs: testInputs(f),
+				out:    &got,
+				opts: convertOptions{
+					from:      tc.from,
+					to:        outputObsJSON,
+					packetLog: true,
+					format:    formatOptions{nov: tc.mapping},
+				},
+			}
+			if err := cj.run(testLogger(&log), time.Now().UTC()); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			_, obs, err := rinex.ReadObsJSON(&got)
+			if err != nil {
+				t.Fatalf("ReadObsJSON: %v", err)
+			}
+			counts := map[byte]int{}
+			for _, o := range obs {
+				counts[o.Sat[0]]++
+			}
+			if !reflect.DeepEqual(counts, tc.expect) {
+				t.Errorf("observations per system: got %v, want %v", counts, tc.expect)
+			}
+			if !strings.Contains(log.String(), tc.expectWarn) || tc.expectWarn == "" && log.Len() != 0 {
+				t.Errorf("log = %q, want %q", log.String(), tc.expectWarn)
+			}
+		})
 	}
 }
 

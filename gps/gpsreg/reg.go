@@ -19,6 +19,7 @@ import (
 	"github.com/jclark/satpulse/gps/internal/spartn"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/internal/unc"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
 
 type Vendor int
@@ -313,6 +314,16 @@ func NovVariant(vendors []Vendor) nov.Variant {
 		novVendor = v
 	}
 	return novVariantFor(novVendor)
+}
+
+// NovRangeMapping returns the mapping of NovAtel RANGE satellites and
+// signals to RINEX for the NovAtel protocol variant of vendors (see
+// NovVariant).
+func NovRangeMapping(vendors []Vendor) novmsg.RangeMapping {
+	if NovVariant(vendors) == nov.VariantSinoGNSS {
+		return novmsg.RangeMappingSinoGNSS
+	}
+	return novmsg.RangeMappingOEM7
 }
 
 func setNovVariant(procs map[gpsprot.Tag]gpsprot.PacketProcessor, v nov.Variant) {
