@@ -1105,6 +1105,22 @@ func TestGoldenFiles(t *testing.T) {
 	// build-time frequency limit drops but SatPulse emits, and B2b, which
 	// SatPulse labels 7D (the BDS-3 data component) per RINEX 4.02 and RTKLIB
 	// Explorer's Unicore decoder mislabels 7P.
+	// The K901 NOVB cases use --nov-omit-do-without-cp, since RTKLIB
+	// Explorer's NovAtel decoder zeroes Doppler without phase lock; it still
+	// writes a record with no values carrying the half-cycle flag when the
+	// parity is unknown, which the comparison drops. It sets the half-cycle
+	// flag on other records without phase too, where SatPulse can mark an arc
+	// change; neither means anything without phase, so the comparison clears
+	// both on records without phase. Its build-time frequency
+	// limit drops Galileo E6C and E5AltBOC, which are ignored. It reads
+	// glofreq as the frequency channel + 8, where the OEM7 and SinoGNSS
+	// manuals, and the receiver's MSM7, give + 7, so its channels are one
+	// lower and channel -7 is unknown; the comparison applies the same
+	// reading to SatPulse's output. Without --vendor, SatPulse uses the
+	// OEM7 mapping, as RTKLIB Explorer does. With --vendor sinognss, the
+	// signals only the SinoGNSS mapping adds or recodes are ignored: QZSS,
+	// BDS and NavIC, whose SinoGNSS PRNs are outside the OEM7 ranges, GPS L5
+	// (5Q) and GPS L2C, which SinoGNSS tracks as M+L (2X).
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	cleanCommon := func(meta *rinex.Metadata) {
 		meta.Run = rinex.MetadataRun{}
@@ -1115,13 +1131,23 @@ func TestGoldenFiles(t *testing.T) {
 		meta.Marker.Name = ""
 		meta.Marker.Number = ""
 	}
+	t.Setenv("SATPULSE_VENDORS", "")
 	tol := goldenTolerances()
+	novbIgnore := []ignoredSignal{{sys: 'E', sig: "6C"}, {sys: 'E', sig: "8Q"}}
+	sinoIgnore := append([]ignoredSignal{
+		{sys: 'G', sig: "5Q"}, {sys: 'G', sig: "2S"}, {sys: 'G', sig: "2X"},
+		{sys: 'J', sig: "1C"}, {sys: 'J', sig: "1L"}, {sys: 'J', sig: "2X"}, {sys: 'J', sig: "5Q"},
+		{sys: 'C', sig: "2I"}, {sys: 'C', sig: "1P"}, {sys: 'C', sig: "5P"}, {sys: 'C', sig: "6I"},
+		{sys: 'C', sig: "7I"}, {sys: 'C', sig: "7D"}, {sys: 'I', sig: "5A"},
+	}, novbIgnore...)
 	tests := []struct {
 		name          string
 		args          []string
 		obs           string
 		cleanMetadata func(*rinex.Metadata)
 		ignoreSignals []ignoredSignal
+		// fixGot and fixWant adjust an observation, returning false to drop it.
+		fixGot, fixWant func(*rinex.SignalObservation) bool
 	}{
 		{
 			name:          "m8t_20251217",
@@ -1158,6 +1184,30 @@ func TestGoldenFiles(t *testing.T) {
 				{sys: 'C', sig: "7P"},
 			},
 		},
+		{
+			name:          "k901_rtcm_20260927",
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "k901-rtcm-20260927.rtcm")},
+			obs:           filepath.Join("testdata", "k901-rtcm-20260927.obs.gz"),
+			cleanMetadata: cleanRTCM,
+		},
+		{
+			name:          "k901_novb_20260927",
+			args:          []string{"--from", "novb", "--run-by", "", "--nov-omit-do-without-cp", filepath.Join("testdata", "k901-novb-20260927.novb")},
+			obs:           filepath.Join("testdata", "k901-novb-20260927.obs.gz"),
+			cleanMetadata: cleanCommon,
+			ignoreSignals: novbIgnore,
+			fixGot:        fixAll(convbinGLONASSChannel, phaselessLLICleaner()),
+			fixWant:       fixAll(hasObservationValues, phaselessLLICleaner()),
+		},
+		{
+			name:          "k901_novb_sinognss_20260927",
+			args:          []string{"--from", "novb", "--vendor", "sinognss", "--run-by", "", "--nov-omit-do-without-cp", filepath.Join("testdata", "k901-novb-20260927.novb")},
+			obs:           filepath.Join("testdata", "k901-novb-20260927.obs.gz"),
+			cleanMetadata: cleanCommon,
+			ignoreSignals: sinoIgnore,
+			fixGot:        fixAll(convbinGLONASSChannel, phaselessLLICleaner()),
+			fixWant:       fixAll(hasObservationValues, phaselessLLICleaner()),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1184,7 +1234,7 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("readGzipFile %s: %v", tt.obs, err)
 			}
-			assertNoObservationFileDiff(t, tt.name, got.Bytes(), want, tt.cleanMetadata, tt.ignoreSignals, tol)
+			assertNoObservationFileDiff(t, tt.name, got.Bytes(), want, tt.cleanMetadata, tt.ignoreSignals, tt.fixGot, tt.fixWant, tol)
 		})
 	}
 }
@@ -1258,7 +1308,7 @@ type ignoredSignal struct {
 	sig rinex.SignalID
 }
 
-func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, clean func(*rinex.Metadata), ignore []ignoredSignal, tol rinex.Tolerances) {
+func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, clean func(*rinex.Metadata), ignore []ignoredSignal, fixGot, fixWant func(*rinex.SignalObservation) bool, tol rinex.Tolerances) {
 	t.Helper()
 	gotMeta, gotObs, err := rinex.ReadObservationFile(bytes.NewReader(got))
 	if err != nil {
@@ -1268,8 +1318,8 @@ func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, cl
 	if err != nil {
 		t.Fatalf("ReadObservationFile want: %v", err)
 	}
-	gotObs = filterIgnoredSignals(gotObs, ignore)
-	wantObs = filterIgnoredSignals(wantObs, ignore)
+	gotObs = fixObservations(filterIgnoredSignals(gotObs, ignore), fixGot)
+	wantObs = fixObservations(filterIgnoredSignals(wantObs, ignore), fixWant)
 	if clean != nil {
 		clean(&gotMeta)
 		clean(&wantMeta)
@@ -1311,6 +1361,73 @@ func filterIgnoredSignals(obs []rinex.SignalObservation, ignore []ignoredSignal)
 		}
 	}
 	return out
+}
+
+func fixObservations(obs []rinex.SignalObservation, fix func(*rinex.SignalObservation) bool) []rinex.SignalObservation {
+	if fix == nil {
+		return obs
+	}
+	out := make([]rinex.SignalObservation, 0, len(obs))
+	for _, o := range obs {
+		if fix(&o) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func fixAll(fixes ...func(*rinex.SignalObservation) bool) func(*rinex.SignalObservation) bool {
+	return func(o *rinex.SignalObservation) bool {
+		for _, fix := range fixes {
+			if !fix(o) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// convbinGLONASSChannel gives a GLONASS observation the frequency channel
+// RTKLIB Explorer's NovAtel decoder gives it, reading glofreq as the channel
+// + 8: one lower, with channel -7 read as unknown.
+func convbinGLONASSChannel(o *rinex.SignalObservation) bool {
+	if o.Sat[0] != 'R' || !o.Frq.IsSet() {
+		return true
+	}
+	if o.Frq.Get() == -7 {
+		o.Frq = opt.Val[int8]{}
+	} else {
+		o.Frq = opt.Make(o.Frq.Get() - 1)
+	}
+	return true
+}
+
+// phaselessLLICleaner returns a fix that clears the loss of lock indicators
+// of observations without carrier phase: it clears the half-cycle flag and
+// gives the observation the arc of the signal's previous observation, so
+// that it does not mark an arc change.
+func phaselessLLICleaner() func(*rinex.SignalObservation) bool {
+	type key struct {
+		sat rinex.SatelliteID
+		sig rinex.SignalID
+	}
+	arcs := make(map[key]uint32)
+	return func(o *rinex.SignalObservation) bool {
+		k := key{o.Sat, o.Sig}
+		if o.CP.IsSet() {
+			arcs[k] = o.Arc
+			return true
+		}
+		o.HC = false
+		o.Arc = arcs[k]
+		return true
+	}
+}
+
+// hasObservationValues reports whether o has any observation value, dropping
+// records that carry only a loss of lock indicator.
+func hasObservationValues(o *rinex.SignalObservation) bool {
+	return o.PR.IsSet() || o.CP.IsSet() || o.Do.IsSet() || o.CN0.IsSet()
 }
 
 func signalIgnored(sat rinex.SatelliteID, sig rinex.SignalID, ignore []ignoredSignal) bool {
