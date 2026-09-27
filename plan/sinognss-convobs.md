@@ -230,14 +230,17 @@ by comparison with NMEA 4.11 GSV signal IDs:
 | BDS | 12 | B2a | 1176.45 | 9 | 5P |
 | BDS | 17 | B2I (BDS-2 only) | 1207.14 | 1 | 7I |
 | BDS | 19 | B2b (BDS-3) | 1207.14 | 11 | 7D |
+| GPS, QZSS | 17 | L2C | 1227.60 | 17 | 2X |
 
-The other types seen match OEM7: GPS 0, 9, 16, 17; GLONASS 0, 5;
-Galileo 2, 7, 12, 17, 20; BDS 0, 2; QZSS 0, 14, 16, 17; SBAS 0, 6;
+The other types seen match OEM7: GPS 0, 9, 16; GLONASS 0, 5;
+Galileo 2, 7, 12, 17, 20; BDS 0, 2; QZSS 0, 14, 16; SBAS 0, 6;
 NavIC 0. SinoGNSS reports BDS GEO satellites with the D1 types (0, 2),
 not OEM7's D2 types (4-6); both give the same RINEX code.
 
-The RINEX attribute letters for the five SinoGNSS-only types are taken
-from the OEM7 signal of the same name. They are not documented; stage 5
+Type 17 is L2C as in OEM7, but OEM7 tracks L2C(M) (2S), and SinoGNSS
+tracks L2C(M+L) (2X): see the stage 5 results. The RINEX attribute
+letters for the five SinoGNSS-only types are taken from the OEM7 signal
+of the same name. They are not documented; stage 5
 checks them against MSM7, which carries RINEX signal identities.
 
 A combination not in either table is skipped, as `rnxunc` skips unknown
@@ -373,8 +376,8 @@ Golden test cases:
 
 - RANGE without `--vendor` against its golden.
 - RANGE with `--vendor sinognss` against the same golden, ignoring the
-  satellites and signals only the SinoGNSS layer adds (QZSS, BDS, NavIC,
-  GPS 5Q).
+  satellites and signals only the SinoGNSS layer adds or recodes (QZSS,
+  BDS, NavIC, GPS 5Q, and GPS L2C, which `convbin` writes as 2S).
 - RTCM against its golden, as for the existing RTCM cases.
 
 ### MSM7
@@ -423,9 +426,16 @@ Against MSM7, on both receivers:
 - The SinoGNSS-only types GPS 2 (5Q), BDS 8 (1P), 12 (5P) and 17 (7I)
   match the MSM7 signals of those codes. BDS 19 (7D) and GPS 16 (1L)
   are not in the MSM7, so they are not checked.
-- GPS type 17, OEM7 L2C(M), which the mapping makes 2S, is the signal
-  the receiver's own MSM7 labels 2X: pseudorange and phase agree as for
-  the other signals.
+- GPS type 17, OEM7 L2C(M), which the OEM7 mapping makes 2S, is the
+  signal the receiver's own MSM7 labels 2X (signal ID 17, L2C(M+L)), as
+  it does for QZSS in 1117: pseudorange and phase agree as for the other
+  signals. A C/N0 comparison with the mosaic-G5 on the same antenna
+  confirms M+L tracking. Each receiver's C/N0 on a signal, less its C/N0
+  on L1 C/A (B1I for BDS), matches the mosaic's within 0.8 dB for GPS
+  and QZSS L5Q, Galileo E5a Q and E5b Q, and BDS B3I, B1C and B2a; for
+  L2C the K901's is 3.0 dB above the mosaic's L2C(L) on GPS and 2.9 dB
+  on QZSS, the doubling of power of tracking M and L together. So the
+  SinoGNSS layer maps type 17 to 2X for GPS and QZSS.
 - MSM7 in these captures has no QZSS, so QZSS is not checked.
 
 Against `convbin`, the OEM7 mapping (no `--vendor`) agrees on every
@@ -452,8 +462,6 @@ antenna's known position.
   (`RangeMapping` above).
 - Whether the input format names should be `novb`/`nova` or name the
   log (`range`).
-- Whether the SinoGNSS layer maps GPS (and QZSS) type 17 to 2X, as the
-  receiver labels L2C in its MSM7, rather than OEM7's 2S.
 - Whether `convobs` gets an option to drop Doppler without phase lock, as
   `--unc-omit-do-without-cp` does for OBSVM, or the golden test ignores
   those records.

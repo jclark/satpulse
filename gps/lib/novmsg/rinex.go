@@ -141,15 +141,21 @@ var oem7ObsSigMap = map[SatSystem]map[uint8]string{
 	},
 }
 
-// sinoObsSigMap has the SinoGNSS signal types that OEM7 does not. The
+// sinoObsSigMap has the SinoGNSS signal types that differ from OEM7. The
 // SinoGNSS manual lacks the signal type table, so these were identified
 // from K901 and K803 captures, by the carrier frequency given by psr/|adr|
-// and by comparison with NMEA 4.11 GSV signal IDs; the RINEX attributes are
-// those of the OEM7 signal of the same name. SinoGNSS reports BDS GEO
-// satellites with the D1 signal types.
+// and by comparison with NMEA 4.11 GSV signal IDs. SinoGNSS tracks L2C as
+// M+L, where OEM7 tracks M: its MSM7 labels L2C 2X, and its L2C C/N0 is
+// 3 dB higher relative to L1 C/A than that of a receiver tracking L alone.
+// The other RINEX attributes are those of the OEM7 signal of the same
+// name. SinoGNSS reports BDS GEO satellites with the D1 signal types.
 var sinoObsSigMap = map[SatSystem]map[uint8]string{
 	SatSystemGPS: {
-		2: "5Q", // L5
+		2:  "5Q", // L5
+		17: "2X", // L2C(M+L)
+	},
+	SatSystemQZSS: {
+		17: "2X", // L2C(M+L)
 	},
 	SatSystemBeiDou: {
 		8:  "1P", // B1C
