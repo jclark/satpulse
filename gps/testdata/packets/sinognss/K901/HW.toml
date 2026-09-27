@@ -10,6 +10,9 @@ default-baud = 115200
 # fix. Each capture replaced the saved output with the logs named in the
 # file, at 1 Hz unless noted. The factory configuration (after FRESET) outputs
 # nothing on COM1, so there is no factory.jsonl.
+# abbrev.jsonl is 60 s with abbreviated RANGE ONTIME 10 and RANGECMP ONTIME
+# 30: at 1 Hz, abbreviated RANGE and RANGECMP exceed 115200 baud and epochs
+# are lost.
 # NMEA style depends on SET NMEAV41: nmea.jsonl and the other NMEA captures
 # are NMEA 4.11 (NMEAV41 ON: GB and GQ talkers, GSA system ID, GSV signal ID,
 # RMC navigational status); nmea-400.jsonl is the factory default NMEAV41 OFF
@@ -39,7 +42,9 @@ default-baud = 115200
 # - SBASRAWFRAME and HASMESS reject the ONCHANGED trigger, and ONCE gives
 #   continuing output.
 # - IRNEPHEM, HEADING and B2BRAWNAVSUBFRAME are accepted but produce nothing;
-#   DCBINFO, IONOSCIN, MARKPOS, MARKTIME, METEMESS and TECINFO are rejected.
+#   DCBINFO, IONOSCIN, METEMESS and TECINFO are rejected. MARKPOS and MARKTIME
+#   are accepted only with ONNEW.
+# - IMUDATA (2264) is output with an empty payload.
 # - GPSEPHEM, GALEPHEM, IRNEPHEM and BD2EPHEM share message ID 71, so the
 #   raw-nav captures have at most one of them each.
 # - RTCM MSM7 (1077, 1087, 1097, 1127) is output although the manual lists
@@ -51,7 +56,8 @@ default-baud = 115200
 #   messages, the first with the multiple message bit set.
 # - RTCM 1001-1003, 1009, 1011, 1013 and 1041 are rejected; 1010 is accepted
 #   but produces nothing; 1005 is output only in base mode (rtcm-base.jsonl,
-#   with FIX position at the antenna position).
+#   with FIX position at the antenna position). Requesting 1005 with ONTIME
+#   puts the receiver in base mode at its current position.
 # - RTCM 1005 and 1006 set the GPS and GLONASS indicators but not Galileo.
 # - POSAVE ON 0.01 completes after about 35 s, when BESTPOS changes from
 #   SINGLE to FIXEDPOS (survey.jsonl).
