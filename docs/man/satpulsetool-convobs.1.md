@@ -9,12 +9,12 @@ satpulsetool-convobs - convert GNSS observation data
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-r**\|**\-\-from** **raw**\|**ubx**\|**rtcm**\|**uncb**\|**unca**\|**novb**\|**nova**\|**rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log**] [**\-\-to** **rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-date** *YYYYMMDD*\|**\-\-recent**\|**\-f**\|**\-\-date\-from\-filename**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-interval** *seconds*] [**\-p**\|**\-\-ppp\-ar**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-interval** *seconds*] [**\-p**\|**\-\-ppp\-ar**] [**\-\-omit\-do\-without\-cp**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rinex\-version** *version*] [**\-\-program** *name*] [**\-\-run\-by** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-antenna** *type*] [**\-\-approx\-pos** *X,Y,Z*] [**\-\-comment** *text*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**] [**\-\-rtcm\-omit\-zero\-do**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-slip\-threshold** *n*] [**\-\-ubx\-bds\-geo\-half\-cycle**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-unc\-omit\-do\-without\-cp**] [**\-\-vendor** *name*] [**\-\-nov\-omit\-do\-without\-cp**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*]\
 &nbsp;&nbsp;&nbsp;&nbsp;*file*...
 
 # DESCRIPTION
@@ -88,6 +88,11 @@ The default is 0, which disables decimation.
 **\-p**, **\-\-ppp\-ar**
 : Produce output optimized for PPP with ambiguity resolution (PPP-AR), such as CSRS-PPP.
 Currently this removes observations that have no carrier phase.
+
+**\-\-omit\-do\-without\-cp**
+: Omit Doppler observations whose signal has no carrier phase.
+By default, **convobs** preserves these Doppler values.
+RTKLIB Explorer omits them for Unicore OBSVM and NovAtel-format RANGE input.
 
 ## RTCM week inference
 
@@ -164,11 +169,6 @@ This option is valid only with **raw** or **ubx** input.
 By default, **convobs** preserves the carrier phase value reported by the receiver.
 This option is valid only with **raw** or **ubx** input.
 
-**\-\-unc\-omit\-do\-without\-cp**
-: Omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase.
-By default, **convobs** preserves these Doppler values.
-This option is valid only with **raw**, **uncb**, or **unca** input.
-
 **\-\-vendor** *name*
 : Select the vendor whose variant of the NovAtel protocol the RANGE logs use.
 The value is case-insensitive.
@@ -178,11 +178,6 @@ If this option is omitted, the **SATPULSE_VENDORS** environment variable applies
 A RANGE observation whose satellite or signal the variant does not map to RINEX is skipped with a warning;
 without **\-\-vendor** **SinoGNSS**, a SinoGNSS receiver loses its QZSS, BDS, NavIC and GPS L5 observations.
 RANGE conversion has been tested with SinoGNSS receivers only; OEM7 RANGE should convert, but has not been tested.
-This option is valid only with **raw**, **novb**, or **nova** input.
-
-**\-\-nov\-omit\-do\-without\-cp**
-: Omit NovAtel-format RANGE Doppler observations whose signal has no valid carrier phase.
-By default, **convobs** preserves these Doppler values.
 This option is valid only with **raw**, **novb**, or **nova** input.
 
 # HEADER FILE FORMAT

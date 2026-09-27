@@ -357,9 +357,11 @@ differences above: this tests the OEM7 mapping, which is otherwise
 untested. With `--vendor sinognss` the two should agree on the GPS,
 GLONASS, Galileo and SBAS records, which the SinoGNSS layer leaves to
 the OEM7 base. The compatibility
-differences that SatPulse should not copy by default get options, as
-`--unc-omit-do-without-cp` does for OBSVM, or ignored signals in the
-golden test, with the reason in the test.
+differences that SatPulse should not copy by default get options, or
+ignored signals in the golden test, with the reason in the test. Doppler
+without phase lock, which `convbin` drops for OBSVM as for RANGE, is
+handled by one option for every input, `--omit-do-without-cp`, which
+replaces the OBSVM-only `--unc-omit-do-without-cp`.
 
 Also to settle when generating the goldens: which `-ro` options
 `convbin` needs (for signals sharing a frequency slot, such as GPS L1
