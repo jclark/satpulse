@@ -450,12 +450,16 @@ Against MSM7, on both receivers:
   pilot (MSM7 signal ID 31, 1P), +0.5 and +0.7 dB against B1C pilot;
   GPS and QZSS L1C +1.0 and +1.1 dB against L1C-P. The controls (GPS L5Q,
   Galileo E5a and E5b, BDS B2I, B3I and B2a) are within -0.8 to +0.3 dB.
-  So B2b stays 7D and B1C 1P. L1C is not settled: it is 0.4 to 0.6 dB
-  above B1C, which is pilot, and 1.5 dB above the other controls. None of
-  the lab's receivers reports L1C data separately (the mosaic and UM980
-  report the pilot, the X20P has no L1C in any signal plan, and the
-  K901's MSM7 carries no L1C), so deciding between 1L and 1X needs the
-  L1C data/pilot power split, which is not in the local documentation.
+  So B2b stays 7D and B1C 1P. L1C stays 1L (pilot): IS-GPS-800H gives
+  L1CP 75% of the L1C power (-158.25 dBW of -157 dBW) and the BDS B1C ICD
+  gives B1C the same 1:3 data:pilot split, and both pilots are MBOC with
+  4/33 of their power in BOC(6,1), on the same carrier. So tracking data
+  and pilot together would put L1C 1.25 dB above B1C, which the receiver
+  tracks by its pilot; L1C is 0.4 to 0.5 dB above it. B1C itself is 0.5
+  to 0.7 dB above the references, about the 0.56 dB (33/29) a receiver
+  gains by using the whole MBOC pilot rather than its BOC(1,1) part. None
+  of the lab's receivers reports L1C data separately, so this comparison
+  with B1C is the evidence.
 - MSM7 in these captures has no QZSS, so QZSS is not checked.
 
 Over the two-hour K901 capture, `--from novb --vendor sinognss` against
@@ -491,7 +495,6 @@ antenna's known position.
   (`RangeMapping` above).
 - Whether the input format names should be `novb`/`nova` or name the
   log (`range`).
-- Whether GPS and QZSS type 16 is 1L (pilot) or 1X (data and pilot).
 - Whether `convobs` gets an option to drop Doppler without phase lock, as
   `--unc-omit-do-without-cp` does for OBSVM, or the golden test ignores
   those records.
