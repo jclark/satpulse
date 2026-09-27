@@ -112,7 +112,7 @@ func (c *Converter) convertObs(t rinex.Time, rec novmsg.RangeObs) (bool, error) 
 	if cpOK {
 		// ADR is accumulated Doppler range, opposite in sign to RINEX
 		// carrier phase.
-		obs.CP = opt.Make(-rec.ADR)
+		obs.CP = opt.Make(-rec.ADR + c.opts.Mapping.RINEXPhaseShift(sysID, st.SignalType()))
 		obs.HC = !st.ParityKnown()
 	}
 	if finite32(rec.Dopp) && (cpOK || !c.opts.OmitDoWithoutCP) {

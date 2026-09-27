@@ -1120,7 +1120,8 @@ func TestGoldenFiles(t *testing.T) {
 	// OEM7 mapping, as RTKLIB Explorer does. With --vendor sinognss, the
 	// signals only the SinoGNSS mapping adds or recodes are ignored: QZSS,
 	// BDS and NavIC, whose SinoGNSS PRNs are outside the OEM7 ranges, GPS L5
-	// (5Q) and GPS L2C, which SinoGNSS tracks as M+L (2X).
+	// (5Q), GPS L2C, which SinoGNSS tracks as M+L (2X), and GPS L1C, whose
+	// SinoGNSS phase is shifted to align it with L1C/A.
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	cleanCommon := func(meta *rinex.Metadata) {
 		meta.Run = rinex.MetadataRun{}
@@ -1135,7 +1136,7 @@ func TestGoldenFiles(t *testing.T) {
 	tol := goldenTolerances()
 	novbIgnore := []ignoredSignal{{sys: 'E', sig: "6C"}, {sys: 'E', sig: "8Q"}}
 	sinoIgnore := append([]ignoredSignal{
-		{sys: 'G', sig: "5Q"}, {sys: 'G', sig: "2S"}, {sys: 'G', sig: "2X"},
+		{sys: 'G', sig: "5Q"}, {sys: 'G', sig: "2S"}, {sys: 'G', sig: "2X"}, {sys: 'G', sig: "1L"},
 		{sys: 'J', sig: "1C"}, {sys: 'J', sig: "1L"}, {sys: 'J', sig: "2X"}, {sys: 'J', sig: "5Q"},
 		{sys: 'C', sig: "2I"}, {sys: 'C', sig: "1P"}, {sys: 'C', sig: "5P"}, {sys: 'C', sig: "6I"},
 		{sys: 'C', sig: "7I"}, {sys: 'C', sig: "7D"}, {sys: 'I', sig: "5A"},

@@ -101,11 +101,13 @@ func TestConvertRange(t *testing.T) {
 				{PRN: 141, PSR: 1, Status: status(novmsg.SatSystemBeiDou, 19, true, false, true)},
 				{PRN: 132, PSR: 1, Status: status(novmsg.SatSystemQZSS, 0, true, false, true)},
 				{PRN: 7, PSR: 1, Status: status(novmsg.SatSystemGPS, 2, true, false, true)},
+				{PRN: 7, PSR: 1, ADR: -2, Status: status(novmsg.SatSystemGPS, 16, true, true, true)},
 			},
 			expect: []rinex.SignalObservation{
 				{T: t0, Sat: "C01", Sig: "7D", SignalValues: rinex.SignalValues{PR: opt.Make(1.0), Do: opt.Make(0.0)}},
 				{T: t0, Sat: "J02", Sig: "1C", SignalValues: rinex.SignalValues{PR: opt.Make(1.0), Do: opt.Make(0.0)}},
 				{T: t0, Sat: "G07", Sig: "5Q", SignalValues: rinex.SignalValues{PR: opt.Make(1.0), Do: opt.Make(0.0)}},
+				{T: t0, Sat: "G07", Sig: "1L", SignalValues: rinex.SignalValues{PR: opt.Make(1.0), CP: opt.Make(2.25), Do: opt.Make(0.0)}},
 			},
 		},
 		{

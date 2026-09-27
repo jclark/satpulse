@@ -416,7 +416,13 @@ Against MSM7, on both receivers:
 - Carrier phase agrees up to a whole number of cycles per arc (fraction
   at most 0.001 cycle) on every signal both logs carry, including GPS
   L2W and L5, BDS B1C and B2a, and Galileo E5a and E5b. So RANGE phase is
-  aligned as MSM phase is, and the converter needs no phase shifts.
+  aligned as MSM phase is on these signals. MSM7 carries no L1C, and on
+  the same satellite the K901's L1C phase is a quarter cycle behind its
+  L1C/A phase (median 0.248 cycle over two hours, GPS and QZSS), where
+  RINEX Table A45 requires L1L to be aligned to L1C; its L2C is aligned
+  with L2 P(Y). So the SinoGNSS mapping adds 0.25 cycle to the phase of
+  type 16; the OEM7 mapping applies no shifts, since there is no OEM7
+  receiver to measure.
 - Doppler differs by the same fraction of the carrier frequency on
   every signal: 16.5 to 20.5 ppb on the K901 and 556 to 561 ppb on the
   K803. The RANGE Doppler is the one consistent with the
@@ -451,6 +457,15 @@ Against MSM7, on both receivers:
   K901's MSM7 carries no L1C), so deciding between 1L and 1X needs the
   L1C data/pilot power split, which is not in the local documentation.
 - MSM7 in these captures has no QZSS, so QZSS is not checked.
+
+Over the two-hour K901 capture, `--from novb --vendor sinognss` against
+`--from rtcm` confirms these: pseudorange within 5 mm and phase within
+0.001 cycle of a whole number on every shared signal, and a Doppler
+offset common to all signals at each epoch (median spread 0.001 ppb),
+the clock drift, which varies from -21 to +96 ppb. MSM7 has phase on
+about 80,000 records where RANGE has the phase lock flag clear; RANGE's
+ADR on those differs from the MSM7 phase by arbitrary fractions of a
+cycle, so the converter is right to drop it.
 
 Against `convbin`, the OEM7 mapping (no `--vendor`) agrees on every
 record, except:

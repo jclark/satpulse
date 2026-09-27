@@ -111,6 +111,30 @@ func TestRINEXObsSig(t *testing.T) {
 	}
 }
 
+func TestRINEXPhaseShift(t *testing.T) {
+	tests := []struct {
+		name       string
+		sys        SatSystem
+		sigType    uint8
+		expectOEM7 float64
+		expectSino float64
+	}{
+		{"GPS L1C/A", SatSystemGPS, 0, 0, 0},
+		{"GPS L1C", SatSystemGPS, 16, 0, 0.25},
+		{"GPS L2C", SatSystemGPS, 17, 0, 0},
+		{"QZSS L1C", SatSystemQZSS, 16, 0, 0.25},
+		{"BDS B1C", SatSystemBeiDou, 8, 0, 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := [2]float64{RangeMappingOEM7.RINEXPhaseShift(tc.sys, tc.sigType), RangeMappingSinoGNSS.RINEXPhaseShift(tc.sys, tc.sigType)}
+			if expect := [2]float64{tc.expectOEM7, tc.expectSino}; got != expect {
+				t.Errorf("got  %v\nwant %v", got, expect)
+			}
+		})
+	}
+}
+
 // TestRINEXSinoCorpus checks that the SinoGNSS mapping maps every record
 // of every binary RANGE in the SinoGNSS captures, so that a gap in the
 // mapping for a signal the receivers output fails.

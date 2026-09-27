@@ -164,3 +164,22 @@ var sinoObsSigMap = map[SatSystem]map[uint8]string{
 		19: "7D", // B2b (BDS-3)
 	},
 }
+
+// RINEXPhaseShift returns the phase shift, in cycles, to add to the carrier
+// phase (the negated ADR) of a RANGE signal to align it with the reference
+// signal of its frequency band, as RINEX requires (RINEX 4.02 Table A45).
+func (m RangeMapping) RINEXPhaseShift(sys SatSystem, sigType uint8) float64 {
+	if m == RangeMappingSinoGNSS {
+		return sinoPhaseShift[sys][sigType]
+	}
+	return 0
+}
+
+// sinoPhaseShift has the SinoGNSS phase shifts. On the same satellite, a
+// K901's L1C phase is a quarter cycle behind its L1C/A phase, for GPS and
+// QZSS, where RINEX requires L1L to be aligned to L1C; its other signals
+// agree with its MSM7, whose phase RTCM requires to be aligned.
+var sinoPhaseShift = map[SatSystem]map[uint8]float64{
+	SatSystemGPS:  {16: 0.25},
+	SatSystemQZSS: {16: 0.25},
+}
