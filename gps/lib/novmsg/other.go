@@ -16,7 +16,7 @@ const (
 	// PsrVelID is defined in nav.go (OEM7, Bynav, SinoGNSS)
 	QzssEphemerisID MsgID = 1336 // OEM7, Bynav
 	RangeCmpID      MsgID = 140  // OEM7, Bynav, SinoGNSS, Unicore, RTKLIB
-	RangeID         MsgID = 43   // OEM7, SinoGNSS, RTKLIB
+	// RangeID is defined in obs.go (OEM7, SinoGNSS, RTKLIB)
 	RawAlmID        MsgID = 74   // OEM7, SinoGNSS
 	RawEphemID      MsgID = 41   // OEM7, SinoGNSS, RTKLIB
 	RefStationID    MsgID = 175  // OEM7, SinoGNSS
@@ -39,7 +39,7 @@ func init() {
 	// PsrVelID registered in nav.go init()
 	idNameMap[QzssEphemerisID] = "QZSSEPHEMERIS"
 	idNameMap[RangeCmpID] = "RANGECMP"
-	idNameMap[RangeID] = "RANGE"
+	// RangeID registered in obs.go init()
 	idNameMap[RawAlmID] = "RAWALM"
 	idNameMap[RawEphemID] = "RAWEPHEM"
 	idNameMap[RefStationID] = "REFSTATION"
