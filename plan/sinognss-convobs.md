@@ -493,8 +493,6 @@ antenna's known position.
 
 - The name and form of the `novmsg` type selecting the mapping
   (`RangeMapping` above).
-- Whether the input format names should be `novb`/`nova` or name the
-  log (`range`).
 - Whether `convobs` gets an option to drop Doppler without phase lock, as
   `--unc-omit-do-without-cp` does for OBSVM, or the golden test ignores
   those records.
