@@ -17,11 +17,11 @@ const (
 	QzssEphemerisID MsgID = 1336 // OEM7, Bynav
 	RangeCmpID      MsgID = 140  // OEM7, Bynav, SinoGNSS, Unicore, RTKLIB
 	// RangeID is defined in obs.go (OEM7, SinoGNSS, RTKLIB)
-	RawAlmID        MsgID = 74   // OEM7, SinoGNSS
-	RawEphemID      MsgID = 41   // OEM7, SinoGNSS, RTKLIB
-	RefStationID    MsgID = 175  // OEM7, SinoGNSS
-	TrackStatID     MsgID = 83   // OEM7, Bynav
-	VersionID       MsgID = 37   // OEM7, SinoGNSS
+	RawAlmID     MsgID = 74  // OEM7, SinoGNSS
+	RawEphemID   MsgID = 41  // OEM7, SinoGNSS, RTKLIB
+	RefStationID MsgID = 175 // OEM7, SinoGNSS
+	TrackStatID  MsgID = 83  // OEM7, Bynav
+	VersionID    MsgID = 37  // OEM7, SinoGNSS
 )
 
 func init() {
