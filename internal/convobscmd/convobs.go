@@ -63,7 +63,7 @@ const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
            [--antenna type] [--approx-pos x,y,z] [--comment text]
            [--rtcm-strict-prr] [--rtcm-omit-zero-do]
            [--ubx-slip-threshold n] [--ubx-bds-geo-half-cycle]
-           [--unc-omit-do-without-cp] [--vendor name]
+           [--unc-omit-do-without-cp] [--vendor name] [--nov-omit-do-without-cp]
            input...`
 
 type inputFormat string
@@ -137,7 +137,7 @@ type formatOptions struct {
 	rtcm rnxrtcm.Options
 	ubx  rnxubx.Options
 	unc  rnxunc.Options
-	nov  novmsg.RangeMapping
+	nov  rnxnov.Options
 }
 
 type inputReader struct {
@@ -316,6 +316,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	flags.BoolVar(&v.format.unc.OmitDoWithoutCP, "unc-omit-do-without-cp", false, "omit Unicore OBSVM Doppler observations whose signal has no valid carrier phase")
 	vendorStr := ""
 	flags.StringVar(&vendorStr, "vendor", "", "GPS vendor `name` whose variant of the NovAtel protocol to use for NovAtel RANGE logs")
+	flags.BoolVar(&v.format.nov.OmitDoWithoutCP, "nov-omit-do-without-cp", false, "omit NovAtel RANGE Doppler observations whose signal has no valid carrier phase")
 	v.metadataFlags = flags
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
@@ -360,6 +361,9 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if flags.Changed("vendor") && !v.from.mayUseNovAtel() {
 		return nil, usageFunc, errors.New("--vendor is valid only with raw, NOVB, or NOVA input")
 	}
+	if v.format.nov.OmitDoWithoutCP && !v.from.mayUseNovAtel() {
+		return nil, usageFunc, errors.New("--nov-omit-do-without-cp is valid only with raw, NOVB, or NOVA input")
+	}
 	vendor, err := gpsreg.ParseVendor(vendorStr)
 	if err != nil {
 		return nil, usageFunc, err
@@ -368,7 +372,7 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	if err != nil {
 		return nil, usageFunc, err
 	}
-	v.format.nov = gpsreg.NovRangeMapping(vendors)
+	v.format.nov.Mapping = gpsreg.NovRangeMapping(vendors)
 	if math.IsNaN(interval) || math.IsInf(interval, 0) || interval < 0 {
 		return nil, usageFunc, errors.New("--interval must be a finite non-negative number of seconds")
 	}

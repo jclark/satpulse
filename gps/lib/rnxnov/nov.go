@@ -13,12 +13,22 @@ import (
 
 const lockTimeTolerance = 0.05
 
+// Options controls RANGE to RINEX conversion.
+type Options struct {
+	// Mapping is the mapping of RANGE satellites and signals to RINEX.
+	Mapping novmsg.RangeMapping
+	// OmitDoWithoutCP omits Doppler observations whose signal has no valid
+	// carrier phase. This matches rtklib-ex novatel.c, which zeroes both
+	// phase and Doppler when the phase lock flag is clear.
+	OmitDoWithoutCP bool
+}
+
 // Converter converts RANGE logs to RINEX observations.
 // It is not safe for concurrent use, and expects one receiver's logs in time
 // order.
 type Converter struct {
 	sink     rinex.Sink
-	mapping  novmsg.RangeMapping
+	opts     Options
 	state    map[signalKey]signalState
 	unmapped int
 }
@@ -35,17 +45,16 @@ type signalState struct {
 	pending bool
 }
 
-// New creates a Converter that writes records to sink, using the given
-// mapping of satellites and signals.
+// New creates a Converter that writes records to sink.
 // It panics if sink is nil.
-func New(sink rinex.Sink, mapping novmsg.RangeMapping) *Converter {
+func New(sink rinex.Sink, opts Options) *Converter {
 	if sink == nil {
 		panic("nil RINEX sink")
 	}
 	return &Converter{
-		sink:    sink,
-		mapping: mapping,
-		state:   make(map[signalKey]signalState),
+		sink:  sink,
+		opts:  opts,
+		state: make(map[signalKey]signalState),
 	}
 }
 
@@ -68,7 +77,7 @@ func (c *Converter) ConvertRange(h *novmsg.MsgHdr[novmsg.Port], m *novmsg.Range)
 
 // Mapping returns the mapping of satellites and signals that c uses.
 func (c *Converter) Mapping() novmsg.RangeMapping {
-	return c.mapping
+	return c.opts.Mapping
 }
 
 // Unmapped returns the number of RANGE records skipped so far because the
@@ -81,8 +90,8 @@ func (c *Converter) convertObs(t rinex.Time, rec novmsg.RangeObs) (bool, error) 
 	st := rec.Status
 	sysID := st.SatSystem()
 	sys := novmsg.RINEXSys(sysID)
-	satNum := c.mapping.RINEXSatNum(sysID, rec.PRN)
-	sig := c.mapping.RINEXObsSig(sysID, st.SignalType())
+	satNum := c.opts.Mapping.RINEXSatNum(sysID, rec.PRN)
+	sig := c.opts.Mapping.RINEXObsSig(sysID, st.SignalType())
 	if sys == "" || satNum == 0 || sig == "" {
 		c.unmapped++
 		return false, nil
@@ -106,7 +115,7 @@ func (c *Converter) convertObs(t rinex.Time, rec novmsg.RangeObs) (bool, error) 
 		obs.CP = opt.Make(-rec.ADR)
 		obs.HC = !st.ParityKnown()
 	}
-	if finite32(rec.Dopp) {
+	if finite32(rec.Dopp) && (cpOK || !c.opts.OmitDoWithoutCP) {
 		obs.Do = opt.Make(float64(rec.Dopp))
 	}
 	if rec.CN0 != 0 {

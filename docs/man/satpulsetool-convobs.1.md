@@ -14,7 +14,7 @@ satpulsetool-convobs - convert GNSS observation data
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-antenna** *type*] [**\-\-approx\-pos** *X,Y,Z*] [**\-\-comment** *text*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-rtcm\-strict\-prr**] [**\-\-rtcm\-omit\-zero\-do**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-ubx\-slip\-threshold** *n*] [**\-\-ubx\-bds\-geo\-half\-cycle**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-unc\-omit\-do\-without\-cp**] [**\-\-vendor** *name*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-unc\-omit\-do\-without\-cp**] [**\-\-vendor** *name*] [**\-\-nov\-omit\-do\-without\-cp**]\
 &nbsp;&nbsp;&nbsp;&nbsp;*file*...
 
 # DESCRIPTION
@@ -178,6 +178,11 @@ If this option is omitted, the **SATPULSE_VENDORS** environment variable applies
 A RANGE observation whose satellite or signal the variant does not map to RINEX is skipped with a warning;
 without **\-\-vendor** **SinoGNSS**, a SinoGNSS receiver loses its QZSS, BDS, NavIC and GPS L5 observations.
 RANGE conversion has been tested with SinoGNSS receivers only; OEM7 RANGE should convert, but has not been tested.
+This option is valid only with **raw**, **novb**, or **nova** input.
+
+**\-\-nov\-omit\-do\-without\-cp**
+: Omit NovAtel-format RANGE Doppler observations whose signal has no valid carrier phase.
+By default, **convobs** preserves these Doppler values.
 This option is valid only with **raw**, **novb**, or **nova** input.
 
 # HEADER FILE FORMAT

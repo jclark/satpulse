@@ -22,6 +22,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
+	"github.com/jclark/satpulse/gps/lib/rnxnov"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
@@ -292,6 +293,7 @@ func TestParseFlagsVendor(t *testing.T) {
 		{name: "environment", env: "sinognss", args: []string{"--from", "novb", "input.novb"}, expect: novmsg.RangeMappingSinoGNSS},
 		{name: "unknown vendor", args: []string{"--from", "novb", "--vendor", "nosuch", "input.novb"}, expectErr: true},
 		{name: "not NovAtel input", args: []string{"--from", "ubx", "--vendor", "sinognss", "input.ubx"}, expectErr: true},
+		{name: "omit Doppler not NovAtel input", args: []string{"--from", "uncb", "--nov-omit-do-without-cp", "input.uncb"}, expectErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -306,8 +308,8 @@ func TestParseFlagsVendor(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if v.format.nov != tc.expect {
-				t.Errorf("mapping = %d, want %d", v.format.nov, tc.expect)
+			if v.format.nov.Mapping != tc.expect {
+				t.Errorf("mapping = %d, want %d", v.format.nov.Mapping, tc.expect)
 			}
 		})
 	}
@@ -1057,7 +1059,7 @@ func TestRunRangePacketLog(t *testing.T) {
 					from:      tc.from,
 					to:        outputObsJSON,
 					packetLog: true,
-					format:    formatOptions{nov: tc.mapping},
+					format:    formatOptions{nov: rnxnov.Options{Mapping: tc.mapping}},
 				},
 			}
 			if err := cj.run(testLogger(&log), time.Now().UTC()); err != nil {

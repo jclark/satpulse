@@ -36,6 +36,7 @@ func TestConvertRange(t *testing.T) {
 	tests := []struct {
 		name           string
 		mapping        novmsg.RangeMapping
+		omitDo         bool
 		obs            []novmsg.RangeObs
 		expect         []rinex.SignalObservation
 		expectUnmapped int
@@ -118,6 +119,20 @@ func TestConvertRange(t *testing.T) {
 			expectUnmapped: 3,
 		},
 		{
+			name:    "omit Doppler without phase",
+			mapping: novmsg.RangeMappingOEM7,
+			omitDo:  true,
+			obs: []novmsg.RangeObs{
+				{PRN: 7, PSR: 1, ADR: -2, Dopp: 3, LockTime: 100, Status: status(novmsg.SatSystemGPS, 0, true, false, true)},
+				{PRN: 8, PSR: 1, ADR: -2, Dopp: 3, LockTime: 100, Status: status(novmsg.SatSystemGPS, 0, true, true, true)},
+				{PRN: 9, Dopp: 3, Status: status(novmsg.SatSystemGPS, 0, false, false, false)},
+			},
+			expect: []rinex.SignalObservation{
+				{T: t0, Sat: "G07", Sig: "1C", SignalValues: rinex.SignalValues{PR: opt.Make(1.0)}},
+				{T: t0, Sat: "G08", Sig: "1C", SignalValues: rinex.SignalValues{PR: opt.Make(1.0), CP: opt.Make(2.0), Do: opt.Make(3.0)}},
+			},
+		},
+		{
 			name:    "no values",
 			mapping: novmsg.RangeMappingOEM7,
 			obs: []novmsg.RangeObs{
@@ -128,7 +143,7 @@ func TestConvertRange(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			s := &testSink{}
-			c := New(s, tc.mapping)
+			c := New(s, Options{Mapping: tc.mapping, OmitDoWithoutCP: tc.omitDo})
 			ok, err := c.ConvertRange(hdr(1000), rangeLog(tc.obs...))
 			if err != nil {
 				t.Fatalf("ConvertRange: %v", err)
@@ -171,7 +186,7 @@ func TestConvertRangeArcs(t *testing.T) {
 		{15000, 2.94, noPhase, 7},
 	}
 	s := &testSink{}
-	c := New(s, novmsg.RangeMappingOEM7)
+	c := New(s, Options{Mapping: novmsg.RangeMappingOEM7})
 	var expect []uint32
 	for _, e := range epochs {
 		if _, err := c.ConvertRange(hdr(e.ms), rangeLog(novmsg.RangeObs{PRN: 7, PSR: 1, ADR: -2, LockTime: e.lock, Status: e.st})); err != nil {
@@ -193,7 +208,7 @@ func TestConvertRangeArcs(t *testing.T) {
 func TestConvertRangeK901(t *testing.T) {
 	h, m := readRange(t, "../../testdata/packets/sinognss/K901/raw-obs-ascii.jsonl")
 	s := &testSink{}
-	c := New(s, novmsg.RangeMappingSinoGNSS)
+	c := New(s, Options{Mapping: novmsg.RangeMappingSinoGNSS})
 	if _, err := c.ConvertRange(h, m); err != nil {
 		t.Fatalf("ConvertRange: %v", err)
 	}
