@@ -399,6 +399,47 @@ for the SinoGNSS layer, which RTKLIB does not cover. Expected:
   header; record the result in the plan. RTKLIB Explorer has a phase
   shift option in its RINEX writer, which may show what it expects.
 
+### Results from the 30 s captures
+
+Before the long capture, the K901 and K803 `raw-cross.jsonl` were
+converted with `--from novb --vendor sinognss` and `--from rtcm` and
+compared with `diffobs`, and their NOVB RANGE (`pack -t NOVB -m RANGE`)
+was converted by `convobs --from novb` and by `convbin -r nov -v 3.04 -od
+-os`.
+
+Against MSM7, on both receivers:
+
+- Pseudorange agrees within 5 mm, and C/N0 within MSM7's resolution.
+- Carrier phase agrees up to a whole number of cycles per arc (fraction
+  at most 0.001 cycle) on every signal both logs carry, including GPS
+  L2W and L5, BDS B1C and B2a, and Galileo E5a and E5b. So RANGE phase is
+  aligned as MSM phase is, and the converter needs no phase shifts.
+- Doppler differs by the same fraction of the carrier frequency on
+  every signal: 16.5 to 20.5 ppb on the K901 and 556 to 561 ppb on the
+  K803. The RANGE Doppler is the one consistent with the
+  carrier phase rate (within 0.2 ppb); the SinoGNSS MSM7 Doppler has
+  the receiver clock drift removed. The long capture comparison has to
+  allow for this.
+- The SinoGNSS-only types GPS 2 (5Q), BDS 8 (1P), 12 (5P) and 17 (7I)
+  match the MSM7 signals of those codes. BDS 19 (7D) and GPS 16 (1L)
+  are not in the MSM7, so they are not checked.
+- GPS type 17, OEM7 L2C(M), which the mapping makes 2S, is the signal
+  the receiver's own MSM7 labels 2X: pseudorange and phase agree as for
+  the other signals.
+- MSM7 in these captures has no QZSS, so QZSS is not checked.
+
+Against `convbin`, the OEM7 mapping (no `--vendor`) agrees on every
+record, except:
+
+- `convbin` drops Galileo E6C and E5AltBOC (its frequency limit).
+- `convbin` reads glofreq as the frequency channel + 8 (`decode_rangeb`
+  comments it "GLONASS FCN+8"), where the OEM7 and SinoGNSS manuals
+  say + 7, so its GLONASS channels are one lower. `convobs` gives the
+  channels MSM7 gives, so the golden test has to ignore the GLONASS
+  channel.
+- For a record without phase lock, `convbin` drops the Doppler and sets
+  the half-cycle flag (2 records in the K803 capture).
+
 ### PPP
 
 Run the RINEX from the long K901 capture through PPP (CSRS-PPP) as an
@@ -411,4 +452,8 @@ antenna's known position.
   (`RangeMapping` above).
 - Whether the input format names should be `novb`/`nova` or name the
   log (`range`).
-- Carrier-phase alignment, if stage 5 shows RANGE is not aligned.
+- Whether the SinoGNSS layer maps GPS (and QZSS) type 17 to 2X, as the
+  receiver labels L2C in its MSM7, rather than OEM7's 2S.
+- Whether `convobs` gets an option to drop Doppler without phase lock, as
+  `--unc-omit-do-without-cp` does for OBSVM, or the golden test ignores
+  those records.
