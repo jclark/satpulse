@@ -248,11 +248,13 @@ func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys st
 	return obs, true
 }
 
-// arcHC tracks per-signal loss-of-lock state across epochs. A lock-time reset
-// (zero, or a decrease since the last valid value), or any change in the
-// MeasExtra CumLossCont counter (which the receiver increments at each initial
-// lock after (re)acquisition or detected cycle slip), marks a pending arc
+// arcHC tracks per-signal loss-of-lock state across epochs. A lock-time
+// decrease since the last valid value, or any change in the MeasExtra
+// CumLossCont counter (which the receiver increments at each initial lock
+// after (re)acquisition or detected cycle slip), marks a pending arc
 // increment, applied at the next epoch that actually reports a carrier phase.
+// A zero lock-time alone does not: the lock-time is in whole seconds, so at
+// output rates above 1 Hz it stays zero for several epochs after a fresh lock.
 // A Do-Not-Use lock-time (lockOK false) or an absent MeasExtra entry (cumOK
 // false) leaves the corresponding state untouched. CumLossCont catches slips
 // the lock-time comparison cannot see, such as a slip followed by an outage
@@ -272,7 +274,7 @@ func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, lock, ceil 
 	st := c.state[k]
 	if lockOK && st.seen {
 		clip := min(ceil, st.ceil)
-		if lock == 0 || min(lock, clip) < min(st.lock, clip) {
+		if min(lock, clip) < min(st.lock, clip) {
 			st.pending = true
 		}
 	}

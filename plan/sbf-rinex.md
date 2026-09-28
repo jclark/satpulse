@@ -336,15 +336,13 @@ indicator: `Arc` increments on every detected loss of continuous lock,
 per-`(satellite, signal)` state across calls the same way `rnxubx`
 does with its `signalKey`/`signalState` map, driven by:
 
-- **LockTime reset**: a `LockTime` of 0 signals a fresh lock (the SBF
+- **LockTime reset**: `LockTime` returns to 0 at a fresh lock (the SBF
   guide states `LockTime` "resets to 0 at the initial lock after a
-  signal (re)acquisition or any loss-of-lock"), so an incoming
-  `LockTime == 0` (when the previous state had already seen this
-  signal) marks a pending arc increment.
-  Also mark pending if the new `LockTime` is smaller than the last
-  observed value for this key (a decrease implies the counter reset
-  and re-grew since the last epoch, which can happen if intervening
-  epochs were missed or the counter briefly wrapped).
+  signal (re)acquisition or any loss-of-lock"), so mark a pending arc
+  increment if the new `LockTime` is smaller than the last observed
+  value for this key. A `LockTime` of 0 alone does not mark one: the
+  field is in whole seconds, so at output rates above 1 Hz it stays 0
+  for several epochs after a fresh lock.
 - **CumLossCont**: when a `MeasExtra` entry correlates with this
   sub-block (same `(RxChannel, signal number)` key as the CN0
   refinement), any change in its `CumLossCont` counter also marks a

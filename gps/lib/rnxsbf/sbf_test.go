@@ -350,6 +350,8 @@ func TestArcHC(t *testing.T) {
 	}{
 		{name: "initial lock", lockTime: 10, expectArc: 0},
 		{name: "reset with phase", lockTime: 0, expectArc: 1},
+		{name: "zero again stays in arc", lockTime: 0, expectArc: 1},
+		{name: "first whole second", lockTime: 1, expectArc: 1},
 		{name: "reset without phase stays pending", lockTime: 0, noPhase: true, expectArc: 1},
 		{name: "phase returns", lockTime: 3, expectArc: 2},
 		{name: "DNU lock-time leaves state alone", lockTime: sbfbin.MeasType1LockTimeDNU, noPhase: true, expectArc: 2},
