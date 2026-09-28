@@ -17,6 +17,7 @@ type Converter struct {
 	state   map[signalKey]signalState
 	ts      sbfbin.TimeStamp
 	pending *sbfbin.MeasEpoch
+	extra   *sbfbin.MeasExtra
 }
 
 type signalKey struct {
@@ -63,40 +64,45 @@ func New(sink rinex.Sink) *Converter {
 }
 
 // ConvertBlock converts one SBF block, reporting whether it was a MeasEpoch.
-// A MeasEpoch is held until the next measurement block decides its pairing:
-// the MeasExtra with the same timestamp converts it with the refinement, and
-// any other MeasEpoch or MeasExtra shows none is coming and converts it
-// without one. Blocks of other types are ignored and leave the held MeasEpoch
-// in place. Call Flush after the last block of the stream.
+// The guide does not fix the order of MeasEpoch and MeasExtra within an
+// epoch, so whichever arrives first is held until the other arrives with the
+// same timestamp, and the pair is then converted together. A measurement
+// block with a new timestamp shows the held epoch is complete, and flushes
+// it. Blocks of other types are ignored and leave the held blocks in place.
+// Call Flush after the last block of the stream.
 func (c *Converter) ConvertBlock(b *sbfbin.Block) (bool, error) {
-	switch p := b.Params.(type) {
-	case *sbfbin.MeasEpoch:
+	m, isEpoch := b.Params.(*sbfbin.MeasEpoch)
+	extra, isExtra := b.Params.(*sbfbin.MeasExtra)
+	if !isEpoch && !isExtra {
+		return false, nil
+	}
+	if b.TimeStamp != c.ts {
 		if err := c.Flush(); err != nil {
-			return true, err
+			return isEpoch, err
 		}
 		c.ts = b.TimeStamp
-		c.pending = p
-		return true, nil
-	case *sbfbin.MeasExtra:
-		if c.pending == nil || b.TimeStamp != c.ts {
-			return false, c.Flush()
-		}
-		m := c.pending
-		c.pending = nil
-		return false, c.ConvertMeasEpoch(c.ts, m, p)
 	}
-	return false, nil
+	if isEpoch {
+		c.pending = m
+	} else {
+		c.extra = extra
+	}
+	if c.pending == nil || c.extra == nil {
+		return isEpoch, nil
+	}
+	return isEpoch, c.Flush()
 }
 
-// Flush converts a MeasEpoch held by ConvertBlock whose MeasExtra can no
-// longer arrive, such as at the end of the input stream.
+// Flush converts a MeasEpoch held by ConvertBlock, with its MeasExtra if one
+// has arrived, and discards a MeasExtra held without a MeasEpoch. Call it
+// after the last block of the stream.
 func (c *Converter) Flush() error {
-	if c.pending == nil {
+	m, extra := c.pending, c.extra
+	c.pending, c.extra = nil, nil
+	if m == nil {
 		return nil
 	}
-	m := c.pending
-	c.pending = nil
-	return c.ConvertMeasEpoch(c.ts, m, nil)
+	return c.ConvertMeasEpoch(c.ts, m, extra)
 }
 
 // ConvertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra block

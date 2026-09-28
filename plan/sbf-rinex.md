@@ -83,8 +83,8 @@ func New(sink rinex.Sink) *Converter { ... }
 // MeasExtra block of the same epoch and ignoring blocks of other types.
 func (c *Converter) ConvertBlock(b *sbfbin.Block) (bool, error)
 
-// Flush converts a MeasEpoch held by ConvertBlock whose MeasExtra can no
-// longer arrive, such as at the end of the input stream.
+// Flush converts a MeasEpoch held by ConvertBlock, with its MeasExtra if one
+// has arrived, and discards a MeasExtra held without a MeasEpoch.
 func (c *Converter) Flush() error
 
 // ConvertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra
@@ -94,8 +94,12 @@ func (c *Converter) ConvertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, e
 
 `ConvertBlock` is the stream entry point, fed one block at a time in
 wire order the same way `rnxrtcm.ConvertMsg` is fed individual RTCM
-messages; it holds each `MeasEpoch` until the next measurement block
-(or `Flush`) decides whether a `MeasExtra` pairs with it.
+messages. The guide guarantees only that measurement timestamps never
+decrease, not the order of `MeasEpoch` and `MeasExtra` within an epoch,
+so it holds whichever arrives first until the other arrives with the
+same timestamp, then converts the pair. A measurement block with a new
+timestamp (or `Flush`) converts a held `MeasEpoch` alone and discards a
+held `MeasExtra`.
 `ConvertMeasEpoch` is the specific entry for a pre-correlated pair,
 parallel to `rnxrtcm.ConvertMSM7`. The block-header `TOW`/`WNc` lives
 on `sbfbin.Block`, not on the `MeasEpoch` params struct, so

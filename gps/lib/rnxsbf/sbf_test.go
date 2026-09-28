@@ -462,6 +462,8 @@ func TestConvertBlock(t *testing.T) {
 	}
 	ts2 := sbfbin.TimeStamp{TOW: testTS.TOW + 1000, WNc: testTS.WNc}
 	ts3 := sbfbin.TimeStamp{TOW: testTS.TOW + 2000, WNc: testTS.WNc}
+	ts4 := sbfbin.TimeStamp{TOW: testTS.TOW + 3000, WNc: testTS.WNc}
+	ts5 := sbfbin.TimeStamp{TOW: testTS.TOW + 4000, WNc: testTS.WNc}
 	epoch := func() *sbfbin.MeasEpoch {
 		return measEpoch(0, []sbfbin.MeasEpochChannelType1{masterCh(7, 0)}, nil)
 	}
@@ -476,8 +478,10 @@ func TestConvertBlock(t *testing.T) {
 		{name: "other block type leaves it held", b: sbfbin.Block{TimeStamp: testTS, Params: &sbfbin.EndOfMeas{}}},
 		{name: "matching MeasExtra converts the pair", b: sbfbin.Block{TimeStamp: testTS, Params: extra()}, expectObs: 1},
 		{name: "next MeasEpoch held", b: sbfbin.Block{TimeStamp: ts2, Params: epoch()}, expectOK: true, expectObs: 1},
-		{name: "mismatched MeasExtra converts it alone", b: sbfbin.Block{TimeStamp: ts3, Params: extra()}, expectObs: 2},
-		{name: "last MeasEpoch held", b: sbfbin.Block{TimeStamp: ts3, Params: epoch()}, expectOK: true, expectObs: 2},
+		{name: "MeasExtra with new timestamp converts it alone", b: sbfbin.Block{TimeStamp: ts3, Params: extra()}, expectObs: 2},
+		{name: "MeasEpoch after its MeasExtra converts the pair", b: sbfbin.Block{TimeStamp: ts3, Params: epoch()}, expectOK: true, expectObs: 3},
+		{name: "unpaired MeasExtra held", b: sbfbin.Block{TimeStamp: ts4, Params: extra()}, expectObs: 3},
+		{name: "last MeasEpoch held", b: sbfbin.Block{TimeStamp: ts5, Params: epoch()}, expectOK: true, expectObs: 3},
 	}
 	s := &testSink{}
 	c := New(s)
@@ -498,16 +502,16 @@ func TestConvertBlock(t *testing.T) {
 	if err := c.Flush(); err != nil {
 		t.Fatalf("second Flush: %v", err)
 	}
-	if len(s.obs) != 3 {
-		t.Fatalf("len observations after Flush = %d, want 3", len(s.obs))
+	if len(s.obs) != 4 {
+		t.Fatalf("len observations after Flush = %d, want 4", len(s.obs))
 	}
-	// The paired epoch gets the CN0 refinement, the unpaired ones do not.
-	for i, want := range []float32{40 + 5*0.03125, 40, 40} {
+	// The paired epochs get the CN0 refinement, the unpaired ones do not.
+	for i, want := range []float32{40 + 5*0.03125, 40, 40 + 5*0.03125, 40} {
 		if got := s.obs[i].CN0.Get(); got != want {
 			t.Errorf("observation %d CN0 = %v, want %v", i, got, want)
 		}
 	}
-	for i, want := range []rinex.Time{testT, rinex.TimeFromGPSWeekMillis(2400, ts2.TOW), rinex.TimeFromGPSWeekMillis(2400, ts3.TOW)} {
+	for i, want := range []rinex.Time{testT, rinex.TimeFromGPSWeekMillis(2400, ts2.TOW), rinex.TimeFromGPSWeekMillis(2400, ts3.TOW), rinex.TimeFromGPSWeekMillis(2400, ts5.TOW)} {
 		if got := s.obs[i].T; got != want {
 			t.Errorf("observation %d T = %v, want %v", i, got, want)
 		}
