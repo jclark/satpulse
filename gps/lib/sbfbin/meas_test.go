@@ -177,12 +177,6 @@ func TestMeasExtraAccessors(t *testing.T) {
 	}
 }
 
-func TestObsInfoHalfCycleAmbiguity(t *testing.T) {
-	if ObsInfo(0).HalfCycleAmbiguity() || !ObsInfo(1<<2).HalfCycleAmbiguity() {
-		t.Errorf("HalfCycleAmbiguity does not select bit 2")
-	}
-}
-
 func TestMeasEpochSignalAccessors(t *testing.T) {
 	t1 := MeasEpochChannelType1{Type: MeasType(2<<5) | MeasType(MeasSigIdxExtension), ObsInfo: 6 << 3}
 	if got := t1.AntennaID(); got != 2 {

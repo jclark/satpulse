@@ -192,7 +192,7 @@ func (c *Converter) masterObservation(t rinex.Time, sat rinex.SatelliteID, sys s
 		cpOK = true
 	}
 	info, infoOK := hr[extraKey{t1.RxChannel, t1.SignalNumber()}]
-	obs.Arc, obs.HC = c.arcHC(sat, sig, t1.LockTime, sbfbin.MeasType1LockTimeClipped, t1.LockTime != sbfbin.MeasType1LockTimeDNU, info.cumLossCont, infoOK, t1.ObsInfo.HalfCycleAmbiguity(), cpOK)
+	obs.Arc, obs.HC = c.arcHC(sat, sig, t1.LockTime, sbfbin.MeasType1LockTimeClipped, t1.LockTime != sbfbin.MeasType1LockTimeDNU, info.cumLossCont, infoOK, t1.ObsInfo&sbfbin.ObsInfoHalfCycle != 0, cpOK)
 	if mst.doOK {
 		obs.Do = opt.Make(mst.do)
 	}
@@ -235,7 +235,7 @@ func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys st
 		cpOK = true
 	}
 	info, infoOK := hr[extraKey{rxChannel, t2.SignalNumber()}]
-	obs.Arc, obs.HC = c.arcHC(sat, sig, uint16(t2.LockTime), sbfbin.MeasType2LockTimeClipped, t2.LockTime != sbfbin.MeasType2LockTimeDNU, info.cumLossCont, infoOK, t2.ObsInfo.HalfCycleAmbiguity(), cpOK)
+	obs.Arc, obs.HC = c.arcHC(sat, sig, uint16(t2.LockTime), sbfbin.MeasType2LockTimeClipped, t2.LockTime != sbfbin.MeasType2LockTimeDNU, info.cumLossCont, infoOK, t2.ObsInfo&sbfbin.ObsInfoHalfCycle != 0, cpOK)
 	if off, ok := t2.DopplerOffsetHz(); ok && mst.doOK && mst.freqHz > 0 && freqOK {
 		obs.Do = opt.Make(mst.do*(freqHz/mst.freqHz) + off)
 	}

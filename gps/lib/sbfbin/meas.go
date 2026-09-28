@@ -29,10 +29,23 @@ const (
 	MeasExtraLockTimeClipped     = 0xFFFE
 )
 
-// CommonFlagsE6BUsed is the MeasEpoch CommonFlags bit indicating that the
-// Galileo E6 measurement (signal number 19) is the E6-B component; when clear
-// it is E6-C.
-const CommonFlagsE6BUsed CommonFlags = 1 << 6
+// Boolean flags in MeasEpoch CommonFlags.
+const (
+	CommonFlagsMultipathMitigation CommonFlags = 1 << iota // multipath mitigation enabled
+	CommonFlagsSmoothingOfCode                             // at least one code measurement is smoothed
+	_                                                      // reserved
+	CommonFlagsClockSteering                               // clock steering active
+	_                                                      // not applicable
+	CommonFlagsHighDynamics                                // receiver in high-dynamics mode
+	CommonFlagsE6BUsed                                     // Galileo E6 (signal number 19) is E6B, not E6C
+	CommonFlagsScrambling                                  // measurements scrambled: no Measurement Availability permission
+)
+
+// Boolean flags in MeasEpoch ObsInfo.
+const (
+	ObsInfoSmoothed  ObsInfo = 1 << 0 // pseudorange is smoothed
+	ObsInfoHalfCycle ObsInfo = 1 << 2 // carrier phase has a half-cycle ambiguity
+)
 
 // Observed-axis signal numbers, guide sec 4.1.10. These index both
 // MeasEpoch's SigIdxLo field and the PVT SignalInfo bitmask.
@@ -250,12 +263,6 @@ func (t *MeasEpochChannelType2) DopplerOffsetHz() (float64, bool) {
 		return 0, false
 	}
 	return (float64(msb)*65536 + float64(t.DopplerOffsetLSB)) * 0.0001, true
-}
-
-// HalfCycleAmbiguity reports whether bit 2 is set, meaning the carrier phase
-// has a half-cycle ambiguity.
-func (o ObsInfo) HalfCycleAmbiguity() bool {
-	return o&0x4 != 0
 }
 
 // GLONASSFreqNr returns the GLONASS frequency number (-7..6) for a master

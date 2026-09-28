@@ -374,7 +374,7 @@ func TestArcHC(t *testing.T) {
 				t1.CarrierLSB = 0
 			}
 			if st.halfCycle {
-				t1.ObsInfo = 1 << 2
+				t1.ObsInfo = sbfbin.ObsInfoHalfCycle
 			}
 			s.obs = nil
 			if err := c.ConvertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), nil); err != nil {
