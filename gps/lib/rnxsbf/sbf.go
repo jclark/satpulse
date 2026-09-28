@@ -69,12 +69,17 @@ func New(sink rinex.Sink) *Converter {
 // same timestamp, and the pair is then converted together. A measurement
 // block with a new timestamp shows the held epoch is complete, and flushes
 // it. Blocks of other types are ignored and leave the held blocks in place.
-// Call Flush after the last block of the stream.
+// A MeasEpoch whose measurements are scrambled, which the receiver does when
+// it lacks the Measurement Availability permission, is an error. Call Flush
+// after the last block of the stream.
 func (c *Converter) ConvertBlock(b *sbfbin.Block) (bool, error) {
 	m, isEpoch := b.Params.(*sbfbin.MeasEpoch)
 	extra, isExtra := b.Params.(*sbfbin.MeasExtra)
 	if !isEpoch && !isExtra {
 		return false, nil
+	}
+	if isEpoch && m.CommonFlags&sbfbin.CommonFlagsScrambling != 0 {
+		return true, fmt.Errorf("SBF MeasEpoch measurements are scrambled: the receiver lacks the Measurement Availability permission")
 	}
 	if b.TimeStamp != c.ts {
 		if err := c.Flush(); err != nil {
@@ -102,19 +107,14 @@ func (c *Converter) Flush() error {
 	if m == nil {
 		return nil
 	}
-	return c.ConvertMeasEpoch(c.ts, m, extra)
+	return c.convertMeasEpoch(c.ts, m, extra)
 }
 
-// ConvertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra block
+// convertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra block
 // for the same epoch if available, to RINEX observations. ts is the MeasEpoch
-// block-header timestamp; pass a nil extra when MeasExtra output is not
-// enabled or has not arrived for this epoch. It returns an error if the
-// measurements are scrambled, which the receiver does when it lacks the
-// Measurement Availability permission.
-func (c *Converter) ConvertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error {
-	if m.CommonFlags&sbfbin.CommonFlagsScrambling != 0 {
-		return fmt.Errorf("SBF MeasEpoch measurements are scrambled: the receiver lacks the Measurement Availability permission")
-	}
+// block-header timestamp; extra is nil when MeasExtra output is not enabled
+// or did not arrive for this epoch.
+func (c *Converter) convertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error {
 	if ts.TOW == sbfbin.TOWDNU || ts.WNc == sbfbin.WNcDNU {
 		return nil
 	}

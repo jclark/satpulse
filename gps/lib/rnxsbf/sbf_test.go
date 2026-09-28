@@ -64,17 +64,23 @@ func measEpoch(flags sbfbin.CommonFlags, t1 []sbfbin.MeasEpochChannelType1, t2 [
 func convert(t *testing.T, ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) []rinex.SignalObservation {
 	t.Helper()
 	s := &testSink{}
-	if err := New(s).ConvertMeasEpoch(ts, m, extra); err != nil {
-		t.Fatalf("ConvertMeasEpoch: %v", err)
+	if err := New(s).convertMeasEpoch(ts, m, extra); err != nil {
+		t.Fatalf("convertMeasEpoch: %v", err)
 	}
 	return s.obs
 }
 
 func TestScrambled(t *testing.T) {
+	// The error comes from the scrambled block itself, not from a later
+	// conversion of the held epoch.
 	s := &testSink{}
-	err := New(s).ConvertMeasEpoch(testTS, measEpoch(sbfbin.CommonFlagsScrambling, []sbfbin.MeasEpochChannelType1{masterCh(7, 0)}, nil), nil)
-	if err == nil || len(s.obs) != 0 {
-		t.Errorf("err = %v, %d observations; want an error and none", err, len(s.obs))
+	c := New(s)
+	b := sbfbin.Block{TimeStamp: testTS, Params: measEpoch(sbfbin.CommonFlagsScrambling, []sbfbin.MeasEpochChannelType1{masterCh(7, 0)}, nil)}
+	if _, err := c.ConvertBlock(&b); err == nil {
+		t.Fatalf("ConvertBlock: no error for a scrambled MeasEpoch")
+	}
+	if err := c.Flush(); err != nil || len(s.obs) != 0 {
+		t.Errorf("Flush: err = %v, %d observations; want neither", err, len(s.obs))
 	}
 }
 
@@ -385,8 +391,8 @@ func TestArcHC(t *testing.T) {
 				t1.ObsInfo = sbfbin.ObsInfoHalfCycle
 			}
 			s.obs = nil
-			if err := c.ConvertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), nil); err != nil {
-				t.Fatalf("ConvertMeasEpoch: %v", err)
+			if err := c.convertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), nil); err != nil {
+				t.Fatalf("convertMeasEpoch: %v", err)
 			}
 			if len(s.obs) != 1 {
 				t.Fatalf("len observations = %d, want 1", len(s.obs))
@@ -433,8 +439,8 @@ func TestArcAcrossMasterSlaveSwitch(t *testing.T) {
 	for _, st := range steps {
 		t.Run(st.name, func(t *testing.T) {
 			s.obs = nil
-			if err := c.ConvertMeasEpoch(testTS, st.m, nil); err != nil {
-				t.Fatalf("ConvertMeasEpoch: %v", err)
+			if err := c.convertMeasEpoch(testTS, st.m, nil); err != nil {
+				t.Fatalf("convertMeasEpoch: %v", err)
 			}
 			for _, o := range s.obs {
 				if o.Sig != "2L" {
@@ -550,8 +556,8 @@ func TestArcFromCumLossCont(t *testing.T) {
 			t1 := masterCh(7, 0)
 			t1.LockTime = sbfbin.MeasType1LockTimeClipped
 			s.obs = nil
-			if err := c.ConvertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), st.extra); err != nil {
-				t.Fatalf("ConvertMeasEpoch: %v", err)
+			if err := c.convertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), st.extra); err != nil {
+				t.Fatalf("convertMeasEpoch: %v", err)
 			}
 			if len(s.obs) != 1 {
 				t.Fatalf("len observations = %d, want 1", len(s.obs))

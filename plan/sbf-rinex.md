@@ -86,10 +86,6 @@ func (c *Converter) ConvertBlock(b *sbfbin.Block) (bool, error)
 // Flush converts a MeasEpoch held by ConvertBlock, with its MeasExtra if one
 // has arrived, and discards a MeasExtra held without a MeasEpoch.
 func (c *Converter) Flush() error
-
-// ConvertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra
-// block for the same epoch if available, to RINEX observations.
-func (c *Converter) ConvertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error
 ```
 
 `ConvertBlock` is the stream entry point, fed one block at a time in
@@ -99,11 +95,12 @@ decrease, not the order of `MeasEpoch` and `MeasExtra` within an epoch,
 so it holds whichever arrives first until the other arrives with the
 same timestamp, then converts the pair. A measurement block with a new
 timestamp (or `Flush`) converts a held `MeasEpoch` alone and discards a
-held `MeasExtra`.
-`ConvertMeasEpoch` is the specific entry for a pre-correlated pair,
-parallel to `rnxrtcm.ConvertMSM7`. The block-header `TOW`/`WNc` lives
-on `sbfbin.Block`, not on the `MeasEpoch` params struct, so
-`ConvertMeasEpoch` takes the timestamp explicitly.
+held `MeasExtra`. `ConvertBlock` is the only entry point, unlike
+`rnxrtcm`, which also exports `ConvertMSM7` for a single message, so
+every check on an incoming block is made as the block arrives. The
+unexported `convertMeasEpoch` converts a paired epoch; the
+block-header `TOW`/`WNc` lives on `sbfbin.Block`, not on the
+`MeasEpoch` params struct, so it takes the timestamp explicitly.
 
 `extra` is optional (pass `nil` when `MeasExtra` output is not
 enabled or has not arrived for this epoch); it contributes refining the
@@ -133,14 +130,15 @@ those scales) -- so no per-GNSS branching is needed here, unlike SBF
 blocks that carry an explicit `TimeSystem` field for something else
 (clock bias). If `TOW` or `WNc` is the Do-Not-Use sentinel
 (`0xFFFFFFFF` / `0xFFFF`), the whole block is unusable and
-`ConvertMeasEpoch` returns without emitting any observations (this can
+`convertMeasEpoch` returns without emitting any observations (this can
 happen briefly at receiver startup before time is set).
 
 If `CommonFlags` bit 7 ("Scrambling") is set, the receiver lacks the
 "Measurement Availability" permission and every measurement in the
 block is scrambled, with no Do-Not-Use marker on any field.
-`ConvertMeasEpoch` returns an error rather than write the scrambled
-values: without the permission no epoch is usable.
+`ConvertBlock` returns an error for such a block as soon as it arrives,
+rather than write the scrambled values: without the permission no epoch
+is usable.
 
 ### Satellite identification: SVID to RINEX satellite ID
 
@@ -397,7 +395,7 @@ For each satellite (`MeasEpochChannelType1` sub-block) with a valid
 4. Repeat steps 1-3 for each nested Type2 sub-block, reconstructing
    absolute values relative to the Type1 master as described above.
 
-`ConvertMeasEpoch` calls `c.sink.Observation(obs)` for each emitted
+`convertMeasEpoch` calls `c.sink.Observation(obs)` for each emitted
 record and returns the first error encountered, matching
 `rnxubx.ConvertRAWX`'s control flow exactly.
 
