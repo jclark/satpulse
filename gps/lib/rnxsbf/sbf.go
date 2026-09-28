@@ -58,6 +58,11 @@ type extraInfo struct {
 	cumLossCont uint8
 }
 
+// cpInfo describes the carrier phase an epoch reports for a signal.
+type cpInfo struct {
+	halfCycle bool // the carrier phase has a half-cycle ambiguity
+}
+
 // New creates a Converter that writes records to sink.
 func New(sink rinex.Sink) *Converter {
 	return &Converter{sink: sink, state: make(map[signalKey]signalState)}
@@ -197,13 +202,17 @@ func (c *Converter) masterObservation(t rinex.Time, sat rinex.SatelliteID, sys s
 	if mst.prOK {
 		obs.PR = opt.Make(mst.pr)
 	}
-	cpOK := false
+	var cp *cpInfo
 	if off, ok := t1.CarrierOffsetCycles(); ok && mst.prOK && mst.freqHz > 0 {
 		obs.CP = opt.Make(mst.pr/(speedOfLight/mst.freqHz) + off)
-		cpOK = true
+		cp = &cpInfo{halfCycle: t1.ObsInfo&sbfbin.ObsInfoHalfCycle != 0}
 	}
 	info, infoOK := hr[extraKey{t1.RxChannel, t1.SignalNumber()}]
-	obs.Arc, obs.HC = c.arcHC(sat, sig, t1.LockTime, sbfbin.MeasType1LockTimeClipped, t1.LockTime != sbfbin.MeasType1LockTimeDNU, info.cumLossCont, infoOK, t1.ObsInfo&sbfbin.ObsInfoHalfCycle != 0, cpOK)
+	var cumLoss *uint8
+	if infoOK {
+		cumLoss = &info.cumLossCont
+	}
+	obs.Arc, obs.HC = c.arcHC(signalKey{sat, sig}, validLock(t1.LockTime, sbfbin.MeasType1LockTimeDNU), sbfbin.MeasType1LockTimeClipped, cumLoss, cp)
 	if mst.doOK {
 		obs.Do = opt.Make(mst.do)
 	}
@@ -240,13 +249,17 @@ func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys st
 		obs.PR = opt.Make(pr)
 		prOK = true
 	}
-	cpOK := false
+	var cp *cpInfo
 	if off, ok := t2.CarrierOffsetCycles(); ok && prOK && freqOK {
 		obs.CP = opt.Make(pr/(speedOfLight/freqHz) + off)
-		cpOK = true
+		cp = &cpInfo{halfCycle: t2.ObsInfo&sbfbin.ObsInfoHalfCycle != 0}
 	}
 	info, infoOK := hr[extraKey{rxChannel, t2.SignalNumber()}]
-	obs.Arc, obs.HC = c.arcHC(sat, sig, uint16(t2.LockTime), sbfbin.MeasType2LockTimeClipped, t2.LockTime != sbfbin.MeasType2LockTimeDNU, info.cumLossCont, infoOK, t2.ObsInfo&sbfbin.ObsInfoHalfCycle != 0, cpOK)
+	var cumLoss *uint8
+	if infoOK {
+		cumLoss = &info.cumLossCont
+	}
+	obs.Arc, obs.HC = c.arcHC(signalKey{sat, sig}, validLock(uint16(t2.LockTime), sbfbin.MeasType2LockTimeDNU), sbfbin.MeasType2LockTimeClipped, cumLoss, cp)
 	if off, ok := t2.DopplerOffsetHz(); ok && mst.doOK && mst.freqHz > 0 && freqOK {
 		obs.Do = opt.Make(mst.do*(freqHz/mst.freqHz) + off)
 	}
@@ -263,13 +276,13 @@ func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys st
 // decrease since the last valid value, or any change in the MeasExtra
 // CumLossCont counter (which the receiver increments at each initial lock
 // after (re)acquisition or detected cycle slip), marks a pending arc
-// increment, applied at the next epoch that actually reports a carrier phase.
-// A zero lock-time alone does not: the lock-time is in whole seconds, so at
-// output rates above 1 Hz it stays zero for several epochs after a fresh lock.
-// A Do-Not-Use lock-time (lockOK false) or an absent MeasExtra entry (cumOK
-// false) leaves the corresponding state untouched. CumLossCont catches slips
-// the lock-time comparison cannot see, such as a slip followed by an outage
-// long enough for the counter to re-clip.
+// increment, applied at the next epoch that actually reports a carrier phase
+// (cp not nil). A zero lock-time alone does not: the lock-time is in whole
+// seconds, so at output rates above 1 Hz it stays zero for several epochs
+// after a fresh lock. A Do-Not-Use lock-time (nil lock) or an absent
+// MeasExtra entry (nil cumLoss) leaves the corresponding state untouched.
+// CumLossCont catches slips the lock-time comparison cannot see, such as a
+// slip followed by an outage long enough for the counter to re-clip.
 //
 // The half-cycle bit clearing also marks an arc increment: the receiver can
 // shift the phase by half a cycle when it resolves the ambiguity, without
@@ -280,37 +293,45 @@ func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys st
 // the receiver re-selects the master, and the two encodings clip the same
 // underlying lock time at different ceilings (65534 vs 254), so the decrease
 // comparison clamps both sides to the smaller of the two ceilings involved.
-func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, lock, ceil uint16, lockOK bool, cumLoss uint8, cumOK, halfCycle, phase bool) (uint32, bool) {
-	k := signalKey{sat: sat, sig: sig}
+func (c *Converter) arcHC(k signalKey, lock *uint16, ceil uint16, cumLoss *uint8, cp *cpInfo) (uint32, bool) {
 	st := c.state[k]
-	if lockOK && st.seen {
+	if lock != nil && st.seen {
 		clip := min(ceil, st.ceil)
-		if min(lock, clip) < min(st.lock, clip) {
+		if min(*lock, clip) < min(st.lock, clip) {
 			st.pending = true
 		}
 	}
-	if cumOK && st.cumSeen && cumLoss != st.cumLoss {
+	if cumLoss != nil && st.cumSeen && *cumLoss != st.cumLoss {
 		st.pending = true
 	}
-	if phase {
-		if st.half && !halfCycle {
+	if cp != nil {
+		if st.half && !cp.halfCycle {
 			st.pending = true
 		}
-		st.half = halfCycle
+		st.half = cp.halfCycle
+		if st.pending {
+			st.arc++
+			st.pending = false
+		}
 	}
-	if phase && st.pending {
-		st.arc++
-		st.pending = false
-	}
-	if lockOK {
-		st.lock = lock
+	if lock != nil {
+		st.lock = *lock
 		st.ceil = ceil
 		st.seen = true
 	}
-	if cumOK {
-		st.cumLoss = cumLoss
+	if cumLoss != nil {
+		st.cumLoss = *cumLoss
 		st.cumSeen = true
 	}
 	c.state[k] = st
-	return st.arc, phase && halfCycle
+	return st.arc, cp != nil && cp.halfCycle
+}
+
+// validLock returns a pointer to lock, or nil if lock is the Do-Not-Use value
+// dnu.
+func validLock(lock, dnu uint16) *uint16 {
+	if lock == dnu {
+		return nil
+	}
+	return &lock
 }
