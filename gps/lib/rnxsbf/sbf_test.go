@@ -355,8 +355,11 @@ func TestArcHC(t *testing.T) {
 		{name: "DNU lock-time leaves state alone", lockTime: sbfbin.MeasType1LockTimeDNU, noPhase: true, expectArc: 2},
 		{name: "lock grows", lockTime: 5, expectArc: 2},
 		{name: "half-cycle with phase", lockTime: 6, halfCycle: true, expectArc: 2, expectHC: true},
-		{name: "decrease marks slip", lockTime: 2, expectArc: 3},
-		{name: "clipped lock-time is valid", lockTime: sbfbin.MeasType1LockTimeClipped, expectArc: 3},
+		{name: "half-cycle without phase", lockTime: 7, halfCycle: true, noPhase: true, expectArc: 2},
+		{name: "half-cycle resolved marks slip", lockTime: 8, expectArc: 3},
+		{name: "resolved phase continues", lockTime: 9, expectArc: 3},
+		{name: "decrease marks slip", lockTime: 2, expectArc: 4},
+		{name: "clipped lock-time is valid", lockTime: sbfbin.MeasType1LockTimeClipped, expectArc: 4},
 	}
 	s := &testSink{}
 	c := New(s)

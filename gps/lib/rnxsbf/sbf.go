@@ -32,6 +32,7 @@ type signalState struct {
 	pending bool
 	seen    bool
 	cumSeen bool
+	half    bool // half-cycle bit of the last epoch with a carrier phase
 }
 
 // master carries the Type1 master values a Type2 slave sub-block needs to
@@ -257,6 +258,11 @@ func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys st
 // the lock-time comparison cannot see, such as a slip followed by an outage
 // long enough for the counter to re-clip.
 //
+// The half-cycle bit clearing also marks an arc increment: the receiver can
+// shift the phase by half a cycle when it resolves the ambiguity, without
+// resetting the lock time, so the resolved phase must not be tied to the
+// flagged phase before it.
+//
 // A signal can move between the Type1 master and a Type2 slave position when
 // the receiver re-selects the master, and the two encodings clip the same
 // underlying lock time at different ceilings (65534 vs 254), so the decrease
@@ -272,6 +278,12 @@ func (c *Converter) arcHC(sat rinex.SatelliteID, sig rinex.SignalID, lock, ceil 
 	}
 	if cumOK && st.cumSeen && cumLoss != st.cumLoss {
 		st.pending = true
+	}
+	if phase {
+		if st.half && !halfCycle {
+			st.pending = true
+		}
+		st.half = halfCycle
 	}
 	if phase && st.pending {
 		st.arc++
