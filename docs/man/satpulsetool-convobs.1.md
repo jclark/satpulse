@@ -27,6 +27,7 @@ Currently, the following raw observation data formats are supported:
 
 * u-blox UBX-RXM-RAWX
 * Unicore OBSVM (in either binary or ASCII format)
+* Septentrio SBF MeasEpoch and MeasExtra
 * RTCM MSM7
 
 The *convobs* command also supports a JSON Lines format called `obsj`,
