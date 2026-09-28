@@ -65,6 +65,7 @@ func (m *PsrDop) Chunks() func(yield func(chunk any) bool) {
 // the SolStatus and PosType enum value sets vary by vendor.
 type BestPos struct {
 	Pos[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for BESTPOS
@@ -77,6 +78,7 @@ func (m *BestPos) ID() (MsgID, string) {
 // Same binary layout as BestPos.
 type BestGNSSPos struct {
 	Pos[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for BESTGNSSPOS.
@@ -89,6 +91,7 @@ func (m *BestGNSSPos) ID() (MsgID, string) {
 // Same binary layout as BestPos.
 type PsrPos struct {
 	Pos[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for PSRPOS.
@@ -136,6 +139,7 @@ func (m *BestGNSSVel) ID() (MsgID, string) {
 // the SolStatus and PosType enum value sets vary by vendor.
 type BestXYZ struct {
 	XYZ[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for BESTXYZ
@@ -149,6 +153,7 @@ func (m *BestXYZ) ID() (MsgID, string) {
 // used when the SinoGNSS variant builds its constructor map.
 type SinoBestPos struct {
 	Pos[SolStatus, SinoPosType]
+	SinoPosFlags
 }
 
 // ID returns the message ID for BESTPOS.
@@ -162,6 +167,7 @@ func (m *SinoBestPos) ID() (MsgID, string) {
 // used when the SinoGNSS variant builds its constructor map.
 type SinoPsrPos struct {
 	Pos[SolStatus, SinoPosType]
+	SinoPosFlags
 }
 
 // ID returns the message ID for PSRPOS.
@@ -188,6 +194,7 @@ func (m *SinoPsrVel) ID() (MsgID, string) {
 // used when the SinoGNSS variant builds its constructor map.
 type SinoBestXYZ struct {
 	XYZ[SolStatus, SinoPosType]
+	SinoPosFlags
 }
 
 // ID returns the message ID for BESTXYZ.

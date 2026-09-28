@@ -78,6 +78,8 @@ func (c *NetConn) Close() error {
 // and the daemon (which alone uses socket connections) never calls it.
 func (c *NetConn) Drain() error { return nil }
 
+func (c *NetConn) SetDetected() {}
+
 func (c *NetConn) Stop() {
 	c.mu.Lock()
 	defer c.mu.Unlock()

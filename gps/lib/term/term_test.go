@@ -94,7 +94,7 @@ func TestByteTransmitTime(t *testing.T) {
 	expected := (time.Second / 9600) * 10
 
 	// Calculate the actual duration to send a byte
-	actual := attr.byteTransmitTime()
+	actual := byteTransmitTime(attr.speed(), attr.ts)
 
 	// Check that the actual duration matches the expected duration
 	if actual != expected {

@@ -25,7 +25,7 @@ This is well short of the accuracy of a GPS receiver,
 which is about 5ns for a high-end model, or about 30ns for an inexpensive model.
 
 In the last few years, inexpensive hardware has become available that makes it possible to do much better than this.
-A precision in the low tens of nanoseconds is achievable with hardware with a total cost in the low hundreds of dollars.
+A precision in the low tens of nanoseconds is achievable with [hardware with a total cost in the low hundreds of dollars]({% link hardware/index.md %}#hardware-for-timing-applications).
 This hardware is designed to support the Precision Time Protocol (PTP), but its use is not restricted to PTP,
 and, in fact, the hardware can be used to improve the performance of NTP.
 
@@ -64,7 +64,7 @@ PTM is a PCI Express (PCIe) feature that enables devices on the PCIe bus to sync
 In particular, it provides hardware support for precise synchronization of the
 PHC and the system clock.
 At a high level, it's like PTP, but for the PCIe bus rather than the network.
-PTM requires support from both the network card and the computer (specifically the motherboard chipset's PCIe subsystem).
+PTM requires [support]({% link hardware/ptm.md %}) from both the network card and the computer (specifically the motherboard chipset's PCIe subsystem).
 
 The Linux kernel enables applications to take advantage
 of PTM using a system call that performs *cross timestamping*, which
@@ -123,7 +123,7 @@ GNSS receiver loses its lock, so that clients can switch over to an alternative 
 
 ## Switches
 
-The other main kind of component that has PTP hardware support is the network switch.
+The other main kind of component that has PTP hardware support is the [network switch]({% link hardware/switches.md %}).
 The accuracy of the algorithm PTP uses to synchronize PHCs depends on path delay being symmetric:
 in other words, that the time taken for a packet to travel from A to B will be the same as the time taken for a packet to travel from B to A.
 But this will not usually be the case when there are switches in between.

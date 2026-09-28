@@ -76,6 +76,64 @@ It can have the following keys:
 * `speed` - an integer giving the speed of the connection in bits-per-second (baud)
 * `device` - a string giving the path of the serial device name; when SatPulse is run via systemd, the
   device will usually be specified in systemd commands, which will override any value specified here
+* `pps.pin` - a string giving the modem-control input pin on which to detect the receiver's PPS pulses;
+  one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`, naming the pins of the computer's own serial port or
+  adapter; CTS is recommended; requires `device` to be a real TTY rather than a FIFO or socket;
+  cannot be used when `interface` in the `[phc]` table is configured;
+  with the `poll` method the pulse must be at least a few milliseconds wide,
+  and narrow pulses can take longer to detect;
+  the common receiver default of 100 ms works well, and microsecond-width pulses are not supported
+* `pps.invertPolarity` - a boolean saying whether to invert the usual PPS pulse polarity;
+  set this to `true` if detected edges trail the start of the second by the pulse width (typically 0.1 s);
+  the default is `false`
+
+Example using PPS on CTS:
+
+```
+[serial]
+device = "/dev/cu.usbserial-XXXXXXXX"
+speed = 38400
+pps.pin = "cts"
+```
+
+## `sample.serial.pps` table
+
+The `sample.serial.pps` table controls how serial PPS edges are detected and associated with UTC-labelled receiver messages.
+It is used when `pps.pin` in the `[serial]` table is configured.
+A non-prepulse message is emitted after the pulse whose UTC second it reports, but timestamp measurement uncertainty can make the inferred delay slightly negative.
+The accepted interval must be narrower than one second so that a pulse has at most one possible UTC label.
+
+It can have the following keys:
+
+* `delayUncertainty` - the allowed uncertainty in the inferred pulse-to-message delay, in seconds;
+  the inferred delay may be this far below zero; the default is 0.005
+* `maxDelay` - the maximum accepted inferred delay from the pulse to its post-pulse message, in seconds;
+  the default is 0.8
+* `method` - controls how the operating system is used to detect modem status changes that mark pulse edges:
+  `"kernel"` means the kernel timestamps the time of a status change;
+  `"wait"` means the kernel notifies the application of a status change;
+  `"poll"` means the application continually asks for the current status;
+  when omitted, the best available method is used
+* `pollPreWarm` - a number of seconds to busy-wait before each poll window opens;
+  this makes the `poll` method more precise on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core;
+  the default is 0, which disables it; a value between 20e-3 and 50e-3 is suggested
+* `pollOutlierRatio` - a number; with the `poll` method, an edge whose two bracketing reads are further apart than this multiple of the lower quartile of recent edges' brackets is marked an outlier and not used for timing,
+  which keeps out edges whose read was stalled by host load;
+  the default is 3; 0 disables the check
+* `maxWakeupLatency` - a number of seconds limiting CPU wakeup latency while serial PPS is active;
+  this makes edge detection more precise, at the cost of power;
+  omitted by default; 0 requests the lowest latency available; a value between 10e-6 and 50e-6 is suggested;
+  currently supported only on Linux
+
+The sum of `delayUncertainty` and `maxDelay` must be less than 1.
+
+Example using the defaults explicitly:
+
+```toml
+[sample.serial.pps]
+delayUncertainty = 0.005
+maxDelay = 0.8
+```
 
 
 ## `gps` table
@@ -185,9 +243,11 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 The `ntp` table controls how SatPulse sends samples to an NTP daemon.
 It supports two protocols: the refclock SOCK protocol defined by chrony, and the SHM protocol defined by NTP.
 
-If the `[phc]` table is not present, then the samples will be based on the timing of the serial messages.
+If the `[phc]` table is not present, samples are normally based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
 The samples from SatPulse can be used to complete the PPS samples.
+When `pps.pin` in the `[serial]` table is configured, samples instead use PPS edges detected on that pin;
+serial time messages are still used to identify the UTC second and leap indication.
 
 The following key enables use of the refclock SOCK protocol:
 

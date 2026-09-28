@@ -7,6 +7,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/msgfile"
 	"github.com/jclark/satpulse/gps/scan"
 )
@@ -36,6 +37,7 @@ func TestFormatMsgID(t *testing.T) {
 
 func TestFormatAck(t *testing.T) {
 	rm := msgfile.RawMsg{Tag: "cfg", Index: 2, Count: 5}
+	adhoc := msgfile.RawMsg{Count: 1}
 	tests := []struct {
 		name string
 		cor  msgfile.Correlation
@@ -45,6 +47,7 @@ func TestFormatAck(t *testing.T) {
 		{"NAK", msgfile.Correlation{Ack: msgfile.AckNak, InResponseTo: &rm}, "cfg/3: receiver rejected message: NAK\n"},
 		{"NAK with error", msgfile.Correlation{Ack: msgfile.AckNak, NakError: "Invalid parameter", InResponseTo: &rm}, "cfg/3: receiver rejected message: Invalid parameter\n"},
 		{"processing", msgfile.Correlation{Ack: msgfile.AckOther, InResponseTo: &rm}, "cfg/3: processing...\n"},
+		{"untagged single", msgfile.Correlation{Ack: msgfile.AckAck, InResponseTo: &adhoc}, "OK\n"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -169,5 +172,26 @@ func TestHandleUnrecognizedAnalyze(t *testing.T) {
 	rh2.handlePacket(unrecognized)
 	if buf.String() != "" {
 		t.Errorf("without sent msg: got %q, want empty", buf.String())
+	}
+}
+
+func TestNakCount(t *testing.T) {
+	tests := []struct {
+		name   string
+		data   string
+		expect int
+	}{
+		{"nak", "$command,CONFIG TEST,response: PARSING FAILD*00", 1},
+		{"ack", "$command,CONFIG TEST,response: OK*00", 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var buf bytes.Buffer
+			rh := newResponseHandlerWithMsgs(t, &buf, "[[line]]\ntext = \"CONFIG TEST\"\nresponsePattern = \"unicore\"\n")
+			rh.handlePacket(scan.Packet{Format: gpsreg.NMEAPacketFormat, Data: tc.data})
+			if rh.nakCount != tc.expect {
+				t.Errorf("nakCount: got %d, want %d", rh.nakCount, tc.expect)
+			}
+		})
 	}
 }

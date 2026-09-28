@@ -14,12 +14,11 @@ Scope notes:
 
 - This plan covers only the production `stream.pull.ntrip.nmeaSend` work.
 - It depends on the NMEA decode layer (#330, typed GGA parsing/serialisation in
-  `nmeamsg`), stage 2 of `plan/nmea-gga.md` (GGA synthesis from `gpsprot`
-  messages), and stage 3 of `plan/nmea-gga.md` (the selected-GGA selector
-  core). This plan owns the NMEA-send-specific wiring of that selector into the daemon
-  and stream pull path.
-- It does not depend on stage 4 of `plan/nmea-gga.md`; enabling NMEA send must not
-  require any proxy service or `proxy.tcp synth` option.
+  `nmeamsg`) and the GGA synthesis and selected-GGA core recorded in
+  [nmea-gga.md](nmea-gga.md). This plan owns the NMEA-send-specific wiring of
+  that selector into the daemon and stream pull path.
+- It does not depend on [nmea-gga-tcp.md](../nmea-gga-tcp.md); enabling NMEA
+  send must not require any proxy service or `proxy.tcp synth` option.
 - Our own caster (`gps/app/ntrip`) is a physical base: field 12 `<nmea>` is
   hard-coded `"0"` in `strrec.go`. Nothing here changes that.
 - The spec requires only one GGA to start, but testing showed many

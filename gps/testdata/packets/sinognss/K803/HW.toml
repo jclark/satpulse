@@ -1,0 +1,41 @@
+vendor = "sinognss"
+model = "K803"
+firmware = "630A9-B23A4-1"
+default-baud = 115200
+
+# From LOG VERSIONA:
+# #VERSIONA,COM1,0,60.0,FINESTEERING,2438,002758.450,00000000,0000,1114;1,GNSSCARD,"S32352K803","0950933900000000","CRDK-803AA-TTT-1","630A9-B23A4-1","7.4.2","2024/Nov/ 5","09:58:43"*f00ab128
+# (model, PSN, hardware version, software version, boot version, compile date and time)
+# Captured on COM1 through an FT232R USB/UART bridge, with a single-point
+# fix, on a different antenna from the K901 set. Each capture replaced the
+# saved output with the logs named in the file, at 1 Hz unless noted, the same
+# logs as the K901 set. The factory configuration (after FRESET) outputs
+# nothing on COM1, so there is no factory.jsonl; PPS is on by default.
+# The factory NMEA style is NMEAV41 OFF: nmea.jsonl and sats-cross.jsonl set
+# SET NMEAV41 ON for the capture, as the K901 captures had it saved;
+# nmea-400.jsonl and the other NMEA captures are in the factory style.
+# abbrev.jsonl is 60 s with abbreviated RANGE ONTIME 10 and RANGECMP ONTIME
+# 30 5: with about 146 observations, abbreviated RANGE and RANGECMP at 1 Hz
+# exceed 115200 baud, and a RANGECMP due in the same second as a RANGE was
+# dropped.
+# rtcm-base.jsonl uses FIX position at the position from survey.jsonl.
+# coldstart.jsonl starts with FRESET, then enables TIMEB, BESTPOSB, BESTVELB,
+# PSRDOPB, IONUTCB, GPGSA, GPGSV and GPRMC after 8 s: the boot banner starts
+# about 3 s after FRESET, and requests sent before it are lost. TIME has an
+# unknown time status and invalid clock until 12 s after FRESET, then a valid
+# clock and a single-point fix, with UTC valid after 42 s.
+# No IONUTC is output during the capture.
+# The logs and RTCM messages accepted, rejected and output are the same as on
+# the K901 (see its HW.toml), with the tracking differences below.
+# Receiver behaviour seen, where it differs from the K901:
+# - RANGE has SBAS L1 and L5 observations (raw-cross.jsonl), and no Galileo
+#   E5 AltBOC; the K901 has AltBOC and never has SBAS or NavIC in RANGE.
+#   NavIC L5 was seen in RANGE requested with LOG ONCE, but is in none of
+#   these captures. The other signals are the same.
+# - B2BRAWNAVSUBFRAME (1697) is output, and ONCE gives continuing output.
+# - RTCM 1045 (Galileo F/NAV ephemeris) is accepted but produces nothing.
+# - IMUDATA (2264) carries gyroscope and accelerometer data as six doubles,
+#   without the GPS seconds field the manual gives; on the K901 its payload is
+#   empty.
+# - LOG requests with ONTIME 0.05 (20 Hz) are rejected with "Function
+#   '20HZOBS' is expired!"; SET PVTFREQ 20 is accepted.

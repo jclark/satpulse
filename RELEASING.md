@@ -1,11 +1,25 @@
 # SatPulse release process
 
-This release process should be performed in a VSCode devcontainer:
-1. Open the repository in VSCode
-2. For minor releases, consider rebuilding without cache to get latest tools:
-   - Command Palette: "Dev Containers: Rebuild Container Without Cache"
-3. Reopen in Container when prompted (or use Command Palette: "Dev Containers: Reopen in Container")
-4. Open a terminal within VSCode to run the commands below
+All release commands run on the host. Release builds run inside the
+project's devcontainer, for a moderately reproducible build environment,
+via two make targets:
+
+- `make docker-pkg` builds the packages without creating a release
+  (`make test && make pkg` in the container)
+- `make docker-release` builds the packages and uploads them to a draft
+  GitHub release (`make test && make release` in the container)
+
+Both need Docker running and the devcontainer CLI
+(`npm install -g @devcontainers/cli`).
+Set `NO_CACHE=1` to recreate the container and rebuild its image from
+scratch, picking up the latest tools; consider this for minor releases.
+Uploading uses the gh credentials bind-mounted from the host, so run
+`gh auth login --insecure-storage` on the host once.
+
+You can equally open the repository in VSCode, reopen in the container,
+and run `make test && make pkg` (or `make release`) from a terminal
+there: VSCode and the make targets drive the same devcontainer
+configuration, so the results are identical.
 
 ## Overview
 
@@ -28,11 +42,16 @@ During normal development, all builds are prereleases:
 
 ```bash
 # Build packages
-make pkg
+make docker-pkg
 
-# Create draft GitHub release with prerelease packages
-make release
+# Build packages and create a draft GitHub release with them
+make docker-release
 ```
+
+Use one or the other: the release target builds everything itself, and
+every build recompiles from scratch, so running `make docker-pkg` first
+would just do the same work twice and the release would upload the
+second build.
 
 ### Testing with Ansible
 
@@ -41,7 +60,8 @@ Deploy and test on real hardware:
 ```bash
 cd systest
 ./t install  # Deploy packages to test machines
-./t check    # Run validation tests
+./t start    # Start the daemons
+./t check    # Run validation tests (repeat as often as you want)
 ```
 
 ## Release process
@@ -64,28 +84,34 @@ make tag
 # Creates tag v0.1 (or whatever VERSION contains)
 ```
 
-### 3. Build final release packages
+### 3. Build final release packages and create the draft release
 
 With the tag in place, builds produce final versions:
 
 ```bash
-make pkg
+make docker-release
+# Builds the packages and uploads them to a draft release on GitHub
 ```
 
-Verify version strings:
+Verify the packages have final version strings:
 
 ```bash
-out/amd64/satpulsetool --version
-# Should show: satpulse version 0.1, build date ...
+ls out/*.deb
+# Final releases are named like satpulse_0.1-1_amd64.deb;
+# a ~git suffix in the name means the tag was not picked up
 ```
+
+On GitHub, edit the draft's description.
 
 ### 4. Hardware testing
 
-Deploy final packages to test hardware:
+Deploy the packages to test hardware; these are the same files in `out/`
+that the draft release holds, so what is tested is what will be shipped:
 
 ```bash
 cd systest
 ./t install
+./t start
 ./t check
 ```
 
@@ -96,22 +122,18 @@ If issues are found, you can fix them and move the tag to a different commit:
 make tag    # Moves the tag to current commit
 ```
 
+then delete the draft release on GitHub before rerunning
+`make docker-release`.
+
 To abandon the release process:
 
 ```bash
 make untag  # Remove the tag entirely
 ```
 
-### 5. Create draft GitHub release
+and delete the draft release on GitHub if one was created.
 
-```bash
-make release
-# Creates draft release on GitHub with final packages
-```
-
-On GitHub, edit the description.
-
-### 6. Finalize release (point of no return)
+### 5. Finalize release (point of no return)
 
 Once testing is complete and you're ready to publish:
 
@@ -124,7 +146,7 @@ gh release edit ${version_tag} --draft=false
 ```
 Note: After testing on a real release, we can make this a `finalize-release` Makefile target.
 
-### 7. Post-release version management
+### 6. Post-release version management
 
 After publishing a release, update VERSION for next development:
 
@@ -176,8 +198,8 @@ git push
 |---------|-------------|
 | `make tag` | Create local release tag |
 | `make untag` | Remove local release tag |
-| `make pkg` | Build packages |
-| `make release` | Create GitHub draft release |
+| `make docker-pkg` | Build packages |
+| `make docker-release` | Build packages and create GitHub draft release |
 | `git push origin v0.1` | Push tag to GitHub (finalize) |
 
 ### Version checks

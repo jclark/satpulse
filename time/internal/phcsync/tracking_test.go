@@ -101,7 +101,7 @@ func TestMADWindow(t *testing.T) {
 		w := newMADWindow(10)
 
 		// Add 10 samples, mark 3 as outliers
-		for i := 0; i < 10; i++ {
+		for i := range 10 {
 			w.Add(time.Duration(i) * time.Nanosecond)
 			if i == 2 || i == 5 || i == 8 {
 				w.SetLastOutlier()

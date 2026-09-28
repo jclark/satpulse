@@ -125,6 +125,12 @@ The `gpsprot.ConfigProtocol`/Configurator (see its code-area section below; the 
 
 *Applies when both hold:* the receiver emits raw observations, and converting them is worth the effort for this vendor. *Depends on:* the codec's raw-measurement decode and `gps/lib/rinex`; not on Msg conversion. *Hardware:* none -- captures suffice. *Milestone:* `satpulsetool convobs` converts a capture and the output is accepted by standard RINEX tooling.
 
+### Documentation
+
+The vendor's page under `docs/gps-module-support/` and its entry in that section's index (see the code-area section below): which models the vendor makes and which were tested, what SatPulse supports for them, and the table of supported messages.
+
+*Depends on:* Msg conversion (the table rows); high-level configuration, when it exists, for the "Automatically enabled" column. *Hardware:* none. *Milestone:* the page is on the site and its table matches the code.
+
 ## Protocol shapes
 
 The graph above is drawn for the full shape: a vendor data format plus a configuration interface. The documentation analysis places a vendor on this spectrum, and the graph shrinks accordingly:
@@ -229,6 +235,27 @@ Device-independent configuration via a `gpsprot.ConfigProtocol` and Configurator
 
 Use the `implement-configprotocol` skill for the common process, semantics contract, director machinery, and verification ladder; do not duplicate that material in the vendor plan. The vendor-specific plan should record only the inputs that skill needs: the verified lower chunks (message files, reply framing, packet library, packet processor), the state-neutral probe and capability source, property-to-command/readback mappings, model/family capability gating, request-correlation and pipelining rules, speed-change/NVM/reset behavior, and which configurable features exist only as best-effort or absence. Prefer receiver-reported capabilities and readback over hardware/model-string branches whenever the protocol exposes them; use model/family branches only for genuine command or wire-format differences. Keep configuration work separate from message processing: enabling a message is configuration, but adding decode/conversion for that message is a separate lower-layer change unless it is already part of the protocol-support phase.
 
+## `docs/gps-module-support/<vendor>.md` -- the vendor page
+
+Every supported vendor has a page in the site's GPS module support section, listed in that section's `index.md`. Follow the existing pages: the vendor and its supported model series, the vendor name used with `--vendor`, a bullet list of what SatPulse supports (packet formats and their tags, conversion into the device-independent data model, message files, high-level configuration, RINEX conversion), the models actually tested, a section on high-level configuration and one on low-level configuration where they apply, and finally the table of supported messages.
+
+The table names its unit in the vendor's own terminology (u-blox messages, Unicore and ByNav logs, Septentrio blocks, Quectel sentences) and spells message names as the vendor's protocol specification does, including a family prefix only where the specification itself uses one (UBX-, SDBP-) and bare class-style names where it does not (CASIC and Allystar NAV-/CFG-).
+
+Rows: one per message with a decode registration in the codec package. Name-only registrations of undecoded messages get no row, and neither do messages the configurator enables but nothing decodes. For a codec shared between vendors (`gps/lib/novmsg` for ByNav and SinoGNSS), the rows are the intersection of what SatPulse decodes and what the vendor's receivers output, established from the vendor manual and from hardware evidence; when the two disagree, the page says so in a sentence.
+
+Columns: the message name; its numeric identity in the binary form (class and ID, or a message number), omitted when the protocol has none; "Used for"; and "Automatically enabled". The last column exists only when the vendor has high-level configuration, and it documents master, not a configuration branch in progress. It is a plain yes/no from the configurator's message-enable logic, deliberately hiding the gating (firmware generation, product variant, raw-output level); configuration messages get "-". Sort rows by class and then ID within class, by number when there are no classes, or alphabetically when there are no numbers.
+
+"Used for" comes from the dispatch switch in the packet processor and, for configuration messages, from the configurator: it names the device-independent data the message feeds, in a fixed vocabulary shared by all pages so that the tables read alike:
+
+- Time: "TAI time" or "UTC time" when the converter sets that scale directly. A message that sets one scale directly and supplies the offset to the other is "TAI time, UTC offset" or "UTC time, TAI offset"; one that sets both scales directly is "TAI time, UTC time". "leap second" means a `LeapSecondMsg` (the date of the next leap second); a message that only supplies the current offset does not earn it. "time pulse" is used only when the converter emits a `TimeMsg` with `Ref` PrePulse or PostPulse, and such rows say just "time pulse" even when the message also carries the time scales.
+- Position and velocity: "geodetic position", "geodetic velocity", "ECEF position", "ECEF velocity"; never a bare "position".
+- Satellites: "satellites" for a `SatellitesMsg`; split into "satellites" and "satellite signals" only when the vendor splits them across messages (u-blox NAV-SAT and NAV-SIG, Septentrio ChannelStatus and MeasEpoch), not otherwise. "satellite usage" covers the GNSS-used and bands-used contributions to the epoch, and a row with "satellite usage" does not also say "solution quality".
+- Solution quality: "solution quality" for anything else contributing to the `NavEpochMsg` (fix level, dimension, DOP, accuracy, satellite counts, differential age), including DOP and covariance messages; there is no separate accuracy term. "navigation epoch" is an end-of-epoch marker.
+- Others: "raw observations", "corrections usage" (a `CorReportMsg`), "survey" (a `SurveyMsg`), "receiver identification", "configuration acknowledgement", "logging" (messages forwarded to the log), and "decode only" for a message with no consumer.
+- Configuration messages by what they configure: "time pulse configuration", "time mode configuration", "signal configuration", "message configuration", "navigation rate configuration", "navigation model configuration", "non-volatile memory operations", "receiver reset", "communications port configuration" (or "serial port configuration" when it is really only serial); generic key-value set and get are "changing configuration" and "getting configuration".
+
+A "decode only" claim must be checked repo-wide, not only under `gps/`: `time/internal/logobs` consumes messages for logging (UBX INF-* and MON-COMMS live there), and `gpsdecode` and `gps/msgfile` consume every codec without that counting as a use.
+
 ## Testing
 
 Round-trip unit tests per protocol codec package (`go-unit-test` skill); scanner-robustness tests (`gps/internal/scantest`) for protocols that add packet formats; NMEA extension handler tests for proprietary `P...` sentences; a systematic packet-log corpus covering every decode path (`packet-testdata` skill) and driving the pipeline from a log without hardware (`drive-satpulsed-from-log`); decode/annotate spot checks (`satpulsetool decode`/`annotate`); message-file tests (`gps-msg-test`, then `hardware-test-gps-msgs` with hardware); high-level-config characterisation against real receivers (`gpshwtest`); the daemon black-box suite (`smoketest/`). Which of these apply at which point follows from the chunk milestones above.
@@ -244,6 +271,7 @@ Round-trip unit tests per protocol codec package (`go-unit-test` skill); scanner
 - `configs/gpsmsg/<vendor>/` -- message file(s) mapping standard tags, split per model or protocol family as needed.
 - `docs/internals/packages.md` -- a package entry for each new package (required by the repo conventions).
 - `docs/_includes/NEWS.md` -- a release-note entry for the user-facing feature.
+- `docs/gps-module-support/<vendor>.md` and its entry in `docs/gps-module-support/index.md` -- the vendor page with its supported-message table.
 
 ## References
 

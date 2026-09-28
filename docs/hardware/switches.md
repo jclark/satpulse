@@ -16,7 +16,7 @@ FS have the IES3110 series. I own two of them:
 * [IES3110-8TF-R](https://www.fs.com/products/148180.html), with a list price of US$159 ([Web UI manual](https://resource.fs.com/mall/doc/20230626110916xmfm0h.pdf), [CLI manual](https://resource.fs.com/mall/doc/20230424145026qmzzpt.pdf))
 
 They both have 8 x 1Gb RJ45 ports and 2 x SFP ports. The major spec difference is that the SFP ports are 2.5Gb in the IES3110-8TF model and 1Gb in IES3110-8TF-R. However, the two models have significantly different firmware (and
-distinct manuals). Most importantly for our purposes, the IES3110-8TF-R model has more complete PTP support, which allows the switch to work either as a transparent clock or a boundary clock, whereas the IES3110-8TF can only work as a transparent clock.
+distinct manuals). Most importantly for our purposes, the IES3110-8TF-R model has more complete PTP support, which allows the switch to work either as a [transparent clock]({% link intro/timing.md %}#switches) or a boundary clock, whereas the IES3110-8TF can only work as a transparent clock.
 
 There are other models in the IES3110 series:
 * the IES3110-8TF has a variant with PoE support, the IES3110-8TF-P, and also models with more ports; these all share the same manual

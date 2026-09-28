@@ -94,6 +94,20 @@ func GPS(week int16, tow time.Duration) Time {
 	return gnss(week, tow, epochGPS, TAIMinusGPS)
 }
 
+// ExtendGPSWeek extends GPS week numbers below 2048 into the range 2048–3071
+// (2019–2038), compensating for receivers that omit one or both high bits.
+// Week numbers of 2048 or greater are returned unchanged.
+func ExtendGPSWeek(week uint16) uint16 {
+	if week >= 2048 {
+		return week
+	}
+	add := uint16(2048)
+	if week >= 1024 {
+		add = 1024
+	}
+	return week + add
+}
+
 func GPSDate(week uint16, day time.Weekday) time.Time {
 	return epochGPS.AddDate(0, 0, int(week)*7+int(day))
 }

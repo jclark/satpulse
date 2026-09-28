@@ -1231,7 +1231,7 @@ func diffMetadataValueFields(prefix string, a, b reflect.Value) []string {
 	if metadataValueIsZero(a) && metadataValueIsZero(b) {
 		return nil
 	}
-	if a.Kind() != reflect.Struct || a.Type() == reflect.TypeOf(time.Time{}) {
+	if a.Kind() != reflect.Struct || a.Type() == reflect.TypeFor[time.Time]() {
 		return []string{prefix}
 	}
 	fields := make([]string, 0)

@@ -21,7 +21,7 @@ type BasicStruct struct {
 type Status uint8
 
 const (
-	StatusOK Status = 0
+	StatusOK    Status = 0
 	StatusError Status = 1
 )
 
@@ -115,7 +115,7 @@ type NestedMessage struct {
 // Test _ field skipping
 type StructWithPadding struct {
 	Field1 string
-	_      int32  // Should be skipped during encoding/decoding
+	_      int32 // Should be skipped during encoding/decoding
 	Field2 uint64
 	_      string // Should be skipped during encoding/decoding
 	Field3 bool
@@ -130,7 +130,7 @@ type EmbeddedWithPadding struct {
 type StructWithEmbeddedPadding struct {
 	Start string
 	EmbeddedWithPadding
-	_   int  // Should be skipped
+	_   int // Should be skipped
 	End bool
 }
 
@@ -151,9 +151,9 @@ type CustomTypesStruct struct {
 
 // Test [N]byte arrays as strings (for Unicore Char[N] fields)
 type ByteArrayStruct struct {
-	ShortName  [8]byte  // Short null-terminated string
-	LongName   [32]byte // Longer null-terminated string
-	NormalField string  // Regular string field
+	ShortName   [8]byte  // Short null-terminated string
+	LongName    [32]byte // Longer null-terminated string
+	NormalField string   // Regular string field
 }
 
 func TestCanonical(t *testing.T) {
@@ -161,7 +161,7 @@ func TestCanonical(t *testing.T) {
 	tests := []struct {
 		name   string
 		fields []string
-		value  interface{}
+		value  any
 	}{
 		{
 			name:   "basic types",
@@ -304,7 +304,7 @@ func TestCanonical(t *testing.T) {
 			value: func() ByteArrayStruct {
 				var s ByteArrayStruct
 				// Manually set up expected byte arrays (null-terminated)
-				copy(s.ShortName[:], "UM980")    // "UM980" + null bytes
+				copy(s.ShortName[:], "UM980")          // "UM980" + null bytes
 				copy(s.LongName[:], "R4.10Build13504") // "R4.10Build13504" + null bytes
 				s.NormalField = "normal"
 				return s
@@ -327,16 +327,16 @@ func TestCanonical(t *testing.T) {
 			if !reflect.DeepEqual(encodedFields, tt.fields) {
 				t.Errorf("Encode: expected %v, got %v", tt.fields, encodedFields)
 			}
-			
+
 			// Test Decode: fields -> value
 			valueType := reflect.TypeOf(tt.value)
 			target := reflect.New(valueType).Interface()
-			
+
 			err = Decode(tt.fields, target)
 			if err != nil {
 				t.Fatalf("Decode failed: %v", err)
 			}
-			
+
 			decodedValue := reflect.ValueOf(target).Elem().Interface()
 			if !reflect.DeepEqual(decodedValue, tt.value) {
 				t.Errorf("Decode: expected %+v, got %+v", tt.value, decodedValue)
@@ -350,7 +350,7 @@ func TestDecode(t *testing.T) {
 	tests := []struct {
 		name     string
 		fields   []string
-		expected interface{}
+		expected any
 	}{
 		{
 			name:   "fewer fields than struct",
@@ -403,12 +403,12 @@ func TestDecode(t *testing.T) {
 			// Create zero value for decoding
 			expectedType := reflect.TypeOf(tt.expected)
 			target := reflect.New(expectedType).Interface()
-			
+
 			err := Decode(tt.fields, target)
 			if err != nil {
 				t.Fatalf("Decode failed: %v", err)
 			}
-			
+
 			result := reflect.ValueOf(target).Elem().Interface()
 			if !reflect.DeepEqual(result, tt.expected) {
 				t.Errorf("expected %+v, got %+v", tt.expected, result)
@@ -420,11 +420,11 @@ func TestDecode(t *testing.T) {
 func TestPartialDecode(t *testing.T) {
 	// Test cases for PartialDecode - verifies field consumption counting
 	tests := []struct {
-		name                string
-		fields              []string
-		target              interface{}
-		expectedConsumed    int
-		expectedValue       interface{}
+		name             string
+		fields           []string
+		target           any
+		expectedConsumed int
+		expectedValue    any
 	}{
 		{
 			name:             "consume all fields",
@@ -483,11 +483,11 @@ func TestPartialDecode(t *testing.T) {
 			if err != nil {
 				t.Fatalf("PartialDecode failed: %v", err)
 			}
-			
+
 			if fieldsConsumed != tt.expectedConsumed {
 				t.Errorf("expected to consume %d fields, consumed %d", tt.expectedConsumed, fieldsConsumed)
 			}
-			
+
 			result := reflect.ValueOf(tt.target).Elem().Interface()
 			if !reflect.DeepEqual(result, tt.expectedValue) {
 				t.Errorf("expected %+v, got %+v", tt.expectedValue, result)
@@ -509,7 +509,7 @@ func TestBlankFieldErrors(t *testing.T) {
 	// Test that blank identifier fields produce errors
 	tests := []struct {
 		name   string
-		target interface{}
+		target any
 	}{
 		{
 			name:   "decode struct with _ field",
@@ -532,7 +532,7 @@ func TestBlankFieldErrors(t *testing.T) {
 				t.Errorf("expected blank identifier error, got: %v", err)
 			}
 
-			// Test PartialDecode  
+			// Test PartialDecode
 			_, err = PartialDecode([]string{"test"}, tt.target)
 			if err == nil {
 				t.Error("expected error for _ field in PartialDecode, got none")
@@ -557,7 +557,7 @@ func TestDecodeErrors(t *testing.T) {
 	tests := []struct {
 		name   string
 		fields []string
-		target interface{}
+		target any
 	}{
 		{
 			name:   "non-pointer",

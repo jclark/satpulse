@@ -522,8 +522,7 @@ func TestPushFiltersInvalidChecksum(t *testing.T) {
 }
 
 func TestPushBcastCloseShutsDown(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// Destination that never succeeds: Connect keeps failing.
 	// This exercises the bcast-close path while the writer is in
 	// the backoff sleep / Connect loop, not in writeLoop.
@@ -603,8 +602,7 @@ func TestPushReconnectsAfterWriteError(t *testing.T) {
 }
 
 func TestPushStopsOnFatalConnect(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// Connect always fails with a fatal error; Push must give up
 	// rather than retry forever.
 	var calls atomic.Int32

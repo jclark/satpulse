@@ -1,6 +1,7 @@
 package pmc
 
 import (
+	"errors"
 	"fmt"
 	"os"
 )
@@ -9,7 +10,8 @@ const PTP4LSocketPath = "/var/run/ptp4l"
 
 type Client struct {
 	MsgPreparer
-	T *Transport
+	T                      *Transport
+	firstMissingSequenceID *uint16
 }
 
 type ClientConfig struct {
@@ -70,26 +72,56 @@ func (client *Client) Send(msg MgmtMsg) (uint16, error) {
 
 func (client *Client) Recv(seqid uint16) (MgmtMsg, error) {
 	buf := make([]byte, 2048)
-	n, _, err := client.T.Conn.ReadFrom(buf)
-	if err != nil {
-		return nil, fmt.Errorf("could not receive PTP management message: %w", err)
-	}
+	for {
+		n, _, err := client.T.Conn.ReadFrom(buf)
+		if err != nil {
+			if errors.Is(err, os.ErrDeadlineExceeded) && client.firstMissingSequenceID == nil {
+				client.firstMissingSequenceID = &seqid
+			}
+			return nil, fmt.Errorf("could not receive PTP management message: %w", err)
+		}
 
-	recvData := buf[:n]
+		recvData := buf[:n]
 
-	resp, err := UnmarshalMgmtMsg(recvData)
-	if err != nil {
-		return nil, fmt.Errorf("could not unmarshal message: %w", err)
-	}
-	respPrefix := resp.Prefix()
-	if respPrefix.TargetPortIdentity.PortNumber != client.PortNumber {
-		return nil, fmt.Errorf("unexpected port number in response, got %d", respPrefix.TargetPortIdentity.PortNumber)
-	}
-	if respPrefix.SequenceID != seqid {
+		resp, err := UnmarshalMgmtMsg(recvData)
+		if err != nil {
+			return nil, fmt.Errorf("could not unmarshal message: %w", err)
+		}
+		respPrefix := resp.Prefix()
+		if respPrefix.TargetPortIdentity.PortNumber != client.PortNumber {
+			return nil, fmt.Errorf("unexpected port number in response, got %d", respPrefix.TargetPortIdentity.PortNumber)
+		}
+		if respPrefix.SequenceID == seqid {
+			if respPrefix.ActionField != ActionResponse {
+				return nil, fmt.Errorf("unexpected action field in response, got %d", respPrefix.ActionField)
+			}
+			client.firstMissingSequenceID = nil
+			return resp, nil
+		}
+		if client.isLateResponse(respPrefix.SequenceID, seqid) {
+			if respPrefix.ActionField != ActionResponse {
+				return nil, fmt.Errorf("unexpected action field in response, got %d", respPrefix.ActionField)
+			}
+			nextMissingSequenceID := respPrefix.SequenceID + 1
+			if nextMissingSequenceID == seqid {
+				client.firstMissingSequenceID = nil
+			} else {
+				client.firstMissingSequenceID = &nextMissingSequenceID
+			}
+			continue
+		}
 		return nil, fmt.Errorf("sequence ID mismatch: expected %d, got %d", seqid, respPrefix.SequenceID)
 	}
-	if respPrefix.ActionField != ActionResponse {
-		return nil, fmt.Errorf("unexpected action field in response, got %d", respPrefix.ActionField)
+}
+
+func (client *Client) isLateResponse(receivedSequenceID, expectedSequenceID uint16) bool {
+	if client.firstMissingSequenceID == nil {
+		return false
 	}
-	return resp, nil
+	firstMissingSequenceID := *client.firstMissingSequenceID
+	// uint16 subtraction measures forward distance modulo 2^16, so this
+	// comparison also works when the missing range crosses zero.
+	receivedDistance := receivedSequenceID - firstMissingSequenceID
+	expectedDistance := expectedSequenceID - firstMissingSequenceID
+	return receivedDistance < expectedDistance
 }

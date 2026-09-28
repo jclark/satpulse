@@ -72,18 +72,20 @@ func testDataBin[P ~uint8](t *testing.T, tests []dataTestCase[P],
 	}
 }
 
-func testDataAscii[P ~uint8](t *testing.T, tests []dataTestCase[P],
+func testDataAscii[P ~uint8, H any, PH AsciiHeader[P, H]](t *testing.T, tests []dataTestCase[P],
 	asciiCtors map[string]func() MsgBody) {
 	t.Helper()
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			msg, err := ParseAsciiMsgUsing[P]([]byte(tt.ascii), asciiCtors)
+			msg, err := ParseAsciiMsgUsing[P, H, PH]([]byte(tt.ascii), asciiCtors)
 			if err != nil {
 				t.Fatalf("ParseAsciiMsgUsing() error = %v", err)
 			}
 			expectedHeader := tt.hdr
+			// ASCII has no measurement source; only the format bits are set.
+			expectedHeader.MessageType = MsgFormatASCII
 			if tt.fixupHeaderForAscii != nil {
-				expectedHeader = tt.fixupHeaderForAscii(tt.hdr)
+				expectedHeader = tt.fixupHeaderForAscii(expectedHeader)
 			}
 			if !reflect.DeepEqual(msg.Hdr, expectedHeader) {
 				t.Errorf("ParseAsciiMsgUsing() header mismatch:\nGot:  %+v\nWant: %+v", msg.Hdr, expectedHeader)
@@ -96,11 +98,11 @@ func testDataAscii[P ~uint8](t *testing.T, tests []dataTestCase[P],
 				t.Errorf("ParseAsciiMsgUsing() mismatch:\nGot:  %+v\nWant: %+v", msg.Body, expectedValue)
 			}
 			testMsg := &Msg[P]{Hdr: expectedHeader, Body: expectedValue}
-			serialized, err := SerializeAsciiMsg(testMsg)
+			serialized, err := SerializeAsciiMsg[P, H, PH](testMsg)
 			if err != nil {
 				t.Fatalf("SerializeAsciiMsg() error = %v", err)
 			}
-			msg2, err := ParseAsciiMsgUsing[P](serialized, asciiCtors)
+			msg2, err := ParseAsciiMsgUsing[P, H, PH](serialized, asciiCtors)
 			if err != nil {
 				t.Fatalf("ParseAsciiMsgUsing() on serialized packet error = %v", err)
 			}

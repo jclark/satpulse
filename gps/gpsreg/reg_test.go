@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nov"
 )
 
 func TestVendorString(t *testing.T) {
@@ -182,6 +183,28 @@ func TestCreatePacketFormats(t *testing.T) {
 			got := formatTags(CreatePacketFormats(tc.vendors))
 			if !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestNovVariant(t *testing.T) {
+	tests := []struct {
+		name    string
+		vendors []Vendor
+		expect  nov.Variant
+	}{
+		{"empty list", nil, nov.VariantOEM7},
+		{"bynav", []Vendor{VendorBynav}, nov.VariantByNav},
+		{"sinognss", []Vendor{VendorSinoGNSS}, nov.VariantSinoGNSS},
+		{"bynav with non-NovAtel vendor", []Vendor{VendorUblox, VendorBynav}, nov.VariantByNav},
+		{"two NovAtel-format vendors", []Vendor{VendorBynav, VendorUnicore}, nov.VariantOEM7},
+		{"no NovAtel-format vendor", []Vendor{VendorUblox}, nov.VariantOEM7},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NovVariant(tc.vendors); got != tc.expect {
+				t.Errorf("got %v, want %v", got, tc.expect)
 			}
 		})
 	}

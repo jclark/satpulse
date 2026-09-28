@@ -67,7 +67,7 @@ const WB_URL_RE = /http:\/\/(?:\[[^\]]+\]|[^\s/]+?):(\d+)\/(?:\?t=(\S+))?/;
 function buildDir(): string {
   // Honour GOOS/GOARCH like the smoketest so a cross-built tree runs against its
   // own binaries; default to the host. Linux uses out/<arch>, other Unix
-  // out/<goos>_<arch>, matching unix-build.sh.
+  // out/<goos>_<arch>, matching Makefile.unix.
   const goos = process.env.GOOS || (process.platform === 'darwin' ? 'darwin' : 'linux');
   let goarch = process.env.GOARCH;
   if (!goarch) {

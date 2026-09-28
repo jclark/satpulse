@@ -18,9 +18,13 @@ func TestArbitrarySpeed(t *testing.T) {
 		t.Fatalf("close setup fd: %v", err)
 	}
 
-	term, err := Open(path, RawMode)
+	opened, _, err := Open(path, RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
+	}
+	term, ok := opened.(*unixTerm)
+	if !ok {
+		t.Fatalf("Open returned %T, want *unixTerm", opened)
 	}
 	t.Cleanup(func() {
 		if err := term.Close(); err != nil {
@@ -33,12 +37,12 @@ func TestArbitrarySpeed(t *testing.T) {
 	}
 	checkTestArbitrarySpeed(t, term.fd, testArbitrarySpeed)
 
-	if err := term.Change(Local); err != nil {
+	if _, err := term.Change(Local); err != nil {
 		t.Fatalf("Change: %v", err)
 	}
 	checkTestArbitrarySpeed(t, term.fd, testArbitrarySpeed)
 
-	if err := term.Change(Speed(9600)); err != nil {
+	if _, err := term.Change(Speed(9600)); err != nil {
 		t.Fatalf("Change Speed(9600): %v", err)
 	}
 	if got := term.Speed(); got != 9600 {
@@ -46,7 +50,7 @@ func TestArbitrarySpeed(t *testing.T) {
 	}
 	checkTestSpeed(t, term.fd, unix.B9600, 0, 9600)
 
-	if err := term.Restore(); err != nil {
+	if err := term.Restore(false); err != nil {
 		t.Fatalf("Restore: %v", err)
 	}
 	checkTestArbitrarySpeed(t, term.fd, testArbitrarySpeed)
@@ -68,7 +72,7 @@ func TestExclusiveModeDetected(t *testing.T) {
 	if err := unix.IoctlSetInt(fd, unix.TIOCEXCL, 0); err != nil {
 		t.Fatalf("ioctl(TIOCEXCL): %v", err)
 	}
-	term, err := Open(path, RawMode)
+	term, _, err := Open(path, RawMode)
 	if err == nil {
 		term.Close()
 		t.Fatal("Open succeeded on a terminal in exclusive mode")
@@ -87,7 +91,7 @@ func TestExclusiveModeReleased(t *testing.T) {
 	path := newTestPTY(t)
 	fd := openTestTTY(t, path)
 	defer unix.Close(fd)
-	term, err := Open(path, RawMode)
+	term, _, err := Open(path, RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -100,6 +104,44 @@ func TestExclusiveModeReleased(t *testing.T) {
 	}
 	if v, err := unix.IoctlGetInt(fd, unix.TIOCGEXCL); err != nil || v != 0 {
 		t.Fatalf("ioctl(TIOCGEXCL) after Close = %d, %v; want 0", v, err)
+	}
+}
+
+func TestRestoreExceptHardware(t *testing.T) {
+	saved := unix.Termios{
+		Iflag:  unix.ICRNL | unix.INPCK | unix.IXON | unix.IXOFF | unix.IXANY,
+		Oflag:  unix.OPOST,
+		Cflag:  unix.B9600 | unix.CS7 | unix.PARENB | unix.PARODD | unix.CMSPAR | unix.CSTOPB | unix.CRTSCTS | unix.HUPCL,
+		Lflag:  unix.ICANON | unix.ECHO | unix.ISIG,
+		Line:   7,
+		Ispeed: 9600,
+		Ospeed: 9600,
+	}
+	saved.Cc[unix.VMIN] = 1
+	saved.Cc[unix.VTIME] = 5
+	current := unix.Termios{
+		Iflag:  unix.BRKINT,
+		Cflag:  unix.BOTHER | unix.BOTHER<<16 | unix.CS8 | unix.CLOCAL | unix.CREAD,
+		Ispeed: 123457,
+		Ospeed: 234567,
+	}
+	current.Cc[unix.VTIME] = 1
+	want := saved
+	want.Cflag = unix.BOTHER | unix.BOTHER<<16 | unix.CS8 | unix.HUPCL
+	want.Iflag = unix.ICRNL | unix.IXON | unix.IXOFF | unix.IXANY | unix.BRKINT
+	want.Ispeed = 123457
+	want.Ospeed = 234567
+	if got := restoreExceptHardware(saved, current); got != want {
+		t.Errorf("restoreExceptHardware = %+v, want %+v", got, want)
+	}
+	// Also test restoration with the saved and current attributes swapped.
+	want = current
+	want.Cflag = unix.B9600 | unix.CS7 | unix.PARENB | unix.PARODD | unix.CMSPAR | unix.CSTOPB | unix.CRTSCTS | unix.CLOCAL | unix.CREAD
+	want.Iflag = unix.INPCK
+	want.Ispeed = 9600
+	want.Ospeed = 9600
+	if got := restoreExceptHardware(current, saved); got != want {
+		t.Errorf("reverse restoreExceptHardware = %+v, want %+v", got, want)
 	}
 }
 

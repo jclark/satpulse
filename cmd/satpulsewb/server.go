@@ -516,7 +516,7 @@ func (s *server) handleDecodePacket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	rslt, err := session.DecodePacket(gpsreg.CreatePacketFormats(nil), b, req.Out)
+	rslt, err := s.sess.DecodePacket(gpsreg.CreatePacketFormats(nil), b, req.Out)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

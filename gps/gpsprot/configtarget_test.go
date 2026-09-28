@@ -67,7 +67,7 @@ func TestPoint3DRoundTrip(t *testing.T) {
 		t.Fatalf("ParsePoint3D returned error: %v", err)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if parsedPoint[i] != originalPoint[i] {
 			t.Errorf("Expected coordinate %d to be %v, got %v", i, originalPoint[i], parsedPoint[i])
 		}
