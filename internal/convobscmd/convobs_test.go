@@ -6,6 +6,7 @@ import (
 	"compress/gzip"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -730,6 +731,36 @@ func TestRunPacketLogPrefilterSkipsInsignificantPacket(t *testing.T) {
 		t.Fatalf("run packet log: %v", err)
 	}
 	assertObsJSON(t, got.String(), "PKTLOG", nil, "G03", "1C", 0)
+}
+
+var errDiskFull = errors.New("disk full")
+
+type diskFullWriter struct{}
+
+func (diskFullWriter) Write([]byte) (int, error) { return 0, errDiskFull }
+
+func TestRunOutputError(t *testing.T) {
+	// A failed write is reported without the input position, whether it
+	// happens at the final flush (RINEX output is written only then) or
+	// while an input is being converted (obsj output, once the buffered
+	// writer fills).
+	tests := []struct {
+		name string
+		to   outputFormat
+		n    int
+	}{
+		{name: "RINEX at flush", to: outputRINEX, n: 1},
+		{name: "obsj during conversion", to: outputObsJSON, n: 200},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			in := bytes.Repeat(rawxPacket(t), tc.n)
+			err := runInputs(testInputs(bytes.NewReader(in)), diskFullWriter{}, inputRaw, tc.to, false, rinex.Metadata{}, 0)
+			if err == nil || err.Error() != "output: disk full" || !errors.Is(err, errDiskFull) {
+				t.Errorf("err = %v, want output: disk full", err)
+			}
+		})
+	}
 }
 
 func TestMaybeSignificantPacketLogLine(t *testing.T) {

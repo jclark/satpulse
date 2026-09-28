@@ -632,7 +632,22 @@ func (cj convJob) run(lg *slog.Logger, now time.Time) error {
 	return sink.Flush()
 }
 
+// outputError is a failure to write the output. It is reported without the
+// input file and packet log line that were being converted when it happened,
+// since the failure has nothing to do with them.
+type outputError struct {
+	err error
+}
+
+func (e *outputError) Error() string { return "output: " + e.err.Error() }
+
+func (e *outputError) Unwrap() error { return e.err }
+
 func inputError(path string, err error) error {
+	var oerr *outputError
+	if errors.As(err, &oerr) {
+		return oerr
+	}
 	if path == "" {
 		return err
 	}
@@ -642,7 +657,21 @@ func inputError(path string, err error) error {
 	return fmt.Errorf("%s: %w", path, err)
 }
 
+// outputWriter makes a failed write to w an outputError.
+type outputWriter struct {
+	w io.Writer
+}
+
+func (ow outputWriter) Write(b []byte) (int, error) {
+	n, err := ow.w.Write(b)
+	if err != nil {
+		err = &outputError{err}
+	}
+	return n, err
+}
+
 func outputSink(w io.Writer, format outputFormat, interval time.Duration, requireCP bool) (rinex.Sink, error) {
+	w = outputWriter{w}
 	var sink rinex.Sink
 	switch format {
 	case outputRINEX:
