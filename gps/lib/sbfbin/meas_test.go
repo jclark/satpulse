@@ -133,6 +133,7 @@ func TestGLONASSFreqNr(t *testing.T) {
 		{name: "L1CA freq -7", typ: 8, obsInfo: 1 << 3, expect: -7, expectOK: true},
 		{name: "L2CA freq +6", typ: 11, obsInfo: 14 << 3, expect: 6, expectOK: true},
 		{name: "zero wire value", typ: 8, obsInfo: 0, expectOK: false},
+		{name: "wire value above range", typ: 8, obsInfo: 15 << 3, expectOK: false},
 		{name: "non-FDMA GLONASS L3", typ: 12, obsInfo: 1 << 3, expectOK: false},
 		{name: "non-GLONASS signal", typ: 0, obsInfo: 1 << 3, expectOK: false},
 		{name: "half-cycle bit ignored", typ: 9, obsInfo: 1<<3 | 1<<2, expect: -7, expectOK: true},

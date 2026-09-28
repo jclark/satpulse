@@ -267,15 +267,16 @@ func (t *MeasEpochChannelType2) DopplerOffsetHz() (float64, bool) {
 
 // GLONASSFreqNr returns the GLONASS frequency number (-7..6) for a master
 // channel whose signal is one of the GLONASS FDMA signal numbers 8-11.
-// ObsInfo bits 3-7 encode the frequency number with an offset of 8; the wire
-// value 0 does not encode a frequency number and reports false, as does any
-// non-FDMA signal.
+// ObsInfo bits 3-7 encode the frequency number with an offset of 8; a wire
+// value outside 1-14, which does not encode a valid frequency number, reports
+// false, as does any non-FDMA signal.
 func (t *MeasEpochChannelType1) GLONASSFreqNr() (int8, bool) {
 	n := uint8(t.Type) & 0x1F
-	if n < SigNumGLONASSL1CA || n > SigNumGLONASSL2CA || t.ObsInfo>>3 == 0 {
+	k := int8(t.ObsInfo>>3) - 8
+	if n < SigNumGLONASSL1CA || n > SigNumGLONASSL2CA || k < -7 || k > 6 {
 		return 0, false
 	}
-	return int8(uint8(t.ObsInfo)>>3) - 8, true
+	return k, true
 }
 
 type measExtraHead struct {
