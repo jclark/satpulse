@@ -52,7 +52,7 @@ var packetLogFormatsByTag = packetFormatsByTag(packetLogFormats)
 var packetLogRTCMMarker = []byte("RTCM")
 var packetLogUBXObsMarker = []byte("RXM-RAWX")
 var packetLogUNCObsMarker = []byte("OBSVM")
-var packetLogSBFObsMarker = []byte("Meas") // MeasEpoch and MeasExtra
+var packetLogSBFObsMarker = []byte("MeasE") // MeasEpoch and MeasExtra, not EndOfMeas
 var packetLogJSONEscapeMarker = []byte(`\u`)
 
 const summary = `[-h|--help] [-o|--output path] [-H|--header-file path]
