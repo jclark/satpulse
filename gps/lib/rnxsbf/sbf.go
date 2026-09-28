@@ -102,8 +102,13 @@ func (c *Converter) Flush() error {
 // ConvertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra block
 // for the same epoch if available, to RINEX observations. ts is the MeasEpoch
 // block-header timestamp; pass a nil extra when MeasExtra output is not
-// enabled or has not arrived for this epoch.
+// enabled or has not arrived for this epoch. It returns an error if the
+// measurements are scrambled, which the receiver does when it lacks the
+// Measurement Availability permission.
 func (c *Converter) ConvertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error {
+	if m.CommonFlags&sbfbin.CommonFlagsScrambling != 0 {
+		return fmt.Errorf("SBF MeasEpoch measurements are scrambled: the receiver lacks the Measurement Availability permission")
+	}
 	if ts.TOW == sbfbin.TOWDNU || ts.WNc == sbfbin.WNcDNU {
 		return nil
 	}

@@ -132,6 +132,12 @@ blocks that carry an explicit `TimeSystem` field for something else
 `ConvertMeasEpoch` returns without emitting any observations (this can
 happen briefly at receiver startup before time is set).
 
+If `CommonFlags` bit 7 ("Scrambling") is set, the receiver lacks the
+"Measurement Availability" permission and every measurement in the
+block is scrambled, with no Do-Not-Use marker on any field.
+`ConvertMeasEpoch` returns an error rather than write the scrambled
+values: without the permission no epoch is usable.
+
 ### Satellite identification: SVID to RINEX satellite ID
 
 `MeasEpochChannelType1.SVID` folds constellation and satellite number
@@ -464,10 +470,3 @@ package -- the guide's formulas above are the authoritative spec.
   246-249 as an undefined gap (skip, per the general "ignore ranges
   this document doesn't define" decoding rule) rather than guessing an
   extension. Revisit if a future guide revision fills it in.
-- **Whether to expose `MeasEpoch.CommonFlags` bit 7 ("Scrambling")** as
-  a diagnostic: when set, every measurement in the block is silently
-  degraded with no per-field Do-Not-Use marker to signal it. This
-  converter has no natural place to surface a block-wide warning
-  (`rinex.Sink` has no side channel for it); decide whether that
-  belongs in `rnxsbf` at all, or purely in the `gps/internal/septentrio`
-  diagnostic path (phase 3), before implementing.

@@ -70,6 +70,14 @@ func convert(t *testing.T, ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfb
 	return s.obs
 }
 
+func TestScrambled(t *testing.T) {
+	s := &testSink{}
+	err := New(s).ConvertMeasEpoch(testTS, measEpoch(sbfbin.CommonFlagsScrambling, []sbfbin.MeasEpochChannelType1{masterCh(7, 0)}, nil), nil)
+	if err == nil || len(s.obs) != 0 {
+		t.Errorf("err = %v, %d observations; want an error and none", err, len(s.obs))
+	}
+}
+
 func TestConvertMaster(t *testing.T) {
 	glo := masterCh(40, 8)
 	glo.ObsInfo = 1 << 3 // frequency number -7
