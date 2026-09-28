@@ -2,6 +2,7 @@ package rnxsbf
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/lib/opt"
@@ -380,27 +381,25 @@ func TestArcHC(t *testing.T) {
 	s := &testSink{}
 	c := New(s)
 	for _, st := range steps {
-		t.Run(st.name, func(t *testing.T) {
-			t1 := masterCh(7, 0)
-			t1.LockTime = st.lockTime
-			if st.noPhase {
-				t1.CarrierMSB = -128
-				t1.CarrierLSB = 0
-			}
-			if st.halfCycle {
-				t1.ObsInfo = sbfbin.ObsInfoHalfCycle
-			}
-			s.obs = nil
-			if err := c.convertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), nil); err != nil {
-				t.Fatalf("convertMeasEpoch: %v", err)
-			}
-			if len(s.obs) != 1 {
-				t.Fatalf("len observations = %d, want 1", len(s.obs))
-			}
-			if s.obs[0].Arc != st.expectArc || s.obs[0].HC != st.expectHC {
-				t.Errorf("Arc/HC = %d/%v, want %d/%v", s.obs[0].Arc, s.obs[0].HC, st.expectArc, st.expectHC)
-			}
-		})
+		t1 := masterCh(7, 0)
+		t1.LockTime = st.lockTime
+		if st.noPhase {
+			t1.CarrierMSB = -128
+			t1.CarrierLSB = 0
+		}
+		if st.halfCycle {
+			t1.ObsInfo = sbfbin.ObsInfoHalfCycle
+		}
+		s.obs = nil
+		if err := c.convertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), nil); err != nil {
+			t.Fatalf("%s: convertMeasEpoch: %v", st.name, err)
+		}
+		if len(s.obs) != 1 {
+			t.Fatalf("%s: len observations = %d, want 1", st.name, len(s.obs))
+		}
+		if s.obs[0].Arc != st.expectArc || s.obs[0].HC != st.expectHC {
+			t.Errorf("%s: Arc/HC = %d/%v, want %d/%v", st.name, s.obs[0].Arc, s.obs[0].HC, st.expectArc, st.expectHC)
+		}
 	}
 }
 
@@ -437,22 +436,17 @@ func TestArcAcrossMasterSlaveSwitch(t *testing.T) {
 		{name: "master reset", m: asMaster(0), expectArc: 2},
 	}
 	for _, st := range steps {
-		t.Run(st.name, func(t *testing.T) {
-			s.obs = nil
-			if err := c.convertMeasEpoch(testTS, st.m, nil); err != nil {
-				t.Fatalf("convertMeasEpoch: %v", err)
-			}
-			for _, o := range s.obs {
-				if o.Sig != "2L" {
-					continue
-				}
-				if o.Arc != st.expectArc {
-					t.Errorf("Arc = %d, want %d", o.Arc, st.expectArc)
-				}
-				return
-			}
-			t.Fatalf("no 2L observation in %+v", s.obs)
-		})
+		s.obs = nil
+		if err := c.convertMeasEpoch(testTS, st.m, nil); err != nil {
+			t.Fatalf("%s: convertMeasEpoch: %v", st.name, err)
+		}
+		i := slices.IndexFunc(s.obs, func(o rinex.SignalObservation) bool { return o.Sig == "2L" })
+		if i < 0 {
+			t.Fatalf("%s: no 2L observation in %+v", st.name, s.obs)
+		}
+		if s.obs[i].Arc != st.expectArc {
+			t.Errorf("%s: Arc = %d, want %d", st.name, s.obs[i].Arc, st.expectArc)
+		}
 	}
 }
 
@@ -492,15 +486,13 @@ func TestConvertBlock(t *testing.T) {
 	s := &testSink{}
 	c := New(s)
 	for _, st := range steps {
-		t.Run(st.name, func(t *testing.T) {
-			ok, err := c.ConvertBlock(&st.b)
-			if err != nil {
-				t.Fatalf("ConvertBlock: %v", err)
-			}
-			if ok != st.expectOK || len(s.obs) != st.expectObs {
-				t.Errorf("ok %v obs %d, want %v %d", ok, len(s.obs), st.expectOK, st.expectObs)
-			}
-		})
+		ok, err := c.ConvertBlock(&st.b)
+		if err != nil {
+			t.Fatalf("%s: ConvertBlock: %v", st.name, err)
+		}
+		if ok != st.expectOK || len(s.obs) != st.expectObs {
+			t.Errorf("%s: ok %v obs %d, want %v %d", st.name, ok, len(s.obs), st.expectOK, st.expectObs)
+		}
 	}
 	if err := c.Flush(); err != nil {
 		t.Fatalf("Flush: %v", err)
@@ -552,20 +544,18 @@ func TestArcFromCumLossCont(t *testing.T) {
 	s := &testSink{}
 	c := New(s)
 	for _, st := range steps {
-		t.Run(st.name, func(t *testing.T) {
-			t1 := masterCh(7, 0)
-			t1.LockTime = sbfbin.MeasType1LockTimeClipped
-			s.obs = nil
-			if err := c.convertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), st.extra); err != nil {
-				t.Fatalf("convertMeasEpoch: %v", err)
-			}
-			if len(s.obs) != 1 {
-				t.Fatalf("len observations = %d, want 1", len(s.obs))
-			}
-			if s.obs[0].Arc != st.expectArc {
-				t.Errorf("Arc = %d, want %d", s.obs[0].Arc, st.expectArc)
-			}
-		})
+		t1 := masterCh(7, 0)
+		t1.LockTime = sbfbin.MeasType1LockTimeClipped
+		s.obs = nil
+		if err := c.convertMeasEpoch(testTS, measEpoch(0, []sbfbin.MeasEpochChannelType1{t1}, nil), st.extra); err != nil {
+			t.Fatalf("%s: convertMeasEpoch: %v", st.name, err)
+		}
+		if len(s.obs) != 1 {
+			t.Fatalf("%s: len observations = %d, want 1", st.name, len(s.obs))
+		}
+		if s.obs[0].Arc != st.expectArc {
+			t.Errorf("%s: Arc = %d, want %d", st.name, s.obs[0].Arc, st.expectArc)
+		}
 	}
 }
 
