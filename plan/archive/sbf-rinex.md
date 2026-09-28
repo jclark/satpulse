@@ -365,7 +365,11 @@ does with its `signalKey`/`signalState` map, driven by:
   at 65534, Type2 at 254), so the decrease comparison clamps both sides
   to the smaller of the two ceilings involved.
 - **Half-cycle ambiguity**: `ObsInfo` bit 2 for this sub-block, mapped
-  straight to `HC` when a carrier phase is present.
+  straight to `HC` when a carrier phase is present. The bit clearing
+  between two epochs with a carrier phase also marks a pending arc
+  increment: the receiver can shift the phase by half a cycle when it
+  resolves the ambiguity, without resetting `LockTime`, so the resolved
+  phase must not be tied to the flagged phase before it.
 - **Arc increments only when a carrier-phase value is actually
   present** this epoch (matching `rnxubx`'s `phase && st.pending`
   gate) -- a pending flag from a lock-time reset waits for the next
@@ -460,10 +464,11 @@ decode/round-trip testing) exercising:
 - The Galileo E6 `CommonFlags` bit 6 dispatch between `6C` and `6B`.
 
 Once example SBF captures with real `MeasEpoch`/`MeasExtra` traffic are
-available (see `CLAUDE.local.md`), cross-check emitted observations
-against the receiver's own SBF-to-RINEX conversion (if the Septentrio
-tools used to build the reference captures include one) as an
-end-to-end sanity check, though this is not required to land the
+available (such as the mosaic-G5 packet logs in
+`gps/testdata/packets/septentrio/mosaic-G5`), cross-check emitted
+observations against the receiver's own SBF-to-RINEX conversion (if the
+Septentrio tools used to build the reference captures include one) as
+an end-to-end sanity check, though this is not required to land the
 package -- the guide's formulas above are the authoritative spec.
 
 ## Open decisions
