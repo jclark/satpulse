@@ -121,7 +121,8 @@ only sub-blocks whose `AntennaID` is 0 (main antenna). It filters Type1,
 Type2, and MeasExtra sub-blocks before observation state or MeasExtra
 correlation can combine measurements from different antennas.
 
-Epoch time is `rinex.TimeFromGPSWeekMillis(int64(m.WNc), m.TOW)`.
+Epoch time is `rinex.TimeFromGPSWeekMillis(int64(ts.WNc), ts.TOW)`,
+from the block-header timestamp `ts`.
 Per the SBF specification, block-header `TOW`/`WNc` always uses the
 GPS week convention regardless of which constellation a given
 sub-block's satellite belongs to (Galileo week is `WNc-1024`, BeiDou
