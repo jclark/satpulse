@@ -502,15 +502,26 @@ CSRS-PPP (version 5.15.5, ultra-rapid products, a float solution, GPS
 and GLONASS; Galileo was skipped, having no ultra-rapid products). The
 RANGE and MSM7 positions agree within 5 mm. Both differ from the
 antenna's known position by -0.121 m north, -0.04 m east and -0.005 m up,
-with 95% sigmas of 0.024, 0.11 and 0.19 m; the north offset, common to
-both inputs, is a limitation of a two-hour ultra-rapid float solution,
-not of the conversion. CSRS-PPP used C2X/L2X for GPS L2C alongside
+with 95% sigmas of 0.024, 0.11 and 0.19 m. The north offset, common to
+both inputs, comes from the reference position, not the conversion (see
+the fixed solution below). CSRS-PPP used C2X/L2X for GPS L2C alongside
 C2W/L2W, and 3 to 4 mm phase residuals for both inputs.
 
 A K901 logging RANGE with `ontime 30` outputs epochs on the GPS-time
 30 s grid (time of week a multiple of 30 s, whenever the log was
 requested), so a longer capture for PPP can log at 30 s rather than
 decimating 1 Hz output.
+
+Two hours was too short for ambiguity resolution (0% of GPS ambiguities
+fixed). A 10-hour K901 RANGE capture (13:00 to 23:00 GPS time on
+2026-09-27), logged at 30 s and converted the same way, gives a fixed
+solution with ultra-rapid products: 83% of GPS ambiguities resolved,
+with 95% sigmas of 0.007 m north, 0.008 m east and 0.040 m up. It
+differs from the antenna's known position by -0.112 m north, -0.134 m
+east and +0.089 m up, and agrees with the two-hour float solution within
+the float's sigmas, so the known position, not the conversion, is off by
+about 11 cm north and 13 cm east. In the capture, 83 to 86% of GPS L1
+C/A carrier phase is in arcs of 30 minutes or more.
 
 ## Open decisions
 
