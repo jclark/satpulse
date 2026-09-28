@@ -34,11 +34,6 @@ const (
 // it is E6-C.
 const CommonFlagsE6BUsed CommonFlags = 1 << 6
 
-// E6BUsed reports whether the E6-B-used bit is set.
-func (f CommonFlags) E6BUsed() bool {
-	return f&CommonFlagsE6BUsed != 0
-}
-
 // Observed-axis signal numbers, guide sec 4.1.10. These index both
 // MeasEpoch's SigIdxLo field and the PVT SignalInfo bitmask.
 const (
