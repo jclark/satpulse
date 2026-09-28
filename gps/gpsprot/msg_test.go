@@ -876,6 +876,161 @@ func TestNavEpochManagerEndOfEpochMultiple(t *testing.T) {
 	}
 }
 
+func TestEndOfEpochDoesNotArmProtocolRecovery(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	t2 := t1.Add(time.Second)
+	ubx := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(ubx, t0)
+	ubx.msg = &NavEpochMsg{Tag: "UBX"}
+	mgr.EndOfEpoch(t0)
+	mgr.EpochStarted(nmeaF, t1)
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", DOP: DOP{Hor: opt.Make(1.0)}}
+	before := len(rec.epochs)
+	mgr.EpochStarted(ubx, t1.Add(time.Millisecond))
+	if len(rec.epochs) != before {
+		t.Fatalf("ordinary EndOfEpoch triggered protocol recovery, got %d new epochs", len(rec.epochs)-before)
+	}
+	ubx.msg = &NavEpochMsg{Tag: "UBX"}
+	mgr.EpochStarted(nmeaF, t2)
+	if len(rec.epochs) != before+1 || rec.epochs[before].Tag != "UBX" || rec.epochs[before].DOP.Hor.Get() != 1.0 {
+		t.Fatalf("post-EndOfEpoch merge = %+v, want aligned UBX and NMEA", rec.epochs)
+	}
+}
+
+func TestEndOfProtocolEpochEstablishesSoleProtocol(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	f := &testFlusher{pri: PriVendorLow, mh: rec}
+	mgr.EpochStarted(f, t0)
+	f.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(f, t0)
+	if len(rec.epochs) != 0 {
+		t.Fatalf("first EndOfProtocolEpoch should defer, got %d epochs", len(rec.epochs))
+	}
+	mgr.EpochStarted(f, t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("next epoch start should establish sole protocol, got %d epochs", len(rec.epochs))
+	}
+	f.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(f, t1)
+	if len(rec.epochs) != 2 {
+		t.Fatalf("established sole-protocol end should flush, got %d epochs", len(rec.epochs))
+	}
+}
+
+func TestEndOfProtocolEpochDefersToOther(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	sbf := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(sbf, t0)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t0)
+	mgr.EpochStarted(sbf, t1)
+	mgr.EpochStarted(nmeaF, t1)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	before := len(rec.epochs)
+	mgr.EndOfProtocolEpoch(sbf, t1)
+	if len(rec.epochs) != before {
+		t.Fatalf("EndOfProtocolEpoch must defer while another protocol is active, got %d new epochs", len(rec.epochs)-before)
+	}
+}
+
+func TestEndOfProtocolEpochDefersOnLastEpoch(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	sbf := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(sbf, t0)
+	mgr.EpochStarted(nmeaF, t0)
+	mgr.EndOfProtocolEpoch(sbf, t0)
+	mgr.EndOfEpoch(t0)
+	before := len(rec.epochs)
+	mgr.EpochStarted(sbf, t1)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t1)
+	if len(rec.epochs) != before {
+		t.Fatalf("EndOfProtocolEpoch must defer when a protocol was present last epoch, got %d new epochs", len(rec.epochs)-before)
+	}
+}
+
+func TestEndOfProtocolEpochColdStartTrailingProtocol(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	t2 := t1.Add(time.Second)
+	sbf := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(sbf, t0)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t0)
+	mgr.EpochStarted(nmeaF, t0.Add(time.Millisecond))
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", DOP: DOP{Hor: opt.Make(1.0)}}
+	mgr.EpochStarted(sbf, t1)
+	if len(rec.epochs) != 1 || rec.epochs[0].DOP.Hor.Get() != 1.0 {
+		t.Fatalf("first merged epoch = %+v, want aligned NMEA DOP", rec.epochs)
+	}
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t1)
+	if len(rec.epochs) != 1 {
+		t.Fatalf("multi-protocol EndOfProtocolEpoch should defer, got %d epochs", len(rec.epochs))
+	}
+	mgr.EpochStarted(nmeaF, t1.Add(time.Millisecond))
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", DOP: DOP{Hor: opt.Make(2.0)}}
+	mgr.EpochStarted(sbf, t2)
+	if len(rec.epochs) != 2 || rec.epochs[1].DOP.Hor.Get() != 2.0 {
+		t.Fatalf("second merged epoch = %+v, want aligned NMEA DOP", rec.epochs)
+	}
+}
+
+func TestEndOfProtocolEpochRecoversLateProtocol(t *testing.T) {
+	mgr := NewNavEpochManager()
+	rec := &epochRecorder{}
+	t0 := time.Date(2025, 1, 1, 0, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Second)
+	t2 := t1.Add(time.Second)
+	t3 := t2.Add(time.Second)
+	sbf := &testFlusher{pri: PriVendorLow, mh: rec}
+	nmeaF := &testFlusher{pri: PriGenericHigh, mh: rec}
+	mgr.EpochStarted(sbf, t0)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t0)
+	mgr.EpochStarted(sbf, t1)
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t1)
+	mgr.EpochStarted(nmeaF, t1.Add(time.Millisecond))
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", DOP: DOP{Hor: opt.Make(1.0)}}
+	mgr.EpochStarted(sbf, t2)
+	if len(rec.epochs) != 3 || rec.epochs[2].Tag != "NMEA" {
+		t.Fatalf("transition should flush late NMEA separately, got %+v", rec.epochs)
+	}
+	sbf.msg = &NavEpochMsg{Tag: "SBF"}
+	mgr.EndOfProtocolEpoch(sbf, t2)
+	if len(rec.epochs) != 3 {
+		t.Fatalf("transition should disable sole-protocol flush, got %d epochs", len(rec.epochs))
+	}
+	mgr.EpochStarted(nmeaF, t2.Add(time.Millisecond))
+	if len(rec.epochs) != 3 {
+		t.Fatalf("trailing protocol should join without another recovery flush, got %d epochs", len(rec.epochs))
+	}
+	nmeaF.msg = &NavEpochMsg{Tag: "NMEA", DOP: DOP{Hor: opt.Make(2.0)}}
+	mgr.EpochStarted(sbf, t3)
+	if len(rec.epochs) != 4 || rec.epochs[3].Tag != "SBF" || rec.epochs[3].DOP.Hor.Get() != 2.0 {
+		t.Fatalf("post-transition epoch = %+v, want aligned SBF and NMEA", rec.epochs)
+	}
+}
+
 func TestNavEpochManagerNilContribution(t *testing.T) {
 	mgr := NewNavEpochManager()
 	rec := &epochRecorder{}
@@ -1338,6 +1493,36 @@ func TestUnmarshalMsg(t *testing.T) {
 	}
 	if _, err := UnmarshalMsg("bogus", []byte(`{}`)); err == nil {
 		t.Error("UnmarshalMsg(bogus): expected error")
+	}
+}
+
+// TestSatellitesUsedSignalNoSignals covers a SatelliteUsedSignal message where a used
+// SV carries no signal detail (e.g. UBX-NAV-SAT with L1 below the quality threshold).
+// GNSSUsed must still report its constellation, while BandsUsed stays signal-level and
+// must not invent a band for it.
+func TestSatellitesUsedSignalNoSignals(t *testing.T) {
+	msg := &SatellitesMsg{
+		UsedValidity: SatelliteUsedSignal,
+		SVs: []SVInfo{
+			{
+				ID:   SVID{GNSS: GPS, Num: 1},
+				Used: true,
+			},
+			{
+				ID:   SVID{GNSS: GAL, Num: 7},
+				Used: true,
+				Signals: []SignalInfo{
+					{ID: SigIDGALE1, CN0: 40, Used: true},
+					{ID: SigIDGALE5a, CN0: 35, Used: false},
+				},
+			},
+		},
+	}
+	if got, expect := msg.GNSSUsed(), GNSSSetOf(GPS)|GNSSSetOf(GAL); got != expect {
+		t.Errorf("GNSSUsed() = %v, expected %v", got, expect)
+	}
+	if got, expect := msg.BandsUsed(), BandL1; got != expect {
+		t.Errorf("BandsUsed() = %v, expected %v", got, expect)
 	}
 }
 

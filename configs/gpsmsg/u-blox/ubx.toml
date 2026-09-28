@@ -2,6 +2,13 @@
 # u-blox configuration messages (all generations)
 # For commands not yet supported through high-level configuration
 
+# Poll MON-VER (software and hardware version)
+[[ubx]]
+tag = "get-version"
+description = "Poll MON-VER for software and hardware version"
+class = 0x0A
+id = 0x04
+
 # Poll PUBX,04 (time, clock bias/drift, time pulse granularity)
 # The last field (tpGran) is not available via UBX binary.
 [[nmea]]

@@ -3,7 +3,7 @@
 
 Runs real satpulsed and satpulsewb binaries fed by a hardware-free packet
 source -- a realtime packet-log replay or the u-blox receiver simulator --
-with no root and no GPS hardware. See plan/smoke-test.md.
+with no root and no GPS hardware. See plan/archive/smoke-test.md.
 
 Each scenario has an explicit ID in SCENARIOS. For scenario ID family/name:
   - scenarios/family/name.toml.in (satpulsed) or name.args.in (satpulsewb):
@@ -188,7 +188,7 @@ def build_dir() -> str:
 
     Honour GOOS and GOARCH when set so a cross-built tree is exercised against
     its own binaries rather than the host's. Linux builds use out/<arch>;
-    other Unix builds use out/<goos>_<arch>, matching unix-build.sh.
+    other Unix builds use out/<goos>_<arch>, matching Makefile.unix.
     """
     goos = os.environ.get("GOOS") or platform.system().lower()
     goarch = os.environ.get("GOARCH")
@@ -1089,7 +1089,12 @@ def run_scenario(name: str, use_sudo: bool) -> tuple[str, Status, str]:
 def main() -> int:
     ap = argparse.ArgumentParser(description="satpulsed daemon smoke tests")
     ap.add_argument("scenarios", nargs="*", help="scenario names (default: all)")
-    ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 4)
+    jobs = os.cpu_count() or 4
+    # GitHub's three-core macOS runner stalls helper processes when every CPU has
+    # a scenario worker; reserve one for daemons, replays, and pty drain threads.
+    if sys.platform == "darwin":
+        jobs = max(1, jobs - 1)
+    ap.add_argument("-j", "--jobs", type=int, default=jobs)
     ap.add_argument("-l", "--list", action="store_true", help="list scenarios and exit")
     ap.add_argument("--sudo", action="store_true",
                     help="run root-required scenarios through sudo -n instead of skipping them")

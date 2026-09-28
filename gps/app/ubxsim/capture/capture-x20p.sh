@@ -104,7 +104,7 @@ mv "$enable_tmp/x20p-enable.jsonl" "$outdir/x20p-enable.jsonl"
 rm -r "$enable_tmp"
 
 echo "== 3/3: replay recording, $dur seconds -> $outdir/x20p-replay.jsonl"
-"$SATPULSETOOL" gps -d "$dev" -s "$speed" --capture "$dur" \
+"$SATPULSETOOL" serial -d "$dev" -s "$speed" -t "$dur" \
     --packet-log "$outdir/x20p-replay.jsonl"
 
 echo "== done"

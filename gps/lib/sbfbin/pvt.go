@@ -101,6 +101,7 @@ const (
 	DatumUserDefined250    Datum  = 250
 	DatumUserDefined251    Datum  = 251
 	DatumDNU               Datum  = 0xFF
+	PVTNrSVDNU             uint8  = 0xFF
 	PVTAccuracyDNU         uint16 = 0xFFFF
 	PVTReferenceIDMulti    uint16 = 0xFFFE
 	PVTReferenceIDDNU      uint16 = 0xFFFF

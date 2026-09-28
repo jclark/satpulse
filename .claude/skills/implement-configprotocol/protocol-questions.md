@@ -206,6 +206,16 @@ differ in which messages they actually emit. A support flag like
 ConfigSupportRaw must be set from observation of the receiver in hand,
 never extrapolated from the firmware version.
 
+Declare the support set subtractively: start from
+`gpsprot.ConfigSupportFull` and clear the flags the family lacks, rather
+than OR-ing together the flags it has (unc and ubx both do this; see the
+`ConfigSupportFull` doc comment). An additive list silently omits any
+universally supported flag added to `ConfigSupportFull` later - the
+backend keeps compiling and quietly under-declares a capability it
+actually has - while a subtractive declaration inherits the new flag
+automatically. The obligation flips: enumerate exactly what the receiver
+lacks, so nothing it truly implements is dropped.
+
 ## What is genuinely not in the protocol
 
 Some requested information will have no carrier (CASIC: epoch markers,

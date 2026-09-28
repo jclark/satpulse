@@ -32,6 +32,10 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 		}
 		return usage, err
 	}
+	vendors, err := cmd.ResolveVendors(v.vendor)
+	if err != nil {
+		return "", err
+	}
 
 	var input io.Reader
 	if v.filePath == "-" {
@@ -46,7 +50,7 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 	}
 
 	out := bufio.NewWriter(os.Stdout)
-	err = run(input, out, v.vendor)
+	err = run(input, out, vendors)
 	if flushErr := out.Flush(); err == nil {
 		err = flushErr
 	}
@@ -84,8 +88,8 @@ type writeFlusher interface {
 	Flush() error
 }
 
-func run(input io.Reader, out writeFlusher, vendor gpsreg.Vendor) error {
-	scanner := scan.New(input, 16, gpsreg.CreatePacketFormats(vendor))
+func run(input io.Reader, out writeFlusher, vendors []gpsreg.Vendor) error {
+	scanner := scan.New(input, 16, gpsreg.CreatePacketFormats(vendors))
 	enc := json.NewEncoder(out)
 	for {
 		pkt, err := scanner.Scan()

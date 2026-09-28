@@ -18,7 +18,6 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
-	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 )
 
@@ -70,6 +69,7 @@ func (c *fakeConn) Write(b []byte) (int, error) {
 
 func (c *fakeConn) Buffered() (int, error) { return 0, nil }
 func (c *fakeConn) Drain() error           { return nil }
+func (c *fakeConn) SetDetected()           {}
 func (c *fakeConn) ReadOnly() bool         { return false }
 func (c *fakeConn) Direct() bool           { return true }
 func (c *fakeConn) LocalAddr() string      { return "fake" }
@@ -114,7 +114,7 @@ type fakeOpener struct {
 	opens  int
 }
 
-func (o *fakeOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
+func (o *fakeOpener) Open(_ context.Context, _ *slog.Logger) (gpsio.Conn, int, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.opens++
@@ -141,9 +141,9 @@ type blockingOpener struct {
 	gate chan struct{}
 }
 
-func (o *blockingOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+func (o *blockingOpener) Open(ctx context.Context, lg *slog.Logger) (gpsio.Conn, int, error) {
 	<-o.gate
-	return o.fakeOpener.Open(ctx)
+	return o.fakeOpener.Open(ctx, lg)
 }
 
 // gatedSink wraps fakeSink, blocking gps:state emissions on gate
@@ -164,7 +164,7 @@ type reentrantSink struct {
 
 func (rs *reentrantSink) Emit(ev Event) {
 	rs.fakeSink.Emit(ev)
-	if ev.Name == EventState {
+	if ev.EventName() == EventState {
 		rs.once.Do(rs.s.Disconnect)
 	}
 }
@@ -185,7 +185,7 @@ func (w *blockingWriter) Write(b []byte) (int, error) {
 }
 
 func (gs *gatedSink) Emit(ev Event) {
-	if ev.Name == EventState && gs.gating.Load() {
+	if ev.EventName() == EventState && gs.gating.Load() {
 		<-gs.gate
 	}
 	gs.fakeSink.Emit(ev)
@@ -215,8 +215,9 @@ func (fs *fakeSink) states() []ConnState {
 	defer fs.mu.Unlock()
 	var sts []ConnState
 	for _, ev := range fs.events {
-		if ev.Name == EventState {
-			sts = append(sts, ev.Data.(ConnState))
+		switch ev := ev.(type) {
+		case ConnState:
+			sts = append(sts, ev)
 		}
 	}
 	return sts
@@ -227,7 +228,7 @@ func (fs *fakeSink) count(name EventName) int {
 	defer fs.mu.Unlock()
 	n := 0
 	for _, ev := range fs.events {
-		if ev.Name == name {
+		if ev.EventName() == name {
 			n++
 		}
 	}
@@ -268,7 +269,7 @@ func TestConnectDisconnect(t *testing.T) {
 		fs := &fakeSink{}
 		s := testSession(t, fs)
 		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+		if err := s.Connect(op, nil); err != nil {
 			t.Fatalf("Connect: %v", err)
 		}
 		waitForState(t, s, StateConnected)
@@ -309,7 +310,7 @@ func TestConnectSuperseded(t *testing.T) {
 			name: "connect during open",
 			interleave: func(t *testing.T, s *Session) {
 				op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
-				if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+				if err := s.Connect(op, nil); err != nil {
 					t.Fatalf("second Connect: %v", err)
 				}
 				waitForState(t, s, StateConnected)
@@ -325,7 +326,7 @@ func TestConnectSuperseded(t *testing.T) {
 				conn := newFakeConn()
 				op := &blockingOpener{fakeOpener: fakeOpener{conns: []*fakeConn{conn}}, gate: make(chan struct{})}
 				errCh := make(chan error, 1)
-				go func() { errCh <- s.Connect(op, gpsreg.VendorUnknown) }()
+				go func() { errCh <- s.Connect(op, nil) }()
 				synctest.Wait()
 				tc.interleave(t, s)
 				close(op.gate)
@@ -353,7 +354,7 @@ func TestLifecycleCallsDuringShutdown(t *testing.T) {
 	op2 := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
 	err1 := make(chan error, 1)
 	err2 := make(chan error, 1)
-	go func() { err1 <- s.Connect(op1, gpsreg.VendorUnknown) }()
+	go func() { err1 <- s.Connect(op1, nil) }()
 	waitGen := func(want int) {
 		t.Helper()
 		deadline := time.Now().Add(time.Second)
@@ -371,7 +372,7 @@ func TestLifecycleCallsDuringShutdown(t *testing.T) {
 		}
 	}
 	waitGen(1)
-	go func() { err2 <- s.Connect(op2, gpsreg.VendorUnknown) }()
+	go func() { err2 <- s.Connect(op2, nil) }()
 	waitGen(2)
 	close(drain)
 	if err := <-err1; err == nil {
@@ -396,7 +397,7 @@ func TestStaleLifecycleCallDoesNotCloseWinner(t *testing.T) {
 		{
 			name: "connect",
 			call: func(s *Session, gen int, op Opener) error {
-				return s.connect(gen, op, gpsreg.VendorUnknown)
+				return s.connect(gen, op, nil)
 			},
 		},
 		{
@@ -415,7 +416,7 @@ func TestStaleLifecycleCallDoesNotCloseWinner(t *testing.T) {
 				staleGen := s.reserveLifecycle()
 				winnerConn := newFakeConn()
 				winnerOp := &fakeOpener{conns: []*fakeConn{winnerConn}}
-				if err := s.Connect(winnerOp, gpsreg.VendorUnknown); err != nil {
+				if err := s.Connect(winnerOp, nil); err != nil {
 					t.Fatalf("winning Connect: %v", err)
 				}
 				waitForState(t, s, StateConnected)
@@ -446,7 +447,7 @@ func TestOperationInProgress(t *testing.T) {
 		fs := &fakeSink{}
 		s := testSession(t, fs)
 		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+		if err := s.Connect(op, nil); err != nil {
 			t.Fatalf("Connect: %v", err)
 		}
 		waitForState(t, s, StateConnected)
@@ -472,7 +473,7 @@ func TestCancelledOpSkipsEndState(t *testing.T) {
 		fs := &fakeSink{}
 		s := testSession(t, fs)
 		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+		if err := s.Connect(op, nil); err != nil {
 			t.Fatalf("Connect: %v", err)
 		}
 		waitForState(t, s, StateConnected)
@@ -484,7 +485,7 @@ func TestCancelledOpSkipsEndState(t *testing.T) {
 		waitForState(t, s, StateConfiguring)
 		op2 := &blockingOpener{fakeOpener: fakeOpener{conns: []*fakeConn{newFakeConn()}}, gate: make(chan struct{})}
 		errCh := make(chan error, 1)
-		go func() { errCh <- s.Connect(op2, gpsreg.VendorUnknown) }()
+		go func() { errCh <- s.Connect(op2, nil) }()
 		synctest.Wait()
 		if err := <-cfgDone; err == nil {
 			t.Fatal("cancelled ReadConfig returned nil error")
@@ -514,7 +515,7 @@ func TestLifecycleEventOrder(t *testing.T) {
 		s := New(slog.New(slog.DiscardHandler), gs, Options{})
 		t.Cleanup(s.Disconnect)
 		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+		if err := s.Connect(op, nil); err != nil {
 			t.Fatalf("Connect: %v", err)
 		}
 		waitForState(t, s, StateConnected)
@@ -527,7 +528,7 @@ func TestLifecycleEventOrder(t *testing.T) {
 		synctest.Wait() // Disconnect is now blocked emitting Disconnected
 		op2 := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
 		errCh := make(chan error, 1)
-		go func() { errCh <- s.Connect(op2, gpsreg.VendorUnknown) }()
+		go func() { errCh <- s.Connect(op2, nil) }()
 		gs.gating.Store(false)
 		close(gs.gate)
 		<-done
@@ -549,7 +550,7 @@ func TestStateEventReentrantDisconnect(t *testing.T) {
 		s := New(slog.New(slog.DiscardHandler), rs, Options{})
 		rs.s = s
 		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err == nil {
+		if err := s.Connect(op, nil); err == nil {
 			t.Fatal("Connect returned nil, want superseded error")
 		}
 		if got := s.State(); got != StateDisconnected {
@@ -585,7 +586,7 @@ func TestUnplugDisconnects(t *testing.T) {
 		s := testSession(t, fs)
 		conn := newFakeConn()
 		op := &fakeOpener{conns: []*fakeConn{conn}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+		if err := s.Connect(op, nil); err != nil {
 			t.Fatalf("Connect: %v", err)
 		}
 		waitForState(t, s, StateConnected)
@@ -607,7 +608,7 @@ func TestResetReconnects(t *testing.T) {
 		s := testSession(t, fs)
 		conn1, conn2 := newFakeConn(), newFakeConn()
 		op := &fakeOpener{conns: []*fakeConn{conn1, conn2}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+		if err := s.Connect(op, nil); err != nil {
 			t.Fatalf("Connect: %v", err)
 		}
 		waitForState(t, s, StateConnected)
@@ -639,7 +640,7 @@ func TestRepeatedConfigRequests(t *testing.T) {
 		fs := &fakeSink{}
 		s := testSession(t, fs)
 		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
-		if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+		if err := s.Connect(op, nil); err != nil {
 			t.Fatalf("Connect: %v", err)
 		}
 		waitForState(t, s, StateConnected)
@@ -671,7 +672,7 @@ func TestPacketEventGating(t *testing.T) {
 				s := testSession(t, fs)
 				conn := newFakeConn()
 				op := &fakeOpener{conns: []*fakeConn{conn}}
-				if err := s.Connect(op, gpsreg.VendorUnknown); err != nil {
+				if err := s.Connect(op, nil); err != nil {
 					t.Fatalf("Connect: %v", err)
 				}
 				waitForState(t, s, StateConnected)

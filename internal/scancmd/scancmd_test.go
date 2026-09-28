@@ -76,7 +76,7 @@ func TestParseFlags(t *testing.T) {
 func TestRunScansPackets(t *testing.T) {
 	input := append([]byte("$GPRMC,1,2,3*0F\r\n"), 0xb5, 0x62, 0x01, 0x07, 0x00, 0x00, 0x08, 0x19)
 	out := &recordingOutput{}
-	if err := run(bytes.NewReader(input), out, gpsreg.VendorUnknown); err != nil {
+	if err := run(bytes.NewReader(input), out, nil); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	entries := parseEntries(t, out.String())
@@ -105,7 +105,7 @@ func TestRunScansPackets(t *testing.T) {
 
 func TestRunEmitsInvalidBytesAtEOF(t *testing.T) {
 	out := &recordingOutput{}
-	if err := run(strings.NewReader("not a packet"), out, gpsreg.VendorUnknown); err != nil {
+	if err := run(strings.NewReader("not a packet"), out, nil); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	entries := parseEntries(t, out.String())
@@ -130,7 +130,7 @@ func TestRunTimestampsFollowInputTiming(t *testing.T) {
 			{0xb5, 0x62, 0x01, 0x07, 0x00, 0x00, 0x08, 0x19},
 		},
 	}
-	if err := run(input, out, gpsreg.VendorUnknown); err != nil {
+	if err := run(input, out, nil); err != nil {
 		t.Fatalf("run: %v", err)
 	}
 	entries := parseEntries(t, out.String())

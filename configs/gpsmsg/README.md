@@ -12,7 +12,7 @@ Message files can also be used to configure receiver-specific features that satp
 Send messages from a file:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t pps
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml -t pps
 ```
 
 The `-m` flag specifies the message file. The `-t` flag selects which tags to send.
@@ -28,7 +28,7 @@ Tag rules:
 List available tags:
 
 ```
-satpulsetool gps -m allystar/allystar.toml --show-tags
+satpulsetool gps -m allystar/tau1201.toml --show-tags
 ```
 
 The `-m` flag cannot be combined with config flags like `--gnss` or `--pps`.
@@ -59,7 +59,7 @@ This can help with seeing whether your receiver is handling the commands correct
 Configure an Allystar receiver, such as the TAU1201, for use with satpulsed:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml -t pps,asbin-nav-time,asbin-nav-svinfo,nmea-off,gnss-all
 ```
 
 This configures:
@@ -74,7 +74,7 @@ If you prefer to use a single constellation, you can use e.g. `gnss-gps` instead
 You can verify the configuration by querying current settings:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml \
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml \
   -t get-pps,get-gnss --packet-log verify.jsonl --capture 2
 satpulsetool annotate verify.jsonl | jq
 ```
@@ -82,7 +82,7 @@ satpulsetool annotate verify.jsonl | jq
 If the configuration seems to be working, you can save it to non-volatile memory:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/allystar.toml -t save
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m allystar/tau1201.toml -t save
 ```
 
 ## Documentation

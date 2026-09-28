@@ -125,6 +125,7 @@ Supported values:
 | Value | Description |
 |-------|-------------|
 | `"unicore"` | Unicore receivers (UM980, etc.). Matches `$command,CMD,response: OK` acks and `$CONFIG,...` data replies. |
+| `"novatel"` | Receivers with NovAtel-style commands (ByNav, etc.). Matches `<OK` acks and `<ERROR:` naks in the order the commands were sent. |
 
 If omitted, line messages use generic matching (displays any non-periodic text as potentially relevant).
 

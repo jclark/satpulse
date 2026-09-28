@@ -66,37 +66,37 @@ func VelECEFXYZ[S, P ~uint32](ne *gpsprot.NavEpochMsg, b *novmsg.XYZ[S, P], nati
 }
 
 func posGeoBestPos(h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
-	m *novmsg.Pos[novmsg.SolStatus, novmsg.PosType], tag gpsprot.Tag, tRead time.Time) (bool, error) {
+	m *novmsg.Pos[novmsg.SolStatus, novmsg.PosType], f *novmsg.PosFlags, nativeMsgID string, tag gpsprot.Tag, tRead time.Time) (bool, error) {
 	quality(ne, m.PSolStatus, m.PosType,
 		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs,
-		m.GalBDS3Sig, m.GPSGLOBDS2Sig)
+		f.GalBDS3Sig, f.GPSGLOBDS2Sig)
 	if m.PSolStatus != novmsg.SolComputed {
 		return false, nil
 	}
-	posG := PosGeo(ne, m, "BESTPOS")
+	posG := PosGeo(ne, m, nativeMsgID)
 	posG.Tag = tag
 	h.PosGeo(posG, tRead)
 	return true, nil
 }
 
 func sinoPosGeoBestPos(h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
-	m *novmsg.Pos[novmsg.SolStatus, novmsg.SinoPosType], tag gpsprot.Tag, tRead time.Time) (bool, error) {
+	m *novmsg.Pos[novmsg.SolStatus, novmsg.SinoPosType], nativeMsgID string, tag gpsprot.Tag, tRead time.Time) (bool, error) {
 	sinoQuality(ne, m.PSolStatus, m.PosType,
 		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs)
 	if m.PSolStatus != novmsg.SolComputed {
 		return false, nil
 	}
-	posG := PosGeo(ne, m, "BESTPOS")
+	posG := PosGeo(ne, m, nativeMsgID)
 	posG.Tag = tag
 	h.PosGeo(posG, tRead)
 	return true, nil
 }
 
 func posVelECEFBestXYZ(h gpsprot.MsgHandler, ne *gpsprot.NavEpochMsg,
-	m *novmsg.XYZ[novmsg.SolStatus, novmsg.PosType], tag gpsprot.Tag, tRead time.Time) (bool, error) {
+	m *novmsg.XYZ[novmsg.SolStatus, novmsg.PosType], f *novmsg.PosFlags, tag gpsprot.Tag, tRead time.Time) (bool, error) {
 	quality(ne, m.PSolStatus, m.PosType,
 		m.DiffAge, m.StnID, m.NumSVs, m.NumSolnSVs,
-		m.GalBDS3Sig, m.GPSGLOBDS2Sig)
+		f.GalBDS3Sig, f.GPSGLOBDS2Sig)
 	var posE *gpsprot.PosECEFMsg
 	var velE *gpsprot.VelECEFMsg
 	if m.PSolStatus == novmsg.SolComputed {

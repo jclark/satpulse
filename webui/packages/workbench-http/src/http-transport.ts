@@ -5,7 +5,7 @@
 // streams carry only the token.
 
 import type {
-    ConnState,
+    ConnectionInfo,
     CorrectionSource,
     DecodeOptions,
     LLH,
@@ -72,7 +72,7 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
     const readerPost = (path: string, body?: unknown) => call('POST', path, body ?? {}, false);
     const writerPost = (path: string, body?: unknown) => call('POST', path, body ?? {}, true);
     return {
-        getConnState: () => get('state') as Promise<ConnState>,
+        getConnection: () => get('connection') as Promise<ConnectionInfo>,
         getReceiverState: () => get('receiver'),
         getCorrectionsState: () => get('corrections'),
         getAllSignals: (gnss: string[]) => readerPost('signals', {gnss}),

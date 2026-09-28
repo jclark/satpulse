@@ -39,6 +39,20 @@
 
 :root {
     color-scheme: light dark;
+
+    /* Palette. A colour gives its light value here and, where it needs a
+       different one to stay legible on a dark ground, an override in the dark
+       block below; red reads well on both, so it has none. The semantic
+       tokens that follow are defined in terms of these and never restate a
+       value or repeat a dark override. */
+    --red: #ef4444;
+    --blue: #2563eb;
+    --green: #16a34a;
+    --purple: #c026d3;
+    --orange: #f97316;
+    --yellow: #facc15;
+    --grey: #6b7280;
+
     --surface-1: #fafafa;
     --surface-2: #ffffff;
     --surface-3: #f4f4f5;
@@ -53,17 +67,17 @@
     --control-hover: #d4d4d8;
     --success: #10b981;
     --warning: #f59e0b;
-    --danger: #f43f5e;
+    --danger: var(--red);
     --info: #3b82f6;
-    --gnss-gps: #2563eb;
-    --gnss-galileo: #16a34a;
-    --gnss-beidou: #dc2626;
-    --gnss-glonass: #c026d3;
-    --gnss-qzss: #d97706;
-    --gnss-navic: #ca8a04;
-    --gnss-unknown: #6b7280;
-    --rtcm: #2563eb;
-    --spartn: #dc2626;
+    --gnss-gps: var(--blue);
+    --gnss-galileo: var(--green);
+    --gnss-beidou: var(--red);
+    --gnss-glonass: var(--purple);
+    --gnss-qzss: var(--orange);
+    --gnss-navic: var(--yellow);
+    --gnss-unknown: var(--grey);
+    --rtcm: var(--blue);
+    --spartn: var(--red);
     --clock-digit: #1f2937;
     --clock-ghost: #e5e7eb;
     --track-dot: #18181b;
@@ -71,6 +85,13 @@
 
 @media (prefers-color-scheme: dark) {
     :root {
+        --blue: #60a5fa;
+        --green: #4ade80;
+        --purple: #e879f9;
+        --orange: #fb923c;
+        --yellow: #fde047;
+        --grey: #9ca3af;
+
         --surface-1: #09090b;
         --surface-2: #18181b;
         --surface-3: #27272a;
@@ -83,15 +104,6 @@
         --accent-hover: #3b82f6;
         --control: #3f3f46;
         --control-hover: #52525b;
-        --gnss-gps: #60a5fa;
-        --gnss-galileo: #4ade80;
-        --gnss-beidou: #f87171;
-        --gnss-glonass: #e879f9;
-        --gnss-qzss: #fbbf24;
-        --gnss-navic: #fde047;
-        --gnss-unknown: #9ca3af;
-        --rtcm: #60a5fa;
-        --spartn: #f87171;
         --info: #60a5fa;
         --clock-digit: #34d399;
         --clock-ghost: rgba(55, 65, 81, 0.4);

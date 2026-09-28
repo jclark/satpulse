@@ -30,6 +30,7 @@ func TestConfigSupport(t *testing.T) {
 		gpsprot.ConfigSupportRTCMMSM7 |
 		gpsprot.ConfigSupportRTCMBaseID |
 		gpsprot.ConfigSupportRTCMQZSS |
+		gpsprot.ConfigSupportReload |
 		gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportPort
 	if configSupport != want {

@@ -10,10 +10,13 @@ const (
 	SatVisibilityAzimuthDNU   = 0xFFFF
 	SatVisibilityElevationDNU = -32768
 	SatVisibilityRiseSetDNU   = 0xFF
-	SatelliteInfoAlmanac      = 1
-	SatelliteInfoEphemeris    = 2
-	SatelliteInfoUnknown      = 0xFF
 	ChannelElevationDNU       = -128
+)
+
+const (
+	SatelliteInfoAlmanac   SatelliteInfo = 1
+	SatelliteInfoEphemeris SatelliteInfo = 2
+	SatelliteInfoUnknown   SatelliteInfo = 0xFF
 )
 
 // ChannelStatus 2-bit slot-status values, guide ChannelStatus tables.

@@ -1,4 +1,4 @@
-# Build satpulsetool and satpulsed for Windows. Analogous to bsd-build.sh.
+# Build satpulsetool and satpulsed for Windows. Analogous to Makefile.unix.
 
 $ErrorActionPreference = 'Stop'
 
@@ -16,7 +16,7 @@ if ($env:GOARCH -notin @('amd64', 'arm64')) {
     throw "Unsupported GOARCH $env:GOARCH"
 }
 
-# Force UTC so git date formatting matches bsd-build.sh.
+# Force UTC so git date formatting matches Makefile.unix.
 $env:TZ = 'UTC'
 
 # Build info

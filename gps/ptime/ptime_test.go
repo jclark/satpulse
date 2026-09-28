@@ -7,6 +7,30 @@ import (
 	"time"
 )
 
+func TestExtendGPSWeek(t *testing.T) {
+	tests := []struct {
+		week uint16
+		want uint16
+	}{
+		{0, 2048},
+		{388, 2436},
+		{1023, 3071},
+		{1024, 2048},
+		{1412, 2436},
+		{2047, 3071},
+		{2048, 2048},
+		{2436, 2436},
+		{3071, 3071},
+		{3072, 3072},
+		{65535, 65535},
+	}
+	for _, tc := range tests {
+		if got := ExtendGPSWeek(tc.week); got != tc.want {
+			t.Errorf("ExtendGPSWeek(%d) = %d, want %d", tc.week, got, tc.want)
+		}
+	}
+}
+
 func TestLeapSecs(t *testing.T) {
 	leaps := LeapSecondOnDate(time.Date(2025, time.June, 30, 0, 0, 0, 0, time.UTC), 37, 38)
 

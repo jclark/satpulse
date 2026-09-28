@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"crypto/subtle"
-	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -160,10 +159,12 @@ func newCaster(lg *slog.Logger, cfg Config, version string,
 func (c *caster) newServer() *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.serveHTTP)
+	var protos http.Protocols
+	protos.SetHTTP1(true)
 	return &http.Server{
-		Handler:      mux,
-		ErrorLog:     slogErrorLog(c.lg),
-		TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
+		Handler:   mux,
+		ErrorLog:  slogErrorLog(c.lg),
+		Protocols: &protos,
 	}
 }
 

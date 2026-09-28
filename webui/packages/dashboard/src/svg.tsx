@@ -136,13 +136,13 @@ function colorClassFor(svid: string): string {
         case 'E': // Galileo
             return 'fill-green-600 dark:fill-green-400';
         case 'C': // BeiDou
-            return 'fill-red-600 dark:fill-red-400';
+            return 'fill-red-500 dark:fill-red-500';
         case 'R': // GLONASS
             return 'fill-fuchsia-600 dark:fill-fuchsia-400';
         case 'J': // QZSS - Japan
-            return 'fill-amber-600 dark:fill-amber-400';
+            return 'fill-orange-500 dark:fill-orange-400';
         case 'I': // NavIC
-            return 'fill-yellow-600 dark:fill-yellow-300';
+            return 'fill-yellow-400 dark:fill-yellow-300';
         default:
             return 'fill-gray-600 dark:fill-gray-400';
     }

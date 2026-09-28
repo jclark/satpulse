@@ -1,12 +1,27 @@
 package msgfile
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
+
+type testDir struct {
+	fs.FS
+	prefix string
+}
+
+func (dir testDir) DisplayPath(name string) string {
+	return dir.prefix + name
+}
+
+func (dir testDir) Load(name string) (*Parsed, error) {
+	return LoadFS(dir.FS, name)
+}
 
 // writeLibrary creates a library directory whose vendor/file structure
 // is given by slash-separated relative paths.
@@ -23,6 +38,15 @@ func writeLibrary(t *testing.T, paths ...string) string {
 		}
 	}
 	return dir
+}
+
+func TestOSDirDisplayPath(t *testing.T) {
+	root := filepath.Join(string(os.PathSeparator), "foo")
+	got := OSDir(root).DisplayPath("bar/baz.toml")
+	want := filepath.Join(root, "bar", "baz.toml")
+	if got != want {
+		t.Errorf("got %q want %q", got, want)
+	}
 }
 
 func TestListNames(t *testing.T) {
@@ -42,7 +66,7 @@ func TestListNames(t *testing.T) {
 		"u-blox/x20.toml",
 		"zhongke/casic.toml",
 	)
-	got := ListNames([]string{dir1, dir2, filepath.Join(dir1, "no-such-dir")})
+	got := ListNames([]Dir{OSDir(dir1), OSDir(dir2), OSDir(filepath.Join(dir1, "no-such-dir"))})
 	expect := []Entry{
 		{Name{"u-blox", "gen9"}, filepath.Join(dir1, "u-blox", "gen9.toml")},
 		{Name{"unicore", "um980"}, filepath.Join(dir1, "unicore", "um980.toml")},
@@ -57,22 +81,25 @@ func TestListNames(t *testing.T) {
 func TestFindName(t *testing.T) {
 	dir1 := writeLibrary(t, "u-blox/gen9.toml", "loose.toml")
 	dir2 := writeLibrary(t, "u-blox/gen9.toml", "unicore/um980.toml")
-	dirs := []string{dir1, dir2}
+	dirs := []Dir{OSDir(dir1), OSDir(dir2)}
 	tests := []struct {
 		name      string
 		fileName  Name
+		expectDir string
 		expect    string
 		expectErr bool
 	}{
 		{
-			name:     "first dir wins",
-			fileName: Name{"u-blox", "gen9"},
-			expect:   filepath.Join(dir1, "u-blox", "gen9.toml"),
+			name:      "first dir wins",
+			fileName:  Name{"u-blox", "gen9"},
+			expectDir: dir1,
+			expect:    "u-blox/gen9.toml",
 		},
 		{
-			name:     "found in second dir",
-			fileName: Name{"unicore", "um980"},
-			expect:   filepath.Join(dir2, "unicore", "um980.toml"),
+			name:      "found in second dir",
+			fileName:  Name{"unicore", "um980"},
+			expectDir: dir2,
+			expect:    "unicore/um980.toml",
 		},
 		{
 			name:      "not found",
@@ -102,7 +129,7 @@ func TestFindName(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := FindName(tc.fileName, dirs)
+			dir, got, err := FindName(tc.fileName, dirs)
 			if tc.expectErr {
 				if err == nil {
 					t.Fatalf("expected error, got %q", got)
@@ -115,25 +142,108 @@ func TestFindName(t *testing.T) {
 			if got != tc.expect {
 				t.Errorf("got  %q\nwant %q", got, tc.expect)
 			}
+			if dir.DisplayPath(".") != tc.expectDir {
+				t.Errorf("got dir %q want %q", dir.DisplayPath("."), tc.expectDir)
+			}
 		})
 	}
 }
 
+func TestFSDirs(t *testing.T) {
+	dir1 := testDir{FS: fstest.MapFS{
+		"u-blox/gen9.toml": &fstest.MapFile{},
+	}, prefix: "first:"}
+	dir2 := testDir{FS: fstest.MapFS{
+		"u-blox/gen9.toml":   &fstest.MapFile{},
+		"unicore/um980.toml": &fstest.MapFile{},
+	}, prefix: "second:"}
+	dirs := []Dir{dir1, dir2}
+	expect := []Entry{
+		{Name: Name{"u-blox", "gen9"}, Path: "first:u-blox/gen9.toml"},
+		{Name: Name{"unicore", "um980"}, Path: "second:unicore/um980.toml"},
+	}
+	if got := ListNames(dirs); !reflect.DeepEqual(got, expect) {
+		t.Errorf("got  %+v\nwant %+v", got, expect)
+	}
+	dir, name, err := FindName(Name{"u-blox", "gen9"}, dirs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir.DisplayPath(name) != "first:u-blox/gen9.toml" || name != "u-blox/gen9.toml" {
+		t.Errorf("got %q %q", dir.DisplayPath(name), name)
+	}
+	if _, err := fs.Stat(dir, name); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuiltin(t *testing.T) {
+	dir, name, err := FindName(Name{"u-blox", "gen9"}, []Dir{Builtin()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if dir.DisplayPath(name) != "built-in:u-blox/gen9.toml" {
+		t.Errorf("unexpected display path %q", dir.DisplayPath(name))
+	}
+	// gen9 includes ubx.toml, so this exercises include resolution
+	// within the archive.
+	if _, err := dir.Load(name); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// TestOSDirLoadIncludeEscapes checks that an on-disk library file
+// loads includes natively, so a "../" include reaching outside the
+// search directory works, matching satpulsetool.
+func TestOSDirLoadIncludeEscapes(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "outside.toml"),
+		[]byte("[[line]]\ntext = \"OUTSIDE\"\ntag = \"out\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	lib := filepath.Join(root, "lib")
+	if err := os.MkdirAll(filepath.Join(lib, "u-blox"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(lib, "u-blox", "gen9.toml"),
+		[]byte("[[line]]\ntext = \"MAIN\"\ntag = \"main\"\n\n[[include]]\nsrc = \"../../outside.toml\"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	p, err := OSDir(lib).Load("u-blox/gen9.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(p.Line) != 2 || p.Line[0].Text != "MAIN" || p.Line[1].Text != "OUTSIDE" {
+		t.Fatalf("unexpected lines: %+v", p.Line)
+	}
+}
+
 func TestEnvDirs(t *testing.T) {
+	root := string(os.PathSeparator)
+	dirA := filepath.Join(root, "a")
+	dirB := filepath.Join(root, "b")
 	tests := []struct {
 		name   string
 		value  string
 		expect []string
 	}{
 		{name: "unset", value: "", expect: nil},
-		{name: "two dirs", value: strings.Join([]string{"/a", "/b"}, string(os.PathListSeparator)), expect: []string{"/a", "/b"}},
-		{name: "empty elements", value: strings.Join([]string{"", "/a", ""}, string(os.PathListSeparator)), expect: []string{"/a"}},
+		{name: "two dirs", value: strings.Join([]string{dirA, dirB}, string(os.PathListSeparator)), expect: []string{dirA, dirB}},
+		{name: "empty elements", value: strings.Join([]string{"", dirA, ""}, string(os.PathListSeparator)), expect: []string{dirA}},
 		{name: "only empty elements", value: string(os.PathListSeparator), expect: []string{}},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Setenv("SATPULSE_GPSMSG_PATH", tc.value)
-			if got := EnvDirs(); !reflect.DeepEqual(got, tc.expect) {
+			gotDirs := EnvDirs()
+			var got []string
+			if gotDirs != nil {
+				got = make([]string, len(gotDirs))
+			}
+			for i, dir := range gotDirs {
+				got[i] = dir.DisplayPath(".")
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
 			}
 		})

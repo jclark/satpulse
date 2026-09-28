@@ -67,7 +67,7 @@ func TestPoint3DRoundTrip(t *testing.T) {
 		t.Fatalf("ParsePoint3D returned error: %v", err)
 	}
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		if parsedPoint[i] != originalPoint[i] {
 			t.Errorf("Expected coordinate %d to be %v, got %v", i, originalPoint[i], parsedPoint[i])
 		}
@@ -256,6 +256,18 @@ func TestConfigPropsJSONRoundTrip(t *testing.T) {
 					PosType:      PosTypeECEF,
 					FixedPosECEF: Point3D{Meters(4000000), Meters(500000), Meters(4800000)},
 					FixedPosAcc:  Meters(0.1),
+				})
+				return cp
+			},
+		},
+		{
+			"mode ECEF no accuracy stated",
+			func() ConfigProps {
+				var cp ConfigProps
+				cp.SetMode(Mode{
+					Static:       true,
+					PosType:      PosTypeECEF,
+					FixedPosECEF: Point3D{Meters(4000000), Meters(500000), Meters(4800000)},
 				})
 				return cp
 			},
@@ -635,5 +647,19 @@ func TestConfigTargetJSONRoundTrip(t *testing.T) {
 	}
 	if got.Opts.TimeAssist != (TimeEstimate{}) {
 		t.Errorf("unset option changed: %+v", got.Opts.TimeAssist)
+	}
+}
+
+func TestFixedPosToECEF(t *testing.T) {
+	llh := Mode{Static: true, PosType: PosTypeLLH}
+	if p, ok := llh.FixedPosToECEF(); !ok || p != (Point3D{Meters(6378137), 0, 0}) {
+		t.Errorf("LLH origin = %v,%v, want the WGS84 semi-major axis on X", p, ok)
+	}
+	ecef := Mode{Static: true, PosType: PosTypeECEF, FixedPosECEF: Point3D{1, 2, 3}}
+	if p, ok := ecef.FixedPosToECEF(); !ok || p != ecef.FixedPosECEF {
+		t.Errorf("ECEF = %v,%v, want pass-through", p, ok)
+	}
+	if _, ok := (Mode{Static: true}).FixedPosToECEF(); ok {
+		t.Error("PosTypeNone reported a position")
 	}
 }

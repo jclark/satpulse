@@ -12,7 +12,8 @@ Online PPP services typically expect the data to be in [RINEX](https://igs.org/w
 This document explains how to use SatPulse to collect the data, convert it to RINEX format.
 It also explains how to use one particular PPP service, the CSRS-PPP service operated by Canadian Geodetic Survey of Natural Resources Canada. Although this service is operated by the Canadian Government, it works for data collected anywhere in the world.
 
-This needs a u-blox timing or high-precision module (names have a a T or P suffix, like LEA-M8T or ZED-F9P): u-blox is needed because SatPulse currently only knows how to configure GNSS receivers that use u-blox's UBX protocol; a timing or high-precision module is needed because only they have a timing mode and support raw output.
+This guide is written for u-blox receivers.
+A timing or high-precision module (names have a T or P suffix, like LEA-M8T or ZED-F9P) is needed because only they have a timing mode and support raw output.
 
 ## Creating RINEX observation file for submission
 
@@ -83,7 +84,7 @@ Collect the UBX data, using str2str from rtklib
 str2str -in tcpcli://localhost:2008 -out YYYYMMDD.ubx
 ```
 
-Here 2008  matches the number specified for the listen property in the `[[proxy.tcp]]` section. Use an extension of `.ubx`. YYYYMMDD is the date of collecting the data.
+Here 2008  matches the number specified for the listen property in the `[[proxy.tcp]]` table. Use an extension of `.ubx`. YYYYMMDD is the date of collecting the data.
 
 Interrupt with Ctrl-C when you have enough data (4 hours).
 
@@ -92,7 +93,15 @@ Turn off raw output
 satpulsetool gps --socket /var/run/satpulse.sock --raw-out none
 ```
 
-Now convert to RINEX using convbin from RTKLIB
+Now convert to RINEX using `satpulsetool convobs` {% include new-in-03.html %}
+
+```
+satpulsetool convobs -r ubx -o YYYYMMDD.obs YYYYMMDD.ubx
+```
+
+See the [satpulsetool-convobs(1)]({%link man/satpulsetool-convobs.1.md %}) man page for full details.
+
+Alternatively, you can convert using convbin from RTKLIB
 
 ```
 convbin -od -os YYYYMMDD.ubx -o YYYYMMDD.obs
@@ -133,7 +142,7 @@ fixedPosECEF=[-1144567.4109,6091234.9865,1504567.9101]
 fixedPosAcc=0.0180
 ```
 
-You can then paste that into the `[gps]` section of `/etc/satpulse.toml`.
+You can then paste that into the `[gps]` table of `/etc/satpulse.toml`.
 However, I suggest first adding 0.02 or 0.03 to fixedPosAcc to account for the potential discrepancy between WGS84 (used by GNSS) and ITRF (used by CSRS). See this [paper](https://navi.ion.org/content/72/2/navi.693) for more details.
 Then restart the satpulse service.
 

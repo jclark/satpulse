@@ -2,7 +2,6 @@ package septentrio
 
 import (
 	"encoding/binary"
-	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/sbfbin"
@@ -82,32 +81,4 @@ func (f packetFormat) ComputeChecksum(pkt []byte) []byte {
 // stream position, and by then the candidate's Length bytes have been consumed.
 func (f packetFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
 	return false
-}
-
-// PacketProcessor implements gpsprot.PacketProcessor for SBF packets.
-type PacketProcessor struct {
-	gpsprot.DefaultPacketProcessor
-}
-
-// NewPacketProcessor creates a new SBF packet processor.
-func NewPacketProcessor(mgr *gpsprot.NavEpochManager) *PacketProcessor {
-	return &PacketProcessor{}
-}
-
-// ProcessPacket parses an SBF packet and forwards it to the native message handler.
-func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, error) {
-	msg, err := sbfbin.ParseMsg(data)
-	if err != nil {
-		return "", err
-	}
-	msgID := msg.ID().String()
-	if nmh := p.GetNativeMsgHandler(); nmh != nil {
-		return msgID, nmh.NativeMsg(Tag, msgID, msg, tRead)
-	}
-	return msgID, nil
-}
-
-// NativeOnly returns true since this phase produces only native messages.
-func (p *PacketProcessor) NativeOnly() bool {
-	return true
 }

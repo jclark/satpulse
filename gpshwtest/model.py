@@ -248,7 +248,9 @@ def l5_signals(sigs: list[str]) -> list[str]:
 def signal_request_valid(req: SignalMap) -> bool:
     """Whether a signal-set request is valid under satpulsetool's own
     semantics: at least one non-augmentation signal from a major
-    constellation enabled."""
+    constellation enabled. --target-json enforces this invariant
+    (validateTarget in internal/gpscmd); the two must stay in sync,
+    so every target this harness sends has to satisfy it."""
     return any(set(s) - AUGMENT_SIGNALS.get(c, set())
                for c, s in normalize_signal_map(req).items() if c in MAJORS)
 

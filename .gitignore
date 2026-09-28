@@ -9,3 +9,4 @@ go.work.sum
 .playwright-mcp/
 CLAUDE.local.md
 .codex
+e2e-run-dirs/

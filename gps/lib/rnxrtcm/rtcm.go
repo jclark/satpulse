@@ -4,9 +4,9 @@ package rnxrtcm
 import (
 	"fmt"
 	"strconv"
-	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
@@ -250,8 +250,24 @@ func metadata1033(m *rtcmbin.MT1033) rinex.Metadata {
 	return meta
 }
 
-func cleanASCII(s rtcmbin.ASCIIString) string {
-	return strings.TrimRight(string(s), "\x00 ")
+// cleanASCII returns c as a RINEX header value.  RINEX is an ASCII format
+// with fixed byte columns, so characters outside printable ASCII are
+// replaced with '?' to keep one byte per character, and the trailing
+// padding is dropped.
+func cleanASCII(c rtcmbin.Char8) string {
+	c8 := c.StripNul()
+	b := make([]byte, len(c8))
+	n := 0
+	for i, v := range c8 {
+		if !ascii.IsPrint(v) {
+			v = '?'
+		}
+		b[i] = v
+		if v != ' ' {
+			n = i + 1
+		}
+	}
+	return string(b[:n])
 }
 
 func (c *Converter) resolveTime(h *rtcmbin.MSMHeader, week TimeInterval) (rinex.Time, error) {

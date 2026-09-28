@@ -3,6 +3,7 @@ package rtcmbin
 import (
 	"bytes"
 	"encoding/hex"
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -465,6 +466,17 @@ const (
 	rtcm1033Centipede = "d300364090001454524d35353937312e303020202020204e4f4e4500000a4c45494341204752323508342e33312e31303107313833303333378c14a0"
 )
 
+// Real MT1033 from a GEODNET base station.  Every char8 field is a
+// fixed 31-byte buffer, the maximum its counter allows, padded with the
+// reserved character 0x00.
+const rtcm1033Geodnet = "d300a4409e301f4144564e554c4c414e54454e4e41204e4f4e45000000000000000000000000001f47454f444e45540000000000000000000000000000000000000000000000001f47454f444e45540000000000000000000000000000000000000000000000001f47454f444e45540000000000000000000000000000000000000000000000001f47454f444e45540000000000000000000000000000000000000000000000007e1fc7"
+
+// padNul returns s padded with nuls to n bytes, as a receiver that sends
+// a fixed-size buffer does.
+func padNul(s string, n int) Char8 {
+	return append(Char8(s), make(Char8, n-len(s))...)
+}
+
 func TestParseDescriptorMsgs(t *testing.T) {
 	// Synthetic MT1007: TRIMBLE ZEPHYR antenna, no serial.
 	synthetic1007 := &MT1007{
@@ -473,7 +485,7 @@ func TestParseDescriptorMsgs(t *testing.T) {
 			StationID: 42,
 		},
 		DescriptorCounterN: 14,
-		AntennaDescriptor:  ASCIIString("TRIMBLE ZEPHYR"),
+		AntennaDescriptor:  Char8("TRIMBLE ZEPHYR"),
 		AntennaSetupID:     1,
 	}
 	synthetic1007Pkt, err := SerializeMsg(synthetic1007)
@@ -501,11 +513,11 @@ func TestParseDescriptorMsgs(t *testing.T) {
 						StationID: 0,
 					},
 					DescriptorCounterN: 20,
-					AntennaDescriptor:  ASCIIString("TRM55971.00     NONE"),
+					AntennaDescriptor:  Char8("TRM55971.00     NONE"),
 					AntennaSetupID:     0,
 				},
 				SerialNumberCounterM: 0,
-				AntennaSerialNumber:  ASCIIString{},
+				AntennaSerialNumber:  Char8{},
 			},
 		},
 		{
@@ -519,18 +531,43 @@ func TestParseDescriptorMsgs(t *testing.T) {
 							StationID: 0,
 						},
 						DescriptorCounterN: 20,
-						AntennaDescriptor:  ASCIIString("TRM55971.00     NONE"),
+						AntennaDescriptor:  Char8("TRM55971.00     NONE"),
 						AntennaSetupID:     0,
 					},
 					SerialNumberCounterM: 0,
-					AntennaSerialNumber:  ASCIIString{},
+					AntennaSerialNumber:  Char8{},
 				},
 				ReceiverTypeCounterI:    10,
-				ReceiverTypeDescriptor:  ASCIIString("LEICA GR25"),
+				ReceiverTypeDescriptor:  Char8("LEICA GR25"),
 				FirmwareCounterJ:        8,
-				ReceiverFirmwareVersion: ASCIIString("4.31.101"),
+				ReceiverFirmwareVersion: Char8("4.31.101"),
 				ReceiverSerialCounterK:  7,
-				ReceiverSerialNumber:    ASCIIString("1830337"),
+				ReceiverSerialNumber:    Char8("1830337"),
+			},
+		},
+		{
+			name: "MT1033 GEODNET",
+			pkt:  decodePkt(t, rtcm1033Geodnet),
+			expect: &MT1033{
+				MT1008: MT1008{
+					MT1007: MT1007{
+						MsgHdrStationID: MsgHdrStationID{
+							MsgHdr:    MsgHdr{MsgNum: 1033},
+							StationID: 3632,
+						},
+						DescriptorCounterN: 31,
+						AntennaDescriptor:  padNul("ADVNULLANTENNA NONE", 31),
+						AntennaSetupID:     0,
+					},
+					SerialNumberCounterM: 31,
+					AntennaSerialNumber:  padNul("GEODNET", 31),
+				},
+				ReceiverTypeCounterI:    31,
+				ReceiverTypeDescriptor:  padNul("GEODNET", 31),
+				FirmwareCounterJ:        31,
+				ReceiverFirmwareVersion: padNul("GEODNET", 31),
+				ReceiverSerialCounterK:  31,
+				ReceiverSerialNumber:    padNul("GEODNET", 31),
 			},
 		},
 	}
@@ -551,6 +588,75 @@ func TestParseDescriptorMsgs(t *testing.T) {
 				t.Errorf("round-trip mismatch:\n got %X\nwant %X", round, tc.pkt)
 			}
 		})
+	}
+}
+
+// TestChar8String checks that String decodes the whole field: dropping
+// the unused characters is StripNul's business.
+func TestChar8String(t *testing.T) {
+	if got, want := padNul("GEODNET", 10).String(), "GEODNET\x00\x00\x00"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+	if got, want := Char8("CHAMB\xc9RY").String(), "CHAMB\u00c9RY"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestChar8StripNul(t *testing.T) {
+	tests := []struct {
+		c    Char8
+		want Char8
+	}{
+		{padNul("GEODNET", 31), Char8("GEODNET")},
+		{Char8("AB\x00CD"), Char8("ABCD")},
+		{Char8("ABCD"), Char8("ABCD")},
+		{Char8{0, 0}, Char8{}},
+		{nil, nil},
+	}
+	for _, tc := range tests {
+		if got := tc.c.StripNul(); !bytes.Equal(got, tc.want) {
+			t.Errorf("StripNul(%q) = %q, want %q", tc.c, got, tc.want)
+		}
+	}
+}
+
+func TestChar8MarshalJSON(t *testing.T) {
+	tests := []struct {
+		c    Char8
+		want string
+	}{
+		{Char8("TRM55971.00     NONE"), `"TRM55971.00     NONE"`},
+		{Char8("ANN-MB-00\x00\x00\x00"), `"ANN-MB-00"`},
+		// char8 is ISO 8859-1, not limited to ASCII.
+		{Char8("CHAMB\xc9RY"), "\"CHAMB\u00c9RY\""},
+		{Char8{}, `""`},
+		{nil, `""`},
+	}
+	for _, tc := range tests {
+		got, err := json.Marshal(tc.c)
+		if err != nil {
+			t.Fatalf("Marshal(%q): %v", tc.c, err)
+		}
+		if string(got) != tc.want {
+			t.Errorf("Marshal(%q) = %s, want %s", tc.c, got, tc.want)
+		}
+	}
+}
+
+// TestMarshalJSONPaddedMsg checks that the nul padding of a real
+// message does not reach the JSON.
+func TestMarshalJSONPaddedMsg(t *testing.T) {
+	msg, err := ParseMsg(decodePkt(t, rtcm1033Geodnet))
+	if err != nil {
+		t.Fatalf("ParseMsg: %v", err)
+	}
+	got, err := json.Marshal(msg)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	want := `{"msgNum":1033,"stationID":3632,"descriptorCounterN":31,"antennaDescriptor":"ADVNULLANTENNA NONE","antennaSetupID":0,"serialNumberCounterM":31,"antennaSerialNumber":"GEODNET","receiverTypeCounterI":31,"receiverTypeDescriptor":"GEODNET","firmwareCounterJ":31,"receiverFirmwareVersion":"GEODNET","receiverSerialCounterK":31,"receiverSerialNumber":"GEODNET"}`
+	if string(got) != want {
+		t.Errorf("Marshal:\n got %s\nwant %s", got, want)
 	}
 }
 

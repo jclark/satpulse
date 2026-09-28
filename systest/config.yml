@@ -10,6 +10,7 @@
     - name: Stat the device so we can check if it is character device
       ansible.builtin.stat:
         path: "{{ device }}"
+        follow: true
       register: device_stat
 
     - name: Fail if not a character device
@@ -32,7 +33,7 @@
         - { section: "gps", option: "config", value: "{{ config }}" }
         - { section: "gps", option: "vendor", value: "{{ vendor }}" }
         - { section: "log", option: "clock", value: "true" }
-        - { section: "ntp", option: "sock.path", value: '"/var/run/chrony.satpulse.sock"'}
+        - { section: "ntp", option: "sock.path", value: '"{{ sock_path }}"'}
         - { section: "[http]", option: "listen", value: '":{{ http_port }}"' }
 
     - name: Remove old options from SatPulse config file

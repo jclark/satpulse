@@ -59,6 +59,9 @@ FIXRATE_FAST = 0.2
 # only ~3 intervals, so a wider window keeps the median inter-arrival stable.
 RATE_OBSERVE_SECONDS = 6
 
+# Give serial PPS detection enough time to observe several one-second periods.
+SERIAL_PPS_SECONDS = 10
+
 
 def signal_universe(gnss: list[str]) -> SignalMap:
     """The union of the full model signal set of each named constellation:
@@ -718,10 +721,12 @@ class ProbeRun:
                                     {"op": "session-speed", "role": "rediscover-try",
                                      "speed": sp}, retry=False)
                 if inv.error is None:
-                    baud = inv.config().get("baudRate")
-                    if isinstance(baud, int) and baud > 0 and baud != sp:
-                        self.tool.set_speed(baud)
-                        return baud
+                    # An answer at sp proves the line runs at sp. The
+                    # readback's baudRate is stored configuration, which
+                    # can lawfully differ from the live line (a V5 reload
+                    # restores the stored baud without retuning the
+                    # running UART), so it must not override the observed
+                    # speed.
                     return sp
             if attempt == 0:
                 time.sleep(RESET_SETTLE)
@@ -1104,14 +1109,15 @@ class ProbeRun:
         if uart:
             self.rediscover_speed()
         nvm = self.show_config("readback-reload-1", "reload", "reload-1")
+        canary_v: int | None = None
         if nvm is not None:
             canary = next(p for p in PROPS if p.name == "minElevation")
             if config_value(nvm, canary.path) is not None:
-                v = 7 if config_value(nvm, canary.path) != 7 else 12
+                canary_v = 7 if config_value(nvm, canary.path) != 7 else 12
                 self.tool.gps("canary-set-minElevation",
-                              target_arg({"Props": canary.props(v)}),
+                              target_arg({"Props": canary.props(canary_v)}),
                               {"op": "canary-set", "prop": canary.name,
-                               "path": list(canary.path), "value": v})
+                               "path": list(canary.path), "value": canary_v})
         self.tool.gps("reload-2", target_arg({"Opts": {"Reset": "reload"}}),
                       {"op": "reload", "round": 2, "uart": uart})
         self.resync_speed(uart, raised)
@@ -1122,6 +1128,15 @@ class ProbeRun:
         self.restore_signals(initial)
         if base is not None:
             self.restore_protocol(base)
+        # A surviving canary means the reload was ineffective (a receiver
+        # without reload support): the second readback is then the running
+        # configuration with the canary in it, not an NVM image, and using
+        # it as the NVM reference would bake the canary into NVM when the
+        # disruptive recovery saves that reference back. Fall back to the
+        # pre-canary readback.
+        if (nvm2 is not None and canary_v is not None
+                and config_value(nvm2, canary.path) == canary_v):
+            return nvm
         return nvm2 if nvm2 is not None else nvm
 
     def probe_disruptive(self, initial: dict[str, Any], nvm: dict[str, Any],
@@ -1408,35 +1423,62 @@ class ProbeRun:
             print(f"emergency restore: {e}", file=sys.stderr)
 
     def probe_pulse_physical(self, initial: dict[str, Any],
-                             phc: tuple[str, int, int], use_sudo: bool) -> None:
-        """Verify the time pulse electrically on the wired PHC pin: pulses
-        present when enabled, absent when disabled. The default pulse fires
-        only with a fix, so without one the check is skipped (absence would
-        prove nothing). Pulse width and polarity are not observable through
-        external timestamps and stay readback-only."""
-        iface, pin, chan = phc
+                             phc: tuple[str, int, int] | None, use_sudo: bool,
+                             serial: tuple[str, str] | None) -> None:
+        """Verify time-pulse enable/disable on every discovered physical path.
+
+        A PHC timestamps the pulse accurately; a serial modem-control input
+        merely proves that edges exist. The enabled probe requests a pulse
+        regardless of fix. If the receiver cannot realize that and has no fix,
+        the check is skipped (absence would prove nothing). Pulse width and
+        polarity stay readback-only.
+        """
         inv = self.observe("pulse-fix-check", {"op": "observe", "role": "fix-check"})
         if inv is None:
             return
-        if not has_fix(replay(self.tool.exe, inv.packet_log)):
-            print("skipping physical time pulse checks: no fix", file=sys.stderr)
-            return
+        fixed = has_fix(replay(self.tool.exe, inv.packet_log))
         width = config_value(initial, ("timePulse", "width"))
-        if not width:
-            inv2 = self.tool.gps("set-pulse-on",
-                                 target_arg({"Props": {"timePulse": pps_props(0.1)}}),
-                                 {"op": "pulse-set", "role": "on", "width": 0.1})
-            if inv2.error is not None:
-                return
-        self.tool.sdp_extts("sdp-pulse-enabled", iface, pin, chan, 4.0, use_sudo,
-                            {"op": "sdp", "role": "enabled", "iface": iface, "pin": pin})
+        enabled_props = pps_props(0.1)
+        enabled_props["onlyWhenLocked"] = False
+        inv2 = self.tool.gps("set-pulse-on",
+                             target_arg({"Props": {"timePulse": enabled_props}}),
+                             {"op": "pulse-set", "role": "on", "width": 0.1})
+        if inv2.error is not None:
+            return
+        accepted_only_when_locked = config_value(
+            inv2.config(), ("timePulse", "onlyWhenLocked"))
+        if not fixed and accepted_only_when_locked is not False:
+            print("skipping physical time pulse checks: no fix and receiver did "
+                  "not accept always-on output", file=sys.stderr)
+            self.tool.gps(
+                "restore-pulse",
+                target_arg({"Props": {"timePulse": pps_props(width if width else 0)}}),
+                {"op": "pulse-set", "role": "restore",
+                 "width": width if width else 0})
+            return
+        self.observe_physical_pulse("enabled", phc, use_sudo, serial)
         inv2 = self.tool.gps("set-pulse-off",
                              target_arg({"Props": {"timePulse": pps_props(0)}}),
                              {"op": "pulse-set", "role": "off", "width": 0})
         if inv2.error is None:
             time.sleep(MSG_SETTLE)
-            self.tool.sdp_extts("sdp-pulse-disabled", iface, pin, chan, 4.0, use_sudo,
-                                {"op": "sdp", "role": "disabled", "iface": iface, "pin": pin})
+            self.observe_physical_pulse("disabled", phc, use_sudo, serial)
         self.tool.gps("restore-pulse",
                       target_arg({"Props": {"timePulse": pps_props(width if width else 0)}}),
                       {"op": "pulse-set", "role": "restore", "width": width if width else 0})
+
+    def observe_physical_pulse(self, role: str,
+                               phc: tuple[str, int, int] | None, use_sudo: bool,
+                               serial: tuple[str, str] | None) -> None:
+        """Record one enabled/disabled observation on each physical path."""
+        if phc is not None:
+            iface, phc_pin, chan = phc
+            self.tool.sdp_extts(
+                f"sdp-pulse-{role}", iface, phc_pin, chan, 4.0, use_sudo,
+                {"op": "sdp", "role": role, "iface": iface, "pin": phc_pin})
+        if serial is not None:
+            device, serial_pin = serial
+            self.tool.serial_pps(
+                f"serial-pulse-{role}", device, serial_pin, SERIAL_PPS_SECONDS,
+                {"op": "serial-pps", "role": role, "device": device,
+                 "pin": serial_pin})

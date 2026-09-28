@@ -5,20 +5,13 @@ import type {ComponentChildren} from 'preact';
 interface Props {
     title: string;
     defaultOpen?: boolean;
-    open?: boolean;
-    onToggle?: (open: boolean) => void;
     variant?: 'config' | 'panel';
     children: ComponentChildren;
 }
 
-export function CollapsibleSection({title, defaultOpen = true, open: controlledOpen, onToggle, variant = 'config', children}: Props) {
-    const [internalOpen, setInternalOpen] = useState(defaultOpen);
-    const isOpen = controlledOpen !== undefined ? controlledOpen : internalOpen;
-    const toggle = () => {
-        const next = !isOpen;
-        if (onToggle) onToggle(next);
-        if (controlledOpen === undefined) setInternalOpen(next);
-    };
+export function CollapsibleSection({title, defaultOpen = true, variant = 'config', children}: Props) {
+    const [isOpen, setIsOpen] = useState(defaultOpen);
+    const toggle = () => setIsOpen(!isOpen);
 
     const panelStyle = variant === 'panel';
     return (

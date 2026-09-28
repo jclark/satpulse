@@ -17,13 +17,15 @@
 struct dev {
 	struct dev *next;
 	char *path;
-	char *model, *vendor;
+	char *model, *vendor, *serial;
+	uint32_t loc;
 	uint16_t vid, pid;
 };
 
 struct opts {
-	bool have_vid, have_pid, do_exec, do_wait;
-	uint16_t vid, pid;
+	bool have_vid, have_pid, have_loc, do_exec, do_wait;
+	uint32_t vid, pid, loc;
+	const char *serial;
 };
 
 static void free_dev(struct dev *dev);
@@ -67,18 +69,19 @@ static char *xstrdup(const char *s)
 
 static void usage(FILE *f)
 {
-	fprintf(f, "usage: find-serial [-v|--vid HEX] [-p|--pid HEX] [-w|--wait] [-e|--exec -- command ... {} ...]\n");
+	fprintf(f, "usage: find-serial [-v|--vid HEX] [-p|--pid HEX] [-s|--serial STR] [-l|--location HEX]\n"
+	           "                   [-w|--wait] [-e|--exec -- command ... {} ...]\n");
 }
 
-static int hexarg(const char *s, uint16_t *v)
+static int hexarg(const char *s, unsigned long max, uint32_t *v)
 {
 	char *end;
 	unsigned long n;
 	errno = 0;
 	n = strtoul(s, &end, 16);
-	if (errno || end == s || *end || n > 0xffff)
+	if (errno || end == s || *end || n > max)
 		return -1;
-	*v = (uint16_t)n;
+	*v = (uint32_t)n;
 	return 0;
 }
 
@@ -106,28 +109,31 @@ static char *callout_device(io_registry_entry_t e)
 	return NULL;
 }
 
-static bool uint_prop(io_registry_entry_t e, CFStringRef key, uint16_t *v)
+// uint_prop reads an unsigned integer property. It fetches as long long
+// because locationID does not fit a signed 32-bit read once the top bit is
+// set, and the kernel may publish it as either width.
+static bool uint_prop(io_registry_entry_t e, CFStringRef key, uint32_t *v)
 {
-	int n = 0;
+	long long n = 0;
 	bool ok = false;
 	CFTypeRef p = IORegistryEntryCreateCFProperty(e, key, kCFAllocatorDefault, 0);
 	if (p) {
 		ok = CFGetTypeID(p) == CFNumberGetTypeID() &&
-		    CFNumberGetValue((CFNumberRef)p, kCFNumberIntType, &n);
+		    CFNumberGetValue((CFNumberRef)p, kCFNumberLongLongType, &n);
 		CFRelease(p);
 	}
 	if (ok)
-		*v = (uint16_t)n;
+		*v = (uint32_t)n;
 	return ok;
 }
 
-// usb_info walks up from a serial service to its USB device node, returning its
-// vendor/product IDs and, when present, the device's own product and vendor
-// name strings (NULL otherwise). It reads kUSBProductString/kUSBVendorString
-// rather than the "USB Product Name"/"USB Vendor Name" keys, as the former carry
-// the descriptor strings faithfully while the latter mangle some characters.
-static bool usb_info(io_registry_entry_t e, uint16_t *vid, uint16_t *pid,
-                     char **model, char **vendor)
+// usb_info walks up from a serial service to its USB device node, filling in
+// the device's vendor/product IDs and location ID, and, when present, its own
+// serial number, product and vendor name strings (left NULL otherwise). It
+// reads the kUSB*String keys rather than the "USB Product Name"/"USB Vendor
+// Name"/"USB Serial Number" ones, as the former carry the descriptor strings
+// faithfully while the latter mangle some characters.
+static bool usb_info(io_registry_entry_t e, struct dev *d)
 {
 	io_registry_entry_t cur = e, parent;
 	kern_return_t kr;
@@ -143,27 +149,20 @@ static bool usb_info(io_registry_entry_t e, uint16_t *vid, uint16_t *pid,
 		if (kr != KERN_SUCCESS)
 			fatal(EXIT_FAILURE, "IOObjectGetClass failed: %d", kr);
 		if (strcmp(cls, "IOUSBDevice") == 0 || strcmp(cls, "IOUSBHostDevice") == 0) {
-			if (!uint_prop(cur, CFSTR("idVendor"), vid) ||
-			    !uint_prop(cur, CFSTR("idProduct"), pid))
-				fatal(EXIT_FAILURE, "USB device is missing idVendor or idProduct");
-			*model = string_prop(cur, CFSTR("kUSBProductString"));
-			*vendor = string_prop(cur, CFSTR("kUSBVendorString"));
+			uint32_t vid = 0, pid = 0;
+			if (!uint_prop(cur, CFSTR("idVendor"), &vid) ||
+			    !uint_prop(cur, CFSTR("idProduct"), &pid) ||
+			    !uint_prop(cur, CFSTR("locationID"), &d->loc))
+				fatal(EXIT_FAILURE, "USB device is missing idVendor, idProduct or locationID");
+			d->vid = (uint16_t)vid;
+			d->pid = (uint16_t)pid;
+			d->serial = string_prop(cur, CFSTR("kUSBSerialNumberString"));
+			d->model = string_prop(cur, CFSTR("kUSBProductString"));
+			d->vendor = string_prop(cur, CFSTR("kUSBVendorString"));
 			IOObjectRelease(cur);
 			return true;
 		}
 	}
-}
-
-static struct dev *make_dev(const char *path, uint16_t vid, uint16_t pid,
-                            const char *model, const char *vendor)
-{
-	struct dev *d = xcalloc(1, sizeof(*d));
-	d->path = xstrdup(path);
-	d->vid = vid;
-	d->pid = pid;
-	d->model = model ? xstrdup(model) : NULL;
-	d->vendor = vendor ? xstrdup(vendor) : NULL;
-	return d;
 }
 
 // serial_matching returns a matching dictionary for serial-port devices. The
@@ -176,6 +175,15 @@ static CFMutableDictionaryRef serial_matching(void)
 	return m;
 }
 
+// match reports whether a device satisfies every filter given. A device that
+// publishes no serial number never matches --serial.
+static bool match(const struct opts *o, const struct dev *d)
+{
+	return (!o->have_vid || o->vid == d->vid) && (!o->have_pid || o->pid == d->pid) &&
+	    (!o->have_loc || o->loc == d->loc) &&
+	    (!o->serial || (d->serial && strcmp(o->serial, d->serial) == 0));
+}
+
 static struct dev *scan1(const struct opts *o, bool *valid)
 {
 	io_iterator_t it;
@@ -186,21 +194,17 @@ static struct dev *scan1(const struct opts *o, bool *valid)
 	if (kr != KERN_SUCCESS)
 		fatal(EXIT_FAILURE, "IOServiceGetMatchingServices failed: %d", kr);
 	while ((s = IOIteratorNext(it))) {
-		uint16_t vid = 0, pid = 0;
-		char *model = NULL, *vendor = NULL;
-		char *path = callout_device(s);
-		if (path && usb_info(s, &vid, &pid, &model, &vendor) &&
-		    (!o->have_vid || o->vid == vid) && (!o->have_pid || o->pid == pid)) {
-			struct dev *d = make_dev(path, vid, pid, model, vendor);
+		struct dev *d = xcalloc(1, sizeof(*d));
+		d->path = callout_device(s);
+		if (d->path && usb_info(s, d) && match(o, d)) {
 			if (tail)
 				tail->next = d;
 			else
 				head = d;
 			tail = d;
+		} else {
+			free_dev(d);
 		}
-		free(path);
-		free(model);
-		free(vendor);
 		IOObjectRelease(s);
 	}
 	*valid = IOIteratorIsValid(it);
@@ -241,6 +245,7 @@ static void free_dev(struct dev *dev)
 		free(dev->path);
 		free(dev->model);
 		free(dev->vendor);
+		free(dev->serial);
 		free(dev);
 		dev = next;
 	}
@@ -319,16 +324,18 @@ static int parse_opts(int argc, char **argv, struct opts *o)
 		{"exec", no_argument, 0, 3},
 		{"help", no_argument, 0, 4},
 		{"wait", no_argument, 0, 5},
+		{"serial", required_argument, 0, 6},
+		{"location", required_argument, 0, 7},
 		{0, 0, 0, 0},
 	};
 	int c;
 	opterr = 0;
-	while ((c = getopt_long(argc, argv, "v:p:ew", longopts, NULL)) != -1) {
+	while ((c = getopt_long(argc, argv, "v:p:s:l:ew", longopts, NULL)) != -1) {
 		switch (c) {
 		case 1:
 		case 'v':
 			o->have_vid = true;
-			if (hexarg(optarg, &o->vid) < 0) {
+			if (hexarg(optarg, 0xffff, &o->vid) < 0) {
 				usage(stderr);
 				return EX_USAGE;
 			}
@@ -336,11 +343,21 @@ static int parse_opts(int argc, char **argv, struct opts *o)
 		case 2:
 		case 'p':
 			o->have_pid = true;
-			if (hexarg(optarg, &o->pid) < 0) {
+			if (hexarg(optarg, 0xffff, &o->pid) < 0) {
 				usage(stderr);
 				return EX_USAGE;
 			}
 			break;
+		case 7:
+		case 'l':
+			o->have_loc = true;
+			if (hexarg(optarg, 0xffffffff, &o->loc) < 0) {
+				usage(stderr);
+				return EX_USAGE;
+			}
+			break;
+		case 6:
+		case 's': o->serial = optarg; break;
 		case 3:
 		case 'e': o->do_exec = true; break;
 		case 5:
@@ -379,7 +396,9 @@ static int list_or_exec(struct dev *dev, const struct opts *o, char **argv)
 {
 	if (!o->do_exec) {
 		for (struct dev *d = dev; d; d = d->next) {
-			printf("device=%s vid=%04X pid=%04X", d->path, d->vid, d->pid);
+			printf("device=%s vid=%04X pid=%04X location=%X", d->path, d->vid,
+			    d->pid, d->loc);
+			print_field("serial", d->serial);
 			print_field("model", d->model);
 			print_field("vendor", d->vendor);
 			putchar('\n');

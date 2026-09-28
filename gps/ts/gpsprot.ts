@@ -45,7 +45,7 @@ export interface SVInfo {
 export interface SatellitesMsg {
     tag?: Tag;
     nativeMsgID?: string;
-    info: SVInfo[];
+    info?: SVInfo[];
     usedValidity?: SatelliteUsedValidity;
 }
 

@@ -2,8 +2,6 @@ package gpscmd
 
 import (
 	"bytes"
-	"encoding/json"
-	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -58,6 +56,11 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "capture after default probe",
+			args: []string{"-d", "/dev/ttyACM0", "-s", "9600", "--packet-log", "capture.jsonl", "--capture", "10"},
+			want: true,
+		},
+		{
 			name: "serial device with configuration change",
 			args: []string{"-d", "/dev/ttyACM0", "-s", "9600", "--gnss", "GPS"},
 			want: false,
@@ -74,10 +77,7 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 				t.Fatalf("parseFlags returned nil flagVars")
 			}
 
-			target, err := createConfigTarget(flagVars)
-			if err != nil {
-				t.Fatalf("createConfigTarget failed: %v", err)
-			}
+			target := createConfigTarget(flagVars)
 
 			got := configTargetIsProbeOnly(target)
 			if got != tt.want {
@@ -94,12 +94,9 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 
 func TestCreateConfigTargetJSON(t *testing.T) {
 	v := &flagVars{
-		targetJSON: `{"Props":{"mode":{"static":true}},"Get":["baudRate"],"Opts":{"Save":"minimal","NMEAMsg":[]}}`,
+		targetJSON: mustTargetJSON(t, `{"Props":{"mode":{"static":true}},"Get":["baudRate"],"Opts":{"Save":"minimal","NMEAMsg":[]}}`),
 	}
-	target, err := createConfigTarget(v)
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(v)
 	mode, ok := target.Props.GetMode()
 	if !ok || !mode.Static {
 		t.Errorf("mode = %+v, %t, want static mode", mode, ok)
@@ -119,63 +116,20 @@ func TestCreateConfigTargetJSON(t *testing.T) {
 // proxy connection on a serial device: that would skip the silence wait, the
 // detection deadline, and the framing checks in gpscfg.Configure.
 func TestCreateConfigTargetJSONSocketFollowsTransport(t *testing.T) {
-	target, err := createConfigTarget(&flagVars{targetJSON: `{"Opts":{"Socket":true}}`, serialDevice: "/dev/ttyACM0"})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{"Opts":{"Socket":true}}`), serialDevice: "/dev/ttyACM0"})
 	if target.Opts.Socket {
 		t.Error("Socket = true for a serial transport")
 	}
-	target, err = createConfigTarget(&flagVars{targetJSON: `{}`, socketPath: "/tmp/socket"})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target = createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`), socketPath: "/tmp/socket"})
 	if !target.Opts.Socket {
 		t.Error("Socket = false for a socket transport")
 	}
 }
 
 func TestCreateConfigTargetJSONNoOp(t *testing.T) {
-	target, err := createConfigTarget(&flagVars{targetJSON: `{}`})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`)})
 	if target == nil || !target.Opts.ForceProbe {
 		t.Errorf("target = %+v, want force-probe target", target)
-	}
-}
-
-func TestCreateConfigTargetJSONStdin(t *testing.T) {
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	oldStdin := os.Stdin
-	os.Stdin = r
-	t.Cleanup(func() {
-		os.Stdin = oldStdin
-		r.Close()
-	})
-	if _, err := w.WriteString(`{"Get":["baudRate"]}`); err != nil {
-		t.Fatal(err)
-	}
-	if err := w.Close(); err != nil {
-		t.Fatal(err)
-	}
-	target, err := createConfigTarget(&flagVars{targetJSON: "-"})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
-	if target.Get != gpsprot.PropIDBaudRate {
-		t.Errorf("Get = %v, want baudRate", target.Get)
-	}
-}
-
-func TestCreateConfigTargetJSONTrailingData(t *testing.T) {
-	for _, s := range []string{`{} {}`, `{} trailing`} {
-		if _, err := createConfigTarget(&flagVars{targetJSON: s}); err == nil {
-			t.Errorf("createConfigTarget(%q) succeeded, want error", s)
-		}
 	}
 }
 
@@ -184,88 +138,19 @@ func TestCreateConfigTargetJSONMergesGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	target, err := createConfigTarget(v)
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(v)
 	want := showProps | gpsprot.PropIDBaudRate
 	if target.Get != want {
 		t.Errorf("Get = %v, want %v", target.Get, want)
 	}
 }
 
-func TestCreateConfigTargetJSONUnknownField(t *testing.T) {
-	for _, s := range []string{
-		`{"Unknown":true}`,
-		`{"Props":{"unknown":true}}`,
-		`{"Opts":{"Unknown":true}}`,
-	} {
-		if _, err := createConfigTarget(&flagVars{targetJSON: s}); err == nil {
-			t.Errorf("createConfigTarget(%s) succeeded, want error", s)
-		}
-	}
-}
-
-func TestCreateConfigTargetJSONReadbackProps(t *testing.T) {
-	var props gpsprot.ConfigProps
-	props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA))
-	props.SetPort("UART1")
-	b, err := json.Marshal(&props)
-	if err != nil {
-		t.Fatal(err)
-	}
-	target, err := createConfigTarget(&flagVars{targetJSON: fmt.Sprintf(`{"Props":%s}`, b)})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
-	if target.Props.ReadOnlyProps() != 0 {
-		t.Errorf("read-only properties not cleared: %v", target.Props.ReadOnlyProps())
-	}
-	if got, ok := target.Props.GetSignalsEnabled(); !ok || got != gpsprot.SignalSetOf(gpsprot.SigGPSL1CA) {
-		t.Errorf("signalsEnabled = %v, %t", got, ok)
-	}
-}
-
 func TestCreateConfigTargetJSONDoesNotApplyFlagProps(t *testing.T) {
-	v := flagVars{targetJSON: `{}`}
+	v := flagVars{targetJSON: mustTargetJSON(t, `{}`)}
 	v.pps.Set(time.Second)
-	target, err := createConfigTarget(&v)
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(&v)
 	if _, ok := target.Props.GetTimePulseWidth(); ok {
 		t.Error("JSON target includes flag-derived PPS property")
-	}
-}
-
-func TestTargetJSONShowPortConfigSupport(t *testing.T) {
-	v, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{}`, "--show-port"})
-	if err != nil {
-		t.Fatalf("parseFlags: %v", err)
-	}
-	all, _ := v.configSupport.flags()
-	if all != gpsprot.ConfigSupportPort {
-		t.Errorf("configSupport = %v, want port", all.Items())
-	}
-}
-
-func TestTargetJSONConfigFlagExclusive(t *testing.T) {
-	_, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{}`, "--gnss", "GPS"})
-	if err == nil {
-		t.Fatal("parseFlags succeeded, want error")
-	}
-	if !strings.Contains(err.Error(), "--target-json cannot be combined with --gnss") {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestTargetJSONShowTagsExclusive(t *testing.T) {
-	_, _, err := parseFlags("gps", []string{"--target-json", `{}`, "--msg-file", "messages.toml", "--show-tags"})
-	if err == nil {
-		t.Fatal("parseFlags succeeded, want error")
-	}
-	if !strings.Contains(err.Error(), "--target-json cannot be combined with --msg-file") {
-		t.Errorf("unexpected error: %v", err)
 	}
 }
 
@@ -292,6 +177,7 @@ func TestWarnMissingConfigSupport(t *testing.T) {
 	var req configSupportReq
 	req.require(gpsprot.ConfigSupportFixedPos, "--fixed-pos-ecef")
 	req.require(gpsprot.ConfigSupportRaw, "--raw-out")
+	req.require(gpsprot.ConfigSupportReload, "--reload")
 	req.require(gpsprot.ConfigSupportPort, "--show-port")
 	req.requireMSM("--rtcm-out")
 	var b bytes.Buffer
@@ -303,6 +189,9 @@ func TestWarnMissingConfigSupport(t *testing.T) {
 	}
 	if !strings.Contains(s, "option=--fixed-pos-ecef") {
 		t.Errorf("log output missing option: %q", s)
+	}
+	if !strings.Contains(s, "option=--reload") {
+		t.Errorf("log output missing reload option: %q", s)
 	}
 	if !strings.Contains(s, "option=--show-port") {
 		t.Errorf("log output missing show-port option: %q", s)

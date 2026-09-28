@@ -2,34 +2,17 @@ package main
 
 import (
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/app/session"
-	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/msgfile"
 )
 
-// msgDirs returns the message-file library search path:
-// SATPULSE_GPSMSG_PATH when set, otherwise the user's own library
-// followed by the installed locations (systemDirs, per platform).
-func msgDirs() []string {
-	if dirs := msgfile.EnvDirs(); dirs != nil {
-		return dirs
-	}
-	cfg, err := os.UserConfigDir()
-	if err != nil {
-		return systemDirs()
-	}
-	return defaultDirs(cfg, systemDirs())
-}
-
-// defaultDirs puts the user's library under cfg ahead of the installed
-// ones. Split out from msgDirs so a test needs no environment variable:
-// os.UserConfigDir reads a different one on each platform.
-func defaultDirs(cfg string, sys []string) []string {
-	return append([]string{filepath.Join(cfg, "satpulse", "gpsmsg")}, sys...)
+// msgDirs returns the message-file library search path: the
+// SATPULSE_GPSMSG_PATH directories, when set, followed by the built-in
+// library.
+func msgDirs() []msgfile.Dir {
+	return append(msgfile.EnvDirs(), msgfile.Builtin())
 }
 
 // msgCatalog is the /api/msgfile/catalog response: the message files
@@ -60,17 +43,17 @@ func (s *server) handleMsgSelect(w http.ResponseWriter, r *http.Request) {
 	}
 	// FindName's component validation is the path-traversal guard: a
 	// Name never resolves outside a search-path directory.
-	path, err := msgfile.FindName(req, s.msgDirs)
+	dir, name, err := msgfile.FindName(req, s.msgDirs)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	mf, err := msgfile.Load(path)
+	mf, err := dir.Load(name)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	writeJSON(w, msgFileResult{Path: path, Tags: s.sess.SetMsgFile(mf)})
+	writeJSON(w, msgFileResult{Path: dir.DisplayPath(name), Tags: s.sess.SetMsgFile(mf)})
 }
 
 func (s *server) handleMsgSend(w http.ResponseWriter, r *http.Request) {
@@ -98,9 +81,8 @@ func (s *server) handleMsgCancel(w http.ResponseWriter, _ *http.Request) {
 }
 
 // msgPreselect returns the vendor the UI should preselect: the session
-// vendor (--vendor if set, else the vendor the probe detected) matched
-// by lowercased name against the catalog's vendors; "" when nothing
-// matches.
+// vendor (see sessionVendorName) matched by lowercased name against
+// the catalog's vendors; "" when nothing matches.
 func (s *server) msgPreselect(names []msgfile.Entry) string {
 	vendor := strings.ToLower(s.sessionVendorName())
 	if vendor == "" {
@@ -115,11 +97,12 @@ func (s *server) msgPreselect(names []msgfile.Entry) string {
 }
 
 // sessionVendorName returns the vendor name driving preselection: the
-// --vendor value when one was given, otherwise the vendor the probe
-// detected (empty under passive detection).
+// asserted vendor when the resolved list (--vendor or a singleton
+// SATPULSE_VENDORS declaration) names exactly one, otherwise the
+// vendor the probe detected (empty under passive detection).
 func (s *server) sessionVendorName() string {
-	if s.vendor != gpsreg.VendorUnknown {
-		return s.vendor.String()
+	if len(s.vendors) == 1 {
+		return s.vendors[0].String()
 	}
 	if r := s.sess.Receiver(); r.Info.IsSet() {
 		return r.Info.Get().Vendor

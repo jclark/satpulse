@@ -1,8 +1,10 @@
 # satpulsewb with an explicit -L bind and no -T: -L takes the runner's allocated
 # HTTP port and disables the access token (the ssh-tunnel workflow). The API is
 # then open, but the CSRF content-type gate still guards state-changing POSTs.
-# -d auto-connects over the FIFO the runner allocated.
+# -d and -s auto-connect over the FIFO the runner allocated.
 -L
 127.0.0.1:${SATPULSE_TEST_HTTP_PORT}
 -d
 ${SATPULSE_TEST_SERIAL}
+-s
+38400

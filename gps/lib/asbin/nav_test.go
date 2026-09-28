@@ -180,7 +180,7 @@ func TestNavAuto(t *testing.T) {
 		packet: "f1d901c0200004ea07030407371afe2afd3b864e2f08388effff000000004d004d007300191aa438",
 		wantID: NavAutoID,
 		wantMsg: &NavAuto{
-			FixState:  4,          // 3D fix
+			FixState:  4, // 3D fix
 			Year:      2026,
 			Month:     3,
 			Day:       4,

@@ -137,7 +137,7 @@ export interface ConfigSubGroupProps {
 export function ConfigSubGroup({title, disabled, children}: ConfigSubGroupProps) {
     return (
         <div>
-            <div class={`mb-1 text-xs font-semibold ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
+            <div class={`mb-2 text-xs font-semibold ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
             <div class="pl-4">{children}</div>
         </div>
     );
@@ -151,9 +151,9 @@ export interface ConfigSubSubGroupProps {
 
 export function ConfigSubSubGroup({title, disabled, children}: ConfigSubSubGroupProps) {
     return (
-        <div class="mt-1">
+        <div class="mt-2">
             <div class={`mb-1 text-xs font-medium ${disabled ? 'text-text-muted' : 'text-text-secondary'}`}>{title}</div>
-            <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1 items-start">
+            <div class="grid grid-cols-[13rem_auto] gap-x-6 gap-y-1.5 items-start">
                 {children}
             </div>
         </div>
@@ -163,16 +163,17 @@ export function ConfigSubSubGroup({title, disabled, children}: ConfigSubSubGroup
 export interface ConfigGroupProps {
     title: string;
     defaultOpen?: boolean;
+    disabled?: boolean;
     children: ComponentChildren;
 }
 
-export function ConfigGroup({title, defaultOpen = true, children}: ConfigGroupProps) {
+export function ConfigGroup({title, defaultOpen = true, disabled, children}: ConfigGroupProps) {
     const [open, setOpen] = useState(defaultOpen);
     return (
-        <section class="mt-3 first:mt-0">
+        <section class="mt-5 first:mt-0">
             <button
                 type="button"
-                class="flex cursor-pointer items-center gap-2 border-none bg-transparent py-1.5 text-left text-sm font-semibold text-text-secondary hover:text-text-primary"
+                class={`flex cursor-pointer items-center gap-2 border-none bg-transparent pt-0 pb-2.5 text-left text-sm font-semibold ${disabled ? 'text-text-muted' : 'text-text-secondary hover:text-text-primary'}`}
                 onClick={() => setOpen(!open)}
             >
                 <svg

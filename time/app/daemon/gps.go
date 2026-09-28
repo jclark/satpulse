@@ -133,21 +133,6 @@ func (c *GPSConfig) setMsgOptions(opts *gpsprot.ConfigOptions, speed int, cf cfg
 	return err
 }
 
-// CreatePacketProcessors creates packet processors configured for the vendor.
-func (c *GPSConfig) CreatePacketProcessors() map[gpsprot.Tag]gpsprot.PacketProcessor {
-	return gpsreg.CreatePacketProcessors(c.Vendor)
-}
-
-// CreatePacketFormats returns the packet formats appropriate for the vendor.
-func (c *GPSConfig) CreatePacketFormats() []gpsprot.PacketFormat {
-	return gpsreg.CreatePacketFormats(c.Vendor)
-}
-
-// CreateConfigProtocols returns the configuration protocols appropriate for the vendor.
-func (c *GPSConfig) CreateConfigProtocols() []gpsprot.ConfigProtocol {
-	return gpsreg.CreateConfigProtocols(c.Vendor)
-}
-
 func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
 	opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
@@ -184,7 +169,7 @@ func (c *GPSConfig) setFixedModeECEF(cp *gpsprot.ConfigProps) error {
 		return configErrorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
 	}
 	var fixedPos gpsprot.Point3D
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
 	}
 	acc, err := c.getFixedPosAcc()

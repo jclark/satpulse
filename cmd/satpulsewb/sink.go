@@ -78,17 +78,25 @@ func newSSEHub() *sseHub {
 // Emit implements session.Sink. It must not block: a client that falls
 // behind is disconnected (its dead channel is closed) rather than blocked.
 func (h *sseHub) Emit(ev session.Event) {
-	pkt := ev.Name == session.EventPacket
+	name := ev.EventName()
+	pkt := name == session.EventPacket
 	msgKind := ""
-	if me, ok := ev.Data.(session.MsgEvent); ok {
-		msgKind = me.Kind
+	disconnected := false
+	dropBaseARP := false
+	switch ev := ev.(type) {
+	case session.MsgEvent:
+		msgKind = ev.Kind
+	case session.ConnState:
+		disconnected = ev == session.StateDisconnected
+	case session.CorrEvent:
+		dropBaseARP = ev.State == "connecting" || ev.State == "stopped"
 	}
-	cacheMsg := ev.Name == session.EventMsg && stickyMsgKinds[msgKind]
+	cacheMsg := name == session.EventMsg && stickyMsgKinds[msgKind]
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	// Skip the JSON encode entirely when nothing needs it: no client
 	// wants this stream and the event is not one we cache for priming.
-	if !stickySet[ev.Name] && !cacheMsg {
+	if !stickySet[name] && !cacheMsg {
 		if pkt {
 			if h.npackets == 0 {
 				return
@@ -97,17 +105,17 @@ func (h *sseHub) Emit(ev session.Event) {
 			return
 		}
 	}
-	e, err := sse.Make(string(ev.Name), ev.Data)
+	e, err := sse.Make(string(name), ev)
 	if err != nil {
 		return
 	}
-	if stickySet[ev.Name] {
-		h.cache[ev.Name] = e
+	if stickySet[name] {
+		h.cache[name] = e
 	}
 	if cacheMsg {
 		h.msgCache[msgKind] = e
 	}
-	if ev.Name == session.EventState && ev.Data == session.StateDisconnected {
+	if disconnected {
 		// Connection-scoped state is stale once disconnected; a late
 		// joiner must not be primed with it. Corrections state carries
 		// its own lifecycle events, so it stays.
@@ -118,7 +126,7 @@ func (h *sseHub) Emit(ev session.Event) {
 		}
 		clear(h.msgCache)
 	}
-	if ce, ok := ev.Data.(session.CorrEvent); ok && (ce.State == "connecting" || ce.State == "stopped") {
+	if dropBaseARP {
 		// The base ARP belongs to the active correction stream. Drop the
 		// cached one when the stream starts fresh or stops, so a late
 		// joiner isn't primed with a stale ARP for a stream that is no

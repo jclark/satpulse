@@ -5,7 +5,8 @@
   "workspaces": [
     "packages/dashboard",
     "packages/workbench",
-    "packages/workbench-http"
+    "packages/workbench-http",
+    "packages/e2e"
   ],
   "dependencies": {
     "@satpulse/gps": "file:../gps/ts"

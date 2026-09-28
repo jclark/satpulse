@@ -86,7 +86,7 @@ func NewConfigProtocol() *ConfigProtocol {
 	return &ConfigProtocol{}
 }
 
-func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+func (cp *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
 	switch mt := msg.(type) {
 	case *nmea.Sentence:
 		if cp.cfg != nil {
@@ -136,8 +136,8 @@ func (c *Configurator) ConfigProps() *gpsprot.ConfigProps {
 	return props
 }
 
-func (cp *ConfigProtocol) ProbePacket() []byte {
-	return []byte("VERSIONB\r\n")
+func (cp *ConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
+	return [][]byte{[]byte("VERSIONB\r\n")}, 0
 }
 
 func (cp *ConfigProtocol) ProbeOK() bool {

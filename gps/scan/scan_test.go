@@ -311,7 +311,7 @@ func TestAbbrevAsciiScanning(t *testing.T) {
 		{gpsreg.TagUnicoreBin, "", true, false}, // data checked by tag only
 	}
 
-	s := scan.New(strings.NewReader(stream), 1024, gpsreg.CreatePacketFormats(gpsreg.VendorUnicore))
+	s := scan.New(strings.NewReader(stream), 1024, gpsreg.CreatePacketFormats([]gpsreg.Vendor{gpsreg.VendorUnicore}))
 	for i, e := range expect {
 		pkt, err := s.Scan()
 		if err != nil {

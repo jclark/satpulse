@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -31,7 +33,7 @@ func TestConfigurePanicsOnReadOnlyProps(t *testing.T) {
 func TestNativeOnlyDetection(t *testing.T) {
 	mh := msgHandler{
 		lg:          slog.Default(),
-		packetProcs: gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown),
+		packetProcs: gpsreg.CreatePacketProcessors(nil),
 		msgCount:    make(map[gpsprot.Tag]int),
 	}
 	mh.msgCount[gpsreg.TagUBX] = 5
@@ -48,8 +50,14 @@ func TestNativeOnlyDetection(t *testing.T) {
 }
 
 // fakeOutPort implements gpsio.OutPort for testing. Records all writes.
+// Writes come from the detect goroutine while the test goroutine reads
+// them, so access is guarded: synctest.Wait orders a bubbled goroutine's
+// writes before a later Wait, but not the test's reads before subsequent
+// writes.
 type fakeOutPort struct {
-	writes [][]byte
+	mu         sync.Mutex
+	writes     [][]byte
+	writeTimes []time.Time
 }
 
 var _ gpsio.OutPort = (*fakeOutPort)(nil)
@@ -57,8 +65,25 @@ var _ gpsio.OutPort = (*fakeOutPort)(nil)
 func (p *fakeOutPort) Write(b []byte) (int, error) {
 	cp := make([]byte, len(b))
 	copy(cp, b)
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.writes = append(p.writes, cp)
+	p.writeTimes = append(p.writeTimes, time.Now())
 	return len(b), nil
+}
+
+// written returns a snapshot of the recorded writes.
+func (p *fakeOutPort) written() [][]byte {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.writes)
+}
+
+// times returns a snapshot of the times of the recorded writes.
+func (p *fakeOutPort) times() []time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.writeTimes)
 }
 
 func (p *fakeOutPort) Buffered() (int, error) { return 0, nil }
@@ -69,14 +94,22 @@ func (p *fakeOutPort) Direct() bool { return false }
 
 // fakeConfigProtocol implements gpsprot.ConfigProtocol for testing.
 type fakeConfigProtocol struct {
-	probePacket []byte
-	probeOK     bool
+	probePackets [][]byte
+	probeDelay   time.Duration
+	probeOK      bool
 }
 
 var _ gpsprot.ConfigProtocol = (*fakeConfigProtocol)(nil)
 
-func (p *fakeConfigProtocol) ProbePacket() []byte { return p.probePacket }
-func (p *fakeConfigProtocol) ProbeOK() bool       { return p.probeOK }
+func newFakeConfigProtocol(s string) *fakeConfigProtocol {
+	return &fakeConfigProtocol{probePackets: [][]byte{[]byte(s)}}
+}
+
+func (p *fakeConfigProtocol) ProbePackets() ([][]byte, time.Duration) {
+	return p.probePackets, p.probeDelay
+}
+
+func (p *fakeConfigProtocol) ProbeOK() bool { return p.probeOK }
 func (p *fakeConfigProtocol) NativeMsg(gpsprot.Tag, string, any, time.Time) error {
 	return nil
 }
@@ -116,7 +149,7 @@ func makeFramingErrorPacket() scan.Packet {
 func setupMsgHandler(configProts []gpsprot.ConfigProtocol) (*msgHandler, chan scan.Packet) {
 	ch := make(chan scan.Packet, 16)
 	mh := &msgHandler{}
-	mh.init(slog.Default(), gpsreg.CreatePacketProcessors(gpsreg.VendorUnknown), configProts, ch)
+	mh.init(slog.Default(), gpsreg.CreatePacketProcessors(nil), configProts, ch)
 	return mh, ch
 }
 
@@ -134,6 +167,18 @@ func runDetect(ctx context.Context, mh *msgHandler, port gpsio.OutPort, probeEna
 		ch <- detectResult{cp, err}
 	}()
 	return ch
+}
+
+func checkWrites(t *testing.T, writes [][]byte, want ...string) {
+	t.Helper()
+	if len(writes) != len(want) {
+		t.Fatalf("got %d probe writes, want %d", len(writes), len(want))
+	}
+	for i, s := range want {
+		if string(writes[i]) != s {
+			t.Fatalf("probe write %d = %q, want %q", i, writes[i], s)
+		}
+	}
 }
 
 func TestListeningOnlySuccess(t *testing.T) {
@@ -195,7 +240,7 @@ func TestListeningOnlyTimeoutWithFramingErrors(t *testing.T) {
 
 func TestProbingTriggeredBySilence(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fp := &fakeConfigProtocol{probePacket: []byte("PROBE1")}
+		fp := newFakeConfigProtocol("PROBE1")
 		mh, _ := setupMsgHandler([]gpsprot.ConfigProtocol{fp})
 		port := &fakeOutPort{}
 		ctx := context.Background()
@@ -205,11 +250,12 @@ func TestProbingTriggeredBySilence(t *testing.T) {
 		// Wait 1s for the silence timer to fire and trigger the first probe
 		time.Sleep(1 * time.Second)
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("expected 1 probe write, got %d", len(port.writes))
+		w := port.written()
+		if len(w) != 1 {
+			t.Fatalf("expected 1 probe write, got %d", len(w))
 		}
-		if string(port.writes[0]) != "PROBE1" {
-			t.Fatalf("probe write = %q, want %q", port.writes[0], "PROBE1")
+		if string(w[0]) != "PROBE1" {
+			t.Fatalf("probe write = %q, want %q", w[0], "PROBE1")
 		}
 		// Let probes time out: 1.5s retry delay + 3s response timeout
 		time.Sleep(probeRetryDelay + probeResponseTimeout)
@@ -223,15 +269,15 @@ func TestProbingTriggeredBySilence(t *testing.T) {
 			t.Fatalf("detect() configProt = %v, want nil", r.configProt)
 		}
 		// Two probes should have been sent
-		if len(port.writes) != 2 {
-			t.Fatalf("expected 2 total probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 2 {
+			t.Fatalf("expected 2 total probe writes, got %d", n)
 		}
 	})
 }
 
 func TestProbingTriggeredByValidPacket(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fp := &fakeConfigProtocol{probePacket: []byte("PROBE1")}
+		fp := newFakeConfigProtocol("PROBE1")
 		mh, packetCh := setupMsgHandler([]gpsprot.ConfigProtocol{fp})
 		port := &fakeOutPort{}
 		ctx := context.Background()
@@ -242,8 +288,8 @@ func TestProbingTriggeredByValidPacket(t *testing.T) {
 		// This triggers a probe immediately.
 		packetCh <- makeNMEAPacket()
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("expected 1 probe write after valid packet, got %d", len(port.writes))
+		if n := len(port.written()); n != 1 {
+			t.Fatalf("expected 1 probe write after valid packet, got %d", n)
 		}
 		// Let probes time out: 1.5s retry delay + 3s response timeout
 		time.Sleep(probeRetryDelay + probeResponseTimeout)
@@ -258,15 +304,15 @@ func TestProbingTriggeredByValidPacket(t *testing.T) {
 			t.Fatalf("detect() configProt = %v, want nil (probe timed out)", r.configProt)
 		}
 		// Two probes should have been sent
-		if len(port.writes) != 2 {
-			t.Fatalf("expected 2 total probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 2 {
+			t.Fatalf("expected 2 total probe writes, got %d", n)
 		}
 	})
 }
 
 func TestProbingSuccess(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fp := &fakeConfigProtocol{probePacket: []byte("PROBE1")}
+		fp := newFakeConfigProtocol("PROBE1")
 		mh, packetCh := setupMsgHandler([]gpsprot.ConfigProtocol{fp})
 		port := &fakeOutPort{}
 		ctx := context.Background()
@@ -293,7 +339,7 @@ func TestProbingSuccess(t *testing.T) {
 func TestSocketMode(t *testing.T) {
 	t.Run("probing", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			fp := &fakeConfigProtocol{probePacket: []byte("PROBE1")}
+			fp := newFakeConfigProtocol("PROBE1")
 			mh, packetCh := setupMsgHandler([]gpsprot.ConfigProtocol{fp})
 			port := &fakeOutPort{}
 			ctx := context.Background()
@@ -301,8 +347,8 @@ func TestSocketMode(t *testing.T) {
 			resultCh := runDetect(ctx, mh, port, true, true)
 			synctest.Wait()
 			// In socket mode, probe is sent immediately
-			if len(port.writes) != 1 {
-				t.Fatalf("expected 1 probe write in socket mode, got %d", len(port.writes))
+			if n := len(port.written()); n != 1 {
+				t.Fatalf("expected 1 probe write in socket mode, got %d", n)
 			}
 			// Set probeOK and send a packet
 			fp.probeOK = true
@@ -336,7 +382,7 @@ func TestSocketMode(t *testing.T) {
 
 func TestProbeRetryAndTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fp := &fakeConfigProtocol{probePacket: []byte("PROBE1")}
+		fp := newFakeConfigProtocol("PROBE1")
 		mh, packetCh := setupMsgHandler([]gpsprot.ConfigProtocol{fp})
 		port := &fakeOutPort{}
 		ctx := context.Background()
@@ -346,14 +392,14 @@ func TestProbeRetryAndTimeout(t *testing.T) {
 		// Send a valid packet to trigger first probe immediately
 		packetCh <- makeNMEAPacket()
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("after first packet: expected 1 probe write, got %d", len(port.writes))
+		if n := len(port.written()); n != 1 {
+			t.Fatalf("after first packet: expected 1 probe write, got %d", n)
 		}
 		// After 1.5s (probeRetryDelay), second probe should be sent
 		time.Sleep(probeRetryDelay)
 		synctest.Wait()
-		if len(port.writes) != 2 {
-			t.Fatalf("after retry delay: expected 2 probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 2 {
+			t.Fatalf("after retry delay: expected 2 probe writes, got %d", n)
 		}
 		// Detect should still be running (waiting for probeResponseTimeout)
 		select {
@@ -375,9 +421,52 @@ func TestProbeRetryAndTimeout(t *testing.T) {
 	})
 }
 
+func TestProbePacketsSequenceDelay(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		delay := 200 * time.Millisecond
+		fp := &fakeConfigProtocol{
+			probePackets: [][]byte{[]byte("ESC"), []byte("PROBE1")},
+			probeDelay:   delay,
+		}
+		fp2 := newFakeConfigProtocol("PROBE2")
+		mh, packetCh := setupMsgHandler([]gpsprot.ConfigProtocol{fp, fp2})
+		port := &fakeOutPort{}
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		mh.installNativeMsgHandlers()
+		resultCh := runDetect(ctx, mh, port, true, false)
+		synctest.Wait()
+		packetCh <- makeNMEAPacket()
+		synctest.Wait()
+		checkWrites(t, port.written(), "ESC")
+		time.Sleep(delay)
+		synctest.Wait()
+		checkWrites(t, port.written(), "ESC", "PROBE1", "PROBE2")
+		times := port.times()
+		if got := times[1].Sub(times[0]); got != delay {
+			t.Fatalf("probe packet delay = %v, want %v", got, delay)
+		}
+		if got := times[2].Sub(times[1]); got != 0 {
+			t.Fatalf("delay after final sequence packet = %v, want 0", got)
+		}
+		time.Sleep(probeRetryDelay - time.Nanosecond)
+		synctest.Wait()
+		checkWrites(t, port.written(), "ESC", "PROBE1", "PROBE2")
+		time.Sleep(time.Nanosecond)
+		synctest.Wait()
+		checkWrites(t, port.written(), "ESC", "PROBE1", "PROBE2", "ESC")
+		cancel()
+		synctest.Wait()
+		r := <-resultCh
+		if !errors.Is(r.err, context.Canceled) {
+			t.Fatalf("detect() error = %v, want context.Canceled", r.err)
+		}
+	})
+}
+
 func TestSilenceTimerCancelsOnInput(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		fp := &fakeConfigProtocol{probePacket: []byte("PROBE1")}
+		fp := newFakeConfigProtocol("PROBE1")
 		mh, packetCh := setupMsgHandler([]gpsprot.ConfigProtocol{fp})
 		port := &fakeOutPort{}
 		ctx := context.Background()
@@ -391,21 +480,21 @@ func TestSilenceTimerCancelsOnInput(t *testing.T) {
 		synctest.Wait()
 		// No probe should have been sent yet (silence timer cancelled,
 		// no valid packet received, deadline hasn't fired)
-		if len(port.writes) != 0 {
-			t.Fatalf("after framing error at 500ms: expected 0 probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 0 {
+			t.Fatalf("after framing error at 500ms: expected 0 probe writes, got %d", n)
 		}
 		// Advance past the original 1s silence timer. No probe should fire.
 		time.Sleep(600 * time.Millisecond)
 		synctest.Wait()
-		if len(port.writes) != 0 {
-			t.Fatalf("at 1.1s: expected 0 probe writes (silence timer cancelled), got %d", len(port.writes))
+		if n := len(port.written()); n != 0 {
+			t.Fatalf("at 1.1s: expected 0 probe writes (silence timer cancelled), got %d", n)
 		}
 		// The deadline (extended by framing error) eventually fires and triggers probe.
 		// Deadline was extended to 2s from the framing error at 0.5s = 2.5s.
 		time.Sleep(1400 * time.Millisecond)
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("after deadline: expected 1 probe write, got %d", len(port.writes))
+		if n := len(port.written()); n != 1 {
+			t.Fatalf("after deadline: expected 1 probe write, got %d", n)
 		}
 		// Let probes finish
 		time.Sleep(probeRetryDelay + probeResponseTimeout)

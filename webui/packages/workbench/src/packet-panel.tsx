@@ -43,7 +43,7 @@ function formatTime(iso: string): string {
 }
 
 function entryData(pkt: PacketLogEntry): string {
-    if (pkt.ascii) return stripTrailingEOL(pkt.ascii);
+    if (pkt.ascii) return stripTrailingEOL(pkt.ascii).replace(/\r\n|\r|\n/g, '\u21b5');
     return pkt.bin || '';
 }
 
@@ -60,6 +60,7 @@ const chevronSvg = (
 export function PacketPanel({visible, connState}: Props) {
     const liveRef = useRef<Map<string, MsgTypeState>>(new Map());
     const [displayed, setDisplayed] = useState<Map<string, MsgTypeState>>(new Map());
+    const visibleRef = useRef(visible);
     const frozenRef = useRef(false);
     const frozenAtRef = useRef(0);
     const [isFrozen, setIsFrozen] = useState(false);
@@ -70,11 +71,10 @@ export function PacketPanel({visible, connState}: Props) {
     const [snapshotOpen, setSnapshotOpen] = useState(false);
     const [snapshotEntries, setSnapshotEntries] = useState<(PacketLogEntry & {key: string})[]>([]);
 
-    // Register gps:packet listener only while the tab is visible: the
-    // subscription is what makes the backend stream the high-rate
-    // packet events.
+    // Keep gps:packet subscribed for the Workbench lifetime. The subscription
+    // makes the backend stream the gated high-rate events, including transient
+    // packets received while another tab is visible.
     useEffect(() => {
-        if (!visible) return;
         const off = transport.eventsOn('gps:packet', (pkt: PacketLogEntry) => {
             const tag = pkt.tag || '';
             const msg = pkt.msg || '';
@@ -92,11 +92,20 @@ export function PacketPanel({visible, connState}: Props) {
             } else {
                 live.set(key, {tag, msg, out, count: 1, recentEntries: [pkt]});
             }
-            if (!frozenRef.current) {
+            if (visibleRef.current && !frozenRef.current) {
                 setDisplayed(new Map(live));
             }
         });
         return off;
+    }, []);
+
+    // Packet ingestion mutates only the live accumulator while hidden. Sync
+    // the displayed snapshot on return without rendering once per hidden packet.
+    useEffect(() => {
+        visibleRef.current = visible;
+        if (visible && !frozenRef.current) {
+            setDisplayed(new Map(liveRef.current));
+        }
     }, [visible]);
 
     // Sorted rows
@@ -191,13 +200,6 @@ export function PacketPanel({visible, connState}: Props) {
         });
     }, []);
 
-    // Row click -> decode most recent entry
-    const handleRowClick = useCallback((state: MsgTypeState) => {
-        const last = state.recentEntries[state.recentEntries.length - 1];
-        const key = `${state.tag}:${state.msg}:${state.out ? 'o' : 'i'}`;
-        decodeEntry(key, last);
-    }, [decodeEntry]);
-
     // Snapshot
     const captureSnapshot = useCallback(() => {
         const live = liveRef.current;
@@ -240,13 +242,14 @@ export function PacketPanel({visible, connState}: Props) {
                             <th class="whitespace-nowrap px-2 py-1.5">Message</th>
                             <th class="whitespace-nowrap px-2 py-1.5"></th>
                             <th class="whitespace-nowrap px-2 py-1.5 text-right">Count</th>
-                            <th class="whitespace-nowrap px-2 py-1.5">Last timestamp</th>
-                            <th class="w-full px-2 py-1.5">Last message</th>
+                            <th class="whitespace-nowrap px-2 py-1.5">First timestamp</th>
+                            <th class="w-full px-2 py-1.5">First message</th>
                         </tr>
                     </thead>
                     <tbody class="font-mono">
                         {sortedRows.map(state => {
                             const key = `${state.tag}:${state.msg}:${state.out ? 'o' : 'i'}`;
+                            const first = state.recentEntries[0];
                             const last = state.recentEntries[state.recentEntries.length - 1];
                             const active = isActive(last, isFrozen ? frozenAtRef.current : undefined);
                             const textClass = active ? 'text-text-primary' : 'text-text-muted';
@@ -257,7 +260,7 @@ export function PacketPanel({visible, connState}: Props) {
                                 <Fragment key={key}>
                                     <tr
                                         class={`cursor-pointer hover:bg-surface-3 ${selected ? 'bg-surface-3' : ''}`}
-                                        onClick={() => handleRowClick(state)}
+                                        onClick={() => decodeEntry(key, first)}
                                     >
                                         <td class="align-baseline w-6 px-1 py-0.5 text-center">
                                             {canExpand && (
@@ -273,10 +276,10 @@ export function PacketPanel({visible, connState}: Props) {
                                         <td class={`align-baseline whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.msg}</td>
                                         <td class={`align-baseline whitespace-nowrap px-2 py-0.5 ${textClass}`}>{state.out ? 'Tx' : 'Rx'}</td>
                                         <td class={`align-baseline whitespace-nowrap px-2 py-0.5 text-right tabular-nums ${textClass}`}>{state.count}</td>
-                                        <td class={`align-baseline whitespace-nowrap px-2 py-0.5 tabular-nums ${textClass}`}>{formatTime(last.t)}</td>
-                                        <td class={`align-baseline px-2 py-0.5 break-all ${textClass}`}>{entryData(last)}</td>
+                                        <td class={`align-baseline whitespace-nowrap px-2 py-0.5 tabular-nums ${textClass}`}>{formatTime(first.t)}</td>
+                                        <td class={`align-baseline px-2 py-0.5 break-all ${textClass}`}>{entryData(first)}</td>
                                     </tr>
-                                    {isExpanded && state.recentEntries.map((e, i) => (
+                                    {isExpanded && state.recentEntries.slice(1).map((e, i) => (
                                         <tr
                                             key={`${key}-${i}`}
                                             class="cursor-pointer text-text-secondary hover:bg-surface-3"
@@ -339,11 +342,11 @@ export function PacketPanel({visible, connState}: Props) {
                                 <tbody class="font-mono">
                                     {snapshotEntries.map((e, i) => (
                                         <tr key={i} class="text-text-primary">
-                                            <td class="whitespace-nowrap px-2 py-0.5 tabular-nums">{formatTime(e.t)}</td>
-                                            <td class="whitespace-nowrap px-2 py-0.5">{e.tag || ''}</td>
-                                            <td class="whitespace-nowrap px-2 py-0.5">{e.msg || ''}</td>
-                                            <td class="whitespace-nowrap px-2 py-0.5">{e.out ? 'Tx' : 'Rx'}</td>
-                                            <td class="px-2 py-0.5 break-all">{entryData(e)}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5 tabular-nums">{formatTime(e.t)}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5">{e.tag || ''}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5">{e.msg || ''}</td>
+                                            <td class="align-baseline whitespace-nowrap px-2 py-0.5">{e.out ? 'Tx' : 'Rx'}</td>
+                                            <td class="align-baseline px-2 py-0.5 break-all">{entryData(e)}</td>
                                         </tr>
                                     ))}
                                 </tbody>

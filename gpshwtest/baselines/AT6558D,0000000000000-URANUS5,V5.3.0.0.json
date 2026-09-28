@@ -1,0 +1,33 @@
+{
+  "limitations": {
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "pvtOut": {"missing": ["leap"]},
+    "rawOut": {
+      "missing": [{"missing": ["obs"], "request": ["obs"]}, {"missing": ["nav"], "request": ["nav"]}]
+    },
+    "rtcmBaseID": {"unsupported": true},
+    "rtcmOut": {
+      "missing": [
+        {"missing": ["1005", "1074", "1124"], "request": ["MSM4", "ARP"]},
+        {"missing": ["1077", "1127"], "request": ["MSM7"]}
+      ]
+    },
+    "saveGranularity": {
+      "groups": [["antennaCableDelay", "messageOutput", "minElevation", "mode", "timePulse.width"]],
+      "unsaved": ["timeGNSS"]
+    },
+    "showPort": {"unsupported": true},
+    "signals": {"signalSet": {"BDS": ["B1I"], "GLO": ["L1"], "GPS": ["L1"]}},
+    "timeGNSS": {"observed": [{"request": "GAL", "result": "GPS"}]},
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "URANUS5,V5.3.0.0",
+    "hardware": "AT6558D,0000000000000",
+    "supportedGNSS": ["GPS", "BDS", "GLO"],
+    "vendor": "Zhongke"
+  },
+  "supports": ["fixedPos", "fixedPosAcc", "reload", "speed", "survey", "surveyAcc"]
+}

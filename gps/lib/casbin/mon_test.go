@@ -25,8 +25,8 @@ func TestMonVerJSON(t *testing.T) {
 	}
 	s := string(b)
 	for _, want := range []string{
-		`"SwVersion":"CASIC V5.3.0.0"`,
-		`"HwVersion":"HW-1234-REV-A"`,
+		`"swVersion":"CASIC V5.3.0.0"`,
+		`"hwVersion":"HW-1234-REV-A"`,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("JSON %s\nmissing %s", s, want)

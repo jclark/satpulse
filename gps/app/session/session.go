@@ -38,6 +38,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net"
+	"slices"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -59,11 +60,14 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// ConnState represents the unified connection/activity state, emitted
-// as gps:state events. Connecting and Reconnecting are transitional;
+// ConnState is the gps:state event payload and represents the unified
+// connection/activity state. Connecting and Reconnecting are transitional;
 // Configuring and Sending mean an exclusive receiver operation holds
 // the port, and further operations are refused until it completes.
 type ConnState string
+
+// EventName implements Event.
+func (ConnState) EventName() EventName { return EventState }
 
 const (
 	StateDisconnected ConnState = "disconnected"
@@ -114,30 +118,75 @@ type sendStepReq struct {
 // EventName identifies a session event on the UI wire.
 type EventName string
 
-// The session events and their payload types.
+// The session events.
 const (
 	EventState        EventName = "gps:state"        // ConnState
 	EventReceiver     EventName = "gps:receiver"     // ReceiverEvent
-	EventSpeed        EventName = "gps:speed"        // int (host serial port speed)
+	EventSpeed        EventName = "gps:speed"        // SpeedEvent
 	EventLog          EventName = "gps:log"          // LogEvent
 	EventMsg          EventName = "gps:msg"          // MsgEvent
-	EventTime         EventName = "gps:time"         // *gpsprot.TimeMsg
-	EventEpochPVT     EventName = "gps:epochPVT"     // gpsprot.PVMsgBundle
-	EventInitialPos   EventName = "gps:initialPos"   // [2]float64 (lat, lon in degrees)
+	EventTime         EventName = "gps:time"         // TimeEvent
+	EventEpochPVT     EventName = "gps:epochPVT"     // EpochPVTEvent
+	EventInitialPos   EventName = "gps:initialPos"   // InitialPosEvent
 	EventNMEAPosition EventName = "gps:nmeaPosition" // NMEAPositionEvent
 	EventMsgSend      EventName = "gps:msgsend"      // MsgSendEvent
 	EventResponse     EventName = "gps:response"     // ResponseEvent
 	EventCorrections  EventName = "gps:corrections"  // CorrEvent
-	EventCorrPacket   EventName = "gps:corrpacket"   // *gpsprot.CorReportMsg
+	EventCorrPacket   EventName = "gps:corrpacket"   // CorrPacketEvent
 	EventBaseARP      EventName = "gps:basearp"      // BaseARPEvent
-	EventPacket       EventName = "gps:packet"       // gpsio.PacketLogEntry
+	EventPacket       EventName = "gps:packet"       // PacketEvent
 )
 
-// Event is a named event with a JSON-serializable payload.
-type Event struct {
-	Name EventName
-	Data any // one of the payload types documented on the EventName constants
+// Event is a session event payload. The implementing types are exactly
+// the payload types associated with the EventName constants.
+type Event interface {
+	EventName() EventName
 }
+
+// SpeedEvent is the gps:speed event payload: the host serial port speed.
+type SpeedEvent int
+
+// EventName implements Event.
+func (SpeedEvent) EventName() EventName { return EventSpeed }
+
+// TimeEvent is the gps:time event payload.
+type TimeEvent struct {
+	*gpsprot.TimeMsg
+}
+
+// EventName implements Event.
+func (TimeEvent) EventName() EventName { return EventTime }
+
+// EpochPVTEvent is the gps:epochPVT event payload.
+type EpochPVTEvent struct {
+	gpsprot.PVMsgBundle
+}
+
+// EventName implements Event.
+func (EpochPVTEvent) EventName() EventName { return EventEpochPVT }
+
+// InitialPosEvent is the gps:initialPos event payload: latitude and
+// longitude in degrees.
+type InitialPosEvent [2]float64
+
+// EventName implements Event.
+func (InitialPosEvent) EventName() EventName { return EventInitialPos }
+
+// CorrPacketEvent is the gps:corrpacket event payload.
+type CorrPacketEvent struct {
+	*gpsprot.CorReportMsg
+}
+
+// EventName implements Event.
+func (CorrPacketEvent) EventName() EventName { return EventCorrPacket }
+
+// PacketEvent is the gps:packet event payload.
+type PacketEvent struct {
+	gpsio.PacketLogEntry
+}
+
+// EventName implements Event.
+func (PacketEvent) EventName() EventName { return EventPacket }
 
 // Sink delivers events to the UI transport. Called from session
 // goroutines; Emit must not block (drop or buffer).
@@ -153,8 +202,8 @@ type Sink interface {
 	Wants(EventName) bool
 }
 
-func emit(sink Sink, name EventName, data any) {
-	sink.Emit(Event{Name: name, Data: data})
+func emit(sink Sink, event Event) {
+	sink.Emit(event)
 }
 
 // Options configures a Session.
@@ -173,11 +222,11 @@ type Session struct {
 	// It is not held while opening a transport, so a later lifecycle
 	// call can still supersede a pending Connect.
 	lifecycleMu sync.Mutex
-	// op and vendor are set by Connect and immutable while the
+	// op and vendors are set by Connect and immutable while the
 	// connection lives.
-	op     Opener
-	vendor gpsreg.Vendor
-	state  ConnState
+	op      Opener
+	vendors []gpsreg.Vendor
+	state   ConnState
 	// stateSeq counts state transitions; stateEmitSeq is the last
 	// transition whose state has been published. emitStateChange uses
 	// them to keep gps:state events ordered when transitions race.
@@ -232,8 +281,8 @@ func New(lg *slog.Logger, sink Sink, opts Options) *Session {
 	}
 }
 
-func (s *Session) emit(name EventName, data any) {
-	emit(s.sink, name, data)
+func (s *Session) emit(event Event) {
+	emit(s.sink, event)
 }
 
 // setStateLocked records a state transition. Call with s.mu held,
@@ -268,7 +317,7 @@ func (s *Session) emitStateChange() {
 		st := s.state
 		s.mu.Unlock()
 		s.stateEmitMu.Unlock()
-		s.emit(EventState, st)
+		s.emit(st)
 		s.stateEmitMu.Lock()
 	}
 }
@@ -441,7 +490,7 @@ func (s *Session) enterReconnect() bool {
 type Opener interface {
 	// Open connects to the receiver. It returns the host serial port
 	// speed, or 0 if the transport has none.
-	Open(ctx context.Context) (conn gpsio.Conn, speed int, err error)
+	Open(ctx context.Context, lg *slog.Logger) (conn gpsio.Conn, speed int, err error)
 	// Socket reports a proxy connection: sets ConfigOptions.Socket
 	// for gpscfg.Configure.
 	Socket() bool
@@ -463,9 +512,9 @@ const deviceWaitInterval = 200 * time.Millisecond
 // last open error is returned. The device is assumed to come back
 // under the same node: a receiver that re-enumerates under a
 // different name is not found (known limitation).
-func (o SerialOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (gpsio.Conn, int, error) {
 	for {
-		conn, speed, err := gpsio.OpenSerial(o.Device, o.Speed)
+		conn, speed, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
 		if err == nil {
 			return conn, speed, nil
 		}
@@ -490,7 +539,7 @@ type SocketOpener struct {
 }
 
 // Open connects to the unix socket.
-func (o SocketOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
+func (o SocketOpener) Open(_ context.Context, _ *slog.Logger) (gpsio.Conn, int, error) {
 	conn, err := gpsio.OpenSocket(o.Path)
 	if err != nil {
 		return nil, 0, err
@@ -503,12 +552,13 @@ func (o SocketOpener) Socket() bool { return true }
 
 // Connect opens a connection to a GPS receiver via op. It is
 // asynchronous: it returns once the transport is open, and probe
-// progress arrives as events. vendor narrows probing and packet format
-// detection; VendorUnknown probes for all supported vendors. A Connect
+// progress arrives as events. vendors narrows probing and packet
+// format detection (see gpsreg.CreateConfigProtocols and
+// gpsreg.CreatePacketFormats); nil applies their defaults. A Connect
 // or Disconnect issued while shutdown or the open is pending supersedes
 // it: a late-opened transport is closed and Connect returns an error.
-func (s *Session) Connect(op Opener, vendor gpsreg.Vendor) error {
-	return s.connect(s.reserveLifecycle(), op, vendor)
+func (s *Session) Connect(op Opener, vendors []gpsreg.Vendor) error {
+	return s.connect(s.reserveLifecycle(), op, vendors)
 }
 
 func (s *Session) reserveLifecycle() int {
@@ -519,7 +569,7 @@ func (s *Session) reserveLifecycle() int {
 	return gen
 }
 
-func (s *Session) connect(gen int, op Opener, vendor gpsreg.Vendor) error {
+func (s *Session) connect(gen int, op Opener, vendors []gpsreg.Vendor) error {
 	s.lifecycleMu.Lock()
 	s.mu.Lock()
 	if s.connectGen != gen {
@@ -538,7 +588,7 @@ func (s *Session) connect(gen int, op Opener, vendor gpsreg.Vendor) error {
 	s.lifecycleMu.Unlock()
 	s.emitStateChange()
 	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
-	conn, speed, err := op.Open(ctx)
+	conn, speed, err := op.Open(ctx, s.lg)
 	cancel()
 	s.lifecycleMu.Lock()
 	s.mu.Lock()
@@ -559,7 +609,9 @@ func (s *Session) connect(gen int, op Opener, vendor gpsreg.Vendor) error {
 	}
 	connCtx, connCancel := context.WithCancel(context.Background())
 	s.op = op
-	s.vendor = vendor
+	// Clone: Connect is asynchronous, so the caller may reuse its slice
+	// while the connection manager is still reading s.vendors.
+	s.vendors = slices.Clone(vendors)
 	s.connCtx = connCtx
 	s.connCancel = connCancel
 	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
@@ -620,7 +672,7 @@ func (s *Session) reopen(connCtx context.Context) (gpsio.Conn, int, error) {
 			}
 		}
 		ctx, cancel := context.WithTimeout(connCtx, reopenTimeout)
-		conn, speed, err := s.op.Open(ctx)
+		conn, speed, err := s.op.Open(ctx, s.lg)
 		cancel()
 		if err == nil {
 			return conn, speed, nil
@@ -639,7 +691,7 @@ func (s *Session) runConn(connCtx context.Context, conn gpsio.Conn, speed int) c
 	runCtx, runCancel := context.WithCancel(connCtx)
 	portLock := gpsio.NewOutPortLock(conn)
 	pCh := make(chan scan.Packet, 1)
-	pktFormats := gpsreg.CreatePacketFormats(s.vendor)
+	pktFormats := gpsreg.CreatePacketFormats(s.vendors)
 	pLog, plCh := gpsio.NewPacketLog(pktFormats, packetLogChannelSize)
 	if sc, ok := conn.(*gpsio.SerialConn); ok {
 		sc.SetPacketLog(pLog)
@@ -654,7 +706,7 @@ func (s *Session) runConn(connCtx context.Context, conn gpsio.Conn, speed int) c
 	pktSub := pb.Subscribe()
 	// Fresh packet processors each run: they are stateful and a
 	// reconnect must not resume from the dead connection's state.
-	procs := gpsreg.CreatePacketProcessors(s.vendor)
+	procs := gpsreg.CreatePacketProcessors(s.vendors)
 	configCh := make(chan configRequest)
 	s.mu.Lock()
 	s.conn = conn
@@ -679,7 +731,21 @@ type ReceiverEvent struct {
 	Warning       string                        `json:"warning,omitempty"`
 	Info          opt.Val[gpsprot.ReceiverInfo] `json:",omitzero"`
 	PacketFormats []string                      `json:"packetFormats,omitempty"`
+	// ConfigSupport marshals as a JSON string array of the configuration
+	// items the probed Configurator supports; the Config tab keys on those
+	// names to gate its controls. omitempty drops it from the pre-probe
+	// (zero-flags) snapshot, where the underlying uint32 is 0.
+	ConfigSupport gpsprot.ConfigSupportFlags `json:"configSupport,omitempty"`
+	// SignalsSupported lists the signals that exist on the receiver, in
+	// signal-catalog form; absent means no known restriction. Backends do
+	// not yet report this, so it is faked from ConfigSupport (see below);
+	// when a real read-only supported-signals property arrives, this field
+	// switches to it.
+	SignalsSupported map[string][]string `json:"signalsSupported,omitempty"`
 }
+
+// EventName implements Event.
+func (ReceiverEvent) EventName() EventName { return EventReceiver }
 
 // packetWorker is the single goroutine that owns packet processing.
 // It runs an initial probe, then loops processing packets for message decoding.
@@ -700,7 +766,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	mon := newGGAMonitor(s.sink, runCtx, sel.Packets())
 	s.gga = mon
 	s.mu.Unlock()
-	s.emit(EventReceiver, ReceiverEvent{})
+	s.emit(ReceiverEvent{})
 	gpsprot.SetAllMsgHandlers(procs, gpsprot.NewMultiHandler(mh, synth))
 	s.connWg.Go(mon.run)
 	// Acquire portLock for probe.
@@ -715,20 +781,28 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	target.Opts.ForceProbe = true
 	target.Opts.Socket = socket
 	rslt, err := gpscfg.Configure(runCtx, s.lg, procs,
-		gpsreg.CreateConfigProtocols(s.vendor), target, sub, conn)
+		gpsreg.CreateConfigProtocols(s.vendors), target, sub, conn)
 	portLock <- port
 	s.emitSpeed(conn)
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
 		if runCtx.Err() != nil {
 			return verdictDisconnect
 		}
-		s.emit(EventReceiver, ReceiverEvent{Error: err.Error()})
+		s.emit(ReceiverEvent{Error: err.Error()})
 		return verdictProbeFailed
 	}
 	r := ReceiverEvent{OK: true}
 	if rslt != nil {
 		if rslt.ReceiverInfo != nil {
 			r.Info.Set(*rslt.ReceiverInfo)
+		}
+		r.ConfigSupport = rslt.ConfigSupport
+		// A Configurator without signal support cannot select signals finer
+		// than a whole constellation, and every backend that lacks it drives
+		// an L1-only receiver, so signals outside the L1 band do not exist on
+		// the receiver. Zero flags mean the support is unknown: fake nothing.
+		if rslt.ConfigSupport != 0 && rslt.ConfigSupport&gpsprot.ConfigSupportSignal == 0 {
+			r.SignalsSupported = signalCatalog(0, gpsprot.BandL1)
 		}
 		for _, tag := range rslt.PacketFormatsDetected {
 			r.PacketFormats = append(r.PacketFormats, string(tag))
@@ -740,7 +814,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	s.mu.Lock()
 	s.probe = r
 	s.mu.Unlock()
-	s.emit(EventReceiver, r)
+	s.emit(r)
 	if !s.probeDone() {
 		return verdictDisconnect
 	}
@@ -773,7 +847,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 			s.mu.Unlock()
 			req.target.Opts.Socket = socket
 			rslt, err := gpscfg.Configure(req.ctx, s.lg, procs,
-				gpsreg.CreateConfigProtocols(s.vendor), req.target, sub, conn)
+				gpsreg.CreateConfigProtocols(s.vendors), req.target, sub, conn)
 			portLock <- port
 			s.emitSpeed(conn)
 			if reset && errors.Is(err, io.ErrUnexpectedEOF) {
@@ -848,6 +922,9 @@ type CorrEvent struct {
 	Error      string `json:"error,omitempty"`      // last error (set during reconnecting or failed)
 }
 
+// EventName implements Event.
+func (CorrEvent) EventName() EventName { return EventCorrections }
+
 func (s *Session) setCorrStateLocked(ev CorrEvent) {
 	s.corrState = ev
 }
@@ -856,7 +933,7 @@ func (s *Session) emitCorrState(ev CorrEvent) {
 	s.mu.Lock()
 	s.setCorrStateLocked(ev)
 	s.mu.Unlock()
-	s.emit(EventCorrections, ev)
+	s.emit(ev)
 }
 
 // CorrectionsState returns the last known corrections state.
@@ -885,6 +962,9 @@ type BaseARPEvent struct {
 	ECEF      [3]float64 `json:"ecef"` // meters
 }
 
+// EventName implements Event.
+func (BaseARPEvent) EventName() EventName { return EventBaseARP }
+
 // emitCorrPacket converts a scanned correction packet into a
 // gpsprot.CorReportMsg and emits it as a "gps:corrpacket" event. The
 // parsed RTCM message is consumed here to emit a "gps:basearp" event
@@ -895,18 +975,18 @@ func (s *Session) emitCorrPacket(pkt scan.Packet) {
 		return
 	}
 	if mt, ok := msg.NativeMsg.(*rtcmbin.MT1005); ok {
-		s.emit(EventBaseARP, BaseARPEvent{
+		s.emit(BaseARPEvent{
 			StationID: mt.StationID,
 			ECEF:      mt.ECEF(),
 		})
 	} else if mt, ok := msg.NativeMsg.(*rtcmbin.MT1006); ok {
-		s.emit(EventBaseARP, BaseARPEvent{
+		s.emit(BaseARPEvent{
 			StationID: mt.StationID,
 			ECEF:      mt.MT1005.ECEF(),
 		})
 	}
 	msg.NativeMsg = nil
-	s.emit(EventCorrPacket, msg)
+	s.emit(CorrPacketEvent{CorReportMsg: msg})
 }
 
 // StartCorrections starts forwarding correction packets from the
@@ -1115,12 +1195,16 @@ func (s *Session) Speed() int {
 // SignalCatalog returns the full signal catalog for the given GNSS constellations.
 // If gs is zero, all constellations are returned.
 func (s *Session) SignalCatalog(gs gpsprot.GNSSSet) map[string][]string {
+	return signalCatalog(gs, gpsprot.BandAll)
+}
+
+func signalCatalog(gs gpsprot.GNSSSet, band gpsprot.Band) map[string][]string {
 	if gs == 0 {
 		gs = gpsprot.SigSetAll.GNSSSet()
 	}
 	m := make(map[string][]string)
 	for _, g := range gs.Items() {
-		sigs := gpsprot.BandAll.SignalSet(g)
+		sigs := band.SignalSet(g)
 		if sigs == 0 {
 			continue
 		}
@@ -1206,8 +1290,13 @@ func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget)
 
 // DecodePacket decodes a packet and returns the decoded fields.
 // It returns nil if the packet is not in any of the given formats.
-func DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error) {
-	_, r, err := gpsdecode.Decode(formats, data, out)
+// NovAtel-format packets are decoded with the variant for the vendors
+// given to Connect, as the session's packet processors are.
+func (s *Session) DecodePacket(formats []gpsprot.PacketFormat, data []byte, out bool) (*gpsdecode.DecodeResult, error) {
+	s.mu.Lock()
+	vendors := s.vendors
+	s.mu.Unlock()
+	_, r, err := gpsdecode.Decode(formats, data, out, vendors)
 	if err != nil {
 		return nil, nil
 	}
@@ -1267,6 +1356,9 @@ type MsgSendEvent struct {
 	Error   string `json:"error,omitempty"`
 }
 
+// EventName implements Event.
+func (MsgSendEvent) EventName() EventName { return EventMsgSend }
+
 // ResponseEvent is emitted as "gps:response" during SendMsgFile.
 type ResponseEvent struct {
 	Session    int    `json:"session"`
@@ -1279,6 +1371,9 @@ type ResponseEvent struct {
 	Text       string `json:"text,omitempty"`     // full text for text protocols
 	Bin        string `json:"bin,omitempty"`      // hex string for binary protocols
 }
+
+// EventName implements Event.
+func (ResponseEvent) EventName() EventName { return EventResponse }
 
 // SendMsgFile sends messages for the given tag from the loaded
 // message file (see SetMsgFile). It is an exclusive receiver
@@ -1348,13 +1443,13 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 			close(stepCh)
 			s.finishSend(runCtx)
 		}()
-		s.emit(EventMsgSend, MsgSendEvent{
+		s.emit(MsgSendEvent{
 			Session: session, Status: "started", Total: total,
 		})
 		replyCh := make(chan error, 1)
 		for i, rm := range rawMsgs {
 			if sendCtx.Err() != nil {
-				s.emit(EventMsgSend, MsgSendEvent{
+				s.emit(MsgSendEvent{
 					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
 				return
@@ -1366,7 +1461,7 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 			select {
 			case stepCh <- sendStepReq{rm: rm, next: next, reply: replyCh}:
 			case <-sendCtx.Done():
-				s.emit(EventMsgSend, MsgSendEvent{
+				s.emit(MsgSendEvent{
 					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
 				return
@@ -1375,23 +1470,23 @@ func (s *Session) SendMsgFile(tag string, port string, save bool) error {
 			select {
 			case wErr = <-replyCh:
 			case <-sendCtx.Done():
-				s.emit(EventMsgSend, MsgSendEvent{
+				s.emit(MsgSendEvent{
 					Session: session, Status: "cancelled", Current: i + 1, Total: total,
 				})
 				return
 			}
 			if wErr != nil {
-				s.emit(EventMsgSend, MsgSendEvent{
+				s.emit(MsgSendEvent{
 					Session: session, Status: "error", Current: i + 1, Total: total, Error: wErr.Error(),
 				})
 				return
 			}
 			s.lg.Info("sent message", "index", i+1, "total", total, "tag", rm.Tag, "bytes", len(rm.Bytes))
-			s.emit(EventMsgSend, MsgSendEvent{
+			s.emit(MsgSendEvent{
 				Session: session, Status: "sent", Current: i + 1, Total: total,
 			})
 		}
-		s.emit(EventMsgSend, MsgSendEvent{
+		s.emit(MsgSendEvent{
 			Session: session, Status: "done", Current: total, Total: total,
 		})
 	})
@@ -1566,12 +1661,12 @@ func (s *Session) flushWorkerLine(cor *msgfile.Correlator, lineBuf []byte, sessi
 		return lineBuf
 	}
 	if (result.Ack == msgfile.AckAck || result.Ack == msgfile.AckNak) && result.InResponseTo != nil {
-		s.emit(EventResponse, s.makeAckEvent(result, session))
+		s.emit(s.makeAckEvent(result, session))
 	}
 	if result.Relevance >= msgfile.LevelMaybeResponse {
 		ev := s.makePacketEvent(result, nil, session)
 		ev.Text = line
-		s.emit(EventResponse, ev)
+		s.emit(ev)
 	}
 	return lineBuf
 }
@@ -1583,10 +1678,10 @@ func (s *Session) emitCorrelation(r msgfile.Correlation, pkt *scan.Packet, sessi
 		return
 	}
 	if (r.Ack == msgfile.AckAck || r.Ack == msgfile.AckNak) && r.InResponseTo != nil {
-		s.emit(EventResponse, s.makeAckEvent(r, session))
+		s.emit(s.makeAckEvent(r, session))
 	}
 	if r.Relevance >= msgfile.LevelMaybeResponse {
-		s.emit(EventResponse, s.makePacketEvent(r, pkt, session))
+		s.emit(s.makePacketEvent(r, pkt, session))
 	}
 }
 
@@ -1681,7 +1776,7 @@ func (s *Session) emitSpeed(conn gpsio.Conn) {
 	}
 	speed := s.speed
 	s.mu.Unlock()
-	s.emit(EventSpeed, speed)
+	s.emit(SpeedEvent(speed))
 }
 
 // logHandler is an slog.Handler that emits "gps:log" events to the sink
@@ -1707,6 +1802,9 @@ type LogEvent struct {
 	Component string         `json:"component,omitempty"`
 	Attrs     map[string]any `json:"attrs,omitempty"`
 }
+
+// EventName implements Event.
+func (LogEvent) EventName() EventName { return EventLog }
 
 func (h *logHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.base.Enabled(ctx, level)
@@ -1740,7 +1838,7 @@ func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
 	if len(attrs) > 0 {
 		ev.Attrs = attrs
 	}
-	emit(h.sink, EventLog, ev)
+	emit(h.sink, ev)
 	return h.base.Handle(ctx, r)
 }
 
@@ -1770,7 +1868,7 @@ func (s *Session) packetLogWorker(ch <-chan gpsio.PacketLogEntry) {
 	for entry := range ch {
 		s.writePacketLogEntry(entry)
 		if s.sink.Wants(EventPacket) {
-			s.emit(EventPacket, entry)
+			s.emit(PacketEvent{PacketLogEntry: entry})
 		}
 	}
 }
@@ -1804,6 +1902,9 @@ type MsgEvent struct {
 	Msg  any    `json:"msg"`
 	Time string `json:"time"`
 }
+
+// EventName implements Event.
+func (MsgEvent) EventName() EventName { return EventMsg }
 
 // VelNEDtoECEF converts a velocity from NED (m/s) to ECEF using the last known position.
 // Returns nil if no position is available.
@@ -1847,7 +1948,7 @@ type timeEmitter struct {
 }
 
 func (e *timeEmitter) Time(msg *gpsprot.TimeMsg, _ time.Time) {
-	emit(e.sink, EventTime, msg)
+	emit(e.sink, TimeEvent{TimeMsg: msg})
 }
 
 // msgHandler implements gpsprot.MsgHandler and emits "gps:msg" events.
@@ -1859,7 +1960,7 @@ type msgHandler struct {
 }
 
 func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "time",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1869,7 +1970,7 @@ func (h *msgHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 
 func (h *msgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	h.tt.LeapSecond(msg, tRead)
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "leapSecond",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1877,7 +1978,7 @@ func (h *msgHandler) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "survey",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1885,7 +1986,7 @@ func (h *msgHandler) Survey(msg *gpsprot.SurveyMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "satellites",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1895,9 +1996,9 @@ func (h *msgHandler) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 func (h *msgHandler) PosGeo(msg *gpsprot.PosGeoMsg, tRead time.Time) {
 	ll := [2]float64{msg.LatLon[0].Degrees(), msg.LatLon[1].Degrees()}
 	if h.refLatLon.Swap(&ll) == nil {
-		emit(h.sink, EventInitialPos, ll)
+		emit(h.sink, InitialPosEvent(ll))
 	}
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "posGeo",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1911,11 +2012,11 @@ func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
 		if llh, err := geopos.WGS84.ECEFtoLLH(ecef); err == nil {
 			ll := [2]float64{llh.Lat, llh.Lon}
 			if h.refLatLon.Swap(&ll) == nil {
-				emit(h.sink, EventInitialPos, ll)
+				emit(h.sink, InitialPosEvent(ll))
 			}
 		}
 	}
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "posECEF",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1924,7 +2025,7 @@ func (h *msgHandler) PosECEF(msg *gpsprot.PosECEFMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "velGeo",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1933,7 +2034,7 @@ func (h *msgHandler) VelGeo(msg *gpsprot.VelGeoMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "velECEF",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1942,7 +2043,7 @@ func (h *msgHandler) VelECEF(msg *gpsprot.VelECEFMsg, tRead time.Time) {
 }
 
 func (h *msgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
-	emit(h.sink, EventMsg, MsgEvent{
+	emit(h.sink, MsgEvent{
 		Kind: "navEpoch",
 		Msg:  msg,
 		Time: tRead.Format(time.TimeOnly),
@@ -1952,7 +2053,7 @@ func (h *msgHandler) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	b := h.PVMsgBundle
 	h.PVMsgAccum.NavEpoch(msg, tRead)
 	if b.PosGeo.IsSet() || b.VelGeo.IsSet() {
-		emit(h.sink, EventEpochPVT, b)
+		emit(h.sink, EpochPVTEvent{PVMsgBundle: b})
 	}
 }
 
@@ -2011,6 +2112,9 @@ type NMEAPositionEvent struct {
 	Lon   float64 `json:"lon"`
 }
 
+// EventName implements Event.
+func (NMEAPositionEvent) EventName() EventName { return EventNMEAPosition }
+
 // run reads the selected-GGA feed until the connection ends.
 func (m *ggaMonitor) run() {
 	for {
@@ -2036,7 +2140,7 @@ func (m *ggaMonitor) handle(pkt scan.Packet) {
 			publishGGA(m.session, pkt)
 		}
 		m.mu.Unlock()
-		emit(m.sink, EventNMEAPosition, NMEAPositionEvent{Valid: true, Lat: pos[0], Lon: pos[1]})
+		emit(m.sink, NMEAPositionEvent{Valid: true, Lat: pos[0], Lon: pos[1]})
 		return
 	}
 	// Unusable GGA: the receiver is reporting no fix. Drop the held position
@@ -2048,7 +2152,7 @@ func (m *ggaMonitor) handle(pkt scan.Packet) {
 	m.latest = scan.Packet{}
 	m.mu.Unlock()
 	if wasHave {
-		emit(m.sink, EventNMEAPosition, NMEAPositionEvent{Valid: false})
+		emit(m.sink, NMEAPositionEvent{Valid: false})
 	}
 }
 

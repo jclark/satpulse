@@ -801,6 +801,19 @@ func TestMsgUTCTimer(t *testing.T) {
 			expectN: 0,
 		},
 		{
+			name:    "pre_pulse_skipped",
+			msgs:    []input{{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0), Ref: gpsprot.PrePulse}, readAt(500)}},
+			expectN: 0,
+		},
+		{
+			name: "pre_pulse_does_not_block_following",
+			msgs: []input{
+				{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 1), Ref: gpsprot.PrePulse}, readAt(500)},
+				{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0)}, readAt(600)},
+			},
+			expectN: 1,
+		},
+		{
 			name:    "nil_sink_no_panic",
 			msgs:    []input{{&gpsprot.TimeMsg{UTCTime: utc(12, 0, 0)}, readAt(500)}},
 			noSink:  true,
