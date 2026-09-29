@@ -135,6 +135,18 @@ func TestClassifyRequest(t *testing.T) {
 			wantSent: "PQTMVERNO",
 		},
 		{
+			name:     "unique ID query without R",
+			sent:     "PQTMUNIQID",
+			wantKind: RequestQuery,
+			wantSent: "PQTMUNIQID",
+		},
+		{
+			name:     "serial number query without R",
+			sent:     "PQTMSN",
+			wantKind: RequestQuery,
+			wantSent: "PQTMSN",
+		},
+		{
 			name:     "savepar command",
 			sent:     "PQTMSAVEPAR",
 			wantKind: RequestCommand,

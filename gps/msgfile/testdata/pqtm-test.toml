@@ -29,3 +29,8 @@ text = "PQTMCFGPPS,W,2,1,100000,1000,0,0"
 [[nmea]]
 tag = "savepar"
 text = "PQTMSAVEPAR"
+
+# Serial number query: no R, but the data comes in the OK reply.
+[[nmea]]
+tag = "get-sn"
+text = "PQTMSN"

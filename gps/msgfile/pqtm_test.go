@@ -56,6 +56,16 @@ func TestCorrelatorPQTM(t *testing.T) {
 			},
 		},
 		{
+			name: "query without R ACK with data",
+			tags: []string{"get-sn"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("PQTMSN,OK,1,15,MPY26A84V001632"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "query NAK",
 			tags: []string{"get-pps"},
 			events: []event{

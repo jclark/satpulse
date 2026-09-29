@@ -72,6 +72,7 @@ type RequestClass struct {
 //   - Second field is "W" -> RequestCommand (write)
 //   - Second field is "R" -> RequestQuery (read)
 //   - Sentence is PQTMVERNO -> RequestVerno
+//   - Sentence is PQTMUNIQID or PQTMSN (queries without "R") -> RequestQuery
 //   - Otherwise -> RequestCommand (default)
 func ClassifyRequest(sent string) RequestClass {
 	name, rest, _ := strings.Cut(sent, ",")
@@ -82,8 +83,11 @@ func ClassifyRequest(sent string) RequestClass {
 	case "R":
 		return RequestClass{Kind: RequestQuery, Sentence: name}
 	}
-	if name == "PQTMVERNO" {
+	switch name {
+	case "PQTMVERNO":
 		return RequestClass{Kind: RequestVerno, Sentence: name}
+	case "PQTMUNIQID", "PQTMSN":
+		return RequestClass{Kind: RequestQuery, Sentence: name}
 	}
 	return RequestClass{Kind: RequestCommand, Sentence: name}
 }
