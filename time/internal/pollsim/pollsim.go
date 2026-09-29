@@ -74,6 +74,62 @@ type EdgeRecord struct {
 	Forwarded   bool             `json:"forwarded"`
 }
 
+// sim is the virtual host: its clock, its timer, the pin, and the faults.
+// All of it is driven from the polling goroutine; the consumer only reads
+// the candidates that goroutine sends.
+type sim struct {
+	cfg       Config
+	end       time.Duration
+	now       time.Duration
+	work      time.Duration
+	stalls    []interval
+	nextStall int
+	slows     []slow
+	nextSlow  int
+	rng       *rand.Rand
+	jitter    []time.Duration
+	clockRead time.Duration
+	idleAfter time.Duration
+	recover   time.Duration
+	// Idle slowdown state: when the thread was last active, and how much
+	// continuous activity has accumulated since it went cold.
+	lastActive time.Duration
+	cold       bool
+	warmed     time.Duration
+	queries    int
+	acquired   int
+	lost       int
+	misses     int
+}
+
+// logHandler stamps the loop's log records with simulated time and counts
+// the events the statistics report.
+type logHandler struct {
+	slog.Handler
+	s *sim
+}
+
+// consumer applies the daemon's forwarding rule and accumulates the
+// statistics.
+type consumer struct {
+	s          *sim
+	caught     map[int64]bool
+	record     func(EdgeRecord)
+	edges      int
+	forwarded  int
+	acquiring  int
+	anomalous  int
+	wrong      int
+	errs       []time.Duration
+	firstFwd   time.Duration
+	lastFwd    time.Duration
+	longestGap time.Duration
+	gapsOver4s int
+}
+
+// errDone is the reader's answer once the simulated duration has elapsed.
+var errDone = errors.New("simulation complete")
+
 // Simulate runs the poll loop under cfg, which must be valid. lg receives
 // the loop's own log lines with simulated timestamps; edges, if non-nil, is
 // called for every candidate.
@@ -104,9 +160,6 @@ func Simulate(cfg Config, lg *slog.Logger, edges func(EdgeRecord)) (Stats, error
 	}
 }
 
-// errDone is the reader's answer once the simulated duration has elapsed.
-var errDone = errors.New("simulation complete")
-
 const period = time.Second
 
 // simBase is the wall-clock time of simulated zero.
@@ -119,34 +172,6 @@ type interval struct {
 type slow struct {
 	from, to time.Duration
 	factor   float64
-}
-
-// sim is the virtual host: its clock, its timer, the pin, and the faults.
-// All of it is driven from the polling goroutine; the consumer only reads
-// the candidates that goroutine sends.
-type sim struct {
-	cfg       Config
-	end       time.Duration
-	now       time.Duration
-	work      time.Duration
-	stalls    []interval
-	nextStall int
-	slows     []slow
-	nextSlow  int
-	rng       *rand.Rand
-	jitter    []time.Duration
-	clockRead time.Duration
-	idleAfter time.Duration
-	recover   time.Duration
-	// Idle slowdown state: when the thread was last active, and how much
-	// continuous activity has accumulated since it went cold.
-	lastActive time.Duration
-	cold       bool
-	warmed     time.Duration
-	queries    int
-	acquired   int
-	lost       int
-	misses     int
 }
 
 func newSim(cfg Config) *sim {
@@ -336,13 +361,6 @@ func (s *sim) present(n time.Duration) bool {
 	return true
 }
 
-// logHandler stamps the loop's log records with simulated time and counts
-// the events the statistics report.
-type logHandler struct {
-	slog.Handler
-	s *sim
-}
-
 func (h *logHandler) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
@@ -367,24 +385,6 @@ func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
 	}
 	r.Time = simBase.Add(h.s.now)
 	return h.Handler.Handle(ctx, r)
-}
-
-// consumer applies the daemon's forwarding rule and accumulates the
-// statistics.
-type consumer struct {
-	s          *sim
-	caught     map[int64]bool
-	record     func(EdgeRecord)
-	edges      int
-	forwarded  int
-	acquiring  int
-	anomalous  int
-	wrong      int
-	errs       []time.Duration
-	firstFwd   time.Duration
-	lastFwd    time.Duration
-	longestGap time.Duration
-	gapsOver4s int
 }
 
 func (c *consumer) candidate(ce pps.CandidateEdge) {
