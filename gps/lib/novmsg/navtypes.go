@@ -80,7 +80,7 @@ func (s StationID) MarshalText() ([]byte, error) {
 	return out, nil
 }
 
-// SolStatus represents the solution status in NovAtel OEM7/ByNav messages.
+// SolStatus represents the solution status in NovAtel OEM7/Bynav messages.
 type SolStatus uint32
 
 const (
@@ -192,7 +192,7 @@ func (s SolStatus) MarshalText() ([]byte, error) {
 	return []byte(s.String()), nil
 }
 
-// PosType represents the position or velocity type in NovAtel OEM7/ByNav messages.
+// PosType represents the position or velocity type in NovAtel OEM7/Bynav messages.
 type PosType uint32
 
 // PosType constants are untyped so they work directly with any vendor's
@@ -201,15 +201,15 @@ const (
 	PosNone            = 0
 	PosFixedPos        = 1
 	PosFixedHeight     = 2
-	PosFloatConv       = 4  // OEM7/ByNav only
-	PosWideLane        = 5  // OEM7/ByNav only
-	PosNarrowLane      = 6  // OEM7/ByNav only
+	PosFloatConv       = 4  // OEM7/Bynav only
+	PosWideLane        = 5  // OEM7/Bynav only
+	PosNarrowLane      = 6  // OEM7/Bynav only
 	PosDopplerVelocity = 8
 	PosSingle          = 16
 	PosPSRDiff         = 17
-	PosWAAS            = 18 // OEM7/ByNav name
+	PosWAAS            = 18 // OEM7/Bynav name
 	PosSBAS            = 18 // Unicore/SinoGNSS name (same value)
-	PosPropagated      = 19 // OEM7/ByNav only
+	PosPropagated      = 19 // OEM7/Bynav only
 	PosL1Float         = 32
 	PosIonoFreeFloat   = 33
 	PosNarrowFloat     = 34
@@ -531,7 +531,7 @@ type Pos[S, P ~uint32] struct {
 }
 
 // PosFlags contains the four bytes that follow the Pos or XYZ fields in
-// OEM7, ByNav and Unicore logs.
+// OEM7, Bynav and Unicore logs.
 type PosFlags struct {
 	Reserved      uint8   // reserved
 	ExtSolStat    HexByte // extended solution status

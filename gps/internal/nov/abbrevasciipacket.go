@@ -42,7 +42,7 @@ const (
 // abbrevMaxLength is the maximum packet length including the CR/LF. The OEM7
 // manual sets no limit. The longest line seen is the data line of a SinoGNSS
 // K901 abbreviated IONUTC, 251 bytes. Keep the limit close to that: a line
-// that lacks its CR/LF (as a ByNav M10 abbreviated PSRDOP data line does)
+// that lacks its CR/LF (as a Bynav M10 abbreviated PSRDOP data line does)
 // absorbs any following text line that ends within the limit.
 const abbrevMaxLength = 300
 

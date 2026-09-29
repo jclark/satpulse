@@ -195,9 +195,9 @@ func TestNovVariant(t *testing.T) {
 		expect  nov.Variant
 	}{
 		{"empty list", nil, nov.VariantOEM7},
-		{"bynav", []Vendor{VendorBynav}, nov.VariantByNav},
+		{"bynav", []Vendor{VendorBynav}, nov.VariantBynav},
 		{"sinognss", []Vendor{VendorSinoGNSS}, nov.VariantSinoGNSS},
-		{"bynav with non-NovAtel vendor", []Vendor{VendorUblox, VendorBynav}, nov.VariantByNav},
+		{"bynav with non-NovAtel vendor", []Vendor{VendorUblox, VendorBynav}, nov.VariantBynav},
 		{"two NovAtel-format vendors", []Vendor{VendorBynav, VendorUnicore}, nov.VariantOEM7},
 		{"no NovAtel-format vendor", []Vendor{VendorUblox}, nov.VariantOEM7},
 	}

@@ -8,7 +8,7 @@ packing. Full format reference: `format.md` in the message directory
 Before doing this, check `--show-tags` on the vendor's message file
 (`gps-msgfile.md`): the command may already exist under a tag.
 
-## Line command (Unicore, NovAtel, ByNav style)
+## Line command (Unicore, NovAtel, Bynav style)
 
 For Unicore receivers set `responsePattern = "unicore"`, so satpulsetool can
 match the receiver's reply and report whether the command was accepted;

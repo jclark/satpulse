@@ -61,7 +61,7 @@ func (m *PsrDop) Chunks() func(yield func(chunk any) bool) {
 
 // BestPos represents geodetic position from a NovAtel-format receiver.
 // Message ID: 42
-// Binary layout is identical across OEM7, ByNav, SinoGNSS, and Unicore;
+// Binary layout is identical across OEM7, Bynav, SinoGNSS, and Unicore;
 // the SolStatus and PosType enum value sets vary by vendor.
 type BestPos struct {
 	Pos[SolStatus, PosType]
@@ -122,7 +122,7 @@ func (m *PsrVel) ID() (MsgID, string) {
 	return PsrVelID, "PSRVELA"
 }
 
-// BestGNSSVel represents GNSS-only velocity from a NovAtel OEM7/ByNav receiver.
+// BestGNSSVel represents GNSS-only velocity from a NovAtel OEM7/Bynav receiver.
 // Message ID: 1430
 type BestGNSSVel struct {
 	Vel[PosType]
@@ -135,7 +135,7 @@ func (m *BestGNSSVel) ID() (MsgID, string) {
 
 // BestXYZ represents ECEF position and velocity from a NovAtel-format receiver.
 // Message ID: 241
-// Binary layout is identical across OEM7, ByNav, SinoGNSS, and Unicore;
+// Binary layout is identical across OEM7, Bynav, SinoGNSS, and Unicore;
 // the SolStatus and PosType enum value sets vary by vendor.
 type BestXYZ struct {
 	XYZ[SolStatus, PosType]

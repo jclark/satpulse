@@ -109,7 +109,7 @@ docs:
         url: "/gps-module-support/quectel.html"
       - title: "Techtotop/Taidou"
         url: "/gps-module-support/techtotop.html"
-      - title: "ByNav"
+      - title: "Bynav"
         url: "/gps-module-support/bynav.html"
       - title: "SinoGNSS/ComNav"
         url: "/gps-module-support/sinognss.html"

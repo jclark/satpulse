@@ -42,7 +42,7 @@ Available in the protocol, but only via messages we do not currently parse:
   `systemId` and `signalId` in NMEA 4.10+. This is enough to derive
   per-signal residuals by correlating `GRS` with the matching `GSA`, but
   `gps/internal/nmea` does not currently parse `GRS`.
-- ByNav `TRACKSTAT`: per-channel pseudorange residuals are available there, but
+- Bynav `TRACKSTAT`: per-channel pseudorange residuals are available there, but
   we do not currently parse `TRACKSTAT`.
 
 Not available in the current vendor-specific satellite-message paths we use:
@@ -70,4 +70,4 @@ Comparison to current code:
   propagate from `SATSINFO` / `BESTSAT`.
 - `gps/internal/nmea` does not currently parse `GRS`, so NMEA residual support
   there would be a separate follow-up feature.
-- ByNav would need a new `TRACKSTAT` parser path before this could be surfaced.
+- Bynav would need a new `TRACKSTAT` parser path before this could be surfaced.

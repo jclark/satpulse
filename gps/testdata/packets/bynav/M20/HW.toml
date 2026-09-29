@@ -1,0 +1,31 @@
+vendor = "bynav"
+model = "M20"
+firmware = "V7.84_250E94_T"
+default-baud = 115200
+
+# From LOG VERSION:
+# $BDVER,V7.84_250E94_T,24081625,24082144,24082139,24080726,23060503,,,24032108,00000000*29
+# Captured on COM2 with a single-point fix. The saved configuration outputs
+# nothing, so there is no factory output capture; each capture outputs the
+# logs named in the file at 1 Hz unless noted. raw-cross.jsonl, rtcm.jsonl
+# and rtcm-legacy.jsonl were captured in base mode (RTKTYPE BASE), the rest
+# in rover mode.
+# Receiver behaviour seen in these captures:
+# - BESTXYZ is accepted but always reports SOL_COMPUTED/NONE with all-zero
+#   position and velocity (bestxyz-dual.jsonl).
+# - The data line of an abbreviated PSRDOP log has no CR/LF terminator
+#   (abbrev-psrdop.jsonl).
+# - The NMEA talker is GN, with a GNGSA for each system (nmea.jsonl).
+# - RTCM is output only in base mode, where the base position is the
+#   receiver's own single-point solution. A port outputs one observation
+#   message per system, so the legacy 1004 and 1012 are in their own capture
+#   (rtcm-legacy.jsonl).
+# - When these captures began, logs were output at most once a second, and
+#   an ONTIME period below 1 s was accepted but gave one log a second.
+#   SET OBSFREQ 5 (2 to 10 are accepted) raised the maximum log output rate
+#   to 5 per second at once and kept it across RESET without SAVECONFIG
+#   (daemon-5hz.jsonl).
+# - At sub-second epochs TIME's UTC milliseconds can be 1 ms below the
+#   header time (daemon-5hz.jsonl: 23199 for .200).
+# - Ephemeris logs with ONTIME give one satellite per period, cycling
+#   through the satellites (raw-obs-nav.jsonl).
