@@ -17,7 +17,7 @@ Existing message files are in per-vendor subdirectories of `configs/gpsmsg/`. Ea
 - `zhongke/at632.toml` -- Zhongke AT632-6T-30 timing receiver
 - `quectel/lc29h.toml`, `quectel/lg290p.toml` -- Quectel receivers
 - `bynav/bynav.toml` -- Bynav receivers
-- `sinognss/sinognss.toml` -- SinoGNSS receivers
+- `sinognss/k8-k9.toml` -- SinoGNSS K8/K9 receivers
 
 See `configs/gpsmsg/README.md` for the directory layout, `configs/gpsmsg/format.md` for the TOML format specification, and `configs/gpsmsg/tags.md` for tag naming conventions.
 
