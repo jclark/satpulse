@@ -130,8 +130,9 @@ type consumer struct {
 // errDone is the reader's answer once the simulated duration has elapsed.
 var errDone = errors.New("simulation complete")
 
-// Simulate runs the poll loop under cfg, which must be valid. lg receives
-// the loop's own log lines with simulated timestamps; edges, if non-nil, is
+// Simulate runs the poll loop under cfg, which must be valid; it panics on a
+// config that would keep the simulation from finishing. lg receives the
+// loop's own log lines with simulated timestamps; edges, if non-nil, is
 // called for every candidate.
 func Simulate(cfg Config, lg *slog.Logger, edges func(EdgeRecord)) (Stats, error) {
 	s := newSim(cfg)
@@ -181,6 +182,9 @@ func newSim(cfg Config) *sim {
 		idleAfter: ptime.Seconds(cfg.Host.Query.Idle.After),
 		recover:   ptime.Seconds(cfg.Host.Query.Idle.Recover),
 	}
+	if cfg.Poll.PreWarm > 0 && s.clockRead <= 0 {
+		panic("pollsim: PreWarm needs a positive ClockRead to advance the clock")
+	}
 	s.jitter = make([]time.Duration, int(cfg.Sim.Duration)+2)
 	for i := range s.jitter {
 		s.jitter[i] = time.Duration(s.rng.NormFloat64() * cfg.Pulse.Jitter * 1e9)
@@ -214,6 +218,9 @@ func newSim(cfg Config) *sim {
 func (s *sim) burst(start, duration Seconds, rate float64, lo, hi Seconds) []interval {
 	if rate == 0 {
 		return nil
+	}
+	if !(rate > 0) || math.IsInf(rate, 1) {
+		panic(fmt.Sprintf("pollsim: burst rate %v must be positive and finite", rate))
 	}
 	end := s.end
 	if duration > 0 {

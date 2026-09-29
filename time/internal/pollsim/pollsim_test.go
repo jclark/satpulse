@@ -3,6 +3,7 @@ package pollsim
 import (
 	"context"
 	"log/slog"
+	"math"
 	"testing"
 	"time"
 
@@ -258,6 +259,34 @@ func TestFaultBursts(t *testing.T) {
 	cfg.Fault.Slows[0].Factor = 1
 	if s := newSim(cfg); len(s.slows) != 0 {
 		t.Error("factor 1 generated slow periods")
+	}
+}
+
+// TestNewSimPanics checks that a config which would keep the simulation from
+// finishing panics instead of hanging.
+func TestNewSimPanics(t *testing.T) {
+	tests := []struct {
+		name   string
+		modify func(*Config)
+	}{
+		{"zero clock read with prewarm", func(c *Config) { c.Host.ClockRead, c.Poll.PreWarm = 0, .05 }},
+		{"negative stall rate", func(c *Config) { c.Fault.Stalls = []StallBurst{{Rate: -1, Min: .001, Max: .010}} }},
+		{"NaN stall rate", func(c *Config) { c.Fault.Stalls = []StallBurst{{Rate: math.NaN(), Min: .001, Max: .010}} }},
+		{"infinite slow rate", func(c *Config) {
+			c.Fault.Slows = []SlowBurst{{Rate: math.Inf(1), Min: .001, Max: .010, Factor: 2}}
+		}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			tc.modify(&cfg)
+			defer func() {
+				if recover() == nil {
+					t.Error("newSim did not panic")
+				}
+			}()
+			newSim(cfg)
+		})
 	}
 }
 
