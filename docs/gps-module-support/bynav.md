@@ -33,6 +33,18 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/bynav/m
 
 Add `save` to the comma-separated list of tags to make it persistent.
 
+### Notes on tags in the message file
+
+- `fix-rate-N` also limits the output rate of logs to N a second.
+- The effect of `fix-rate-*`, `mode-base` and `mode-rover` persists across `reload`.
+- `nmea-gsa` outputs a GSA only for GPS, unless `nmea-talker-auto` has been used.
+- The `gnss-*` tags take effect only after `save` and `reload`.
+- BeiDou cannot be disabled.
+- The RTCM tags work only in base mode.
+- `mode-base` uses the receiver's current position as the base position, unless a fixed position has been set.
+- The receiver can output only one kind of RTCM observation message for each system,
+  so only one of `rtcm-legacy`, `rtcm-msm4` and `rtcm-msm7` can be in effect at a time.
+
 ## Supported logs
 
 SatPulse decodes the following logs.
