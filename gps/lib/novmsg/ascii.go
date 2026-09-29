@@ -18,7 +18,7 @@ type AsciiHeader[P ~uint8, H any] interface {
 }
 
 // AsciiHdr represents the header fields of a NovAtel ASCII message as OEM7,
-// ByNav and SinoGNSS receivers write them, with the receiver status and
+// Bynav and SinoGNSS receivers write them, with the receiver status and
 // reserved fields in hex.
 type AsciiHdr struct {
 	MessageName        string // Message name (e.g., "BESTPOSA")

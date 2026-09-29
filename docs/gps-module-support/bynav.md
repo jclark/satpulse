@@ -1,14 +1,14 @@
 ---
-title: ByNav
+title: Bynav
 toc: false
 classes: wide
 ---
 
-SatPulse supports the M20 and M10 series of modules from [ByNav](https://www.bynav.com/en/).
+SatPulse supports the M20 and M10 series of modules from [Bynav](https://www.bynav.com/en/).
 The vendor name used with the `--vendor` option and `vendor` key is `bynav`.
 
 These modules use the [NovAtel OEM6/OEM7 protocol]({% link gps-module-support/novatel.md %}) for their logs:
-ByNav supports some logs defined by NovAtel and defines some of its own.
+Bynav supports some logs defined by NovAtel and defines some of its own.
 Configuration uses line-oriented ASCII commands, which are different from NovAtel's, although similar in style.
 
 For these modules, SatPulse supports:
@@ -38,8 +38,8 @@ Add `save` to the comma-separated list of tags to make it persistent.
 SatPulse decodes the following logs.
 The log name is given without the A or B suffix that selects the ASCII or binary form;
 the number is the message ID used by the binary form.
-ByNav's interface protocol manual does not document BESTVEL or PSRDOP,
-but ByNav receivers output them.
+Bynav's interface protocol manual does not document BESTVEL or PSRDOP,
+but Bynav receivers output them.
 
 | Log | Number | Used for |
 |-----|--------|----------|

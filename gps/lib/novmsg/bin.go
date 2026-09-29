@@ -22,7 +22,7 @@ const headerLengthOffset = 3 // Offset to header length field in packet
 // MsgID represents a NovAtel binary message identifier (uint16)
 type MsgID uint16
 
-// Port represents the port address encoding used by NovAtel OEM7 and ByNav.
+// Port represents the port address encoding used by NovAtel OEM7 and Bynav.
 type Port uint8
 
 const (

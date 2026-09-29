@@ -16,7 +16,7 @@ const (
 	VariantOEM7 Variant = iota
 	VariantSinoGNSS
 	VariantUnicore // NovAtel-format messages on Unicore hardware (undocumented)
-	VariantByNav
+	VariantBynav
 )
 
 // parseResult holds the port-type-independent parts of a parsed message.
@@ -166,10 +166,10 @@ func asciiParser[P ~uint8, H any, PH novmsg.AsciiHeader[P, H]]() func([]byte, ma
 }
 
 // binVariant returns the constructor map and parse function for a binary variant.
-// BESTXYZ is not a documented ByNav log: UG017 names it only as a log
-// affected by OUTPUTSOURCE. ByNav receivers accept a request for it but, on
+// BESTXYZ is not a documented Bynav log: UG017 names it only as a log
+// affected by OUTPUTSOURCE. Bynav receivers accept a request for it but, on
 // an M10 (firmware V7.82_AB1AD3_T), output it as a computed solution of type
-// NONE with every field zero, even while BESTPOS has a fix; so the ByNav
+// NONE with every field zero, even while BESTPOS has a fix; so the Bynav
 // variant does not decode BESTXYZ, which would otherwise replace BESTPOS's
 // solution quality.
 func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
@@ -188,7 +188,7 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
 		m[novmsg.UnicoreIonUTCID] = reg[novmsg.IonUTCID]
 		delete(m, novmsg.IonUTCID)
 		return m, binParser[novmsg.UnicorePort]()
-	case VariantByNav:
+	case VariantBynav:
 		m := copyMap(reg)
 		delete(m, novmsg.BestXYZID)
 		m[novmsg.ByCheckID] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }
@@ -212,7 +212,7 @@ func asciiVariant(v Variant) (map[string]func() novmsg.MsgBody,
 		return m, asciiParser[novmsg.Port, novmsg.AsciiHdr]()
 	case VariantUnicore:
 		return reg, asciiParser[novmsg.UnicorePort, novmsg.UnicoreAsciiHdr]()
-	case VariantByNav:
+	case VariantBynav:
 		m := copyMap(reg)
 		delete(m, "BESTXYZA")
 		m["BYCHECKA"] = func() novmsg.MsgBody { return &novmsg.ByCheck{} }

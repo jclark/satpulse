@@ -1,10 +1,10 @@
-# ByNav specific capture details
+# Bynav specific capture details
 
-Read `novatel-config.md` first. This file covers what is specific to ByNav receivers. The message file is `configs/gpsmsg/bynav/bynav.toml`; the M10 set is in `gps/testdata/packets/bynav/M10/`, and its HW.toml records the receiver behaviour seen.
+Read `novatel-config.md` first. This file covers what is specific to Bynav receivers. The message file is `configs/gpsmsg/bynav/bynav.toml`; the M10 set is in `gps/testdata/packets/bynav/M10/`, and its HW.toml records the receiver behaviour seen.
 
 ## Command replies
 
-Commands are answered in abbreviated ASCII, `<OK` or `<ERROR:` with the error text, followed by a port prompt such as `[COM1]`. Message files for ByNav set `responsePattern = "novatel"`, so `satpulsetool gps` reports whether each command was accepted.
+Commands are answered in abbreviated ASCII, `<OK` or `<ERROR:` with the error text, followed by a port prompt such as `[COM1]`. Message files for Bynav set `responsePattern = "novatel"`, so `satpulsetool gps` reports whether each command was accepted.
 
 ## Identification
 
@@ -21,6 +21,6 @@ A port can output the same log in ASCII and binary at once, so make `-dual` capt
 
 ## Logs
 
-- BESTXYZ is accepted but always reports SOL_COMPUTED/NONE with all fields zero, and the ByNav variant does not decode it.
+- BESTXYZ is accepted but always reports SOL_COMPUTED/NONE with all fields zero, and the Bynav variant does not decode it.
 - The data line of an abbreviated PSRDOP log has no CR/LF terminator.
 - PSRPOS is rejected; RANGE and RAWEPHEM are accepted but produce nothing.

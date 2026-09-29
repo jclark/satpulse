@@ -20,7 +20,7 @@ func (e recvNOVAEvent) run(t *testing.T, tc *testContext) {
 	tc.last = tc.cor.CorrelatePacket(gpsreg.TagNovAtelAscii, e.content)
 }
 
-// Packets and lines captured from a ByNav M10 (firmware V7.82_AB1AD3_T).
+// Packets and lines captured from a Bynav M10 (firmware V7.82_AB1AD3_T).
 const (
 	novOK       = "<OK\r\n"
 	novErrNoLog = "<ERROR:Requested log does not exist\r\n"

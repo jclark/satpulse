@@ -5,7 +5,7 @@ import "fmt"
 // Message IDs for time-related messages
 const (
 	TimeID   MsgID = 101
-	IonUTCID MsgID = 8 // OEM7/ByNav use ID 8; Unicore (UM980) uses ID 6
+	IonUTCID MsgID = 8 // OEM7/Bynav use ID 8; Unicore (UM980) uses ID 6
 )
 
 // ClockStatus represents the receiver clock model status
@@ -138,7 +138,7 @@ func (r *IonUTC) ID() (MsgID, string) {
 }
 
 // UnicoreIonUTCID is the binary message ID used by Unicore (UM980) receivers
-// for IONUTC, which differs from OEM7/ByNav's ID 8.
+// for IONUTC, which differs from OEM7/Bynav's ID 8.
 const UnicoreIonUTCID MsgID = 6
 
 // UnicoreIonUTC wraps IonUTC with the Unicore-specific binary message ID.

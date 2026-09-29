@@ -434,7 +434,7 @@ func TestCorrelatorLine(t *testing.T) {
 			tags: []string{"raw-cmd"},
 			events: []event{
 				sendEvent{},
-				// From a ByNav M10 (firmware V7.82_AB1AD3_T).
+				// From a Bynav M10 (firmware V7.82_AB1AD3_T).
 				recvNMEA("BDVER,V7.82_AB1AD3_T,24081625,24110741,2408163A,24102627,23060503,,,24081609,00000000"),
 				expect{relevance: LevelMaybeResponse},
 			},

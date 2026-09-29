@@ -330,7 +330,7 @@ func novVariantFor(v Vendor) nov.Variant {
 	case VendorUnicore:
 		return nov.VariantUnicore
 	case VendorBynav:
-		return nov.VariantByNav
+		return nov.VariantBynav
 	default:
 		return nov.VariantOEM7
 	}
