@@ -597,8 +597,8 @@ description = "Set NMEA version to 4.00"
 text = "SET NMEAV41 OFF"
 
 # PPP (Precise Point Positioning)
-# Works on K902 fw 8.2.4 but requires gnss-all (not just gnss-bds).
-# Convergence takes about an hour. Achieved ~20cm horizontal, ~1cm vertical.
+# ppp-b2b worked on K901 and K902 with gnss-all, but took a long time to converge;
+# on K902 it did not work with gnss-bds.
 
 # Verified OK response for all 3 commands on K901
 # Verified OK response for all 3 commands on K803
