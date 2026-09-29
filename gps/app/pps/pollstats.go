@@ -16,9 +16,9 @@ type PollStats struct {
 	acquire, track struct {
 		windows, edges int
 	}
-	outliers  int
-	durations durationSamples
-	gaps      durationSamples
+	trackAnomalous int
+	durations      durationSamples
+	gaps           durationSamples
 }
 
 func (s *PollStats) begin() {
@@ -44,10 +44,12 @@ type durationStats struct {
 }
 
 type pollStatsSummary struct {
-	Acquire, Track struct {
+	Acquire struct {
 		Windows, Edges int
 	}
-	Outliers     int
+	Track struct {
+		Windows, Edges, Anomalous int
+	}
 	PollDuration durationStats
 	PollGap      durationStats
 }
@@ -72,20 +74,20 @@ func (s *PollStats) addPoll(p poll, prev *poll) {
 	}
 }
 
-func (s *PollStats) addWindow(edge, acquired, outlier bool) {
+func (s *PollStats) addWindow(o outcome, acquired bool, reject RejectReason) {
 	if s == nil {
 		return
 	}
 	phase := &s.acquire
 	if acquired {
 		phase = &s.track
+		if reject == RejectAnomalous {
+			s.trackAnomalous++
+		}
 	}
 	phase.windows++
-	if edge {
+	if o != miss {
 		phase.edges++
-	}
-	if outlier {
-		s.outliers++
 	}
 }
 
@@ -95,8 +97,7 @@ func (s *PollStats) summary() pollStatsSummary {
 	}
 	sum := pollStatsSummary{PollDuration: s.durations.summary(), PollGap: s.gaps.summary()}
 	sum.Acquire.Windows, sum.Acquire.Edges = s.acquire.windows, s.acquire.edges
-	sum.Track.Windows, sum.Track.Edges = s.track.windows, s.track.edges
-	sum.Outliers = s.outliers
+	sum.Track.Windows, sum.Track.Edges, sum.Track.Anomalous = s.track.windows, s.track.edges, s.trackAnomalous
 	return sum
 }
 
@@ -129,7 +130,7 @@ func (s *PollStats) Log(lg *slog.Logger) {
 	summary := s.summary()
 	lg.Info("serial PPS polling statistics",
 		slog.Group("acquire", "windows", summary.Acquire.Windows, "edges", summary.Acquire.Edges),
-		slog.Group("track", "windows", summary.Track.Windows, "edges", summary.Track.Edges, "outliers", summary.Outliers))
+		slog.Group("track", "windows", summary.Track.Windows, "edges", summary.Track.Edges, "anomalous", summary.Track.Anomalous))
 	logDurationStats(lg, "serial PPS state read times", summary.PollDuration)
 	logDurationStats(lg, "serial PPS between-read times", summary.PollGap)
 }
