@@ -1,6 +1,8 @@
 # SinoGNSS specific capture details
 
-Read `novatel-config.md` first. This file covers what is specific to SinoGNSS (ComNav) K8/K9 receivers. The message file is `configs/gpsmsg/sinognss/sinognss.toml`; the K901 and K803 sets are in `gps/testdata/packets/sinognss/K901/` and `K803/`, and their HW.toml files record the receiver behaviour seen.
+Read `novatel-config.md` first. This file covers what is specific to SinoGNSS (ComNav) K8/K9 receivers. The message file is `configs/gpsmsg/sinognss/sinognss.toml`; the K901, K803 and K902 sets are in `gps/testdata/packets/sinognss/K901/`, `K803/` and `K902/`, and their HW.toml files record the receiver behaviour seen.
+
+Capture the K902 on COM1, through the 6-pin connector and a USB/UART adapter, not through the USB port on its board (COM3, a WCH CH9102): over that port about half the binary RANGE logs lost 100 to 120 bytes mid-packet, at 115200 and 460800.
 
 ## Command replies
 
@@ -46,7 +48,7 @@ FRESET destroys the saved configuration, so ask the user first, and restore and 
 ## Base mode and survey
 
 - RTCM 1005 is output only in base mode. Set it with `FIX position <lat> <lon> <hgt>`, where the height is above the geoid (ellipsoidal height minus the undulation that BESTPOS reports), using the antenna position from CLAUDE.local.md, or for an antenna whose position is not known, the position from the survey capture. RTCM 1006, 1007, 1008, 1033 and 1230 are output in rover mode too.
-- Requesting RTCM 1005 with `ONTIME` by itself puts the receiver in base mode at its current position, as `FIX auto` does. `FIX NONE` (not in the manual) returns to rover mode.
+- Requesting RTCM 1005 with `ONTIME` by itself puts the receiver in base mode at its current position, as `FIX auto` does. `FIX NONE` (not in the manual) returns to rover mode, but after a 1005 request only once 1005 is unlogged: otherwise the next 1005 puts the receiver back in base mode.
 - For a survey capture, `POSAVE ON 0.01` finishes in about 35 s, after which BESTPOS reports FIXEDPOS; capture for 90 s. The message file's `survey` tag uses 0.56 hours.
 
 A RESET leaves base mode.
