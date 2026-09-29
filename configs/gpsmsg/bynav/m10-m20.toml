@@ -359,24 +359,23 @@ text = "UNLOG BYCHECKA"
 # Fix Rate (SET OBSFREQ)
 # UG017 says SET OBSFREQ sets the observation frequency, that the PVT
 # frequency follows it, and that it takes effect after SAVECONFIG and a reboot.
-# On an M20 (V7.84_250E94_T), SET OBSFREQ n raised the maximum log output rate
-# to n per second at once, and this was kept across RESET without SAVECONFIG.
-# Before OBSFREQ was first set, the M20 output logs at most once a second, and
-# an ONTIME period below 1 s was accepted but gave one log a second. It
-# accepts 2 to 10 and rejects 0, 1 and 20. There is no query. It does not
-# restrict observation epochs to its own period: at OBSFREQ 2, RANGECMP and
-# BESTPOS logged with ONTIME 1 0.3 had epochs at x.3 s.
+# On an M20 (V7.84_250E94_T), SET OBSFREQ n took effect at once and was kept
+# across RESET without SAVECONFIG. It also limits the log output rate: logs
+# are output at most n times a second, each with a different solution. Before
+# OBSFREQ was first set, the M20 output logs at most once a second, and an
+# ONTIME period below 1 s was accepted but gave one log a second. It accepts
+# 2 to 10 and rejects 0, 1 and 20. There is no query.
 [[line]]
 tag = "fix-rate-2"
-description = "Set maximum log output rate to 2 Hz"
+description = "Set fix rate to 2 Hz"
 text = "SET OBSFREQ 2"
 [[line]]
 tag = "fix-rate-5"
-description = "Set maximum log output rate to 5 Hz"
+description = "Set fix rate to 5 Hz"
 text = "SET OBSFREQ 5"
 [[line]]
 tag = "fix-rate-10"
-description = "Set maximum log output rate to 10 Hz"
+description = "Set fix rate to 10 Hz"
 text = "SET OBSFREQ 10"
 
 # Elevation Mask
