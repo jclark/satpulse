@@ -3,6 +3,8 @@ package pps
 import (
 	"slices"
 	"time"
+
+	"github.com/jclark/satpulse/time/lib/median"
 )
 
 const maxClockDiscrepancy = time.Millisecond
@@ -50,23 +52,13 @@ func ReconcileTimes(wall, mono []time.Time) ([]time.Time, bool) {
 		}
 		offsets[i] = wall[i].Round(0).Sub(w0) - mono[i].Sub(m0)
 	}
-	m, discrepancy := medianAndSpread(offsets)
-	if discrepancy > maxClockDiscrepancy {
+	if slices.Max(offsets)-slices.Min(offsets) > maxClockDiscrepancy {
 		return nil, false
 	}
+	m := median.Median(slices.Values(offsets))
 	out := make([]time.Time, len(wall))
 	for i := range wall {
 		out[i] = wall[i].Round(0).Add(m - offsets[i])
 	}
 	return out, true
-}
-
-// medianAndSpread returns the median and the difference between the largest
-// and smallest values of ds. It averages the middle two for an even count and
-// sorts a copy because the caller's order pairs ds with its samples.
-func medianAndSpread(ds []time.Duration) (time.Duration, time.Duration) {
-	s := slices.Clone(ds)
-	slices.Sort(s)
-	lo, hi := s[(len(s)-1)/2], s[len(s)/2]
-	return lo + (hi-lo)/2, s[len(s)-1] - s[0]
 }

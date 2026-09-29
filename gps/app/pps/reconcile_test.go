@@ -133,11 +133,7 @@ func TestReconcileTimesClockSteps(t *testing.T) {
 					if split < 2 {
 						shift = step
 					} else if split == 2 {
-						// medianAndSpread rounds the average toward the lower offset.
 						shift = step / 2
-						if step < 0 && step%2 != 0 {
-							shift--
-						}
 					}
 					for i, v := range got {
 						want := wallBase.Add(time.Duration(i)*10*time.Microsecond + shift)
