@@ -4,7 +4,7 @@ toc: false
 classes: wide
 ---
 
-SatPulse supports the M20 and M10 series of modules from [Bynav](https://www.bynav.com/en/).
+SatPulse supports the M10 and M2 series (M20/M21/M22) modules from [Bynav](https://www.bynav.com/en/).
 The vendor name used with the `--vendor` option and `vendor` key is `bynav`.
 
 These modules use the [NovAtel OEM6/OEM7 protocol]({% link gps-module-support/novatel.md %}) for their logs:
@@ -20,14 +20,14 @@ For these modules, SatPulse supports:
   - a message file for configuration
   - a `novatel` response pattern in message files, for correlation of responses
 
-SatPulse has been tested with the M20 and the M10.
+SatPulse has been tested with the M10 and the M20.
 
 ## Low-level configuration
 
 A command like the following will configure a receiver suitably for `satpulsed`:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/bynav/bynav.toml \
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/bynav/m10-m20.toml \
     -t msg-all-off,nov-timeb,nov-bestposb,nov-bestvelb,nov-psrdopb,nov-ionutcb,nmea-talker-auto,nmea-gsa,nmea-gsv,pps
 ```
 

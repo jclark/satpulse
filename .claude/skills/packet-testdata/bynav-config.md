@@ -1,6 +1,6 @@
 # Bynav specific capture details
 
-Read `novatel-config.md` first. This file covers what is specific to Bynav receivers. The message file is `configs/gpsmsg/bynav/bynav.toml`; the M10 set is in `gps/testdata/packets/bynav/M10/`, and its HW.toml records the receiver behaviour seen.
+Read `novatel-config.md` first. This file covers what is specific to Bynav receivers. The message file is `configs/gpsmsg/bynav/m10-m20.toml`; the M10 set is in `gps/testdata/packets/bynav/M10/`, and its HW.toml records the receiver behaviour seen.
 
 ## Command replies
 
