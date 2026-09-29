@@ -303,6 +303,29 @@ tag = "nov-ionutca-off"
 description = "Disable IONUTC ASCII"
 text = "UNLOG IONUTCA"
 
+# Fix Rate (SET OBSFREQ)
+# UG017 says SET OBSFREQ sets the observation frequency, that the PVT
+# frequency follows it, and that it takes effect after SAVECONFIG and a reboot.
+# On an M20 (V7.84_250E94_T), SET OBSFREQ n raised the maximum log output rate
+# to n per second at once, and this was kept across RESET without SAVECONFIG.
+# Before OBSFREQ was first set, the M20 output logs at most once a second, and
+# an ONTIME period below 1 s was accepted but gave one log a second. It
+# accepts 2 to 10 and rejects 0, 1 and 20. There is no query. It does not
+# restrict observation epochs to its own period: at OBSFREQ 2, RANGECMP and
+# BESTPOS logged with ONTIME 1 0.3 had epochs at x.3 s.
+[[line]]
+tag = "fix-rate-2"
+description = "Set maximum log output rate to 2 Hz"
+text = "SET OBSFREQ 2"
+[[line]]
+tag = "fix-rate-5"
+description = "Set maximum log output rate to 5 Hz"
+text = "SET OBSFREQ 5"
+[[line]]
+tag = "fix-rate-10"
+description = "Set maximum log output rate to 10 Hz"
+text = "SET OBSFREQ 10"
+
 # Elevation Mask
 # Verified OK received for 0/5/10/45 on M20 (V7.84_250E94_T)
 
@@ -522,9 +545,13 @@ description = "Clear fixed position"
 text = "FIX NONE"
 
 # RTK Mode (RTKTYPE)
-# RTCM output requires base mode; set mode-base before enabling RTCM
+# RTCM output requires base mode; set mode-base before enabling RTCM.
+# On an M20 (V7.84_250E94_T), RTKTYPE BASE alone is enough: with no FIX, the
+# base position is the receiver's own single-point solution (LOG REFSTATION),
+# and RTCM output starts without SAVECONFIG or a reset.
+# RTKTYPE is kept across RESET without SAVECONFIG, so send mode-rover
+# afterwards to return to rover mode.
 # Verified OK received on M20 (V7.84_250E94_T)
-# Verified RTCM 1074 frames appear after mode-base + fixed position
 [[line]]
 tag = "mode-base"
 description = "Set base station mode"
@@ -536,7 +563,10 @@ description = "Set rover mode"
 text = "RTKTYPE ROVER"
 
 # RTCM Output
-# Note: requires mode-base and a fixed position (FIX POSITION or FIX BASE)
+# Note: requires mode-base. In rover mode, an M20 (V7.84_250E94_T) accepts
+# LOG RTCMnnnn but outputs nothing.
+# An M20 outputs one observation message per system on a port: requesting
+# another (for example 1077 or 1004 after 1074) replaces the earlier one.
 
 # ARP (antenna reference point, message 1006)
 # Verified OK received on M20 (V7.84_250E94_T)
@@ -559,10 +589,15 @@ tag = "rtcm-msm4"
 text = "LOG RTCM1094 ONTIME 1"
 [[line]]
 tag = "rtcm-msm4"
+text = "LOG RTCM1114 ONTIME 1"
+[[line]]
+tag = "rtcm-msm4"
 text = "LOG RTCM1124 ONTIME 1"
 
 # MSM7 messages for all constellations
-# Verified OK received on M20 (V7.84_250E94_T)
+# On an M20 (V7.84_250E94_T) in base mode, each of 1077 (GPS), 1087 (GLONASS),
+# 1097 (Galileo), 1117 (QZSS) and 1127 (BDS) is output every second, and
+# satpulsetool convobs --from rtcm converts all five.
 [[line]]
 tag = "rtcm-msm7"
 description = "Enable RTCM MSM7 for all constellations at 1Hz"
@@ -573,6 +608,9 @@ text = "LOG RTCM1087 ONTIME 1"
 [[line]]
 tag = "rtcm-msm7"
 text = "LOG RTCM1097 ONTIME 1"
+[[line]]
+tag = "rtcm-msm7"
+text = "LOG RTCM1117 ONTIME 1"
 [[line]]
 tag = "rtcm-msm7"
 text = "LOG RTCM1127 ONTIME 1"
@@ -594,6 +632,9 @@ tag = "rtcm-off"
 text = "UNLOG RTCM1094"
 [[line]]
 tag = "rtcm-off"
+text = "UNLOG RTCM1114"
+[[line]]
+tag = "rtcm-off"
 text = "UNLOG RTCM1124"
 [[line]]
 tag = "rtcm-off"
@@ -604,6 +645,9 @@ text = "UNLOG RTCM1087"
 [[line]]
 tag = "rtcm-off"
 text = "UNLOG RTCM1097"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1117"
 [[line]]
 tag = "rtcm-off"
 text = "UNLOG RTCM1127"
