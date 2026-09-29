@@ -173,8 +173,8 @@ func (*NAV) ID() (string, uint8) { return "NAV", 1 }
 
 // PPPNAV represents a PQTMPPPNAV PPP navigation information message.
 // Same layout as NAV except field 8 is Datumid instead of reserved.
-// LG290P firmware R02A01S appends one extra trailing reserved field
-// beyond the v1.0 spec; Res18 absorbs it.
+// LG290P firmware sometimes appends an extra trailing reserved field
+// beyond those in the spec; ParsePeriodicMsg ignores it.
 type PPPNAV struct {
 	TimeStatus uint8           // 0=invalid, 1=valid
 	TimeRef    uint8           // 1=GPS
@@ -218,7 +218,6 @@ type PPPNAV struct {
 	COG        opt.Val[float64] // deg, 0-360
 	Res16      skip
 	Res17      skip
-	Res18      skip
 }
 
 func (*PPPNAV) periodicMsg()        {}
@@ -323,6 +322,9 @@ func checkVersion(fields []string, expected uint8) ([]string, error) {
 //
 // It returns a non-nil error if the message is a recognized periodic
 // type but cannot be parsed (unsupported version or malformed fields).
+//
+// Fields beyond those of the message type are ignored, since firmware
+// can append fields without changing the message version.
 func ParsePeriodicMsg(payload string) (PeriodicMsg, error) {
 	if !strings.HasPrefix(payload, "PQTM") {
 		return nil, nil
@@ -343,7 +345,7 @@ func ParsePeriodicMsg(payload string) (PeriodicMsg, error) {
 	if err != nil {
 		return nil, fmt.Errorf("qtmmsg: %s: %w", msgType, err)
 	}
-	if err := fieldenc.Decode(fields, msg); err != nil {
+	if _, err := fieldenc.PartialDecode(fields, msg); err != nil {
 		return nil, fmt.Errorf("qtmmsg: %s: %w", msgType, err)
 	}
 	return msg, nil
