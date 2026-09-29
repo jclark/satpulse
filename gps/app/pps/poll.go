@@ -74,6 +74,20 @@ type poller struct {
 	startup    bool
 }
 
+// None of these constants encodes hardware timing; everything hardware- and
+// load-dependent is measured by the polling loop itself. initialPolls and
+// minSpacing are the PollParams defaults, suited to serial modem-status
+// queries.
+const (
+	initialPolls = 64
+	startupPolls = 2048
+	minSpacing   = 50 * time.Microsecond
+)
+
+// widthHistory is the number of recent tracking widths with which
+// rejectReason compares a catch's width.
+const widthHistory = 31
+
 // Poll adaptively polls for the pulse read by r and sends a candidate for
 // every leading edge it catches. It repeatedly runs acquisition followed by
 // tracking. Acquisition ends when polling resolution is acquired, or restarts
@@ -134,16 +148,6 @@ const (
 	// maxWindow is the whole period: the cold-start window, within which
 	// polling is uniform.
 	maxWindow = period
-)
-
-// None of these constants encodes hardware timing; everything hardware- and
-// load-dependent is measured by the polling loop itself. initialPolls and
-// minSpacing are the PollParams defaults, suited to serial modem-status
-// queries.
-const (
-	initialPolls = 64
-	startupPolls = 2048
-	minSpacing   = 50 * time.Microsecond
 )
 
 // outcome classifies one polling window: no valid transition seen, or a catch.
@@ -545,10 +549,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (o out
 	}
 }
 
-const (
-	widthHistory = 31
-	anomalyRatio = 4
-)
+const anomalyRatio = 4
 
 // rejectReason rejects all acquisition catches and compares tracking widths
 // with previous catches before recording them. Anomalous widths still enter
