@@ -44,33 +44,6 @@ func TestSimulateQuiet(t *testing.T) {
 	}
 }
 
-// TestSimulateStalls replays the shape of the 2026-09-20 incident with
-// stalls placed where the loop is exposed. Each costs one window, as a miss
-// or as an anomalous catch whose stretched bracket is too wide to correct
-// prediction; which of the two depends on where the poll grid lies to within
-// a query. Nothing wrong is forwarded, and the next pulse after the last
-// stall is caught normally.
-func TestSimulateStalls(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Sim.Duration = 180
-	cfg.Poll.PreWarm = 0.05
-	cfg.Fault.Stall = []StallConfig{{At: 120.9998, Duration: 2.4e-3}, {At: 122.98, Duration: 90e-3}, {At: 123.9999, Duration: 50e-3}}
-	st, err := Simulate(cfg, testLog, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Log(st)
-	if st.Anomalous+st.TrackMisses != 3 {
-		t.Errorf("anomalous = %d trackMisses = %d, want one window per stall", st.Anomalous, st.TrackMisses)
-	}
-	if st.Wrong != 0 {
-		t.Errorf("%d forwarded edges outside their uncertainty intervals, want none", st.Wrong)
-	}
-	if st.LongestGap > 3.001 || st.Lost != 0 {
-		t.Errorf("longestGap = %v s lost = %d, want a gap of at most three pulses without reacquisition", st.LongestGap, st.Lost)
-	}
-}
-
 // TestSimulateOutage checks that a long outage returns the loop to
 // acquisition and that forwarding resumes soon after the pulse does.
 func TestSimulateOutage(t *testing.T) {

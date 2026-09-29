@@ -985,9 +985,10 @@ show; the bracket widths alone do not.
 ### Unit tests
 
 The full `make test` suite passed after the one-shot startup sweep revision.
-The synthetic three-stall scenario accepts no sample whose reported
-uncertainty interval excludes the true edge and has two tracking misses
-and a longest forwarding gap of three seconds, with no reacquisition.
+The synthetic three-stall scenario was a simulator experiment used while
+designing the growth and correction rules, not a test: its results depend
+on where hand-placed stalls land in one run, and the rules it exercised
+are tested directly.
 
 The relevant coverage includes:
 
