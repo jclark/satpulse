@@ -1504,6 +1504,13 @@ func (s *Session) finishSend(runCtx context.Context) {
 	s.setEndState(runCtx, StateConnected)
 }
 
+// workerLine accumulates an unframed text line and the line ending received
+// with it; the correlator needs the line ending to match line messages.
+type workerLine struct {
+	buf []byte
+	eol string
+}
+
 // sendWorker owns conn.Write, Correlator, line buffer, and the broadcast
 // subscriber. It runs until stepCh is closed and all expected responses
 // have arrived (or a deadline expires), or workerCtx is cancelled.
@@ -1518,7 +1525,8 @@ func (s *Session) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Pac
 	}
 	defer func() { portLock <- port }()
 	cor := msgfile.NewCorrelator()
-	var lineBuf []byte
+	var line workerLine
+	defer s.flushWorkerLine(cor, &line, session)
 	var deadline time.Time
 	var tailCh <-chan time.Time
 	for {
@@ -1549,12 +1557,12 @@ func (s *Session) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Pac
 				deadline = d
 			}
 			// Wait for delay + pacing, processing packets throughout.
-			lineBuf = s.workerWaitStep(workerCtx, sub, cor, req, lineBuf, session, deadline)
+			s.workerWaitStep(workerCtx, sub, cor, req, &line, session, deadline)
 		case pkt, ok := <-sub:
 			if !ok {
 				return
 			}
-			lineBuf = s.processWorkerPacket(cor, lineBuf, pkt, session)
+			s.processWorkerPacket(cor, &line, pkt, session)
 			if tailCh != nil && !cor.CanAcceptMore() {
 				return
 			}
@@ -1568,7 +1576,7 @@ func (s *Session) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Pac
 
 // workerWaitStep handles the delay and pacing wait after a successful write.
 // It processes packets throughout, then replies to the coordinator.
-func (s *Session) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, cor *msgfile.Correlator, req sendStepReq, lineBuf []byte, session int, deadline time.Time) []byte {
+func (s *Session) workerWaitStep(workerCtx context.Context, sub <-chan scan.Packet, cor *msgfile.Correlator, req sendStepReq, line *workerLine, session int, deadline time.Time) {
 	// Wait for delay.
 	if req.rm.Delay > 0 {
 		timer := time.NewTimer(req.rm.Delay)
@@ -1578,15 +1586,15 @@ func (s *Session) workerWaitStep(workerCtx context.Context, sub <-chan scan.Pack
 			select {
 			case <-workerCtx.Done():
 				req.reply <- workerCtx.Err()
-				return lineBuf
+				return
 			case <-timer.C:
 				break delayLoop
 			case pkt, ok := <-sub:
 				if !ok {
 					req.reply <- nil
-					return lineBuf
+					return
 				}
-				lineBuf = s.processWorkerPacket(cor, lineBuf, pkt, session)
+				s.processWorkerPacket(cor, line, pkt, session)
 			}
 		}
 	}
@@ -1601,15 +1609,15 @@ func (s *Session) workerWaitStep(workerCtx context.Context, sub <-chan scan.Pack
 				select {
 				case <-workerCtx.Done():
 					req.reply <- workerCtx.Err()
-					return lineBuf
+					return
 				case <-timer.C:
 					break paceLoop
 				case pkt, ok := <-sub:
 					if !ok {
 						req.reply <- nil
-						return lineBuf
+						return
 					}
-					lineBuf = s.processWorkerPacket(cor, lineBuf, pkt, session)
+					s.processWorkerPacket(cor, line, pkt, session)
 					if cor.ReadyToSend(*req.next) {
 						break paceLoop
 					}
@@ -1618,57 +1626,59 @@ func (s *Session) workerWaitStep(workerCtx context.Context, sub <-chan scan.Pack
 		}
 	}
 	req.reply <- nil
-	return lineBuf
 }
 
 // processWorkerPacket handles a single packet from the broadcast subscriber.
-func (s *Session) processWorkerPacket(cor *msgfile.Correlator, lineBuf []byte, pkt scan.Packet, session int) []byte {
+func (s *Session) processWorkerPacket(cor *msgfile.Correlator, line *workerLine, pkt scan.Packet, session int) {
 	if pkt.IsInterPacketTimeout() {
-		return lineBuf
+		return
 	}
 	if pkt.Format == nil {
-		return s.bufferWorkerLines(cor, lineBuf, []byte(pkt.Data), session)
+		s.bufferWorkerLines(cor, line, []byte(pkt.Data), session)
+		return
 	}
-	lineBuf = s.flushWorkerLine(cor, lineBuf, session)
+	s.flushWorkerLine(cor, line, session)
 	result := cor.CorrelatePacket(pkt.Tag(), pkt.Data)
 	s.emitCorrelation(result, &pkt, session)
-	return lineBuf
 }
 
-func (s *Session) bufferWorkerLines(cor *msgfile.Correlator, lineBuf, data []byte, session int) []byte {
+func (s *Session) bufferWorkerLines(cor *msgfile.Correlator, line *workerLine, data []byte, session int) {
 	for _, b := range data {
-		if b == '\n' {
-			lineBuf = s.flushWorkerLine(cor, lineBuf, session)
-		} else if b == '\r' {
-			// skip
+		if b == '\r' || b == '\n' {
+			line.eol += string(b)
+			if b == '\n' {
+				s.flushWorkerLine(cor, line, session)
+			}
 		} else if b >= 0x20 && b <= 0x7E || b == '\t' {
-			lineBuf = append(lineBuf, b)
+			line.buf = append(line.buf, b)
 		} else {
-			lineBuf = lineBuf[:0]
+			line.buf = line.buf[:0]
+			line.eol = ""
 		}
 	}
-	return lineBuf
 }
 
-func (s *Session) flushWorkerLine(cor *msgfile.Correlator, lineBuf []byte, session int) []byte {
-	if len(lineBuf) == 0 {
-		return lineBuf
+func (s *Session) flushWorkerLine(cor *msgfile.Correlator, line *workerLine, session int) {
+	if len(line.buf) == 0 {
+		line.eol = ""
+		return
 	}
-	line := string(lineBuf)
-	lineBuf = lineBuf[:0]
-	result := cor.CorrelatePacket(gpsprot.EmptyTag, line)
+	text := string(line.buf)
+	eol := line.eol
+	line.buf = line.buf[:0]
+	line.eol = ""
+	result := cor.CorrelatePacket(gpsprot.EmptyTag, text+eol)
 	if !s.sessionCurrent(session) {
-		return lineBuf
+		return
 	}
 	if (result.Ack == msgfile.AckAck || result.Ack == msgfile.AckNak) && result.InResponseTo != nil {
 		s.emit(s.makeAckEvent(result, session))
 	}
 	if result.Relevance >= msgfile.LevelMaybeResponse {
 		ev := s.makePacketEvent(result, nil, session)
-		ev.Text = line
+		ev.Text = text
 		s.emit(ev)
 	}
-	return lineBuf
 }
 
 // emitCorrelation emits up to two ResponseEvents for a correlated packet:
