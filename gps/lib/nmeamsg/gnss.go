@@ -71,42 +71,44 @@ func ParseGNSSTalkerPayload(payload string, flags SentenceSyntaxFlags) (GNSSTalk
 	case "GGA":
 		return asMsg(decode[GGAFields](talker, fields))
 	case "RMC":
-		return asMsg(decodeRange[RMCFields](talker, fields, 12, 13))
+		if len(fields) == 12 {
+			return asMsg(decode[RMC12Fields](talker, fields))
+		}
+		return asMsg(decode[RMCFields](talker, fields))
 	default:
 		return nil, ErrUnsupportedSentence
 	}
 }
 
 // decode parses fields into the field set F, requiring exactly the number of
-// wire fields F declares (one struct field per wire field). fieldenc.Decode
-// rejects extra fields but tolerates short input, silently leaving trailing
-// struct fields unset, so a truncated sentence would otherwise decode to a
-// half-populated struct. PartialDecode reports how many fields it consumed;
-// requiring that to equal both the input length and the struct field count
-// rejects truncated and over-long sentences as malformed.
+// wire fields F declares (one per struct field, counting the fields of an
+// embedded struct). fieldenc.Decode rejects extra fields but tolerates short
+// input, silently leaving trailing struct fields unset, so a truncated sentence
+// would otherwise decode to a half-populated struct. PartialDecode reports how
+// many fields it consumed; requiring that to equal both the input length and
+// the wire field count rejects truncated and over-long sentences as malformed.
 func decode[F SentenceFields](talker string, fields []string) (Sentence[F], error) {
-	var f F
-	want := reflect.TypeOf(f).NumField()
-	return decodeRange[F](talker, fields, want, want)
-}
-
-func decodeRange[F SentenceFields](talker string, fields []string, min, max int) (Sentence[F], error) {
 	var f F
 	n, err := fieldenc.PartialDecode(fields, &f)
 	if err != nil {
 		return Sentence[F]{}, fmt.Errorf("%s: %w", f.SentenceFormat(), err)
 	}
-	if n != len(fields) || n < min || n > max {
-		return Sentence[F]{}, fieldCountErr(f.SentenceFormat(), min, max, len(fields))
+	if want := numWireFields(reflect.TypeOf(f)); n != len(fields) || n != want {
+		return Sentence[F]{}, fmt.Errorf("%s: expected %d fields, got %d", f.SentenceFormat(), want, len(fields))
 	}
 	return Sentence[F]{talkerID: talker, Fields: f}, nil
 }
 
-func fieldCountErr(format string, min, max, got int) error {
-	if min == max {
-		return fmt.Errorf("%s: expected %d fields, got %d", format, min, got)
+func numWireFields(t reflect.Type) int {
+	n := 0
+	for i := range t.NumField() {
+		if sf := t.Field(i); sf.Anonymous && sf.Type.Kind() == reflect.Struct {
+			n += numWireFields(sf.Type)
+		} else {
+			n++
+		}
 	}
-	return fmt.Errorf("%s: expected %d or %d fields, got %d", format, min, max, got)
+	return n
 }
 
 // asMsg boxes a decoded sentence as a GNSSTalkerIDMsg, returning a nil
@@ -241,9 +243,16 @@ func (g GGAFields) LatLon() (lat, lon float64) {
 }
 
 // RMCFields is the typed field set of an RMC sentence (NMEA 4.00 8.3.67). The
-// final NavStatus field is present only on NMEA 4.x output and is left unset
-// otherwise.
+// final NavStatus field is present only on NMEA 4.x output; an RMC sentence
+// without it decodes to RMC12Fields instead.
 type RMCFields struct {
+	RMC12Fields
+	NavStatus string `json:"navStatus"`
+}
+
+// RMC12Fields is the typed field set of an RMC sentence without the final
+// NavStatus field: the first 12 fields of RMCFields.
+type RMC12Fields struct {
 	Time    opt.Val[todUTC]   `json:"time,omitzero"`
 	Status  string            `json:"status,omitempty"`
 	Lat     opt.Val[latCoord] `json:"lat,omitzero"`
@@ -260,16 +269,15 @@ type RMCFields struct {
 	MagVar     opt.Val[float64] `json:"magVar,omitzero"`
 	MagVarSign lonSign          `json:"magVarSign,omitzero"`
 	Mode       string           `json:"mode,omitempty"`
-	NavStatus  string           `json:"navStatus,omitempty"`
 }
 
 // SentenceFormat returns the NMEA sentence format for RMC.
-func (RMCFields) SentenceFormat() string { return "RMC" }
+func (RMC12Fields) SentenceFormat() string { return "RMC" }
 
 // Timestamp combines the date and time-of-day into an absolute UTC time. It
 // returns ok == false when either field is absent. A leap second collapses
 // into the following minute, the inherent limit of time.Time.
-func (r RMCFields) Timestamp() (time.Time, bool) {
+func (r RMC12Fields) Timestamp() (time.Time, bool) {
 	if r.Date.IsZero() || r.Time.IsZero() {
 		return time.Time{}, false
 	}
