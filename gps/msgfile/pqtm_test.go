@@ -142,6 +142,23 @@ func TestCorrelatorPQTM(t *testing.T) {
 			},
 		},
 		{
+			name: "PQTMVERNO data with pending query",
+			tags: []string{"get-version", "get-pps"},
+			events: []event{
+				sendEvent{},
+				readyToSend{want: true},
+				sendEvent{},
+				// The query's data arrives in its ack, so it cannot claim
+				// the PQTMVERNO data.
+				recvNMEA("PQTMVERNO,LG290P03AANR01A03S,2024/04/30,10:53:07"),
+				expect{relevance: LevelSoleResponse},
+				recvNMEA("PQTMCFGPPS,OK,1,1,100000,1000,0,0"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(1)},
+				checkDone{canAcceptMore: false},
+				checkMissing{},
+			},
+		},
+		{
 			name: "PQTMVERNO pacing unblocks after data received",
 			tags: []string{"get-version", "get-version"},
 			events: []event{
