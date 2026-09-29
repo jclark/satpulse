@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -81,34 +80,14 @@ func ParseGNSSTalkerPayload(payload string, flags SentenceSyntaxFlags) (GNSSTalk
 }
 
 // decode parses fields into the field set F, requiring exactly the number of
-// wire fields F declares (one per struct field, counting the fields of an
-// embedded struct). fieldenc.Decode rejects extra fields but tolerates short
-// input, silently leaving trailing struct fields unset, so a truncated sentence
-// would otherwise decode to a half-populated struct. PartialDecode reports how
-// many fields it consumed; requiring that to equal both the input length and
-// the wire field count rejects truncated and over-long sentences as malformed.
+// wire fields F declares, so that truncated and over-long sentences are
+// rejected as malformed.
 func decode[F SentenceFields](talker string, fields []string) (Sentence[F], error) {
 	var f F
-	n, err := fieldenc.PartialDecode(fields, &f)
-	if err != nil {
+	if err := fieldenc.Decode(fields, &f); err != nil {
 		return Sentence[F]{}, fmt.Errorf("%s: %w", f.SentenceFormat(), err)
 	}
-	if want := numWireFields(reflect.TypeOf(f)); n != len(fields) || n != want {
-		return Sentence[F]{}, fmt.Errorf("%s: expected %d fields, got %d", f.SentenceFormat(), want, len(fields))
-	}
 	return Sentence[F]{talkerID: talker, Fields: f}, nil
-}
-
-func numWireFields(t reflect.Type) int {
-	n := 0
-	for i := range t.NumField() {
-		if sf := t.Field(i); sf.Anonymous && sf.Type.Kind() == reflect.Struct {
-			n += numWireFields(sf.Type)
-		} else {
-			n++
-		}
-	}
-	return n
 }
 
 // asMsg boxes a decoded sentence as a GNSSTalkerIDMsg, returning a nil

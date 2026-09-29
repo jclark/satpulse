@@ -324,9 +324,9 @@ func TestParseDispatch(t *testing.T) {
 	}
 }
 
-// TestParseFieldCount rejects wrong field counts for known sentences. fieldenc
-// tolerates short input, so a truncated GGA/RMC must be a malformed known
-// message, not a half-populated struct.
+// TestParseFieldCount rejects wrong field counts for known sentences: a
+// truncated GGA/RMC must be a malformed known message, not a half-populated
+// struct.
 func TestParseFieldCount(t *testing.T) {
 	bad := []string{
 		frame("GPGGA"),                                                  // address only
