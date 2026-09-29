@@ -25,6 +25,23 @@ tag = "get-loglist"
 description = "Query active log list"
 text = "LOG LOGLIST"
 
+# Query the licence: authorization mode, INS, licensed frequencies and
+# systems (UG017 4.3.1). The reply is plain text.
+# LOG AUTHORIZATIONA is rejected.
+# Verified OK received on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-authorization"
+description = "Query licensed features"
+text = "LOG AUTHORIZATION ONCE"
+
+# Query the tracking configuration: active systems and excluded satellites.
+# The reply is plain text.
+# Verified on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-trackconfig"
+description = "Query tracking configuration"
+text = "LOG TRACKCONFIG ONCE"
+
 # Disable all logging
 # Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
@@ -214,6 +231,24 @@ tag = "nmea-zda-off"
 description = "Disable NMEA ZDA"
 text = "UNLOG GPZDA"
 
+[[line]]
+tag = "nmea-gst"
+description = "Enable NMEA GST at 1Hz"
+text = "LOG GPGST ONTIME 1"
+[[line]]
+tag = "nmea-gst-off"
+description = "Disable NMEA GST"
+text = "UNLOG GPGST"
+
+[[line]]
+tag = "nmea-vtg"
+description = "Enable NMEA VTG at 1Hz"
+text = "LOG GPVTG ONTIME 1"
+[[line]]
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG"
+text = "UNLOG GPVTG"
+
 # Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
 # See nmea-gsa about the NMEA talker.
 # Verified OK received on M20 (V7.84_250E94_T)
@@ -303,6 +338,24 @@ tag = "nov-ionutca-off"
 description = "Disable IONUTC ASCII"
 text = "UNLOG IONUTCA"
 
+# BYCHECK (Bynav GNSS self-check, msg 42272)
+[[line]]
+tag = "nov-bycheckb"
+description = "Enable BYCHECK binary at 1Hz"
+text = "LOG BYCHECKB ONTIME 1"
+[[line]]
+tag = "nov-bycheckb-off"
+description = "Disable BYCHECK binary"
+text = "UNLOG BYCHECKB"
+[[line]]
+tag = "nov-bychecka"
+description = "Enable BYCHECK ASCII at 1Hz"
+text = "LOG BYCHECKA ONTIME 1"
+[[line]]
+tag = "nov-bychecka-off"
+description = "Disable BYCHECK ASCII"
+text = "UNLOG BYCHECKA"
+
 # Fix Rate (SET OBSFREQ)
 # UG017 says SET OBSFREQ sets the observation frequency, that the PVT
 # frequency follows it, and that it takes effect after SAVECONFIG and a reboot.
@@ -374,6 +427,20 @@ text = "ECUTOFF 45"
 # Takes effect after saveconfig and reset
 # ASSIGNALL is accepted but has no effect on M20 (V7.84_250E94_T)
 # WORKFREQS NONE BEIDOU is silently ignored (BeiDou cannot be disabled)
+# WORKFREQS ALL <system> gives no reply: enabling one system needs its
+# frequencies listed (for example WORKFREQS L1L2CL5 GPS). WORKFREQS alone
+# shows the current setting; system names are as it shows them (GLONASS,
+# GALILEO, BEIDOU, IRNSS), not GLO, GAL, BDS or NavIC.
+
+# WORKFREQS with no parameters is a query; its plain-text reply follows the
+# <OK. The novatel response pattern expects output only after LOG commands,
+# so this line uses none.
+# Verified on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-gnss"
+description = "Query constellation and frequency configuration"
+text = "WORKFREQS"
+responsePattern = "none"
 
 [[line]]
 tag = "gnss-gps-bds"
@@ -474,8 +541,18 @@ text = "NMEATALKER GP"
 # Raw Observations
 
 # Verified RANGECMP binary frames appear in capture on M20 (V7.84_250E94_T)
+# The M20 tracks these RANGECMP signal types: GPS and QZSS 0, 14, 17;
+# GLONASS 0, 1; Galileo 1, 12, 17; BDS 0, 1, 2, 4, 6, 9. Galileo type 1 is
+# in neither UG017 nor the OEM7 manual (both give 2 for E1C), but its
+# Doppler puts it on E1, and MSM7 labels it 1B. UG017 gives BDS B2b as 10,
+# where OEM7 gives 11. L1C, B1C, B2b, E6, NavIC and SBAS are licensed
+# (LOG AUTHORIZATION) and listed by WORKFREQS, but are not tracked.
 [[line]]
 tag = "nov-rangecmpb"
+description = "Enable RANGECMP binary at 1Hz"
+text = "LOG RANGECMPB ONTIME 1"
+[[line]]
+tag = "nov-rangecmpb-30"
 description = "Enable RANGECMP binary every 30s"
 text = "LOG RANGECMPB ONTIME 30"
 # Verified OK received on M20 (V7.84_250E94_T)
@@ -483,6 +560,60 @@ text = "LOG RANGECMPB ONTIME 30"
 tag = "nov-rangecmpb-off"
 description = "Disable RANGECMP binary"
 text = "UNLOG RANGECMPB"
+
+# TRACKSTAT (channel tracking status, msg 83)
+[[line]]
+tag = "nov-trackstatb"
+description = "Enable TRACKSTAT binary at 1Hz"
+text = "LOG TRACKSTATB ONTIME 1"
+[[line]]
+tag = "nov-trackstatb-off"
+description = "Disable TRACKSTAT binary"
+text = "UNLOG TRACKSTATB"
+[[line]]
+tag = "nov-trackstata"
+description = "Enable TRACKSTAT ASCII at 1Hz"
+text = "LOG TRACKSTATA ONTIME 1"
+[[line]]
+tag = "nov-trackstata-off"
+description = "Disable TRACKSTAT ASCII"
+text = "UNLOG TRACKSTATA"
+
+# Decoded ephemerides for GPS, GLONASS, Galileo, BDS and QZSS
+# With ONTIME, each log gives one satellite per period, cycling through the
+# satellites.
+[[line]]
+tag = "nov-eph"
+description = "Enable binary ephemeris logs at 1Hz"
+text = "LOG GPSEPHEMB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG GLOEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG GALEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG BDSEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG QZSSEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph-off"
+description = "Disable binary ephemeris logs"
+text = "UNLOG GPSEPHEMB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG GLOEPHEMERISB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG GALEPHEMERISB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG BDSEPHEMERISB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG QZSSEPHEMERISB"
 
 # PPS Configuration
 # PPSCONTROL: Switch Edge Period(s) PulseWidth(us)
@@ -562,18 +693,35 @@ tag = "mode-rover"
 description = "Set rover mode"
 text = "RTKTYPE ROVER"
 
+# RTKTYPE with no parameters is a query. The reply, such as RTKTYPE ROVER,
+# follows the <OK and ends with LF only, so this line uses no response
+# pattern and an LF terminator, which the receiver accepts.
+# Verified on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-mode"
+description = "Query RTK mode (base or rover)"
+text = "RTKTYPE"
+responsePattern = "none"
+eol = "\n"
+
+# Query the base position; REFSTATIONB is rejected.
+[[line]]
+tag = "get-refstation"
+description = "Query base station position"
+text = "LOG REFSTATIONA ONCE"
+
 # RTCM Output
 # Note: requires mode-base. In rover mode, an M20 (V7.84_250E94_T) accepts
 # LOG RTCMnnnn but outputs nothing.
 # An M20 outputs one observation message per system on a port: requesting
 # another (for example 1077 or 1004 after 1074) replaces the earlier one.
 
-# ARP (antenna reference point, message 1006)
+# ARP (antenna reference point, message 1005)
 # Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "rtcm-arp"
-description = "Enable RTCM ARP message (1006) at 5s"
-text = "LOG RTCM1006 ONTIME 5"
+description = "Enable RTCM ARP message (1005) at 5s"
+text = "LOG RTCM1005 ONTIME 5"
 
 # MSM4 messages for all constellations
 # Verified OK received on M20 (V7.84_250E94_T)
@@ -615,12 +763,84 @@ text = "LOG RTCM1117 ONTIME 1"
 tag = "rtcm-msm7"
 text = "LOG RTCM1127 ONTIME 1"
 
+# RTCM ephemerides: GPS (1019), GLONASS (1020), BDS (1042), QZSS (1044) and
+# Galileo I/NAV (1046); 1045 (Galileo F/NAV) is rejected.
+[[line]]
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages (1019/1020/1042/1044/1046)"
+text = "LOG RTCM1019 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1020 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1042 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1044 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1046 ONTIME 1"
+[[line]]
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+text = "UNLOG RTCM1019"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1020"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1042"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1044"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1046"
+
+# Legacy observables: GPS 1004 and GLONASS 1012; 1001, 1002, 1009 and 1010
+# are rejected. Each replaces MSM for its system (see above).
+[[line]]
+tag = "rtcm-legacy"
+description = "Enable legacy RTCM observables (1004/1012) at 1Hz"
+text = "LOG RTCM1004 ONTIME 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "LOG RTCM1012 ONTIME 1"
+[[line]]
+tag = "rtcm-legacy-off"
+description = "Disable legacy RTCM observables"
+text = "UNLOG RTCM1004"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1012"
+
+# Receiver and antenna descriptors (1033)
+[[line]]
+tag = "rtcm-1033"
+description = "Enable RTCM 1033 at 5s"
+text = "LOG RTCM1033 ONTIME 5"
+[[line]]
+tag = "rtcm-1033-off"
+description = "Disable RTCM 1033"
+text = "UNLOG RTCM1033"
+
+# GLONASS code-phase biases (1230)
+[[line]]
+tag = "rtcm-1230"
+description = "Enable RTCM 1230 at 5s"
+text = "LOG RTCM1230 ONTIME 5"
+[[line]]
+tag = "rtcm-1230-off"
+description = "Disable RTCM 1230"
+text = "UNLOG RTCM1230"
+
 # Disable all RTCM output
 # Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "rtcm-off"
 description = "Disable all RTCM output"
-text = "UNLOG RTCM1006"
+text = "UNLOG RTCM1005"
 [[line]]
 tag = "rtcm-off"
 text = "UNLOG RTCM1074"
@@ -651,6 +871,33 @@ text = "UNLOG RTCM1117"
 [[line]]
 tag = "rtcm-off"
 text = "UNLOG RTCM1127"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1019"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1020"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1042"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1044"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1046"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1004"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1012"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1033"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1230"
 
 # Port Configuration (SERIALCONFIG)
 
