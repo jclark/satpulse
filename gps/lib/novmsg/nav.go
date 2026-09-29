@@ -49,7 +49,7 @@ func (m *PsrDop) Chunks() func(yield func(chunk any) bool) {
 			return
 		}
 		if len(m.PRNs) == 0 {
-			m.PRNs = make([]PsrDopPRN, m.NumPRNs)
+			m.PRNs = make([]PsrDopPRN, ClampLen[PsrDopPRN](m.NumPRNs))
 		}
 		for i := range m.PRNs {
 			if !yield(&m.PRNs[i]) {

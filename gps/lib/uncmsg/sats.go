@@ -469,7 +469,7 @@ func (b *BestSat) Chunks() func(yield func(chunk any) bool) {
 
 		// Allocate the Sats slice based on NumEntries if not already allocated
 		if len(b.Sats) == 0 && b.NumEntries > 0 {
-			b.Sats = make([]BestSatEntry, b.NumEntries)
+			b.Sats = make([]BestSatEntry, novmsg.ClampLen[BestSatEntry](b.NumEntries))
 		}
 
 		// Read each satellite entry (16 bytes each)
