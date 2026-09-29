@@ -173,6 +173,7 @@ text = "log gpgsa ontime 1"
 # RESET reloads config from NVM without clearing satellite data
 # Verified device restarts and responds to commands after RESET on K902
 # Verified on K803: the receiver restarts (boot banner), and unsaved output does not return
+# Verified on K901: no response (the receiver restarts), then the saved output resumes
 [[line]]
 tag = "reload"
 description = "Reload configuration from NVM"
@@ -596,8 +597,8 @@ description = "Set NMEA version to 4.00"
 text = "SET NMEAV41 OFF"
 
 # PPP (Precise Point Positioning)
-# Works on K902 fw 8.2.4 but requires gnss-all (not just gnss-bds).
-# Convergence takes about an hour. Achieved ~20cm horizontal, ~1cm vertical.
+# ppp-b2b worked on K901 and K902 with gnss-all, but took a long time to converge;
+# on K902 it did not work with gnss-bds.
 
 # Verified OK response for all 3 commands on K901
 # Verified OK response for all 3 commands on K803
@@ -647,11 +648,31 @@ text = "SET PPP OFF"
 
 # Raw Observations
 
+# Verified RANGEB at 1Hz in capture on K901, K803 and K902
+[[line]]
+tag = "nov-rangeb"
+description = "Enable RANGE binary at 1Hz"
+text = "log rangeb ontime 1"
+# Verified RANGEB every 30s, on the GPS-time 30s grid, in capture on K901, K803 and K902
+[[line]]
+tag = "nov-rangeb-30"
+description = "Enable RANGE binary every 30 seconds"
+text = "log rangeb ontime 30"
+# Verified OK response on K901
+[[line]]
+tag = "nov-rangeb-off"
+description = "Disable RANGE binary"
+text = "unlog rangeb"
+# Verified RANGECMPB at 1Hz in capture on K901, K803 and K902
+[[line]]
+tag = "nov-rangecmpb"
+description = "Enable RANGECMP binary at 1Hz"
+text = "log rangecmpb ontime 1"
 # Verified OK response on K901; LOGLIST shows RANGECMP BINARY ONTIME 30
 # Verified OK response on K803; LOGLIST shows RANGECMP BINARY ONTIME 30
 [[line]]
-tag = "nov-rangecmpb"
-description = "Enable RANGECMP binary every 30s"
+tag = "nov-rangecmpb-30"
+description = "Enable RANGECMP binary every 30 seconds"
 text = "log rangecmpb ontime 30"
 # Verified OK response on K901; RANGECMP removed from LOGLIST
 # Verified OK response on K803; RANGECMP removed from LOGLIST
@@ -680,18 +701,10 @@ text = "PPSCONTROL DISABLE NEGATIVE 1 1000 -1"
 
 # Reset Commands
 
-# RESET preserves ephemeris/almanac (equivalent to hot start)
-# Verified on K901: no response (the receiver restarts), then the saved output resumes
-# Verified on K803: the receiver restarts (boot banner), and unsaved output does not return
-[[line]]
-tag = "hot-start"
-description = "Hot start - preserves ephemeris and almanac"
-text = "RESET"
-delay = 3
-
-# No cold-start tag: the manual documents no command that clears satellite
-# data but keeps the configuration. RESET keeps the almanac and ephemeris,
-# and FRESET is a factory reset (see factory-reset).
+# No hot-start or cold-start tag: RESET (see reload) keeps the almanac and
+# ephemeris but also reloads the saved configuration, and the manual documents
+# no command that clears satellite data but keeps the configuration. FRESET is
+# a factory reset (see factory-reset).
 
 # Survey-in
 
@@ -711,6 +724,7 @@ text = "POSAVE off"
 # Fixed Position
 
 # Example using accurate ECEF converted to geodetic
+# The height is above the geoid, not the ellipsoid (manual 2.2.6)
 # Verified OK response on K902
 # Verified OK response on K803; BESTPOS reports FIXEDPOS at the given position
 [[line]]
@@ -720,6 +734,8 @@ text = "FIX position 13.7305 100.6405 50.0"
 # FIX NONE is not in the manual (OEM7 syntax). FIX auto does not clear the
 # fixed position: it fixes the current single-point position.
 # Verified on K803 and K901: BESTPOS changes from FIXEDPOS to SINGLE
+# Verified on K902: after rtcm-arp, the next RTCM 1005 returns BESTPOS to FIXEDPOS
+# unless rtcm-off is sent first; rtcm-off alone leaves it at FIXEDPOS
 [[line]]
 tag = "fixed-pos-off"
 description = "Clear fixed position, return to auto mode"
@@ -729,7 +745,7 @@ text = "FIX NONE"
 
 # ARP (antenna reference point, message 1005)
 # Verified OK response on K902
-# Verified RTCM 1005 appears every 5s on K803; the request itself puts the receiver in base mode at its current position (also on K901)
+# Verified on K803, K901 and K902: RTCM 1005 appears, and the request itself puts the receiver in base mode at its current position
 [[line]]
 tag = "rtcm-arp"
 description = "Enable RTCM ARP message (1005) at 5s"
@@ -756,6 +772,7 @@ text = "log rtcm1124b ontime 1"
 # Not in the protocol manual, which lists only MSM4 (Table 3-24)
 # Verified OK response for all 4 commands on K901
 # Verified RTCM 1077, 1087, 1097 and 1127 appear at 1Hz in capture on K901
+# Verified RTCM 1077, 1087, 1097 and 1127 at 1Hz in base mode (after rtcm-arp) on K902
 # Verified OK response for all 4 commands and 1077, 1087, 1097 and 1127 at 1Hz on K803
 [[line]]
 tag = "rtcm-msm7"
@@ -776,6 +793,7 @@ text = "log rtcm1127b ontime 1"
 # Verified OK response for all 6 commands on K901
 # Verified all 6 messages appear at about 1Hz in capture on K901
 # Verified OK response for all 6 commands on K803; all but 1045 appear
+# Verified all 6 messages appear in base mode (after rtcm-arp) on K902
 [[line]]
 tag = "rtcm-eph"
 description = "Enable RTCM ephemeris messages (1019/1020/1042/1044/1045/1046)"
