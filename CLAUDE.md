@@ -198,7 +198,8 @@ written for an installed system; in this repo:
   `satpulsetool serial` before relying on it, discover unknown ports with
   `serial -a` and `gps --show-receiver`, ask the user for the receiver's name
   (they know it better than `--show-receiver` does, especially without
-  high-level support), and update `CLAUDE.local.md` with what you find.
+  high-level configuration support), and update `CLAUDE.local.md` with what
+  you find.
 - when an ad-hoc command sent with `gps -m -` proves generally useful,
   suggest adding it to the message files we ship in `configs/gpsmsg` (the
   `gps-msg-add` skill does this)

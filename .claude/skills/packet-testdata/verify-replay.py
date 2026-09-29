@@ -4,7 +4,10 @@
 Usage: verify-replay.py [--ecef x,y,z] <satpulsetool-binary> <packet-log-directory>
 
 Runs satpulsetool replay on every .jsonl file in the directory,
-collects all events, and checks for anomalies.
+collects all events, and checks for anomalies. The vendor from the
+directory's HW.toml is passed to replay, so that vendor-specific decoding
+(such as the NovAtel variant and NMEA satellite numbering) matches what
+satpulsed does for that receiver.
 
 Options:
   --ecef x,y,z   Known ECEF position in meters. Checks posECEF and survey
@@ -17,6 +20,7 @@ import json
 import math
 import subprocess
 import sys
+import tomllib
 from collections import defaultdict
 from pathlib import Path
 
@@ -47,10 +51,12 @@ def ecef_dist(a, b):
     return math.sqrt(sum((ai - bi) ** 2 for ai, bi in zip(a, b)))
 
 
-def replay(binary, logfile):
+def replay(binary, logfile, vendor):
     """Run satpulsetool replay and return parsed events."""
-    r = subprocess.run([binary, "replay", str(logfile)],
-                       capture_output=True, text=True)
+    cmd = [binary, "replay"]
+    if vendor:
+        cmd += ["--vendor", vendor]
+    r = subprocess.run(cmd + [str(logfile)], capture_output=True, text=True)
     if r.returncode != 0:
         return None, r.stderr.strip()
     events = []
@@ -358,12 +364,22 @@ def main():
         print(f"No .jsonl files in {logdir}")
         sys.exit(1)
 
+    vendor = None
+    hw = logdir / "HW.toml"
+    if hw.is_file():
+        with open(hw, "rb") as f:
+            vendor = tomllib.load(f).get("vendor")
+    if vendor:
+        print(f"Vendor: {vendor}")
+    else:
+        print("No vendor in HW.toml; replaying without --vendor")
+
     print(f"Replaying {len(files)} packet logs from {logdir}")
 
     # Replay all files
     all_data = {}
     for f in files:
-        events, err = replay(binary, f)
+        events, err = replay(binary, f, vendor)
         if err:
             print(f"  {f.name}: REPLAY ERROR: {err}")
             continue

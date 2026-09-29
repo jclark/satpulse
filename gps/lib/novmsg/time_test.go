@@ -170,6 +170,67 @@ var bynavIonUTCTests = []dataTestCase[Port]{
 	},
 }
 
+// sinoTimeTests and sinoIonUTCTests are binary and ASCII pairs from a
+// SinoGNSS K901, like sinoNavTests. sinoIonUTCTests is tested in binary only:
+// the K901 prints A1 in ASCII as a copy of A0.
+var sinoTimeTests = []dataTestCase[Port]{
+	{
+		name:  "SinoGNSS K901 TIME",
+		hex:   "aa44121c650002202c000000b8b4850952b9502100001000f6ff01000000000013a7c29c54964cbe0000000000000000da0c1100010032c0ea070000091a0b0fe24f00000100000037e7b057",
+		ascii: "#TIMEA,COM1,0,60.0,FINESTEERING,2437,558938.450,00000000,0000,1114;VALID,-1.331196566e-08,0.000000000e+00,-18.00001526276,2026,9,26,11,15,20450,VALID*4933ef9e\r\n",
+		hdr:   sinoHdr(184, 558938450, 65526, 1),
+		value: &Time{
+			ClockStatus: ClockStatusValid,
+			Offset:      -1.3311965662020693e-08,
+			OffsetStd:   0,
+			UTCOffset:   -18.000015262758872,
+			UTCYear:     2026,
+			UTCMonth:    9,
+			UTCDay:      26,
+			UTCHour:     11,
+			UTCMin:      15,
+			UTCMs:       20450,
+			UTCStatus:   UTCStatusValid,
+		},
+		// SinoGNSS includes the sub-second GPS-UTC correction in the
+		// UTC offset, so it has a fraction to round.
+		fixupValueForAscii: func(msg MsgBody) MsgBody {
+			r := fixupTimeValueForAscii(msg).(*Time)
+			fixupFloat(&r.UTCOffset, "%.11f")
+			return r
+		},
+		fixupHeaderForAscii: sinoHdrForAscii,
+	},
+}
+
+var sinoIonUTCTests = []dataTestCase[Port]{
+	{
+		name:  "SinoGNSS K901 IONUTC",
+		hex:   "aa44121c080002206c000000b8b4850924b0502100001000fcfffa270000000000004c3e000000000000503e00000000000070be00000000000080be000000000000f940000000000000f04000000000000008c100000000000010c18600000000400200000000000000343e000000000000f03c8900000007000000120000001200000000000000dca1ca22",
+		ascii: "#IONUTCA,COM1,0,60.0,FINESTEERING,2437,558936.100,00000000,0000,1114;1.303851604461670e-08,1.490116119384766e-08,-5.960464477539063e-08,-1.192092895507813e-07,1.024000000000000e+05,6.553600000000000e+04,-1.966080000000000e+05,-2.621440000000000e+05,134,147456,4.6566128730773926e-09,4.656612873e-09,137,7,18,18,0*5358d805\r\n",
+		hdr:   sinoHdr(184, 558936100, 65532, 10234),
+		value: &IonUTC{
+			Alpha0:    1.30385160446167e-08,
+			Alpha1:    1.4901161193847656e-08,
+			Alpha2:    -5.960464477539063e-08,
+			Alpha3:    -1.1920928955078125e-07,
+			Beta0:     102400,
+			Beta1:     65536,
+			Beta2:     -196608,
+			Beta3:     -262144,
+			UTCWn:     134,
+			Tot:       147456,
+			A0:        4.6566128730773926e-09,
+			A1:        3.552713678800501e-15,
+			WnLsf:     137,
+			Dn:        7,
+			DeltatLs:  18,
+			DeltatLsf: 18,
+			Reserved:  0,
+		},
+	},
+}
+
 func unicoreBinRegistry() map[MsgID]func() MsgBody {
 	m := make(map[MsgID]func() MsgBody)
 	maps.Copy(m, BinRegistry())
@@ -181,21 +242,24 @@ func unicoreBinRegistry() map[MsgID]func() MsgBody {
 func TestTimeBinary(t *testing.T) {
 	testDataBin(t, um980TimeTests, BinRegistry())
 	testDataBin(t, bynavTimeTests, BinRegistry())
+	testDataBin(t, sinoTimeTests, BinRegistry())
 }
 
 func TestTimeAscii(t *testing.T) {
-	testDataAscii(t, um980TimeTests, AsciiRegistry())
-	testDataAscii(t, bynavTimeTests, AsciiRegistry())
+	testDataAscii[UnicorePort, UnicoreAsciiHdr](t, um980TimeTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, bynavTimeTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, sinoTimeTests, AsciiRegistry())
 }
 
 func TestIonUTCBinary(t *testing.T) {
 	testDataBin(t, um980IonUTCTests, unicoreBinRegistry())
 	testDataBin(t, bynavIonUTCTests, BinRegistry())
+	testDataBin(t, sinoIonUTCTests, BinRegistry())
 }
 
 func TestIonUTCAscii(t *testing.T) {
-	testDataAscii(t, um980IonUTCTests, AsciiRegistry())
-	testDataAscii(t, bynavIonUTCTests, AsciiRegistry())
+	testDataAscii[UnicorePort, UnicoreAsciiHdr](t, um980IonUTCTests, AsciiRegistry())
+	testDataAscii[Port, AsciiHdr](t, bynavIonUTCTests, AsciiRegistry())
 }
 
 // fixupTimeValueForAscii converts a Time with full binary precision

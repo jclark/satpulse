@@ -88,23 +88,27 @@ func TestQualitySinoGNSS(t *testing.T) {
 
 func TestQualityFields(t *testing.T) {
 	var ne gpsprot.NavEpochMsg
-	m := &novmsg.BestPos{Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
-		PSolStatus:    novmsg.SolComputed,
-		PosType:       novmsg.PosNarrowInt,
-		Lat:           47.0,
-		Lon:           8.0,
-		Hgt:           400.0,
-		LatSigma:      0.01,
-		LonSigma:      0.01,
-		HgtSigma:      0.02,
-		DiffAge:       1.5,
-		StnID:         novmsg.StationID{'1', '2', '3', 0},
-		NumSVs:        20,
-		NumSolnSVs:    15,
-		GPSGLOBDS2Sig: 0x01, // GPS L1CA
-		GalBDS3Sig:    0x01, // GAL E1
-	}}
-	posGeoBestPos(&gpsprot.DefaultHandler{}, &ne, &m.Pos, "BESTPOS", TagBinary, time.Time{})
+	m := &novmsg.BestPos{
+		Pos: novmsg.Pos[novmsg.SolStatus, novmsg.PosType]{
+			PSolStatus: novmsg.SolComputed,
+			PosType:    novmsg.PosNarrowInt,
+			Lat:        47.0,
+			Lon:        8.0,
+			Hgt:        400.0,
+			LatSigma:   0.01,
+			LonSigma:   0.01,
+			HgtSigma:   0.02,
+			DiffAge:    1.5,
+			StnID:      novmsg.StationID{'1', '2', '3', 0},
+			NumSVs:     20,
+			NumSolnSVs: 15,
+		},
+		PosFlags: novmsg.PosFlags{
+			GPSGLOBDS2Sig: 0x01, // GPS L1CA
+			GalBDS3Sig:    0x01, // GAL E1
+		},
+	}
+	posGeoBestPos(&gpsprot.DefaultHandler{}, &ne, &m.Pos, &m.PosFlags, "BESTPOS", TagBinary, time.Time{})
 	if ne.FixLevel != gpsprot.FixLevelCarrierFixed {
 		t.Errorf("FixLevel = %v, want CarrierFixed", ne.FixLevel)
 	}

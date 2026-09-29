@@ -75,6 +75,8 @@ For u-blox receivers specifically, also read `ubx-config.md`.
 
 For Unicore receivers (UM980, UM981, UM982), also read `unicore-config.md`.
 
+For NovAtel-format receivers configured with message files (ByNav, SinoGNSS), read `novatel-config.md`, which refers to a file for each vendor.
+
 For CASIC (Zhongke) receivers, read `casic-config.md` - it maps which captures are possible on which attached unit (CASIC firmware acknowledges enabling messages it never emits).
 
 For all receivers, message files in the per-vendor subdirectories of `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.

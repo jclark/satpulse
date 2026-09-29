@@ -41,8 +41,19 @@ type badCount struct {
 
 var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
-var ErrNoProbeResponse = errors.New("no response to configuration probe message; not configuring GPS")
-var ErrNotDetected = errors.New("GPS detection failed")
+var ErrNoProbeResponse = errors.New("configuration probes could not identify GPS; not configuring GPS")
+
+// ErrNotDetected is matched by errors.Is when no configuration protocol
+// identified the GPS and no usable output was seen. The returned error is a
+// notDetectedError whose text describes the specific case.
+var ErrNotDetected = errors.New("GPS not detected")
+
+// notDetectedError is not wrapped around ErrNotDetected so that each case
+// can be worded on its own instead of behind a fixed prefix.
+type notDetectedError string
+
+func (e notDetectedError) Error() string        { return string(e) }
+func (e notDetectedError) Is(target error) bool { return target == ErrNotDetected }
 
 func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	if ro := target.Props.ReadOnlyProps(); ro != 0 {
@@ -210,16 +221,23 @@ func (mh *msgHandler) detect(ctx context.Context, port gpsio.OutPort, probeEnabl
 		if mh.bad.framingErrs > 0 {
 			msg = "framing errors reading GPS output (wrong speed?)"
 		} else if nativeOnly := mh.nativeOnlyTags(); len(nativeOnly) > 0 {
-			msg = fmt.Sprintf("only messages with these protocols detected: %s", strings.Join(nativeOnly, ", "))
+			tags := strings.Join(nativeOnly, ", ")
+			if probeEnabled {
+				msg = fmt.Sprintf("configuration probes could not identify GPS; no usable output (only formats detected: %s)", tags)
+			} else {
+				msg = fmt.Sprintf("no usable output from GPS (only formats detected: %s)", tags)
+			}
 		} else if mh.bad.invalidBytes+mh.bad.corruptMsgs == 0 {
-			msg = "no output detected from GPS"
+			msg = "no output from GPS"
 		} else if mh.bad.corruptMsgs > 0 {
 			msg = "corrupted GPS output (multiple processes reading from serial port?)"
+		} else if probeEnabled {
+			msg = "configuration probes could not identify GPS; output not in any recognized format"
 		} else {
-			msg = "cannot parse GPS output"
+			msg = "GPS output not in any recognized format"
 		}
 		mh.lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "nativeOnlyTags", mh.nativeOnlyTags())
-		return nil, fmt.Errorf("%w: %s", ErrNotDetected, msg)
+		return nil, notDetectedError(msg)
 	}
 	mh.lg.Info("detected a GPS")
 	mh.lg.Debug("received suitable output message from GPS", "msgCount", mh.msgCount, "bad", mh.bad)

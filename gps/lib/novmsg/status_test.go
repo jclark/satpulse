@@ -47,5 +47,5 @@ func TestByCheckBinary(t *testing.T) {
 }
 
 func TestByCheckAscii(t *testing.T) {
-	testDataAscii(t, byCheckTests, map[string]func() MsgBody{"BYCHECKA": func() MsgBody { return &ByCheck{} }})
+	testDataAscii[Port, AsciiHdr](t, byCheckTests, map[string]func() MsgBody{"BYCHECKA": func() MsgBody { return &ByCheck{} }})
 }

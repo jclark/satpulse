@@ -6,6 +6,7 @@ const (
 	// BestGNSSPosID defined in nav.go (OEM7, Bynav)
 	GalEphemerisID MsgID = 1122 // OEM6, Bynav, SinoGNSS, RTKLIB
 	GloEphemerisID MsgID = 723  // OEM7, Bynav, SinoGNSS, RTKLIB
+	GloRawEphemID  MsgID = 792  // OEM7, SinoGNSS
 	GpsEphemID     MsgID = 7    // OEM7, Bynav
 	HeadingID      MsgID = 971  // OEM6, Bynav, SinoGNSS
 	Heading2ID     MsgID = 1335 // OEM7, Bynav, SinoGNSS
@@ -16,6 +17,7 @@ const (
 	QzssEphemerisID MsgID = 1336 // OEM7, Bynav
 	RangeCmpID      MsgID = 140  // OEM7, Bynav, SinoGNSS, Unicore, RTKLIB
 	RangeID         MsgID = 43   // OEM7, SinoGNSS, RTKLIB
+	RawAlmID        MsgID = 74   // OEM7, SinoGNSS
 	RawEphemID      MsgID = 41   // OEM7, SinoGNSS, RTKLIB
 	RefStationID    MsgID = 175  // OEM7, SinoGNSS
 	TrackStatID     MsgID = 83   // OEM7, Bynav
@@ -27,6 +29,7 @@ func init() {
 	// BestGNSSPosID registered in nav.go init()
 	idNameMap[GalEphemerisID] = "GALEPHEMERIS"
 	idNameMap[GloEphemerisID] = "GLOEPHEMERIS"
+	idNameMap[GloRawEphemID] = "GLORAWEPHEM"
 	idNameMap[GpsEphemID] = "GPSEPHEM"
 	idNameMap[HeadingID] = "HEADING"
 	idNameMap[Heading2ID] = "HEADING2"
@@ -37,6 +40,7 @@ func init() {
 	idNameMap[QzssEphemerisID] = "QZSSEPHEMERIS"
 	idNameMap[RangeCmpID] = "RANGECMP"
 	idNameMap[RangeID] = "RANGE"
+	idNameMap[RawAlmID] = "RAWALM"
 	idNameMap[RawEphemID] = "RAWEPHEM"
 	idNameMap[RefStationID] = "REFSTATION"
 	idNameMap[TrackStatID] = "TRACKSTAT"
