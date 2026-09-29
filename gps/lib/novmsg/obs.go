@@ -49,7 +49,7 @@ func (m *Range) Chunks() func(yield func(chunk any) bool) {
 			return
 		}
 		if len(m.Obs) == 0 && m.NumObs > 0 {
-			m.Obs = make([]RangeObs, m.NumObs)
+			m.Obs = make([]RangeObs, ClampLen[RangeObs](m.NumObs))
 		}
 		for i := range m.Obs {
 			if !yield(&m.Obs[i]) {
