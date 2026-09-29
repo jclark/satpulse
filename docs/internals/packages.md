@@ -140,6 +140,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/rnxrtcm` converts RTCM MSM7 observation messages to `gps/lib/rinex` records. It uses `gps/lib/rtcmbin` to decode the source messages.
 
+`gps/lib/rnxsbf` converts Septentrio SBF raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/sbfbin` to decode the source messages.
+
 `gps/lib/rnxubx` converts u-blox raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/ubxbin` to decode the source messages.
 
 `gps/lib/rnxunc` converts Unicore raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/uncmsg` to decode the source messages.
@@ -217,6 +219,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 `time/internal/refclock` provides abstractions for sending clock synchronization samples to external time synchronization services like chrony. It includes a worker goroutine that processes samples from a channel and delivers them to configured refclock implementations.
 
 `time/internal/syncsim` provides a discrete-event simulator for testing the phcsync controller with configurable error models for GPS PPS timing and PHC oscillator characteristics. It generates synthetic pulses, messages, and ticks under various fault conditions and measures controller performance.
+
+`time/internal/pollsim` simulates the serial PPS polling loop of `gps/app/pps` in virtual time. It supplies the loop's clock, timer and pulse reader from a model of the pulse and the host (query time, timer truncation and overshoot, idle slowdown) with injected pulse outages and stalls of the polling thread, applies the daemon's forwarding rule to the candidates, and reports how many edges the time daemon would have received, their error against the true edge, and the gaps between them.
 
 `time/internal/obs` provides unified observability interfaces including `Observer` (which extends `phcsync.Sampler` and `gpsprot.Handler`) for receiving both clock synchronization samples and GPS protocol messages.
 

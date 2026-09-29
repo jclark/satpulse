@@ -79,15 +79,34 @@ type Converter struct {
 
 func New(sink rinex.Sink) *Converter { ... }
 
-// ConvertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra
-// block for the same epoch if available, to RINEX observations.
-func (c *Converter) ConvertMeasEpoch(m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error
+// ConvertBlock converts one SBF block, pairing each MeasEpoch with the
+// MeasExtra block of the same epoch and ignoring blocks of other types.
+func (c *Converter) ConvertBlock(b *sbfbin.Block) (bool, error)
+
+// Flush converts a MeasEpoch held by ConvertBlock, with its MeasExtra if one
+// has arrived, and discards a MeasExtra held without a MeasEpoch.
+func (c *Converter) Flush() error
 ```
 
+`ConvertBlock` is the stream entry point, fed one block at a time in
+wire order the same way `rnxrtcm.ConvertMsg` is fed individual RTCM
+messages. The guide guarantees only that measurement timestamps never
+decrease, not the order of `MeasEpoch` and `MeasExtra` within an epoch,
+so it holds whichever arrives first until the other arrives with the
+same timestamp, then converts the pair. A measurement block with a new
+timestamp (or `Flush`) converts a held `MeasEpoch` alone and discards a
+held `MeasExtra`. `ConvertBlock` is the only entry point, unlike
+`rnxrtcm`, which also exports `ConvertMSM7` for a single message, so
+every check on an incoming block is made as the block arrives. The
+unexported `convertMeasEpoch` converts a paired epoch; the
+block-header `TOW`/`WNc` lives on `sbfbin.Block`, not on the
+`MeasEpoch` params struct, so it takes the timestamp explicitly.
+
 `extra` is optional (pass `nil` when `MeasExtra` output is not
-enabled or has not arrived for this epoch); its only currently-defined
-contribution is refining the CN0 resolution from 0.25 dB-Hz to 0.03125
-dB-Hz (see "CN0" below). Unlike u-blox's RAWX, which is one flat
+enabled or has not arrived for this epoch); it contributes refining the
+CN0 resolution from 0.25 dB-Hz to 0.03125 dB-Hz (see "CN0" below) and
+the `CumLossCont` loss-of-continuity counter (see "Arc and
+loss-of-lock" below). Unlike u-blox's RAWX, which is one flat
 per-signal array, `MeasEpoch`'s per-satellite `MeasEpochChannelType1`
 sub-block plus its nested `MeasEpochChannelType2` sub-blocks together
 enumerate all signals for one satellite; `Converter` walks both levels
@@ -97,7 +116,13 @@ sub-blocks (`MeasExtraChannelSub`) key back to `MeasEpoch` entries by
 `(RxChannel, Type)` -- see "Correlating MeasExtra" below -- so the
 converter builds a lookup from `extra` before walking `m`.
 
-Epoch time is `rinex.TimeFromGPSWeekMillis(int64(m.WNc), m.TOW)`.
+RINEX observations have no antenna dimension, so the converter emits
+only sub-blocks whose `AntennaID` is 0 (main antenna). It filters Type1,
+Type2, and MeasExtra sub-blocks before observation state or MeasExtra
+correlation can combine measurements from different antennas.
+
+Epoch time is `rinex.TimeFromGPSWeekMillis(int64(ts.WNc), ts.TOW)`,
+from the block-header timestamp `ts`.
 Per the SBF specification, block-header `TOW`/`WNc` always uses the
 GPS week convention regardless of which constellation a given
 sub-block's satellite belongs to (Galileo week is `WNc-1024`, BeiDou
@@ -106,8 +131,15 @@ those scales) -- so no per-GNSS branching is needed here, unlike SBF
 blocks that carry an explicit `TimeSystem` field for something else
 (clock bias). If `TOW` or `WNc` is the Do-Not-Use sentinel
 (`0xFFFFFFFF` / `0xFFFF`), the whole block is unusable and
-`ConvertMeasEpoch` returns without emitting any observations (this can
+`convertMeasEpoch` returns without emitting any observations (this can
 happen briefly at receiver startup before time is set).
+
+If `CommonFlags` bit 7 ("Scrambling") is set, the receiver lacks the
+"Measurement Availability" permission and every measurement in the
+block is scrambled, with no Do-Not-Use marker on any field.
+`ConvertBlock` returns an error for such a block as soon as it arrives,
+rather than write the scrambled values: without the permission no epoch
+is usable.
 
 ### Satellite identification: SVID to RINEX satellite ID
 
@@ -189,38 +221,20 @@ keyed by `(GNSSID, sigId)` -- one 40-entry array indexed by signal
 number is sufficient and self-contained.
 
 GLONASS carrier frequency (needed by `rinex.SignalValues.Frq`, the
-FDMA channel number) is not a separate field on `MeasEpochChannelType1`/
-`Type2`: for signal numbers 8-11 (the four GLONASS signals),
-`ObsInfo` bits 3-7 carry the GLONASS `FreqNr` (1-14) instead of the
-signal-number extension, and `Frq = FreqNr - 8` (channel range -7..+6,
-matching the FDMA channel convention `rnxubx` uses for u-blox's
-`freqId - 7`). For every other signal number, `ObsInfo` bits 3-7 either
-extend the signal number (`SigIdxLo == 31`) or are reserved and
-ignored.
+FDMA channel number) is encoded only on `MeasEpochChannelType1`: for
+signal numbers 8-11 (the four GLONASS signals), `ObsInfo` bits 3-7
+carry the GLONASS `FreqNr` (1-14), and `Frq = FreqNr - 8` (channel
+range -7..+6, matching the FDMA channel convention `rnxubx` uses for
+u-blox's `freqId - 7`). A GLONASS FDMA Type2 sub-block inherits the
+channel from its parent Type1 sub-block.
 
 ### Extended signal number and GLONASS FreqNr decode
 
-Both uses of `ObsInfo` bits 3-7 dispatch on the *same* sub-block's own
-`Type` bits 0-4, independently for each Type1 master and each of its
-Type2 children (a Type2 slave signal can carry a different `SigIdxLo`,
-and therefore a different `ObsInfo` interpretation, than its Type1
-parent):
-
-```go
-func resolveSignal(sigIdxLo byte, obsInfo byte) (num byte, freqNr byte) {
-    switch {
-    case sigIdxLo == 31:
-        return 32 + (obsInfo >> 3), 0
-    case sigIdxLo >= 8 && sigIdxLo <= 11:
-        return sigIdxLo, obsInfo >> 3
-    default:
-        return sigIdxLo, 0
-    }
-}
-```
-
-`freqNr` is only meaningful (and only consulted) when the resolved
-signal number is one of the GLONASS signals 8-11.
+Signal-number extension dispatches on each sub-block's own `Type` bits
+0-4: when `SigIdxLo` is 31, `ObsInfo` bits 3-7 contain the signal number
+with an offset of 32. On Type1, those bits instead contain `FreqNr` when
+`SigIdxLo` is 8-11. On Type2, they are reserved and ignored whenever
+`SigIdxLo` is not 31.
 
 ### Pseudorange, carrier phase, Doppler: scaling and Do-Not-Use
 
@@ -331,17 +345,31 @@ indicator: `Arc` increments on every detected loss of continuous lock,
 per-`(satellite, signal)` state across calls the same way `rnxubx`
 does with its `signalKey`/`signalState` map, driven by:
 
-- **LockTime reset**: a `LockTime` of 0 signals a fresh lock (the SBF
+- **LockTime reset**: `LockTime` returns to 0 at a fresh lock (the SBF
   guide states `LockTime` "resets to 0 at the initial lock after a
-  signal (re)acquisition or any loss-of-lock"), so an incoming
-  `LockTime == 0` (when the previous state had already seen this
-  signal) marks a pending arc increment.
-  Also mark pending if the new `LockTime` is smaller than the last
-  observed value for this key (a decrease implies the counter reset
-  and re-grew since the last epoch, which can happen if intervening
-  epochs were missed or the counter briefly wrapped).
+  signal (re)acquisition or any loss-of-lock"), so mark a pending arc
+  increment if the new `LockTime` is smaller than the last observed
+  value for this key. A `LockTime` of 0 alone does not mark one: the
+  field is in whole seconds, so at output rates above 1 Hz it stays 0
+  for several epochs after a fresh lock.
+- **CumLossCont**: when a `MeasExtra` entry correlates with this
+  sub-block (same `(RxChannel, signal number)` key as the CN0
+  refinement), any change in its `CumLossCont` counter also marks a
+  pending arc increment. The receiver increments this modulo-256
+  counter at each initial lock after signal (re)acquisition or detected
+  cycle slip, so it catches slips the `LockTime` comparison cannot see
+  (e.g. a slip followed by an outage long enough for the lock time to
+  re-clip at its ceiling). The lock-time rule remains the only signal
+  when `MeasExtra` is absent. Note `LockTime` moves between encodings
+  when the receiver re-selects a satellite's master signal (Type1 clips
+  at 65534, Type2 at 254), so the decrease comparison clamps both sides
+  to the smaller of the two ceilings involved.
 - **Half-cycle ambiguity**: `ObsInfo` bit 2 for this sub-block, mapped
-  straight to `HC` when a carrier phase is present.
+  straight to `HC` when a carrier phase is present. The bit clearing
+  between two epochs with a carrier phase also marks a pending arc
+  increment: the receiver can shift the phase by half a cycle when it
+  resolves the ambiguity, without resetting `LockTime`, so the resolved
+  phase must not be tied to the flagged phase before it.
 - **Arc increments only when a carrier-phase value is actually
   present** this epoch (matching `rnxubx`'s `phase && st.pending`
   gate) -- a pending flag from a lock-time reset waits for the next
@@ -372,7 +400,7 @@ For each satellite (`MeasEpochChannelType1` sub-block) with a valid
 4. Repeat steps 1-3 for each nested Type2 sub-block, reconstructing
    absolute values relative to the Type1 master as described above.
 
-`ConvertMeasEpoch` calls `c.sink.Observation(obs)` for each emitted
+`convertMeasEpoch` calls `c.sink.Observation(obs)` for each emitted
 record and returns the first error encountered, matching
 `rnxubx.ConvertRAWX`'s control flow exactly.
 
@@ -436,10 +464,11 @@ decode/round-trip testing) exercising:
 - The Galileo E6 `CommonFlags` bit 6 dispatch between `6C` and `6B`.
 
 Once example SBF captures with real `MeasEpoch`/`MeasExtra` traffic are
-available (see `CLAUDE.local.md`), cross-check emitted observations
-against the receiver's own SBF-to-RINEX conversion (if the Septentrio
-tools used to build the reference captures include one) as an
-end-to-end sanity check, though this is not required to land the
+available (such as the mosaic-G5 packet logs in
+`gps/testdata/packets/septentrio/mosaic-G5`), cross-check emitted
+observations against the receiver's own SBF-to-RINEX conversion (if the
+Septentrio tools used to build the reference captures include one) as
+an end-to-end sanity check, though this is not required to land the
 package -- the guide's formulas above are the authoritative spec.
 
 ## Open decisions
@@ -449,18 +478,3 @@ package -- the guide's formulas above are the authoritative spec.
   246-249 as an undefined gap (skip, per the general "ignore ranges
   this document doesn't define" decoding rule) rather than guessing an
   extension. Revisit if a future guide revision fills it in.
-- **Type2 GLONASS `FreqNr` overlay**: the reference guide states the
-  `ObsInfo`-bits-3-7 GLONASS `FreqNr` rule explicitly only for Type1;
-  Type2's own field description documents only the `SigIdxLo == 31`
-  extension case and is silent on the GLONASS case. This plan applies
-  the same rule to Type2 for consistency (GLONASS FDMA slave signals
-  are rare but not impossible), but this is an inference, not a
-  directly documented guarantee -- confirm against a real capture with
-  a GLONASS Type2 slave signal once hardware is available.
-- **Whether to expose `MeasEpoch.CommonFlags` bit 7 ("Scrambling")** as
-  a diagnostic: when set, every measurement in the block is silently
-  degraded with no per-field Do-Not-Use marker to signal it. This
-  converter has no natural place to surface a block-wide warning
-  (`rinex.Sink` has no side channel for it); decide whether that
-  belongs in `rnxsbf` at all, or purely in the `gps/internal/septentrio`
-  diagnostic path (phase 3), before implementing.

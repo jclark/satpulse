@@ -189,6 +189,38 @@ tag = "antenna-cable-delay-0"
 text = "setCalibCommonDelay, 0"
 description = "Clear antenna cable delay compensation (factory default)"
 
+# Receiver clock synchronization
+#
+# setClockSyncThreshold selects free-running or steered mode for the receiver
+# clock. In free-running mode (factory default usec500), the receiver jumps its
+# clock by an integer number of milliseconds whenever its offset from the
+# system time exceeds the threshold, so the measurements jump too. With
+# ClockSteering, the clock is continuously steered to the system time to
+# within a couple of nanoseconds; the reference guides recommend this only
+# under open-sky conditions. Either way the xPPS pulses stay within a few
+# nanoseconds of the requested time. MeasEpoch CommonFlags bit 3 shows whether
+# steering is active. The StartupSync argument is omitted, so it keeps its
+# current value. Confirmed identical command/enum on both models.
+
+# Verified on mosaic-G5: returns the factory setting usec500, off.
+[[line]]
+tag = "get-clock-steering"
+text = "getClockSyncThreshold"
+description = "Query receiver clock synchronization mode"
+
+# Verified ACK with readback on mosaic-G5 (ClockSyncThreshold, ClockSteering,
+# off).
+[[line]]
+tag = "clock-steering"
+text = "setClockSyncThreshold, ClockSteering"
+description = "Steer the receiver clock to GNSS time"
+
+# Verified ACK with readback on mosaic-G5 (ClockSyncThreshold, usec500, off).
+[[line]]
+tag = "clock-steering-off"
+text = "setClockSyncThreshold, usec500"
+description = "Free-running receiver clock with 0.5ms sync threshold (factory default)"
+
 # NMEA message output control
 # Septentrio routes NMEA through a "stream": one NMEA stream (Stream1..Stream10,
 # a pool separate from the SBF streams) carries a list of sentences to one

@@ -399,11 +399,13 @@ func logFailedProps(lg *slog.Logger, reqProps *gpsprot.ConfigProps, rsltProps *g
 }
 
 func printReceiverInfo(f *os.File, info *gpsprot.ReceiverInfo) {
+	vendor := "not supported"
+	if info != nil {
+		vendor = info.Vendor
+	}
+	fmt.Fprintf(f, "High-level configuration: %s\n", vendor)
 	if info == nil {
 		return
-	}
-	if info.Vendor != "" {
-		fmt.Fprintf(f, "Vendor: %s\n", info.Vendor)
 	}
 	if info.Hardware != "" {
 		fmt.Fprintf(f, "Hardware: %s\n", info.Hardware)

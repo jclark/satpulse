@@ -74,7 +74,7 @@ func RINEXSatNum(svid uint8) uint8 {
 // representable.
 // The mapping follows mosaic-G5 4.1.10 and RINEX 4.02 Tables 10-16.
 func RINEXSig(sig uint8, flags CommonFlags) (string, string) {
-	if sig == 19 && flags.E6BUsed() {
+	if sig == 19 && flags&CommonFlagsE6BUsed != 0 {
 		return "E", "6B"
 	}
 	i := int(sig) * 3
