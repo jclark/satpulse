@@ -6,8 +6,8 @@ Multiple vendors emit identical NovAtel binary packets (AA 44 12 sync bytes) wit
 
 - **SinoGNSS**: Incompatible PosType enum values (e.g., value 51 = SUPER_WIDE_LANE vs OEM7's RTK_DIRECT_INS). SolStatus is a compatible subset of OEM7.
 - **Unicore**: IONUTC uses message ID 6 instead of OEM7's ID 8 (see `novmsg/time.go:8`). This is about the undocumented/unsupported use of NovAtel OEM7 messages on Unicore receivers -- not the native Unicore protocol (which goes through the `unc` package).
-- **ByNav**: Compatible with OEM7 for now; variant defined for future use.
-- **Port address encoding**: OEM7/ByNav use 0x20=COM1, 0x40=COM2, 0x60=COM3. Unicore uses 1=COM1, 2=COM2, 3=COM3. SinoGNSS uses OEM7 byte values but shows decimal strings in ASCII ("32" not "COM1"). Currently `Port` constants use the Unicore encoding; OEM7/ByNav should be the default.
+- **Bynav**: Compatible with OEM7 for now; variant defined for future use.
+- **Port address encoding**: OEM7/Bynav use 0x20=COM1, 0x40=COM2, 0x60=COM3. Unicore uses 1=COM1, 2=COM2, 3=COM3. SinoGNSS uses OEM7 byte values but shows decimal strings in ASCII ("32" not "COM1"). Currently `Port` constants use the Unicore encoding; OEM7/Bynav should be the default.
 
 The structs `Pos[S, P]` and `XYZ[S, P]` are already parameterized on enum types. `MsgHdr` and `Msg` should be similarly parameterized on the port type to handle the port address encoding differences cleanly.
 
@@ -16,7 +16,7 @@ The structs `Pos[S, P]` and `XYZ[S, P]` are already parameterized on enum types.
 1. Parameterize `MsgHdr` and `Msg` on port type; add `Port`, `UnicorePort`, and `SinoPort` types
 2. Add `SinoPosType` enum and `SinoBestPos`/`SinoBestXYZ` types to `novmsg`
 3. Expose novmsg registries and add parse functions that accept a constructor map
-4. `nov` processor holds a complete constructor map, built at construction time: a reference to the global registry for OEM7/ByNav, or a fresh copy with overrides merged in for SinoGNSS/Unicore
+4. `nov` processor holds a complete constructor map, built at construction time: a reference to the global registry for OEM7/Bynav, or a fresh copy with overrides merged in for SinoGNSS/Unicore
 5. `nov` defines all four variants; `gpsreg` maps its Vendor to a Variant once
 6. Enable the disabled IONUTC test case for Unicore variant
 
@@ -27,7 +27,7 @@ The structs `Pos[S, P]` and `XYZ[S, P]` are already parameterized on enum types.
 Replace the current `Port` type (iota-based, Unicore encoding) with three variant-specific types. OEM7 is the default and uses the unadorned `Port` name (consistent with `PosType`):
 
 ```go
-// Port represents the port address encoding used by NovAtel OEM7 and ByNav.
+// Port represents the port address encoding used by NovAtel OEM7 and Bynav.
 type Port uint8
 
 const (
@@ -128,15 +128,15 @@ const (
     PosNone             = 0
     PosFixedPos         = 1
     PosFixedHeight      = 2
-    PosFloatConv        = 4   // OEM7/ByNav only
-    PosWideLane         = 5   // OEM7/ByNav only
-    PosNarrowLane       = 6   // OEM7/ByNav only
+    PosFloatConv        = 4   // OEM7/Bynav only
+    PosWideLane         = 5   // OEM7/Bynav only
+    PosNarrowLane       = 6   // OEM7/Bynav only
     PosDopplerVelocity  = 8
     PosSingle           = 16
     PosPSRDiff          = 17
-    PosWAAS             = 18  // OEM7/ByNav name
+    PosWAAS             = 18  // OEM7/Bynav name
     PosSBAS             = 18  // Unicore/SinoGNSS name (same value)
-    PosPropagated       = 19  // OEM7/ByNav only
+    PosPropagated       = 19  // OEM7/Bynav only
     PosL1Float          = 32
     PosIonoFreeFloat    = 33
     PosNarrowFloat      = 34
@@ -273,7 +273,7 @@ const (
     VariantOEM7 Variant = iota
     VariantSinoGNSS
     VariantUnicore  // NovAtel-format messages on Unicore hardware (undocumented)
-    VariantByNav
+    VariantBynav
 )
 ```
 
@@ -354,7 +354,7 @@ func binVariant(v Variant) (map[novmsg.MsgID]func() novmsg.MsgBody,
         m[6] = reg[novmsg.IonUTCID]
         delete(m, novmsg.IonUTCID)
         return m, binParser[novmsg.UnicorePort]()
-    default: // OEM7, ByNav
+    default: // OEM7, Bynav
         return reg, binParser[novmsg.Port]()
     }
 }
@@ -490,7 +490,7 @@ func novVariantFor(v Vendor) nov.Variant {
     case VendorUnicore:
         return nov.VariantUnicore
     case VendorBynav:
-        return nov.VariantByNav
+        return nov.VariantBynav
     default:
         return nov.VariantOEM7
     }

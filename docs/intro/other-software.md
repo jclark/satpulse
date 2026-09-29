@@ -134,5 +134,5 @@ Vendors all have their own proprietary programs for working with their receivers
 - Zhongke: GnssToolkit3
 - Allystar: Satrack
 - Techtotop/Taidou: TDMonitor
-- ByNav: BY_Connect
+- Bynav: BY_Connect
 - ComNav/SinoGNSS: CRU

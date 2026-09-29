@@ -695,6 +695,9 @@ text = "PQTMCFGMSGRATE,W,RTCM3-1005,0"
 tag = "rtcm-off"
 description = "Disable all RTCM messages"
 [[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1006,0"
+tag = "rtcm-off"
+[[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-107X,0,0"
 tag = "rtcm-off"
 [[nmea]]
@@ -712,6 +715,23 @@ tag = "rtcm-off"
 text = "PQTMCFGMSGRATE,W,RTCM3-1005,1"
 tag = "rtcm-arp"
 description = "Enable RTCM ARP message (1005)"
+
+# Enable RTCM ARP message with antenna height (1006); set the height with
+# antenna-height-*
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1006,1"
+tag = "rtcm-arph"
+description = "Enable RTCM ARP message with antenna height (1006)"
+
+# Antenna height above the marker (PQTMCFGANTDELTA East, North, Height, in m)
+[[nmea]]
+text = "PQTMCFGANTDELTA,W,0,0,0"
+tag = "antenna-height-0"
+description = "Set antenna height above the marker to 0"
+[[nmea]]
+text = "PQTMCFGANTDELTA,W,0,0,2.0"
+tag = "antenna-height-2000"
+description = "Set antenna height above the marker to 2 m"
 
 # Enable RTCM MSM4 messages for all constellations
 # First set MSM type to 4, then enable all constellation outputs

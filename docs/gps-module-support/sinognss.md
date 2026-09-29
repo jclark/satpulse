@@ -4,7 +4,7 @@ toc: false
 classes: wide
 ---
 
-SatPulse supports the K9 series of modules from [SinoGNSS](https://www.sinognss.com/),
+SatPulse supports the K8 and K9 series of modules from [SinoGNSS](https://www.sinognss.com/),
 which brands itself as [ComNav Technology](https://www.comnavtech.com/) for Western audiences.
 The vendor name used with the `--vendor` option and `vendor` key is `sinognss` or `comnav`.
 
@@ -31,7 +31,7 @@ SatPulse has been tested with the K803, the K901 and the K902.
 A command like the following will configure a receiver suitably for `satpulsed`:
 
 ```
-satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/sinognss/sinognss.toml \
+satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/sinognss/k8-k9.toml \
     -t msg-all-off,nov-timeb,nov-bestposb,nov-bestvelb,nov-psrdopb,nov-ionutcb,nmea-ver-411,nmea-gsa,nmea-gsv,pps
 ```
 

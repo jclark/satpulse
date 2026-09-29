@@ -1,6 +1,6 @@
 # SinoGNSS specific capture details
 
-Read `novatel-config.md` first. This file covers what is specific to SinoGNSS (ComNav) K8/K9 receivers. The message file is `configs/gpsmsg/sinognss/sinognss.toml`; the K901, K803 and K902 sets are in `gps/testdata/packets/sinognss/K901/`, `K803/` and `K902/`, and their HW.toml files record the receiver behaviour seen.
+Read `novatel-config.md` first. This file covers what is specific to SinoGNSS (ComNav) K8/K9 receivers. The message file is `configs/gpsmsg/sinognss/k8-k9.toml`; the K901, K803 and K902 sets are in `gps/testdata/packets/sinognss/K901/`, `K803/` and `K902/`, and their HW.toml files record the receiver behaviour seen.
 
 Capture the K902 on COM1, through the 6-pin connector and a USB/UART adapter, not through the USB port on its board (COM3, a WCH CH9102): over that port about half the binary RANGE logs lost 100 to 120 bytes mid-packet, at 115200 and 460800.
 

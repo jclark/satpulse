@@ -158,6 +158,19 @@ tag = "antenna-main-off"
 text = "setAntennaOffset, Main, 0, 0, 0, Unknown, Unknown, 0"
 description = "Clear main antenna offsets and phase-center calibration"
 
+# DeltaU is the height of the ARP above the marker. The antenna type, serial
+# number and setup ID are omitted, so they keep their current values.
+# Verified on mosaic-G5: after antenna-main-example, antenna-height-2000 reads
+# back as 0, 0, 2.0 with the example antenna type and serial number kept.
+[[line]]
+tag = "antenna-height-0"
+text = "setAntennaOffset, Main, 0, 0, 0"
+description = "Set main antenna height above the marker to 0"
+[[line]]
+tag = "antenna-height-2000"
+text = "setAntennaOffset, Main, 0, 0, 2.0"
+description = "Set main antenna height above the marker to 2 m"
+
 # Antenna cable delay
 #
 # setCalibCommonDelay compensates all pseudoranges (and hence the receiver
@@ -777,11 +790,16 @@ description = "Clear fixed position, return to rover mode"
 # the setRTCMv3Output reply echoes the resulting USB1 message list. (Actual
 # RTCM bytes on the wire additionally require base mode + a reference position;
 # the readback confirms enablement.)
-# Verified: rtcm-arp adds RTCM1006 to the USB1 output list.
 [[line]]
 tag = "rtcm-arp-usb1"
+text = "setRTCMv3Output, USB1, +RTCM1005"
+description = "Enable RTCM ARP message (1005) at default interval"
+
+# 1006 adds the antenna height; set it with antenna-height-*.
+[[line]]
+tag = "rtcm-arph-usb1"
 text = "setRTCMv3Output, USB1, +RTCM1006"
-description = "Enable RTCM ARP message (1006, includes antenna height) at default interval"
+description = "Enable RTCM ARP message with antenna height (1006) at default interval"
 
 # Verified: MSM4 expands to RTCM1074/1084/1094/1104/1114/1124/1134.
 [[line]]
