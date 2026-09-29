@@ -38,8 +38,9 @@ evidence.
 ### Tracking controller
 
 Tracking cadence is independent of extent. Catches cannot widen the
-extent; misses grow it by 25% while the polling budget allows; catches
-shrink it at 31/32, stopping at eight midpoint-to-midpoint brackets.
+extent; misses grow it by 25% while the polling budget allows, up to
+half a period; catches shrink it at 31/32, stopping at eight
+midpoint-to-midpoint brackets.
 The first redesign replaced settled-bracket history with local rejection
 tests and removed `Settled`. The subsequent
 anomaly-flag revision below removed those local tests and `Rejected`.
@@ -53,10 +54,20 @@ unless both the read count is at least 50 and the extent is at least
 `50 * MinSpacing`. The count is feedback from a completed search, not a
 reason to stop polling early. Catches keep the existing shrink rule.
 
-`MaxExtent` and the acquisition handoff cap are removed. Only ten
+Reaching a maximum extent no longer returns tracking to acquisition, and
+the extent acquisition hands over is no longer capped. Only ten
 consecutive misses return tracking to acquisition; a catch resets that
 count. This resolves review point 9: reaching the work budget no longer
 causes premature reacquisition.
+
+Growth is still bounded. The budget counts reads, so how long a 50-read
+window lasts depends on the query time: a few milliseconds on every
+measured host, but past half a second for queries slower than about
+10 ms. A miss therefore never grows the extent beyond `MaxExtent`, half a
+period. This is a soft bound on growth that stops the window growing
+unreasonably, not a limit on the extent itself: an extent inherited from
+acquisition can be longer, and a miss that allows growth then brings it
+down to `MaxExtent`.
 
 The product `MaxPolls * MinSpacing` is 2.5 ms with the defaults: roughly
 1.25 ms either side of the prediction. Skipping sleeps increases the
@@ -484,7 +495,7 @@ it cannot.
    miss:      prediction += period
               failures++
               if stateReads < MaxPolls || extent < MaxPolls * MinSpacing:
-                  extent += extent / 4
+                  extent = min(extent + extent / 4, MaxExtent)
    ```
 
 5. Give up and return to acquisition if `failures >= F`. No extent growth
@@ -547,6 +558,7 @@ None encodes a hardware timing.
 | shrink | fraction of the extent kept per catch | 31/32 |
 | growth | extent multiplier after a miss when growth is allowed | 1.25 |
 | `MaxPolls` | state-read threshold for allowing further growth | 50 |
+| `MaxExtent` | largest extent a miss can grow to | half a period, 500 ms |
 | correction width fraction | largest outer width relative to the pre-catch extent for phase correction | 1/2 |
 | anomaly ratio | outer width relative to the recent median | 4 |
 | history length | previous valid tracking widths | 31 |
@@ -937,7 +949,9 @@ permanently too slow for `U` deserves a warning from the consumer.
 ### The maximum-extent budget in the initial redesign
 
 This rationale is historical. The implemented budget now uses observed
-state-read counts rather than an extent limit.
+state-read counts rather than an extent limit, with a separate soft bound
+on growth for slow queries; see "Poll-count budget replaces maximum
+extent".
 
 A polling budget accounted as elapsed query time per period, shared by
 both modes and carried across mode switches as a credit balance, was

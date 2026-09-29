@@ -94,10 +94,10 @@ const widthHistory = 31
 // from cold after losing the partly acquired signal. Tracking polls at the
 // finest cadence the host has and adapts only the extent of the window
 // around the predicted edge: a catch shrinks it toward a few brackets,
-// a miss grows it by a quarter while the polling budget allows, and
-// sustained failure restarts the cycle from acquisition. Every window also
-// opens early by the measured lead of its first query, so that the extent
-// before the prediction is actually covered.
+// a miss grows it by a quarter while the polling budget allows, up to half
+// a period, and sustained failure restarts the cycle from acquisition.
+// Every window also opens early by the measured lead of its first query, so
+// that the extent before the prediction is actually covered.
 //
 // Every catch is sent, with the midpoint of the two query midpoints as its
 // timestamp, Uncertainty reaching the outer endpoints of those queries, and
@@ -297,7 +297,10 @@ const (
 	// growthDivisor sets miss growth to a quarter of the extent, limiting
 	// how far one expansion can overshoot the polling budget at a steady pace.
 	growthDivisor = 4
-	// maxExtent bounds growth of the tracking window.
+	// maxExtent bounds growth of the tracking window. maxPolls reads can
+	// span a long time when queries are slow, so the read count alone would
+	// let the window grow past a period. It bounds growth only: acquisition
+	// can hand over a longer extent.
 	maxExtent = period / 2
 	// maxPolls is the threshold for further growth, not a limit on an
 	// attempt: polling continues through the full extent or until a catch.
@@ -314,9 +317,10 @@ const (
 // search window. Every catch resets failures and shrinks the extent by
 // 1/shrinkDivisor down to shrinkStop brackets; it never widens it, so no
 // catch, however wide its bracket, can add coverage. A miss
-// grows the extent by a quarter unless both maxPolls reads and an extent of
-// maxPolls*minSpacing have been reached. Ignoring short sleeps can cost more
-// polls, but must not prevent growth to that coverage.
+// grows the extent by a quarter, to at most maxExtent, unless both maxPolls
+// reads and an extent of maxPolls*minSpacing have been reached. Ignoring
+// short sleeps can cost more polls, but must not prevent growth to that
+// coverage.
 // This finds the margin a jittery host needs while using observed polling
 // work to decide whether more coverage is affordable. Only failureLimit
 // consecutive misses hand back to acquisition.
