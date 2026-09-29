@@ -440,6 +440,15 @@ func TestCorrelatorLine(t *testing.T) {
 			},
 		},
 		{
+			name: "line message shows an unclaimed ack as maybe response",
+			tags: []string{"raw-cmd"},
+			events: []event{
+				sendEvent{},
+				recvNOVAA(novOK),
+				expect{relevance: LevelMaybeResponse},
+			},
+		},
+		{
 			name: "line message rejects binary data",
 			tags: []string{"raw-cmd"},
 			events: []event{
