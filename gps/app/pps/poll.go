@@ -65,9 +65,9 @@ type poller struct {
 	gridOffset time.Duration
 	// lead is an exponentially weighted moving average of how long after
 	// its scheduled time a window's first query completes: the timer's
-	// overshoot plus a query slowed by the idle wait before it. Each window
-	// opens that much early, so the first query completes, on average, at
-	// the nominal open.
+	// overshoot plus a query slowed by the idle wait before it, bounded by
+	// maxLead. Each window opens that much early, so the first query
+	// completes, on average, at the nominal open.
 	lead       time.Duration
 	slept      bool
 	stateReads int
@@ -413,13 +413,22 @@ type reading struct {
 	slept   bool      // whether waiting for the schedule used a timer
 }
 
+// maxLead bounds the lead. After a stall of several seconds, the late
+// wakeup and the windows whose start has already passed while the loop
+// catches up measure how far behind it is, not wake-up delay. Unbounded, that
+// would grow the lead until each window started as the previous one ended,
+// and the loop would poll continuously until the lead decayed. A quarter of
+// a period is far above any real wake-up delay, and with a window no longer
+// than maxExtent it leaves part of every period idle, so the lead can decay.
+const maxLead = period / 4
+
 func (p *poller) init() error {
 	first, err := p.readState(time.Time{}, false)
 	if err != nil {
 		return err
 	}
 	p.stats.addPoll(first.poll, nil)
-	p.lead = max(0, first.poll.duration())
+	p.lead = min(max(0, first.poll.duration()), maxLead)
 	p.nextEdge = first.poll.midpoint().mono.Add(maxWindow / 2)
 	p.startup = true
 	return nil
@@ -455,7 +464,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (o out
 	// completes at the open; the lead moves only this query, never the
 	// deadline or the prediction. It is clamped at zero so that an early
 	// wakeup (a truncated sleep) never schedules the query later than the
-	// open.
+	// open, and at maxLead so that a stall cannot make it run away.
 	lead := p.lead
 	start := open.Add(-lead)
 	if p.params.PreWarm > 0 {
@@ -473,7 +482,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (o out
 		return miss, 0, 0, err
 	}
 	first := cur
-	p.lead = max(0, p.lead+(first.poll.end.mono.Sub(start)-p.lead)/leadWeight)
+	p.lead = min(max(0, p.lead+(first.poll.end.mono.Sub(start)-p.lead)/leadWeight), maxLead)
 	p.stats.addPoll(cur.poll, nil)
 	p.slept = false
 	p.stateReads = 1

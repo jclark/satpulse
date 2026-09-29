@@ -196,8 +196,22 @@ the open. The lead moves only the first query: the deadline, the
 prediction and the extent controller are unchanged. It is clamped at zero
 so an early wakeup, as Linux's truncated sleeps give, never schedules the
 query later than the open. With prewarm the spin ends at the early time
-and the lead settles to about one warm query. A stall's excess is repaid
-once, spread over later windows, since the average's decay sums to it.
+and the lead settles to about one warm query.
+
+The lead is bounded by `MaxLead`, a quarter of a period, in its
+initialization as well as its updates. After a stall of several seconds,
+the late wakeup and the windows whose start had already passed while the
+loop caught up measured how far behind the loop was, not wake-up delay.
+The average grew to seconds, each window then started as the previous one
+ended, and the loop polled continuously until the lead decayed: in the
+simulator, a 10 s stall pushed the lead to 6 s and took about 76 s to
+recover, and a 60 s stall pushed it to 227 s and took about 31 minutes.
+With the bound, the lead peaks at 250 ms and is back below 10 ms about
+25 s after either stall, costing about 8,000 extra reads (1.6 s of
+reading with 200 us queries) whatever the stall's length. A quarter of a
+period is far above any real wake-up delay, and with a window no longer
+than `MaxExtent` it leaves part of every period idle, so the lead can
+decay. Like `MaxExtent`, the fraction is a choice, not a hardware timing.
 
 On the same Mac setup a repeat three-minute run without prewarm had 2
 misses in 171 tracking attempts against 18 before, both at timer
@@ -429,7 +443,7 @@ kernel.
 - `failures`: count of consecutive tracking misses.
 - `lead`: exponentially weighted moving average of the interval from a
   window's scheduled first query to that query's completion, initialized
-  from the very first query's duration.
+  from the very first query's duration and bounded by `MaxLead`.
 - `widths`: recent tracking widths, used only for anomaly classification.
 
 ### Recorded per query
@@ -472,7 +486,7 @@ it cannot.
 1. `open = prediction - extent/2`, `close = prediction + extent/2`. Wait
    until `open - lead`, with `PreWarm` as today, so that the first query
    completes at about `open`; then update `lead` from that query's
-   completion.
+   completion, bounded by `MaxLead`.
 2. Poll as today: if the pin is on at the first query, poll through the
    in-progress pulse; then poll until an off-to-on transition is seen or
    the query midpoint passes `close`. A transition takes precedence over
@@ -564,6 +578,7 @@ None encodes a hardware timing.
 | history length | previous valid tracking widths | 31 |
 | `F` | consecutive misses before giving up | 10 |
 | `leadWeight` | reciprocal weight of the newest observation in the lead average | 8 |
+| `MaxLead` | largest lead | a quarter of a period, 250 ms |
 
 Measured quantities: state reads per attempt, the bracket, the durations
 of the two queries around the edge, and the gap before the catching query.

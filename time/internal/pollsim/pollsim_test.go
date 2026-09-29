@@ -44,6 +44,26 @@ func TestSimulateQuiet(t *testing.T) {
 	}
 }
 
+// TestSimulateLongStall checks that a long stall of the polling thread costs
+// only a bounded amount of polling afterwards: the windows it leaves late
+// must not grow the lead until the loop polls continuously.
+func TestSimulateLongStall(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Sim.Duration = 300
+	quiet, err := Simulate(cfg, testLog, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Fault.Stall = []StallConfig{{At: 100.3, Duration: 60}}
+	st, err := Simulate(cfg, testLog, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if extra, limit := st.Queries-quiet.Queries, int(5/cfg.Host.Query.Duration); extra > limit {
+		t.Errorf("a 60 s stall cost %d extra queries, want at most five seconds of continuous polling (%d)", extra, limit)
+	}
+}
+
 // TestSimulateOutage checks that a long outage returns the loop to
 // acquisition and that forwarding resumes soon after the pulse does.
 func TestSimulateOutage(t *testing.T) {
