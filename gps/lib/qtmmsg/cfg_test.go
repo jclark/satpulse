@@ -156,6 +156,19 @@ func TestParseCfgResponseShort(t *testing.T) {
 	}
 }
 
+func TestParseCfgResponseTruncated(t *testing.T) {
+	for _, payload := range []string{
+		"PQTMCFGPPS2,OK,1,1",
+		"PQTMCFGPPS2,OK,1,1,100,2,1,0",
+		"PQTMCFGMSGRATE,OK,GGA",
+		"PQTMCFGSVIN,OK,1,60,5.0",
+	} {
+		if _, err := ParseCfgResponse(payload); err == nil {
+			t.Errorf("%s: expected error", payload)
+		}
+	}
+}
+
 func TestParseCfgResponseNonCfg(t *testing.T) {
 	tests := []struct {
 		name    string
