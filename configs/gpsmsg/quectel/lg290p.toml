@@ -672,6 +672,7 @@ tag = "mode-rover"
 description = "Set rover mode"
 
 # Get RTCM message rates
+# Verified OK and a rate for each message on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-1005"
 tag = "get-rtcm"
@@ -688,8 +689,45 @@ tag = "get-rtcm"
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-112X"
 tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1006"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1033"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-111X"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-113X"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1019"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1020"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1041"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1042"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1044"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1046"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1230"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGRTCM,R"
+tag = "get-rtcm"
 
 # Disable all RTCM messages
+# Verified all OK and no RTCM output after it on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-1005,0"
 tag = "rtcm-off"
@@ -709,8 +747,39 @@ tag = "rtcm-off"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,0,0"
 tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-111X,0,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-113X,0,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1033,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1019,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1020,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1041,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1042,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1044,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1046,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1230,0"
+tag = "rtcm-off"
 
 # Enable RTCM ARP message (1005)
+# Verified OK and 1005 appears in rover mode on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-1005,1"
 tag = "rtcm-arp"
@@ -771,3 +840,89 @@ tag = "rtcm-msm7"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
 tag = "rtcm-msm7"
+
+# Enable RTCM ephemeris messages: GPS (1019), GLONASS (1020), NavIC (1041),
+# BDS (1042), QZSS (1044), Galileo I/NAV (1046). The rate must be 1: when
+# each is output is set by PQTMCFGRTCM EPH_Mode (after save and reset). With
+# the factory EPH_Mode 1 each ephemeris is output when it is updated; with
+# EPH_Mode 2 and a 30 s interval every tracked satellite's ephemeris is output
+# every 30 s on LG290P (R02A01S).
+# Verified OK and 1019 and 1046 appear within 2 minutes on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1019,1"
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages (1019/1020/1041/1042/1044/1046)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1020,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1041,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1042,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1044,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1046,1"
+tag = "rtcm-eph"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1019,0"
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1020,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1041,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1042,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1044,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1046,0"
+tag = "rtcm-eph-off"
+
+# Receiver and antenna descriptors (1033); set the antenna with PQTMCFGANTINF
+# Verified OK and 1033 appears at the fix rate in rover mode on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1033,1"
+tag = "rtcm-1033"
+description = "Enable RTCM 1033 (rate of one per fix)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1033,0"
+tag = "rtcm-1033-off"
+description = "Disable RTCM 1033"
+
+# GLONASS code-phase biases (1230); the rate must be 1
+# Verified OK and 1230 appears at the fix rate in rover mode on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1230,1"
+tag = "rtcm-1230"
+description = "Enable RTCM 1230"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1230,0"
+tag = "rtcm-1230-off"
+description = "Disable RTCM 1230"
+
+# RTCM reference station ID (PQTMCFGRSID, range 0-4095)
+# Verified on LG290P (R02A01S): returns 290 (default)
+[[nmea]]
+text = "PQTMCFGRSID,R"
+tag = "get-rtcm-base-id"
+description = "Get RTCM reference station ID"
+# Verified OK and get-rtcm-base-id returns 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGRSID,W,0"
+tag = "rtcm-base-id-0"
+description = "Set RTCM reference station ID to 0"
+# Verified OK and get-rtcm-base-id returns 1234 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGRSID,W,1234"
+tag = "rtcm-base-id-1234"
+description = "Set RTCM reference station ID to 1234"
