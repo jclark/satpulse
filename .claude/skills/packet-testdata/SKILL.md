@@ -77,6 +77,8 @@ For Unicore receivers (UM980, UM981, UM982), also read `unicore-config.md`.
 
 For NovAtel-format receivers configured with message files (Bynav, SinoGNSS), read `novatel-config.md`, which refers to a file for each vendor.
 
+For Quectel LG290P receivers, read `quectel-config.md` - it has safety rules: some command sequences hang the receiver until it is power cycled.
+
 For CASIC (Zhongke) receivers, read `casic-config.md` - it maps which captures are possible on which attached unit (CASIC firmware acknowledges enabling messages it never emits).
 
 For all receivers, message files in the per-vendor subdirectories of `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.
