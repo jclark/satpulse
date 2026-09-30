@@ -35,6 +35,9 @@ tag = "get-fix-rate"
 description = "Get fix interval"
 
 # Set fix rate
+# Verified OK and get-fix-rate returns the new value on LG290P (R02A01S), but
+# the output rate stays at the old rate: the stored fix rate did not take
+# effect live
 [[nmea]]
 text = "PQTMCFGFIXRATE,W,1000"
 tag = "fix-rate-1"
@@ -743,7 +746,10 @@ tag = "msg-all-off"
 description = "Disable all message output"
 
 # Enable PQTMSVINSTATUS message (survey-in status)
-# Does not work on R02 firmware
+# The spec says the module must be in base station mode (see mode-base).
+# Rejected (invalid parameters) in rover mode on LG290P (R02A01S)
+# Verified OK and PQTMSVINSTATUS appears in base mode (after mode-base, save
+# and reset) on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"
 tag = "pqtm-svinstatus"
@@ -756,6 +762,7 @@ tag = "pqtm-svinstatus-off"
 description = "Disable PQTMSVINSTATUS message"
 
 # Enable PQTM messages for R01A04S+ firmware (PVT + VEL + EPE + SVINSTATUS + DOP)
+# PQTMSVINSTATUS is rejected (invalid parameters) in rover mode on LG290P (R02A01S)
 # Sets fix rate to 1 Hz; message rate is one per fix.
 [[nmea]]
 text = "PQTMCFGFIXRATE,W,1000"
@@ -796,6 +803,7 @@ text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
 tag = "pqtm-r01a04-off"
 
 # Enable PQTM messages for R01A05S+ firmware (NAV + VEL + EPE + EOE + SVINSTATUS + DOP)
+# PQTMSVINSTATUS is rejected (invalid parameters) in rover mode on LG290P (R02A01S)
 # Sets fix rate to 1 Hz; message rate is one per fix.
 [[nmea]]
 text = "PQTMCFGFIXRATE,W,1000"
