@@ -92,7 +92,7 @@ func (*EPE) ID() (string, uint8) { return "EPE", 2 }
 
 // DOP represents a PQTMDOP dilution of precision message.
 type DOP struct {
-	TOW  uint32 // ms, GPS time of week
+	TOW  opt.Val[uint32] // ms, GPS time of week
 	GDOP opt.Val[float64]
 	PDOP opt.Val[float64]
 	TDOP opt.Val[float64]
@@ -288,10 +288,10 @@ func (*AntennaStatus) ID() (string, uint8) { return "ANTENNASTATUS", 1 }
 
 // EOE represents a PQTMEOE end-of-epoch message.
 type EOE struct {
-	UTC  string // hhmmss.sss
-	Date string // yyyymmdd
-	WN   uint16 // GPS week number
-	TOW  uint32 // ms, GPS time of week
+	UTC  string          // hhmmss.sss
+	Date string          // yyyymmdd
+	WN   opt.Val[uint16] // GPS week number
+	TOW  opt.Val[uint32] // ms, GPS time of week
 }
 
 func (*EOE) periodicMsg()        {}
