@@ -196,6 +196,35 @@ text = "PQTMCFGPPS,W,1,0"
 tag = "pps-off"
 description = "Disable PPS output"
 
+# PPS user delay (PQTMCFGPPS2), in ns
+# PQTMCFGPPS2 sets all the PPS settings of PQTMCFGPPS together with the
+# period and the user delay. Added in R02A01S firmware.
+# Verified on LG290P (R02A01S): returns 1,1,100,2,1,0,1000,0,1,0,0,0 (default)
+[[nmea]]
+text = "PQTMCFGPPS2,R,1"
+tag = "get-antenna-cable-delay"
+description = "Query PPS user delay (with the other PPS settings)"
+
+# Set the PPS user delay. A positive user delay makes the pulse later, so
+# compensating an antenna cable delay of N ns takes a user delay of -N.
+# PQTMCFGPPS2 sets all the PPS fields: Index=1, Enable=1, Duration=100,
+# Mode=2 (fix only), Polarity=1 (high), Reserved1=0, Period=1000 ms,
+# Userdelay, Reserved2=1, Reserved3-5=0 - the same pulse as the pps tag.
+# Verified on LG290P (R02A01S) with a PHC timestamping the pulse: a user
+# delay of +1000000 ns moved the pulse edge 1.000 ms later
+# Verified OK and get-antenna-cable-delay returns the user delay on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGPPS2,W,1,1,100,2,1,0,1000,0,1,0,0,0"
+tag = "antenna-cable-delay-0"
+description = "Clear PPS user delay"
+
+# 50 ns is the u-blox default antenna cable delay (CFG-TP-ANT_CABLEDELAY)
+# Verified OK and get-antenna-cable-delay returns -50 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGPPS2,W,1,1,100,2,1,0,1000,-50,1,0,0,0"
+tag = "antenna-cable-delay-50"
+description = "Compensate 50 ns antenna cable delay (PPS 50 ns earlier)"
+
 # Get survey-in config
 [[nmea]]
 text = "PQTMCFGSVIN,R"
