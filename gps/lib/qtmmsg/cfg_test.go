@@ -33,6 +33,11 @@ func TestParseCfgResponse(t *testing.T) {
 			},
 		},
 		{
+			name:    "CfgPPS2 disabled",
+			payload: "PQTMCFGPPS2,OK,1,0",
+			expect:  &CfgPPS2{Index: 1},
+		},
+		{
 			name:    "CfgPPS2 userdelay",
 			payload: "PQTMCFGPPS2,OK,1,1,200,1,1,0,1000,250,1,0,0,0",
 			expect: &CfgPPS2{
@@ -104,6 +109,38 @@ func TestParseCfgResponse(t *testing.T) {
 			name:    "CfgRSID",
 			payload: "PQTMCFGRSID,OK,1024",
 			expect:  &CfgRSID{ID: 1024},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ParseCfgResponse(tc.payload)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}
+
+// Get responses with optional trailing fields left out, in the forms
+// the spec's synopses allow (not captured).
+func TestParseCfgResponseShort(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		expect  CfgMsg
+	}{
+		{
+			name:    "CfgPPS disabled",
+			payload: "PQTMCFGPPS,OK,1,0",
+			expect:  &CfgPPS{Index: 1},
+		},
+		{
+			name:    "CfgSvin without Distance",
+			payload: "PQTMCFGSVIN,OK,1,60,5.0,0.0000,0.0000,0.0000",
+			expect:  &CfgSvin{Mode: 1, CfgCnt: 60, AccLimit3D: 5.0},
 		},
 	}
 	for _, tc := range tests {

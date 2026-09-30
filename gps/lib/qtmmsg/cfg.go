@@ -42,6 +42,19 @@ func writeFieldsOf(m CfgMsg) ([]string, error) {
 	return fieldenc.Encode(m)
 }
 
+// fieldReader is implemented by CFG types whose get response is not
+// always the full tuple (the spec makes trailing fields conditional).
+type fieldReader interface {
+	readFields(fields []string) error
+}
+
+func readFieldsOf(fields []string, m CfgMsg) error {
+	if fr, ok := m.(fieldReader); ok {
+		return fr.readFields(fields)
+	}
+	return fieldenc.Decode(fields, m)
+}
+
 // ParseCfgResponse parses a CFG get response (NAME,OK,<tuple>) into the
 // tuple struct registered for that sentence.
 //
@@ -60,7 +73,7 @@ func ParseCfgResponse(payload string) (CfgMsg, error) {
 	}
 	msg := ctor()
 	fields := strings.Split(payload, ",")[2:]
-	if err := fieldenc.Decode(fields, msg); err != nil {
+	if err := readFieldsOf(fields, msg); err != nil {
 		return nil, fmt.Errorf("qtmmsg: %s: %w", rc.Sentence, err)
 	}
 	return msg, nil
@@ -188,6 +201,15 @@ func (m *CfgPPS) writeFields() ([]string, error) {
 	return fieldenc.Encode(m)
 }
 
+// readFields accepts the disabled form, with no fields after Enable,
+// as for PQTMCFGPPS2; the spec shows only the full get response.
+func (m *CfgPPS) readFields(fields []string) error {
+	if len(fields) == 2 {
+		return readDisabledPPS(fields, &m.Index, &m.Enable)
+	}
+	return fieldenc.Decode(fields, m)
+}
+
 // CfgPPS2 represents the PQTMCFGPPS2 tuple (PPS extend feature,
 // R02A01S+). It addresses the same underlying state as CfgPPS plus
 // Period and Userdelay, which a CfgPPS write leaves unchanged.
@@ -216,6 +238,30 @@ func (m *CfgPPS2) writeFields() ([]string, error) {
 		return []string{strconv.Itoa(int(m.Index)), "0"}, nil
 	}
 	return fieldenc.Encode(m)
+}
+
+// readFields accepts the disabled form of the get response, which has
+// no fields after Enable.
+func (m *CfgPPS2) readFields(fields []string) error {
+	if len(fields) == 2 {
+		return readDisabledPPS(fields, &m.Index, &m.Enable)
+	}
+	return fieldenc.Decode(fields, m)
+}
+
+// readDisabledPPS decodes the Index and Enable fields of a PPS get
+// response that stops after Enable, which the spec allows only when
+// the PPS is disabled.
+func readDisabledPPS(fields []string, index, enable *uint8) error {
+	var v struct{ Index, Enable uint8 }
+	if err := fieldenc.Decode(fields, &v); err != nil {
+		return err
+	}
+	if v.Enable != 0 {
+		return fmt.Errorf("fields after Enable missing with PPS enabled")
+	}
+	*index, *enable = v.Index, v.Enable
+	return nil
 }
 
 // CfgFixRate represents the PQTMCFGFIXRATE tuple (fix interval).
@@ -306,6 +352,16 @@ func (m *CfgSvin) writeFields() ([]string, error) {
 	return fields, nil
 }
 
+// readFields accepts a get response without the optional Distance
+// field, which firmware before R01A05S does not have; its absence
+// means 0.
+func (m *CfgSvin) readFields(fields []string) error {
+	if len(fields) == 6 {
+		fields = append(fields, "0")
+	}
+	return fieldenc.Decode(fields, m)
+}
+
 // PQTMCFGRCVRMODE mode values.
 const (
 	RcvrModeUnknown = 0
@@ -346,6 +402,15 @@ func (m *CfgMsgRate) writeFields() ([]string, error) {
 		fields = fields[:2]
 	}
 	return fields, nil
+}
+
+// readFields accepts a get response without the trailing version
+// field, for messages that do not carry one; MsgVer is then unset.
+func (m *CfgMsgRate) readFields(fields []string) error {
+	if len(fields) == 2 {
+		fields = append(fields, "")
+	}
+	return fieldenc.Decode(fields, m)
 }
 
 // CfgProt represents the PQTMCFGPROT tuple (input/output protocol
