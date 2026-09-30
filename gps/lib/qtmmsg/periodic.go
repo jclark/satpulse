@@ -339,9 +339,15 @@ func ParsePeriodicMsg(payload string) (PeriodicMsg, error) {
 	if ctor == nil {
 		return nil, nil
 	}
+	fields := strings.Split(payload[comma+1:], ",")
+	// A command reply named after a periodic message, such as the
+	// PQTMEOE,ERROR,3 an LG290P sends when it receives its own output,
+	// is not periodic output.
+	if fields[0] == "OK" || fields[0] == "ERROR" {
+		return nil, nil
+	}
 	msg := ctor()
 	_, ver := msg.ID()
-	fields := strings.Split(payload[comma+1:], ",")
 	fields, err := checkVersion(fields, ver)
 	if err != nil {
 		return nil, fmt.Errorf("qtmmsg: %s: %w", msgType, err)

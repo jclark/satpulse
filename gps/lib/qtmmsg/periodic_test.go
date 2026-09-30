@@ -279,6 +279,10 @@ func TestParsePeriodicMsg(t *testing.T) {
 			},
 		},
 		{
+			name:    "error reply named after a periodic message",
+			payload: "PQTMEOE,ERROR,3",
+		},
+		{
 			name:    "unrecognized PQTM",
 			payload: "PQTMFOO,1,2,3",
 		},
