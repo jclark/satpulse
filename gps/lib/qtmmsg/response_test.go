@@ -147,6 +147,12 @@ func TestClassifyRequest(t *testing.T) {
 			wantSent: "PQTMSN",
 		},
 		{
+			name:     "restart without reply",
+			sent:     "PQTMSRR",
+			wantKind: RequestNoAck,
+			wantSent: "PQTMSRR",
+		},
+		{
 			name:     "savepar command",
 			sent:     "PQTMSAVEPAR",
 			wantKind: RequestCommand,

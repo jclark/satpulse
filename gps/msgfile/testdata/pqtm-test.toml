@@ -34,3 +34,8 @@ text = "PQTMSAVEPAR"
 [[nmea]]
 tag = "get-sn"
 text = "PQTMSN"
+
+# Hot start: no reply on success, ERROR on failure.
+[[nmea]]
+tag = "hot-start"
+text = "PQTMHOT"

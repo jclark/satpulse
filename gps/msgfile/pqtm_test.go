@@ -195,6 +195,25 @@ func TestCorrelatorPQTM(t *testing.T) {
 			},
 		},
 		{
+			name: "hot start no reply",
+			tags: []string{"hot-start"},
+			events: []event{
+				sendEvent{},
+				checkDone{canAcceptMore: true},
+				checkMissing{},
+			},
+		},
+		{
+			name: "hot start NAK",
+			tags: []string{"hot-start"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("PQTMHOT,ERROR,3"),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "savepar command ACK",
 			tags: []string{"savepar"},
 			events: []event{
