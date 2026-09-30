@@ -257,8 +257,8 @@ def check_file(name, events, problems, diagnostics, ref_ecef=None, ref_latlon=No
         native = [ev for ev in sat_msgs if ev["data"].get("tag") != "NMEA"]
         if not nmea or not native:
             continue
-        nmea_svs = {sv["id"]: sv for ev in nmea for sv in ev["data"]["info"]}
-        native_svs = {sv["id"]: sv for ev in native for sv in ev["data"]["info"]}
+        nmea_svs = {sv["id"]: sv for ev in nmea for sv in ev["data"].get("info", [])}
+        native_svs = {sv["id"]: sv for ev in native for sv in ev["data"].get("info", [])}
         # Every NMEA SV should appear in native
         for svid in nmea_svs:
             if svid not in native_svs:
