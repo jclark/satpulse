@@ -448,6 +448,7 @@ func (t *unixTerm) ModemControlPinState() (ModemControlPinState, error) {
 
 func (t *unixTerm) Restore(exceptHardware bool) error {
 	ts := t.tsSaved
+	ts.Lflag &^= unix.ECHO | unix.ECHONL
 	if exceptHardware {
 		current, err := t.getAttr()
 		if err != nil {

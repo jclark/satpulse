@@ -145,6 +145,39 @@ func TestRestoreExceptHardware(t *testing.T) {
 	}
 }
 
+func TestRestoreLeavesEchoOff(t *testing.T) {
+	path := newTestPTY(t)
+	fd := openTestTTY(t, path)
+	defer unix.Close(fd)
+	tsp, err := unix.IoctlGetTermios(fd, unix.TCGETS2)
+	if err != nil {
+		t.Fatalf("ioctl(TCGETS2): %v", err)
+	}
+	tsp.Lflag |= unix.ICANON | unix.ECHO | unix.ECHONL
+	if err := unix.IoctlSetTermios(fd, unix.TCSETS2, tsp); err != nil {
+		t.Fatalf("ioctl(TCSETS2): %v", err)
+	}
+	term, _, err := Open(path, RawMode)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if err := term.Restore(false); err != nil {
+		t.Fatalf("Restore: %v", err)
+	}
+	if err := term.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	got, err := unix.IoctlGetTermios(fd, unix.TCGETS2)
+	if err != nil {
+		t.Fatalf("ioctl(TCGETS2): %v", err)
+	}
+	want := *tsp
+	want.Lflag &^= unix.ECHO | unix.ECHONL
+	if *got != want {
+		t.Errorf("termios after Restore = %+v, want %+v", *got, want)
+	}
+}
+
 func newTestPTY(t *testing.T) string {
 	t.Helper()
 	fd, err := unix.Open("/dev/ptmx", unix.O_RDWR|unix.O_NOCTTY|unix.O_CLOEXEC, 0)
