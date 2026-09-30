@@ -38,9 +38,11 @@ SatPulse decodes the following PQTM sentences.
 |---------|----------|
 | PQTMANTENNASTATUS | decode only |
 | PQTMDOP | solution quality |
+| PQTMENV | decode only |
 | PQTMEOE | navigation epoch |
 | PQTMEPE | solution quality |
 | PQTMGEOFENCESTATUS | decode only |
+| PQTMJAMMINGSTATUS | decode only |
 | PQTMNAV | UTC time, TAI time, geodetic position, geodetic velocity, solution quality |
 | PQTMODO | decode only |
 | PQTMPL | decode only |

@@ -227,6 +227,31 @@ func TestParsePeriodicMsg(t *testing.T) {
 			},
 		},
 		{
+			name:    "ENV",
+			payload: "PQTMENV,1,228317500,2438,20260929,152459.500,49,39.73,55,44,1,0,0.000,18,0,0,,,,,",
+			want: &ENV{
+				TOW:             opt.Make[uint32](228317500),
+				WN:              opt.Make[uint16](2438),
+				Date:            "20260929",
+				Time:            "152459.500",
+				BaseScore:       opt.Make[uint8](49),
+				ConfidenceLevel: opt.Make(39.73),
+				SatVis:          opt.Make[uint8](55),
+				SatSlo:          opt.Make[uint8](44),
+				MovedFlag:       opt.Make[uint8](1),
+				MovingFlag:      opt.Make[uint8](0),
+				PosDiff:         opt.Make(0.0),
+				SloType:         opt.Make[uint8](18),
+				BaseSatNum:      opt.Make[uint8](0),
+				PubSatNum:       opt.Make[uint8](0),
+			},
+		},
+		{
+			name:    "JammingStatus",
+			payload: "PQTMJAMMINGSTATUS,1,0",
+			want:    &JammingStatus{Status: 0},
+		},
+		{
 			name:    "GeofenceStatus",
 			payload: "PQTMGEOFENCESTATUS,1,124521.000,1,2,2,2",
 			want: &GeofenceStatus{
@@ -364,6 +389,8 @@ func TestPeriodicMsgID(t *testing.T) {
 		{&PL{}, "PL", 1},
 		{&ODO{}, "ODO", 1},
 		{&AntennaStatus{}, "ANTENNASTATUS", 1},
+		{&ENV{}, "ENV", 1},
+		{&JammingStatus{}, "JAMMINGSTATUS", 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

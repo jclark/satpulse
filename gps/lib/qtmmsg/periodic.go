@@ -297,6 +297,35 @@ type EOE struct {
 func (*EOE) periodicMsg()        {}
 func (*EOE) ID() (string, uint8) { return "EOE", 1 }
 
+// ENV represents a PQTMENV environment information message.
+type ENV struct {
+	TOW             opt.Val[uint32]  // ms, GPS time of week
+	WN              opt.Val[uint16]  // GPS week number
+	Date            string           // yyyymmdd
+	Time            string           // hhmmss.sss, UTC
+	BaseScore       opt.Val[uint8]   // base mode: 90-100 excellent, 85-90 good, 80-85 general, below 80 not suitable
+	ConfidenceLevel opt.Val[float64] // rover mode
+	SatVis          opt.Val[uint8]   // rover mode, satellite visibility
+	SatSlo          opt.Val[uint8]   // rover mode, satellite utilization
+	MovedFlag       opt.Val[uint8]   // 0=not moved, 1=moved since power-on, 2=not available
+	MovingFlag      opt.Val[uint8]   // 0=static, 1=moving
+	PosDiff         opt.Val[float64] // distance from fixed base position, 0 if not base
+	SloType         opt.Val[uint8]   // position type
+	BaseSatNum      opt.Val[uint8]   // satellites of base
+	PubSatNum       opt.Val[uint8]   // satellites in common view of base and rover
+}
+
+func (*ENV) periodicMsg()        {}
+func (*ENV) ID() (string, uint8) { return "ENV", 1 }
+
+// JammingStatus represents a PQTMJAMMINGSTATUS jamming detection message.
+type JammingStatus struct {
+	Status uint8 // 0=unknown, 1=no jamming, 2=warning, 3=critical
+}
+
+func (*JammingStatus) periodicMsg()        {}
+func (*JammingStatus) ID() (string, uint8) { return "JAMMINGSTATUS", 1 }
+
 // checkVersion parses and validates the version field at the start of a PQTM
 // message, returning the remaining fields.
 func checkVersion(fields []string, expected uint8) ([]string, error) {
@@ -391,6 +420,8 @@ func init() {
 	regPeriodic[NAV]()
 	regPeriodic[PPPNAV]()
 	regPeriodic[EOE]()
+	regPeriodic[ENV]()
+	regPeriodic[JammingStatus]()
 	regPeriodic[GeofenceStatus]()
 	regPeriodic[TXT]()
 	regPeriodic[PL]()
