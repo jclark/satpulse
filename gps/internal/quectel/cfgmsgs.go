@@ -197,6 +197,10 @@ func (c *Configurator) msgWant() map[string]bool {
 			want[name] = msm
 		}
 		want["RTCM3-1005"] = flags&gpsprot.RTCMMsgARP != 0
+		// Rovers need the GLONASS code-phase biases to use GLONASS MSM.
+		if c.fw.has(fwRTCM230) {
+			want["RTCM3-1230"] = msm && (c.found.cnst == nil || c.found.cnst.GLONASS != 0)
+		}
 	}
 	if pvt := opts.PVTMsg; pvt.IsSet() {
 		if pvt&(gpsprot.PVTMsgPos|gpsprot.PVTMsgVel|gpsprot.PVTMsgTime|gpsprot.PVTMsgLeapSecond) != 0 {
@@ -234,7 +238,7 @@ func (c *Configurator) msgRateSet(name string, on bool) *request {
 	rate := 0
 	if on {
 		rate = 1
-		if name != "GSA" && name != "GSV" && c.found.fixRate != nil {
+		if name != "GSA" && name != "GSV" && name != "RTCM3-1230" && c.found.fixRate != nil {
 			ms := c.found.fixRate.FixInterval
 			if ms > 0 && ms < 1000 {
 				rate = int((1000 + ms/2) / ms)

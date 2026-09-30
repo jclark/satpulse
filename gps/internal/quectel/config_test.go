@@ -949,6 +949,7 @@ func TestConfiguratorSignalsMasks(t *testing.T) {
 func TestConfiguratorRTCMAuto(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
 	responses["PQTMCFGMSGRATE,W,RTCM3-1005,1"] = []string{"PQTMCFGMSGRATE,OK"}
+	responses["PQTMCFGMSGRATE,W,RTCM3-1230,1"] = []string{"PQTMCFGMSGRATE,OK"}
 	for _, name := range rtcmMSMNames {
 		responses["PQTMCFGMSGRATE,W,"+name+",1,0"] = []string{"PQTMCFGMSGRATE,OK"}
 	}
@@ -966,9 +967,31 @@ func TestConfiguratorRTCMAuto(t *testing.T) {
 		"PQTMCFGMSGRATE,W,RTCM3-111X,1,0",
 		"PQTMCFGMSGRATE,W,RTCM3-112X,1,0",
 		"PQTMCFGMSGRATE,W,RTCM3-113X,1,0",
+		"PQTMCFGMSGRATE,W,RTCM3-1230,1",
 	}
 	if got := wSent(sent); !reflect.DeepEqual(got, expect) {
 		t.Errorf("sets sent:\ngot  %v\nwant %v", got, expect)
+	}
+}
+
+// TestConfiguratorRTCMNoGLONASS checks that MSM output turns the
+// GLONASS code-phase-bias message 1230 off when GLONASS is disabled.
+func TestConfiguratorRTCMNoGLONASS(t *testing.T) {
+	responses := maps.Clone(fakeResponses)
+	responses["PQTMCFGCNST,R"] = []string{"PQTMCFGCNST,OK,1,0,1,1,1,1"}
+	responses["PQTMCFGMSGRATE,W,RTCM3-1230,0"] = []string{"PQTMCFGMSGRATE,OK"}
+	for _, name := range rtcmMSMNames {
+		responses["PQTMCFGMSGRATE,W,"+name+",1,0"] = []string{"PQTMCFGMSGRATE,OK"}
+	}
+	responses["PQTMCFGMSGRATE,W,RTCM3-1005,0"] = []string{"PQTMCFGMSGRATE,OK"}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgMSM4)
+	_, errCount, sent := runConfigTarget(t, target, responses)
+	if errCount != 0 {
+		t.Errorf("director errors: %d", errCount)
+	}
+	if !slices.Contains(wSent(sent), "PQTMCFGMSGRATE,W,RTCM3-1230,0") {
+		t.Errorf("1230 not turned off: %v", wSent(sent))
 	}
 }
 
@@ -980,6 +1003,7 @@ func TestConfiguratorRTCMAuto(t *testing.T) {
 func TestConfiguratorRTCMMSM7(t *testing.T) {
 	responses := maps.Clone(fakeResponses)
 	responses["PQTMCFGMSGRATE,W,RTCM3-1005,1"] = []string{"PQTMCFGMSGRATE,OK"}
+	responses["PQTMCFGMSGRATE,W,RTCM3-1230,1"] = []string{"PQTMCFGMSGRATE,OK"}
 	for _, name := range rtcmMSMNames {
 		responses["PQTMCFGMSGRATE,W,"+name+",1,0"] = []string{"PQTMCFGMSGRATE,OK"}
 	}
