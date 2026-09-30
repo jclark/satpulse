@@ -374,7 +374,62 @@ text = "PQTMCFGMSGRATE,W,GLL,0"
 tag = "nmea-gll-off"
 description = "Disable NMEA GLL message"
 
+# Enable NMEA GST message at rate 1 (pseudorange error statistics)
+# Verified OK and GNGST messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GST,1"
+tag = "nmea-gst"
+description = "Enable NMEA GST message"
+
+# Verified OK and GNGST messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GST,0"
+tag = "nmea-gst-off"
+description = "Disable NMEA GST message"
+
+# Enable NMEA GNS message at rate 1 (fix data)
+# Verified OK and GNGNS messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,1"
+tag = "nmea-gns"
+description = "Enable NMEA GNS message"
+
+# Verified OK and GNGNS messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,0"
+tag = "nmea-gns-off"
+description = "Disable NMEA GNS message"
+
+# Enable NMEA GBS message at rate 1 (satellite fault detection)
+# Verified OK and GNGBS messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GBS,1"
+tag = "nmea-gbs"
+description = "Enable NMEA GBS message"
+
+# Verified OK and GNGBS messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GBS,0"
+tag = "nmea-gbs-off"
+description = "Disable NMEA GBS message"
+
+# NMEA talker ID (PQTMCFGNMEATID)
+# 00 = automatic (factory setting): GN when several constellations are used.
+# The second field 0 gives GSV the talker ID of its constellation.
+# Verified OK and GNGGA/GNRMC/GNGSA appear on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNMEATID,W,00,0"
+tag = "nmea-talker-auto"
+description = "Set NMEA talker ID to automatic"
+
+# Verified OK and GPGGA/GPRMC/GPGSA appear (GSV keeps per-constellation talkers) on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNMEATID,W,GP,0"
+tag = "nmea-talker-gp"
+description = "Set NMEA talker ID to GP"
+
 # Disable all NMEA messages
+# Verified all OK and no NMEA (including GST and ZDA) after it on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RMC,0"
 tag = "nmea-off"
@@ -393,6 +448,18 @@ text = "PQTMCFGMSGRATE,W,GSA,0"
 tag = "nmea-off"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GLL,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,ZDA,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GBS,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GST,0"
 tag = "nmea-off"
 
 # Enable NMEA messages for satpulse daemon (RMC, GGA, GSV, GSA)
