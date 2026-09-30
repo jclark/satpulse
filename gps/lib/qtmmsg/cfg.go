@@ -29,15 +29,15 @@ func EncodeWrite(m CfgMsg) (string, error) {
 	return m.Sentence() + ",W," + strings.Join(fields, ","), nil
 }
 
-// writeFielder is implemented by CFG types whose W form is not always
+// fieldWriter is implemented by CFG types whose W form is not always
 // the full tuple (the spec makes trailing fields conditional).
-type writeFielder interface {
+type fieldWriter interface {
 	writeFields() ([]string, error)
 }
 
 func writeFieldsOf(m CfgMsg) ([]string, error) {
-	if wf, ok := m.(writeFielder); ok {
-		return wf.writeFields()
+	if fw, ok := m.(fieldWriter); ok {
+		return fw.writeFields()
 	}
 	return fieldenc.Encode(m)
 }
