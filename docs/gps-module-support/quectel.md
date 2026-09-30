@@ -30,6 +30,18 @@ High-level configuration for the LG290P is [under development](https://github.co
 SatPulse has been tested with the LG290P and the LC29H.
 The LG580P and LG680P use the same protocol as the LG290P.
 
+## Low-level configuration
+
+### Notes on tags in the LG290P message file
+
+- The `fix-rate-*` tags do not change the output rate.
+- `rtcm-msm4` and `rtcm-msm7` change the MSM type only after `save` and `reset`; do any `mode-base` before `rtcm-msm7` to avoid the MSM type being reset to 4.
+- In base mode the fix rate is 1 Hz.
+- `pqtm-svinstatus` works in base mode, but not in rover mode.
+- `rtcm-eph` outputs each ephemeris only when it is updated.
+- `pqtm-rtcmis` outputs a sentence for each RTCM message received, except RTCM 1230.
+- `nmea-talker-gp` does not change the talker ID of GSV.
+
 ## Supported PQTM sentences
 
 SatPulse decodes the following PQTM sentences.
