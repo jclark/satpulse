@@ -8,7 +8,7 @@ import (
 
 // requestAnalyzer produces a requestAnalysis from outgoing message bytes.
 // Implemented by each message type (UBXMsg, CASBINMsg, etc.).
-type requestAnalyzer interface{}
+type requestAnalyzer any
 
 // AckExpectation describes what ACK behavior a request expects.
 type AckExpectation int
@@ -131,13 +131,14 @@ type Correlator struct {
 func NewCorrelator() *Correlator {
 	return &Correlator{
 		analyzers: map[gpsprot.Tag]responseAnalyzer{
-			gpsreg.TagUBX:          ubxAnalyzer{},
-			gpsreg.TagCASICBin:     casbinAnalyzer{},
-			gpsreg.TagAllystarBin:  asbinAnalyzer{},
-			gpsreg.TagSDBP:         sdbpAnalyzer{},
-			gpsreg.TagNMEA:         nmeaAnalyzer{},
-			gpsreg.TagUnicoreAscii: uncaAnalyzer{},
-			septentrio.TagReply:    septAnalyzer{},
+			gpsreg.TagUBX:                ubxAnalyzer{},
+			gpsreg.TagCASICBin:           casbinAnalyzer{},
+			gpsreg.TagAllystarBin:        asbinAnalyzer{},
+			gpsreg.TagSDBP:               sdbpAnalyzer{},
+			gpsreg.TagNMEA:               nmeaAnalyzer{},
+			gpsreg.TagUnicoreAscii:       uncaAnalyzer{},
+			gpsreg.TagNovAtelAbbrevAscii: novaaAnalyzer{},
+			septentrio.TagReply:          septAnalyzer{},
 		},
 	}
 }
@@ -150,20 +151,9 @@ func (c *Correlator) NotifyMsgSent(rm RawMsg) {
 	case ExpectAckOrNak, ExpectAckNakOnly:
 		ack = ackWait
 	}
-	var data dataStatus
-	switch a.expectData {
-	case expectDataNone:
+	data := dataWait
+	if a.expectData == expectDataNone {
 		data = dataNotExpected
-	default:
-		if a.expectData != expectDataUnknown || a.expectAck == ExpectAckNone {
-			data = dataWait
-		}
-	}
-	// expectDataUnknown with ack: data status depends on ack type,
-	// but for now we set dataWait -- all expectDataUnknown messages
-	// have ExpectAckNone.
-	if a.expectData == expectDataUnknown {
-		data = dataWait
 	}
 	c.requests = append(c.requests, requestState{
 		msg:      &rm,
@@ -210,11 +200,17 @@ func (c *Correlator) CorrelatePacket(tag gpsprot.Tag, data string) Correlation {
 	ra := c.classifyResponse(tag, data)
 	switch ra.kind {
 	case responseAck, responseNak, responseWait, responseAckMore, responseDone:
-		return c.correlateAck(tag, ra)
+		if cor := c.correlateAck(tag, ra); cor.Relevance != LevelNotResponse {
+			return cor
+		}
+		// A request that expects no ack, such as a line message without a
+		// response pattern, cannot claim an ack, so show it as it would show
+		// any other reply.
+		return c.correlateData(tag, data, false, true)
 	case responseData:
-		return c.correlateData(tag, data, true)
+		return c.correlateData(tag, data, true, false)
 	case responseMaybeData:
-		return c.correlateData(tag, data, false)
+		return c.correlateData(tag, data, false, false)
 	case responseInfo:
 		return Correlation{Relevance: LevelMaybeResponse}
 	case responseNotData:
@@ -274,8 +270,10 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 			Relevance:    rel,
 		}
 	case responseNak:
+		// A rejected request is finished: nothing that follows is its data.
 		rs.ack = ackFailed
 		rs.ackError = ra.ackError
+		rs.data = dataNotExpected
 		return Correlation{
 			Ack:          AckNak,
 			NakError:     ra.ackError,
@@ -310,10 +308,18 @@ func (c *Correlator) correlateAck(tag gpsprot.Tag, ra responseAnalysis) Correlat
 	return Correlation{Relevance: LevelNotResponse}
 }
 
-func (c *Correlator) correlateData(tag gpsprot.Tag, data string, confirmed bool) Correlation {
+func (c *Correlator) correlateData(tag gpsprot.Tag, data string, confirmed, unclaimedAck bool) Correlation {
 	var matches []*requestState
 	for i := range c.requests {
 		rs := &c.requests[i]
+		if unclaimedAck && rs.analysis.expectAck != ExpectAckNone {
+			continue
+		}
+		// Such a request's data arrives only in its ack, so a separate
+		// packet cannot be its data.
+		if rs.analysis.expectData == expectDataWithAck {
+			continue
+		}
 		if rs.data != dataWait &&
 			!(rs.data == dataReceived && rs.analysis.expectData == expectDataMultiple) {
 			continue
@@ -376,7 +382,7 @@ func (c *Correlator) requestComplete(rs *requestState) bool {
 			return true
 		}
 	case expectDataUnknown:
-		return false
+		return rs.ack == ackFailed
 	case expectDataWithAck:
 		return rs.ack == ackSuccess || rs.ack == ackFailed
 	case expectDataAmbig:

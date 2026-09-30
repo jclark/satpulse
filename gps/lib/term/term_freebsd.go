@@ -28,6 +28,6 @@ var baudRates = []struct {
 	{unix.B921600, 921600},
 }
 
-func (t *Term) DevKind() DevKind {
+func (t *unixTerm) DevKind() DevKind {
 	return DevUnknown
 }

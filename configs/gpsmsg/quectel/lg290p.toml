@@ -9,6 +9,13 @@ text = "PQTMVERNO"
 tag = "get-version"
 description = "Get firmware and hardware version"
 
+# Get module unique ID
+# Verified on LG290P (R02A01S): returns the unique ID
+[[nmea]]
+text = "PQTMUNIQID"
+tag = "get-uniqid"
+description = "Get module unique ID"
+
 # Get PPS configuration
 [[nmea]]
 text = "PQTMCFGPPS,R,1"
@@ -28,6 +35,9 @@ tag = "get-fix-rate"
 description = "Get fix interval"
 
 # Set fix rate
+# Verified OK and get-fix-rate returns the new value on LG290P (R02A01S), but
+# the output rate stays at the old rate: the stored fix rate did not take
+# effect live
 [[nmea]]
 text = "PQTMCFGFIXRATE,W,1000"
 tag = "fix-rate-1"
@@ -133,6 +143,47 @@ text = "PQTMCFGELETHD,W,45.0"
 tag = "min-elev-45"
 description = "Set elevation threshold to 45 degrees"
 
+# C/N0 threshold for the position engine (PQTMCFGCNRTHD)
+# Range: 0.0 to 99.9 dBHz, 0 = no limit, default 10.0
+# Verified on LG290P (R02A01S): returns 10.0 (default)
+[[nmea]]
+text = "PQTMCFGCNRTHD,R"
+tag = "get-min-cno"
+description = "Get C/N0 threshold"
+
+# Verified OK and get-min-cno returns 10.0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGCNRTHD,W,10.0"
+tag = "min-cno-10"
+description = "Set minimum C/N0 to 10 dBHz (default)"
+
+# Verified OK and get-min-cno returns 25.0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGCNRTHD,W,25.0"
+tag = "min-cno-25"
+description = "Set minimum C/N0 to 25 dBHz"
+
+# Navigation mode (PQTMCFGNAVMODE)
+# 0 = normal, 5 = dynamic flight, 11 = mower, 14 = agriculture.
+# The LG290P default is 11 (mower).
+# Verified on LG290P (R02A01S): returns 11 (default)
+[[nmea]]
+text = "PQTMCFGNAVMODE,R"
+tag = "get-nav-mode"
+description = "Get navigation mode"
+
+# Verified OK and get-nav-mode returns 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNAVMODE,W,0"
+tag = "nav-mode-normal"
+description = "Set navigation mode to normal"
+
+# Verified OK and get-nav-mode returns 11 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNAVMODE,W,11"
+tag = "nav-mode-mower"
+description = "Set navigation mode to mower (LG290P default)"
+
 # Enable PPS: 100ms pulse, only when locked, rising edge
 # Index=1, Enable=1, Duration=100, Mode=2 (fix only), Polarity=1 (high), Reserved=0
 [[nmea]]
@@ -147,6 +198,35 @@ description = "Enable PPS output (0.1s pulse, only when locked)"
 text = "PQTMCFGPPS,W,1,0"
 tag = "pps-off"
 description = "Disable PPS output"
+
+# PPS user delay (PQTMCFGPPS2), in ns
+# PQTMCFGPPS2 sets all the PPS settings of PQTMCFGPPS together with the
+# period and the user delay. Added in R02A01S firmware.
+# Verified on LG290P (R02A01S): returns 1,1,100,2,1,0,1000,0,1,0,0,0 (default)
+[[nmea]]
+text = "PQTMCFGPPS2,R,1"
+tag = "get-antenna-cable-delay"
+description = "Query PPS user delay (with the other PPS settings)"
+
+# Set the PPS user delay. A positive user delay makes the pulse later, so
+# compensating an antenna cable delay of N ns takes a user delay of -N.
+# PQTMCFGPPS2 sets all the PPS fields: Index=1, Enable=1, Duration=100,
+# Mode=2 (fix only), Polarity=1 (high), Reserved1=0, Period=1000 ms,
+# Userdelay, Reserved2=1, Reserved3-5=0 - the same pulse as the pps tag.
+# Verified on LG290P (R02A01S) with a PHC timestamping the pulse: a user
+# delay of +1000000 ns moved the pulse edge 1.000 ms later
+# Verified OK and get-antenna-cable-delay returns the user delay on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGPPS2,W,1,1,100,2,1,0,1000,0,1,0,0,0"
+tag = "antenna-cable-delay-0"
+description = "Clear PPS user delay"
+
+# 50 ns is the u-blox default antenna cable delay (CFG-TP-ANT_CABLEDELAY)
+# Verified OK and get-antenna-cable-delay returns -50 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGPPS2,W,1,1,100,2,1,0,1000,-50,1,0,0,0"
+tag = "antenna-cable-delay-50"
+description = "Compensate 50 ns antenna cable delay (PPS 50 ns earlier)"
 
 # Get survey-in config
 [[nmea]]
@@ -374,7 +454,62 @@ text = "PQTMCFGMSGRATE,W,GLL,0"
 tag = "nmea-gll-off"
 description = "Disable NMEA GLL message"
 
+# Enable NMEA GST message at rate 1 (pseudorange error statistics)
+# Verified OK and GNGST messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GST,1"
+tag = "nmea-gst"
+description = "Enable NMEA GST message"
+
+# Verified OK and GNGST messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GST,0"
+tag = "nmea-gst-off"
+description = "Disable NMEA GST message"
+
+# Enable NMEA GNS message at rate 1 (fix data)
+# Verified OK and GNGNS messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,1"
+tag = "nmea-gns"
+description = "Enable NMEA GNS message"
+
+# Verified OK and GNGNS messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,0"
+tag = "nmea-gns-off"
+description = "Disable NMEA GNS message"
+
+# Enable NMEA GBS message at rate 1 (satellite fault detection)
+# Verified OK and GNGBS messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GBS,1"
+tag = "nmea-gbs"
+description = "Enable NMEA GBS message"
+
+# Verified OK and GNGBS messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GBS,0"
+tag = "nmea-gbs-off"
+description = "Disable NMEA GBS message"
+
+# NMEA talker ID (PQTMCFGNMEATID)
+# 00 = automatic (factory setting): GN when several constellations are used.
+# The second field 0 gives GSV the talker ID of its constellation.
+# Verified OK and GNGGA/GNRMC/GNGSA appear on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNMEATID,W,00,0"
+tag = "nmea-talker-auto"
+description = "Set NMEA talker ID to automatic"
+
+# Verified OK and GPGGA/GPRMC/GPGSA appear (GSV keeps per-constellation talkers) on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNMEATID,W,GP,0"
+tag = "nmea-talker-gp"
+description = "Set NMEA talker ID to GP"
+
 # Disable all NMEA messages
+# Verified all OK and no NMEA (including GST and ZDA) after it on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RMC,0"
 tag = "nmea-off"
@@ -393,6 +528,18 @@ text = "PQTMCFGMSGRATE,W,GSA,0"
 tag = "nmea-off"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GLL,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,ZDA,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GBS,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GST,0"
 tag = "nmea-off"
 
 # Enable NMEA messages for satpulse daemon (RMC, GGA, GSV, GSA)
@@ -522,8 +669,87 @@ text = "PQTMCFGMSGRATE,W,PQTMPPPNAV,0,1"
 tag = "pqtm-pppnav-off"
 description = "Disable PQTMPPPNAV message"
 
+# Enable PQTMENV message (environment information)
+# Added in R01A06S firmware
+# Verified OK and PQTMENV messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMENV,1,1"
+tag = "pqtm-env"
+description = "Enable PQTMENV message (rate of one per fix)"
+
+# Verified OK and PQTMENV messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMENV,0,1"
+tag = "pqtm-env-off"
+description = "Disable PQTMENV message"
+
+# Enable PQTMJAMMINGSTATUS message (jamming detection status)
+# Added in R02A01S firmware
+# Verified OK and PQTMJAMMINGSTATUS messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,1,1"
+tag = "pqtm-jammingstatus"
+description = "Enable PQTMJAMMINGSTATUS message (rate of one per fix)"
+
+# Verified OK and PQTMJAMMINGSTATUS messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,0,1"
+tag = "pqtm-jammingstatus-off"
+description = "Disable PQTMJAMMINGSTATUS message"
+
+# Enable PQTMRTCMIS message (status of each RTCM message received)
+# Added in R01A06S firmware; the rate must be 1. Output only while RTCM
+# is being received.
+# Verified OK and PQTMRTCMIS appears for each RTCM message received (except 1230) on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMRTCMIS,1,1"
+tag = "pqtm-rtcmis"
+description = "Enable PQTMRTCMIS message (one per RTCM message received)"
+
+# Verified OK and PQTMCFGMSGRATE read returns rate 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMRTCMIS,0,1"
+tag = "pqtm-rtcmis-off"
+description = "Disable PQTMRTCMIS message"
+
+# Enable PQTMODO message (odometer)
+# Verified OK and PQTMODO messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMODO,1,1"
+tag = "pqtm-odo"
+description = "Enable PQTMODO message (rate of one per fix)"
+
+# Verified OK and PQTMODO messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMODO,0,1"
+tag = "pqtm-odo-off"
+description = "Disable PQTMODO message"
+
+# Enable PQTMTXT message (text); enabled by default
+# Verified OK and PQTMCFGMSGRATE read returns rate 1 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMTXT,1,1"
+tag = "pqtm-txt"
+description = "Enable PQTMTXT message"
+
+# Verified OK and PQTMCFGMSGRATE read returns rate 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMTXT,0,1"
+tag = "pqtm-txt-off"
+description = "Disable PQTMTXT message"
+
+# Disable all message output on the current port (PQTMCLRMSG)
+# Verified OK and no output at all after it on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCLRMSG"
+tag = "msg-all-off"
+description = "Disable all message output"
+
 # Enable PQTMSVINSTATUS message (survey-in status)
-# Does not work on R02 firmware
+# The spec says the module must be in base station mode (see mode-base).
+# Rejected (invalid parameters) in rover mode on LG290P (R02A01S)
+# Verified OK and PQTMSVINSTATUS appears in base mode (after mode-base, save
+# and reset) on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMSVINSTATUS,1,1"
 tag = "pqtm-svinstatus"
@@ -536,6 +762,7 @@ tag = "pqtm-svinstatus-off"
 description = "Disable PQTMSVINSTATUS message"
 
 # Enable PQTM messages for R01A04S+ firmware (PVT + VEL + EPE + SVINSTATUS + DOP)
+# PQTMSVINSTATUS is rejected (invalid parameters) in rover mode on LG290P (R02A01S)
 # Sets fix rate to 1 Hz; message rate is one per fix.
 [[nmea]]
 text = "PQTMCFGFIXRATE,W,1000"
@@ -576,6 +803,7 @@ text = "PQTMCFGMSGRATE,W,PQTMDOP,0,1"
 tag = "pqtm-r01a04-off"
 
 # Enable PQTM messages for R01A05S+ firmware (NAV + VEL + EPE + EOE + SVINSTATUS + DOP)
+# PQTMSVINSTATUS is rejected (invalid parameters) in rover mode on LG290P (R02A01S)
 # Sets fix rate to 1 Hz; message rate is one per fix.
 [[nmea]]
 text = "PQTMCFGFIXRATE,W,1000"
@@ -672,6 +900,7 @@ tag = "mode-rover"
 description = "Set rover mode"
 
 # Get RTCM message rates
+# Verified OK and a rate for each message on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-1005"
 tag = "get-rtcm"
@@ -688,12 +917,52 @@ tag = "get-rtcm"
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,RTCM3-112X"
 tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1006"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1033"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-111X"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-113X"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1019"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1020"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1041"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1042"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1044"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1046"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGMSGRATE,R,RTCM3-1230"
+tag = "get-rtcm"
+[[nmea]]
+text = "PQTMCFGRTCM,R"
+tag = "get-rtcm"
 
 # Disable all RTCM messages
+# Verified all OK and no RTCM output after it on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-1005,0"
 tag = "rtcm-off"
 description = "Disable all RTCM messages"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1006,0"
+tag = "rtcm-off"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-107X,0,0"
 tag = "rtcm-off"
@@ -706,18 +975,71 @@ tag = "rtcm-off"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,0,0"
 tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-111X,0,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-113X,0,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1033,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1019,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1020,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1041,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1042,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1044,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1046,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1230,0"
+tag = "rtcm-off"
 
 # Enable RTCM ARP message (1005)
+# Verified OK and 1005 appears in rover mode on LG290P (R02A01S)
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-1005,1"
 tag = "rtcm-arp"
 description = "Enable RTCM ARP message (1005)"
 
+# Enable RTCM ARP message with antenna height (1006); set the height with
+# antenna-height-*
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1006,1"
+tag = "rtcm-arph"
+description = "Enable RTCM ARP message with antenna height (1006)"
+
+# Antenna height above the marker (PQTMCFGANTDELTA East, North, Height, in m)
+[[nmea]]
+text = "PQTMCFGANTDELTA,W,0,0,0"
+tag = "antenna-height-0"
+description = "Set antenna height above the marker to 0"
+[[nmea]]
+text = "PQTMCFGANTDELTA,W,0,0,2.0"
+tag = "antenna-height-2000"
+description = "Set antenna height above the marker to 2 m"
+
 # Enable RTCM MSM4 messages for all constellations
 # First set MSM type to 4, then enable all constellation outputs
-# 107X = GPS, 108X = GLO, 109X = GAL, 112X = BDS
+# EPH_Mode 1 (the default) outputs each ephemeris when it updates.
+# Verified OK and 1005, 1074, 1084, 1094, 1114, 1124, 1134 appear in rover
+# mode on LG290P (R02A01S)
+# Verified with rtcm-eph, save and reset: PQTMCFGRTCM reads back EPH_Mode 1
+# and ephemerides (1046) are output on LG290P (R02A01S)
+# 107X = GPS, 108X = GLO, 109X = GAL, 112X = BDS, 111X = QZSS, 113X = NavIC
 [[nmea]]
-text = "PQTMCFGRTCM,W,4,0,-90.0,07,06,0,0"
+text = "PQTMCFGRTCM,W,4,0,-90.0,07,06,1,0"
 tag = "rtcm-msm4"
 description = "Enable RTCM MSM4 messages for all constellations"
 [[nmea]]
@@ -732,11 +1054,24 @@ tag = "rtcm-msm4"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
 tag = "rtcm-msm4"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-111X,1,0"
+tag = "rtcm-msm4"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-113X,1,0"
+tag = "rtcm-msm4"
 
 # Enable RTCM MSM7 messages for all constellations
 # First set MSM type to 7, then enable all constellation outputs
+# EPH_Mode 1 (the default) outputs each ephemeris when it updates.
+# Verified OK on LG290P (R02A01S), but the receiver kept outputting MSM4
+# (1074...): the stored MSM type did not take effect live
+# Verified after save and reset in rover mode: 1077, 1087, 1097, 1117, 1127,
+# 1137 on LG290P (R02A01S). mode-base sets the MSM type back to 4; rtcm-msm7
+# sent in base mode, then save and reset, gives 1077, 1087, 1097, 1127 with
+# 1005 and 1033
 [[nmea]]
-text = "PQTMCFGRTCM,W,7,0,-90.0,07,06,0,0"
+text = "PQTMCFGRTCM,W,7,0,-90.0,07,06,1,0"
 tag = "rtcm-msm7"
 description = "Enable RTCM MSM7 messages for all constellations"
 [[nmea]]
@@ -751,3 +1086,95 @@ tag = "rtcm-msm7"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
 tag = "rtcm-msm7"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-111X,1,0"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-113X,1,0"
+tag = "rtcm-msm7"
+
+# Enable RTCM ephemeris messages: GPS (1019), GLONASS (1020), NavIC (1041),
+# BDS (1042), QZSS (1044), Galileo I/NAV (1046). The rate must be 1: when
+# each is output is set by PQTMCFGRTCM EPH_Mode (after save and reset). With
+# the factory EPH_Mode 1 each ephemeris is output when it is updated; with
+# EPH_Mode 2 and a 30 s interval every tracked satellite's ephemeris is output
+# every 30 s on LG290P (R02A01S).
+# Verified OK and 1019 and 1046 appear within 2 minutes on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1019,1"
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages (1019/1020/1041/1042/1044/1046)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1020,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1041,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1042,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1044,1"
+tag = "rtcm-eph"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1046,1"
+tag = "rtcm-eph"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1019,0"
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1020,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1041,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1042,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1044,0"
+tag = "rtcm-eph-off"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1046,0"
+tag = "rtcm-eph-off"
+
+# Receiver and antenna descriptors (1033); set the antenna with PQTMCFGANTINF
+# Verified OK and 1033 appears at the fix rate in rover mode on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1033,1"
+tag = "rtcm-1033"
+description = "Enable RTCM 1033 (rate of one per fix)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1033,0"
+tag = "rtcm-1033-off"
+description = "Disable RTCM 1033"
+
+# GLONASS code-phase biases (1230); the rate must be 1
+# Verified OK and 1230 appears at the fix rate in rover mode on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1230,1"
+tag = "rtcm-1230"
+description = "Enable RTCM 1230"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-1230,0"
+tag = "rtcm-1230-off"
+description = "Disable RTCM 1230"
+
+# RTCM reference station ID (PQTMCFGRSID, range 0-4095)
+# Verified on LG290P (R02A01S): returns 290 (default)
+[[nmea]]
+text = "PQTMCFGRSID,R"
+tag = "get-rtcm-base-id"
+description = "Get RTCM reference station ID"
+# Verified OK and get-rtcm-base-id returns 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGRSID,W,0"
+tag = "rtcm-base-id-0"
+description = "Set RTCM reference station ID to 0"
+# Verified OK and get-rtcm-base-id returns 1234 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGRSID,W,1234"
+tag = "rtcm-base-id-1234"
+description = "Set RTCM reference station ID to 1234"

@@ -8,7 +8,7 @@ This is a common feature of modern NICs.
 
 When choosing a NIC for Linux, it is much better if there is a driver with the necessary PTP support included in the Linux kernel (called an *in-tree* driver), rather than provided separately by the manufacturer (called an *out-of-tree* driver).
 
-It is also very desirable for PTP clients to support what the Linux kernel calls cross-timestamping.
+It is also very desirable for PTP clients to support what the Linux kernel calls [cross-timestamping]({% link intro/timing.md %}#synchronizing-the-system-clock).
 This is the ability to take simultaneous readings of the PHC and the system clock.
 Cross-timestamping dramatically improves the accuracy with which the system clock can be synchronized to the PHC. What matters for most applications is the accuracy of the system clock.
 

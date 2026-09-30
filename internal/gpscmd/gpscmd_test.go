@@ -58,6 +58,11 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 			want: true,
 		},
 		{
+			name: "capture after default probe",
+			args: []string{"-d", "/dev/ttyACM0", "-s", "9600", "--packet-log", "capture.jsonl", "--capture", "10"},
+			want: true,
+		},
+		{
 			name: "serial device with configuration change",
 			args: []string{"-d", "/dev/ttyACM0", "-s", "9600", "--gnss", "GPS"},
 			want: false,
@@ -74,10 +79,7 @@ func TestCreateConfigTargetProbeOnly(t *testing.T) {
 				t.Fatalf("parseFlags returned nil flagVars")
 			}
 
-			target, err := createConfigTarget(flagVars)
-			if err != nil {
-				t.Fatalf("createConfigTarget failed: %v", err)
-			}
+			target := createConfigTarget(flagVars)
 
 			got := configTargetIsProbeOnly(target)
 			if got != tt.want {
@@ -96,10 +98,7 @@ func TestCreateConfigTargetJSON(t *testing.T) {
 	v := &flagVars{
 		targetJSON: mustTargetJSON(t, `{"Props":{"mode":{"static":true}},"Get":["baudRate"],"Opts":{"Save":"minimal","NMEAMsg":[]}}`),
 	}
-	target, err := createConfigTarget(v)
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(v)
 	mode, ok := target.Props.GetMode()
 	if !ok || !mode.Static {
 		t.Errorf("mode = %+v, %t, want static mode", mode, ok)
@@ -119,27 +118,18 @@ func TestCreateConfigTargetJSON(t *testing.T) {
 // proxy connection on a serial device: that would skip the silence wait, the
 // detection deadline, and the framing checks in gpscfg.Configure.
 func TestCreateConfigTargetJSONSocketFollowsTransport(t *testing.T) {
-	target, err := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{"Opts":{"Socket":true}}`), serialDevice: "/dev/ttyACM0"})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{"Opts":{"Socket":true}}`), serialDevice: "/dev/ttyACM0"})
 	if target.Opts.Socket {
 		t.Error("Socket = true for a serial transport")
 	}
-	target, err = createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`), socketPath: "/tmp/socket"})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target = createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`), socketPath: "/tmp/socket"})
 	if !target.Opts.Socket {
 		t.Error("Socket = false for a socket transport")
 	}
 }
 
 func TestCreateConfigTargetJSONNoOp(t *testing.T) {
-	target, err := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`)})
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(&flagVars{targetJSON: mustTargetJSON(t, `{}`)})
 	if target == nil || !target.Opts.ForceProbe {
 		t.Errorf("target = %+v, want force-probe target", target)
 	}
@@ -150,10 +140,7 @@ func TestCreateConfigTargetJSONMergesGet(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parseFlags: %v", err)
 	}
-	target, err := createConfigTarget(v)
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(v)
 	want := showProps | gpsprot.PropIDBaudRate
 	if target.Get != want {
 		t.Errorf("Get = %v, want %v", target.Get, want)
@@ -163,10 +150,7 @@ func TestCreateConfigTargetJSONMergesGet(t *testing.T) {
 func TestCreateConfigTargetJSONDoesNotApplyFlagProps(t *testing.T) {
 	v := flagVars{targetJSON: mustTargetJSON(t, `{}`)}
 	v.pps.Set(time.Second)
-	target, err := createConfigTarget(&v)
-	if err != nil {
-		t.Fatalf("createConfigTarget: %v", err)
-	}
+	target := createConfigTarget(&v)
 	if _, ok := target.Props.GetTimePulseWidth(); ok {
 		t.Error("JSON target includes flag-derived PPS property")
 	}

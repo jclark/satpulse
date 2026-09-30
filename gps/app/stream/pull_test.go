@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -885,56 +886,59 @@ func TestPortLockAcquiredPerWrite(t *testing.T) {
 }
 
 func TestReconnectOnNetworkError(t *testing.T) {
-	// use a reconnectable source that provides a new pipe each time
-	rs := &reconnectSource{}
-	mw := &mockWriter{}
-	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(rs, mw, portLock)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var states []State
-	var mu sync.Mutex
-	onState := func(st State, _ error) {
-		mu.Lock()
-		states = append(states, st)
-		mu.Unlock()
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- sink.Run(ctx, nil, onState)
-	}()
-	// write a packet on the first connection, then close it
-	conn1 := rs.waitConn(t)
-	primeSink(t, conn1, mw)
-	if _, err := conn1.Write(makeRTCM(1005, 10)); err != nil {
-		t.Fatalf("failed to write first connection packet: %v", err)
-	}
-	waitPackets(t, mw, 1)
-	conn1.Close()
-	// wait for reconnect and second connection
-	conn2 := rs.waitConn(t)
-	if _, err := conn2.Write(makeRTCM(1077, 10)); err != nil {
-		t.Fatalf("failed to write second connection packet: %v", err)
-	}
-	waitPackets(t, mw, 2)
-	conn2.Close()
-	cancel()
-	err := <-done
-	if err != nil && !errors.Is(err, context.Canceled) {
-		t.Errorf("unexpected Run error: %v", err)
-	}
-	// check state transitions include reconnecting
-	mu.Lock()
-	defer mu.Unlock()
-	hasReconnecting := false
-	for _, st := range states {
-		if st == Reconnecting {
-			hasReconnecting = true
+	// The bubble's fake clock skips the real backoff delay before reconnecting.
+	synctest.Test(t, func(t *testing.T) {
+		// use a reconnectable source that provides a new pipe each time
+		rs := &reconnectSource{}
+		mw := &mockWriter{}
+		portLock := gpsio.NewOutPortLock(mockOutPort{})
+		sink := newTestPull(rs, mw, portLock)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var states []State
+		var mu sync.Mutex
+		onState := func(st State, _ error) {
+			mu.Lock()
+			states = append(states, st)
+			mu.Unlock()
 		}
-	}
-	if !hasReconnecting {
-		t.Errorf("expected Reconnecting state, got %v", states)
-	}
+		done := make(chan error, 1)
+		go func() {
+			done <- sink.Run(ctx, nil, onState)
+		}()
+		// write a packet on the first connection, then close it
+		conn1 := rs.waitConn(t)
+		primeSink(t, conn1, mw)
+		if _, err := conn1.Write(makeRTCM(1005, 10)); err != nil {
+			t.Fatalf("failed to write first connection packet: %v", err)
+		}
+		waitPackets(t, mw, 1)
+		conn1.Close()
+		// wait for reconnect and second connection
+		conn2 := rs.waitConn(t)
+		if _, err := conn2.Write(makeRTCM(1077, 10)); err != nil {
+			t.Fatalf("failed to write second connection packet: %v", err)
+		}
+		waitPackets(t, mw, 2)
+		conn2.Close()
+		cancel()
+		err := <-done
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("unexpected Run error: %v", err)
+		}
+		// check state transitions include reconnecting
+		mu.Lock()
+		defer mu.Unlock()
+		hasReconnecting := false
+		for _, st := range states {
+			if st == Reconnecting {
+				hasReconnecting = true
+			}
+		}
+		if !hasReconnecting {
+			t.Errorf("expected Reconnecting state, got %v", states)
+		}
+	})
 }
 
 func TestPullStopsOnFatalConnect(t *testing.T) {
@@ -1246,8 +1250,7 @@ func TestNtripNoAuthHeaderWhenNoUsername(t *testing.T) {
 }
 
 func TestGGASenderRejectsQualityZero(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,0,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
@@ -1270,8 +1273,7 @@ func TestGGASenderRejectsQualityZero(t *testing.T) {
 // A GGA with empty position fields is not usable even with a nonzero quality,
 // so a synthesized no-fix GGA (empty lat/lon) never starts an NMEA upload.
 func TestGGASenderRejectsNoPosition(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
@@ -1408,8 +1410,7 @@ func TestGGASenderTimeoutTolerance(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			ctx := t.Context()
 			ch := make(chan scan.Packet, 1)
 			ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
 			gs := NewGGASender(ch, 5*time.Millisecond)

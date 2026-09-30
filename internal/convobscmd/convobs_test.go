@@ -4,7 +4,9 @@ import (
 	"bufio"
 	"bytes"
 	"compress/gzip"
+	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"iter"
@@ -22,6 +24,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/rinex"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
 )
 
@@ -47,6 +50,10 @@ type packetInputFunc func(obsPacket, WeekConstraint) (bool, error)
 
 func (f packetInputFunc) ConvertPacket(pkt obsPacket, week WeekConstraint) (bool, error) {
 	return f(pkt, week)
+}
+
+func (f packetInputFunc) Finish() error {
+	return nil
 }
 
 func runInputs(inputs iter.Seq2[string, inputReader], out io.Writer, from inputFormat, to outputFormat, packetLog bool, meta rinex.Metadata, interval time.Duration) error {
@@ -531,6 +538,9 @@ func TestRunPacketLogInput(t *testing.T) {
 	tow := uint32(345600000)
 	rtcmT := rinex.TimeFromGPSWeekMillis(2397, tow)
 	uncT := rinex.TimeFromGPSWeekMillis(2419, 522335000)
+	sbfTS := sbfbin.TimeStamp{TOW: 300000000, WNc: 2400}
+	sbfT := rinex.TimeFromGPSWeekMillis(2400, sbfTS.TOW)
+	sbfEpoch := gpsio.PacketLogEntry{Tag: gpsreg.TagSBF, Msg: "MeasEpoch", Bin: gpsio.HexString(sbfPacket(t, sbfTS, sbfMeasEpochParams()))}
 	uncb := packetLogEntryFromFixture(t, gpsreg.TagUnicoreBin, "OBSVM")
 	unca := packetLogEntryFromFixture(t, gpsreg.TagUnicoreAscii, "OBSVM")
 	uncbUntagged := uncb
@@ -595,6 +605,22 @@ func TestRunPacketLogInput(t *testing.T) {
 			t:       uncT,
 		},
 		{
+			name:    "sbf_explicit",
+			from:    inputSBF,
+			entries: []gpsio.PacketLogEntry{sbfEpoch},
+			sat:     "G07",
+			sig:     "1C",
+			t:       sbfT,
+		},
+		{
+			name:    "raw_selects_sbf",
+			from:    inputRaw,
+			entries: []gpsio.PacketLogEntry{sbfEpoch},
+			sat:     "G07",
+			sig:     "1C",
+			t:       sbfT,
+		},
+		{
 			name:    "raw_ignores_untagged_uncb",
 			from:    inputRaw,
 			entries: []gpsio.PacketLogEntry{uncbUntagged},
@@ -653,6 +679,39 @@ func TestRunPacketLogInput(t *testing.T) {
 	}
 }
 
+func TestRunPacketLogSBFPairing(t *testing.T) {
+	// The first MeasEpoch pairs with its MeasExtra and gets the CN0
+	// refinement; the trailing MeasEpoch has no MeasExtra and reaches the
+	// sink through the end-of-input flush.
+	ts1 := sbfbin.TimeStamp{TOW: 300000000, WNc: 2400}
+	ts2 := sbfbin.TimeStamp{TOW: 300001000, WNc: 2400}
+	entries := []gpsio.PacketLogEntry{
+		{Tag: gpsreg.TagSBF, Msg: "MeasEpoch", Bin: gpsio.HexString(sbfPacket(t, ts1, sbfMeasEpochParams()))},
+		{Tag: gpsreg.TagSBF, Msg: "MeasExtra", Bin: gpsio.HexString(sbfPacket(t, ts1, sbfMeasExtraParams()))},
+		{Tag: gpsreg.TagSBF, Msg: "MeasEpoch", Bin: gpsio.HexString(sbfPacket(t, ts2, sbfMeasEpochParams()))},
+	}
+	var got bytes.Buffer
+	if err := runInputs(testInputs(strings.NewReader(packetLog(t, entries...))), &got, inputSBF, outputObsJSON, true, rinex.Metadata{}, 0); err != nil {
+		t.Fatalf("runInputs sbf packet log to obsj: %v", err)
+	}
+	_, obs, err := rinex.ReadObsJSON(strings.NewReader(got.String()))
+	if err != nil {
+		t.Fatalf("ReadObsJSON: %v\n%s", err, got.String())
+	}
+	if len(obs) != 2 {
+		t.Fatalf("len observations = %d, want 2\n%s", len(obs), got.String())
+	}
+	if want := float32(40 + 5*0.03125); obs[0].CN0.Get() != want {
+		t.Errorf("paired observation CN0 = %v, want %v", obs[0].CN0.Get(), want)
+	}
+	if want := float32(40); obs[1].CN0.Get() != want {
+		t.Errorf("flushed observation CN0 = %v, want %v", obs[1].CN0.Get(), want)
+	}
+	if want := rinex.TimeFromGPSWeekMillis(2400, ts2.TOW); obs[1].T != want {
+		t.Errorf("flushed observation T = %v, want %v", obs[1].T, want)
+	}
+}
+
 func TestRunPacketLogPrefilterSkipsInsignificantPacket(t *testing.T) {
 	rawx := rawxPacket(t)
 	bad := `{"t":"2026-01-01T00:00:00Z","tag":"UBX","msg":"NAV-PVT","bin":"zz"}`
@@ -674,6 +733,36 @@ func TestRunPacketLogPrefilterSkipsInsignificantPacket(t *testing.T) {
 	assertObsJSON(t, got.String(), "PKTLOG", nil, "G03", "1C", 0)
 }
 
+var errDiskFull = errors.New("disk full")
+
+type diskFullWriter struct{}
+
+func (diskFullWriter) Write([]byte) (int, error) { return 0, errDiskFull }
+
+func TestRunOutputError(t *testing.T) {
+	// A failed write is reported without the input position, whether it
+	// happens at the final flush (RINEX output is written only then) or
+	// while an input is being converted (obsj output, once the buffered
+	// writer fills).
+	tests := []struct {
+		name string
+		to   outputFormat
+		n    int
+	}{
+		{name: "RINEX at flush", to: outputRINEX, n: 1},
+		{name: "obsj during conversion", to: outputObsJSON, n: 200},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			in := bytes.Repeat(rawxPacket(t), tc.n)
+			err := runInputs(testInputs(bytes.NewReader(in)), diskFullWriter{}, inputRaw, tc.to, false, rinex.Metadata{}, 0)
+			if err == nil || err.Error() != "output: disk full" || !errors.Is(err, errDiskFull) {
+				t.Errorf("err = %v, want output: disk full", err)
+			}
+		})
+	}
+}
+
 func TestMaybeSignificantPacketLogLine(t *testing.T) {
 	tests := []struct {
 		name string
@@ -683,6 +772,9 @@ func TestMaybeSignificantPacketLogLine(t *testing.T) {
 		{name: "ubx rawx", line: `{"tag":"UBX","msg":"RXM-RAWX"}`, want: true},
 		{name: "unc obsvm", line: `{"tag":"UNCB","msg":"OBSVM"}`, want: true},
 		{name: "rtcm", line: `{"tag":"RTCM","msg":"1005"}`, want: true},
+		{name: "sbf measepoch", line: `{"tag":"SBF","msg":"MeasEpoch"}`, want: true},
+		{name: "sbf measextra", line: `{"tag":"SBF","msg":"MeasExtra"}`, want: true},
+		{name: "sbf endofmeas", line: `{"tag":"SBF","msg":"EndOfMeas"}`, want: false},
 		{name: "unicode escape", line: `{"tag":"UBX","msg":"RX\u004d-RAWX"}`, want: true},
 		{name: "escaped crlf", line: `{"tag":"UNCA","msg":"MODE","ascii":"#MODE\\r\\n"}`, want: false},
 		{name: "irrelevant", line: `{"tag":"UBX","msg":"NAV-PVT"}`, want: false},
@@ -1231,7 +1323,7 @@ func diffMetadataValueFields(prefix string, a, b reflect.Value) []string {
 	if metadataValueIsZero(a) && metadataValueIsZero(b) {
 		return nil
 	}
-	if a.Kind() != reflect.Struct || a.Type() == reflect.TypeOf(time.Time{}) {
+	if a.Kind() != reflect.Struct || a.Type() == reflect.TypeFor[time.Time]() {
 		return []string{prefix}
 	}
 	fields := make([]string, 0)
@@ -1464,6 +1556,41 @@ func mustTime(t *testing.T, s string) rinex.Time {
 		t.Fatalf("UnmarshalText(%q): %v", s, err)
 	}
 	return tm
+}
+
+func sbfPacket(t *testing.T, ts sbfbin.TimeStamp, params sbfbin.Params) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	if err := binary.Write(&buf, sbfbin.Endian, ts); err != nil {
+		t.Fatalf("write timestamp: %v", err)
+	}
+	if err := sbfbin.WriteBinChunked(&buf, params, "test"); err != nil {
+		t.Fatalf("WriteBinChunked: %v", err)
+	}
+	pkt, err := sbfbin.PackMsg(sbfbin.MsgID(params.BlockNumber()), buf.Bytes())
+	if err != nil {
+		t.Fatalf("PackMsg: %v", err)
+	}
+	return pkt
+}
+
+func sbfMeasEpochParams() *sbfbin.MeasEpoch {
+	return &sbfbin.MeasEpoch{
+		Type1: []sbfbin.MeasEpochChannelType1{{
+			RxChannel: 1, SVID: 7, Misc: 5, CodeLSB: 123456789,
+			Doppler: -12345678, CarrierMSB: 2, CarrierLSB: 1500, CN0: 120, LockTime: 100,
+		}},
+		Type2: [][]sbfbin.MeasEpochChannelType2{nil},
+	}
+}
+
+func sbfMeasExtraParams() *sbfbin.MeasExtra {
+	var e sbfbin.MeasExtra
+	var s sbfbin.MeasExtraChannelSub
+	s.RxChannel = 1
+	s.Misc = 5
+	e.Channels = []sbfbin.MeasExtraChannelSub{s}
+	return &e
 }
 
 func rawxPacket(t *testing.T) []byte {

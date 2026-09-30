@@ -1,0 +1,540 @@
+#:schema ../gpsmsg-schema.json
+# Allystar TAU951M GPS message file (P2 and K2 variants)
+# CFG-MSG rate is a divisor of the receiver's native measurement cycle.
+# The TAU951M is 5Hz-native, so divisor 5 produces 1Hz output.
+
+[[include]]
+src = "asbin.toml"
+
+# Default delay: protocol says to wait for ACK before sending next command
+[default.asbin]
+delay = 0.1
+
+# Message Rate Control (CFG-MSG 0x06 0x01)
+
+# Enable NAV-TIME at 1Hz (for satpulsed)
+[[asbin]]
+tag = "asbin-nav-time"
+description = "Enable NAV-TIME binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x05, 5]
+
+# Disable NAV-TIME
+[[asbin]]
+tag = "asbin-nav-time-off"
+description = "Disable NAV-TIME binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x05, 0]
+
+# Enable NAV-TIMEUTC at 1Hz (UTC time with validity flags)
+[[asbin]]
+tag = "asbin-nav-timeutc"
+description = "Enable NAV-TIMEUTC binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 5]
+
+# Disable NAV-TIMEUTC
+[[asbin]]
+tag = "asbin-nav-timeutc-off"
+description = "Disable NAV-TIMEUTC binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x21, 0]
+
+# Enable NAV-SVINFO at 1Hz (satellite visibility info)
+[[asbin]]
+tag = "asbin-nav-svinfo"
+description = "Enable NAV-SVINFO binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 5]
+
+# Disable NAV-SVINFO
+[[asbin]]
+tag = "asbin-nav-svinfo-off"
+description = "Disable NAV-SVINFO binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x30, 0]
+
+# Enable NAV-SVIN at 1Hz (survey-in status)
+[[asbin]]
+tag = "asbin-nav-svin"
+description = "Enable NAV-SVIN binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x31, 5]
+
+# Disable NAV-SVIN
+[[asbin]]
+tag = "asbin-nav-svin-off"
+description = "Disable NAV-SVIN binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x31, 0]
+
+# Enable NAV-POSECEF at 1Hz (ECEF position)
+[[asbin]]
+tag = "asbin-nav-posecef"
+description = "Enable NAV-POSECEF binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 5]
+
+# Disable NAV-POSECEF
+[[asbin]]
+tag = "asbin-nav-posecef-off"
+description = "Disable NAV-POSECEF binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x01, 0]
+
+# Enable NAV-POSLLH at 1Hz (LLH position)
+[[asbin]]
+tag = "asbin-nav-posllh"
+description = "Enable NAV-POSLLH binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 5]
+
+# Disable NAV-POSLLH
+[[asbin]]
+tag = "asbin-nav-posllh-off"
+description = "Disable NAV-POSLLH binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x02, 0]
+
+# Enable NAV-AUTO at 1Hz (fix state, position, speed, DOPs, satellite counts)
+[[asbin]]
+tag = "asbin-nav-auto"
+description = "Enable NAV-AUTO binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0xC0, 5]
+
+# Disable NAV-AUTO
+[[asbin]]
+tag = "asbin-nav-auto-off"
+description = "Disable NAV-AUTO binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0xC0, 0]
+
+# Enable NAV-DOP at 1Hz (dilution of precision)
+[[asbin]]
+tag = "asbin-nav-dop"
+description = "Enable NAV-DOP binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 5]
+
+# Disable NAV-DOP
+[[asbin]]
+tag = "asbin-nav-dop-off"
+description = "Disable NAV-DOP binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x04, 0]
+
+# Enable NAV-VELECEF at 1Hz (ECEF velocity)
+[[asbin]]
+tag = "asbin-nav-velecef"
+description = "Enable NAV-VELECEF binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 5]
+
+# Disable NAV-VELECEF
+[[asbin]]
+tag = "asbin-nav-velecef-off"
+description = "Disable NAV-VELECEF binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x11, 0]
+
+# Enable NAV-VELNED at 1Hz (NED velocity)
+[[asbin]]
+tag = "asbin-nav-velned"
+description = "Enable NAV-VELNED binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 5]
+
+# Disable NAV-VELNED
+[[asbin]]
+tag = "asbin-nav-velned-off"
+description = "Disable NAV-VELNED binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x12, 0]
+
+# Enable NAV-CLOCK at 1Hz (clock bias/drift)
+[[asbin]]
+tag = "asbin-nav-clock"
+description = "Enable NAV-CLOCK binary message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 5]
+
+# Disable NAV-CLOCK
+[[asbin]]
+tag = "asbin-nav-clock-off"
+description = "Disable NAV-CLOCK binary message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0x01, 0x22, 0]
+
+# NMEA messages use class 0xF0
+
+[[asbin]]
+tag = "nmea-gga"
+description = "Enable NMEA GGA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 5]
+
+[[asbin]]
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 0]
+
+[[asbin]]
+tag = "nmea-gsa"
+description = "Enable NMEA GSA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 5]
+
+[[asbin]]
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 0]
+
+[[asbin]]
+tag = "nmea-gsv"
+description = "Enable NMEA GSV message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 5]
+
+[[asbin]]
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 0]
+
+[[asbin]]
+tag = "nmea-rmc"
+description = "Enable NMEA RMC message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 5]
+
+[[asbin]]
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 0]
+
+[[asbin]]
+tag = "nmea-zda"
+description = "Enable NMEA ZDA message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 5]
+
+[[asbin]]
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 0]
+
+[[asbin]]
+tag = "nmea-gll"
+description = "Enable NMEA GLL message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 5]
+
+[[asbin]]
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 0]
+
+# GST uses an undocumented CFG-MSG sub-ID discovered by hardware testing
+# Verified enable and disable on TAU951M
+[[asbin]]
+tag = "nmea-gst"
+description = "Enable NMEA GST message at 1Hz"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x08, 5]
+
+[[asbin]]
+tag = "nmea-gst-off"
+description = "Disable NMEA GST message"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x08, 0]
+
+# Disable all NMEA messages (GGA, GLL, GSA, GSV, RMC, ZDA, GST)
+# Note: TXT cannot be disabled
+# GGA
+[[asbin]]
+tag = "nmea-off"
+description = "Disable all NMEA messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x00, 0]
+
+# GSA
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x02, 0]
+
+# GSV
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x04, 0]
+
+# RMC
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x05, 0]
+
+# ZDA
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x07, 0]
+
+# GLL
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x01, 0]
+
+# GST (undocumented CFG-MSG sub-ID; hardware-discovered); keep last
+[[asbin]]
+tag = "nmea-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF0, 0x08, 0]
+
+# RTCM Message Control (CFG-MSG 0x06 0x01 with group 0xF8)
+
+# Enable RTCM ARP (1005) message
+[[asbin]]
+tag = "rtcm-arp"
+description = "Enable RTCM ARP message (1005)"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x05, 5]
+
+# Enable RTCM MSM7 messages for all constellations
+# Divisor 5 = 1Hz output on the TAU951M
+# 1077 GPS MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 messages for all constellations"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4D, 5]
+
+# 1087 GLONASS MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x57, 5]
+
+# 1097 Galileo MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x61, 5]
+
+# 1127 BeiDou MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7F, 5]
+
+# Enable RTCM MSM4 messages for all constellations
+# 1074 GPS MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+description = "Enable RTCM MSM4 messages for all constellations"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4A, 5]
+
+# 1084 GLONASS MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x54, 5]
+
+# 1094 Galileo MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x5E, 5]
+
+# 1124 BeiDou MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7C, 5]
+
+# Disable all RTCM messages (MSM4 + MSM7 + 1005)
+# 1005 ARP
+[[asbin]]
+tag = "rtcm-off"
+description = "Disable all RTCM messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x05, 0]
+
+# 1074 GPS MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4A, 0]
+
+# 1077 GPS MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4D, 0]
+
+# 1084 GLONASS MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x54, 0]
+
+# 1087 GLONASS MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x57, 0]
+
+# 1094 Galileo MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x5E, 0]
+
+# 1097 Galileo MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x61, 0]
+
+# 1124 BeiDou MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7C, 0]
+
+# 1127 BeiDou MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7F, 0]

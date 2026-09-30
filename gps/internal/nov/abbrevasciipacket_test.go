@@ -64,6 +64,11 @@ func TestAbbrevAsciiPacketValidation(t *testing.T) {
 			false,
 		},
 		{
+			"SinoGNSS K901 IONUTC data line",
+			"<     1.303851604461670e-08 1.490116119384766e-08 -5.960464477539063e-08 -1.192092895507813e-07 1.024000000000000e+05 6.553600000000000e+04 -1.966080000000000e+05 -2.621440000000000e+05 134 147456 4.6566128730773926e-09 4.656612873e-09 137 7 18 18 0\r\n",
+			true,
+		},
+		{
 			"line at maximum length",
 			"<" + strings.Repeat("x", abbrevMaxLength-3) + "\r\n",
 			true,

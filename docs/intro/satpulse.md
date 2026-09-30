@@ -2,27 +2,42 @@
 title: SatPulse
 ---
 
-The SatPulse software consists of two programs:
+The SatPulse software consists of three programs:
 
 - [`satpulsed`]({%link man/satpulsed.8.md%}) - an integrated daemon, which connects to a GPS receiver over a serial port; the functions it performs are controlled by a configuration file in [TOML format]({%link man/satpulse.toml.5.md%})
+- [`satpulsewb`]({%link man/satpulsewb.1.md%}) - a web-based GUI for GPS receiver configuration and monitoring, called SatPulse Workbench {% include new-in-03.html %}
 - [`satpulsetool`]({%link man/satpulsetool.1.md%}) - a suite of command-line tools, usable with or without the daemon; there is a subcommand for each tool
 
-Both programs are written in Go and use a common Go library.
+All three programs are written in Go and use a common Go library.
 
 ## Platform support
 
-TODO
+All three programs run on Linux, macOS and Windows. {% include new-in-03.html %}
+On Linux, SatPulse is packaged for deb-based and rpm-based distributions;
+on macOS, it installs from the Homebrew tap;
+on Windows, it is distributed as a zip file.
+See [Installing SatPulse]({% link setup/satpulse-install.md %}).
+
+Timing with a PHC is supported only on Linux.
+Timing based on a serial PPS signal is supported on Linux and macOS.
 
 ## Timing
 
 SatPulse can be used for timing both with and without a PHC.
 See [Precision timing](timing.md) for the concepts behind these features.
 
-When used without a PHC, SatPulse can provide timing information to an NTP daemon based on serial messages alone.
-The NTP daemon will typically read PPS timestamps itself, and use the timing information from SatPulse to identify which second each pulse corresponds to.
+When used without a PHC, SatPulse can provide timing information to an NTP daemon.
+There are two different approaches depending on how the PPS signal is wired up:
+
+- based on serial messages alone: the NTP daemon reads PPS timestamps itself, and uses the timing information from SatPulse to identify which second each pulse corresponds to
+- based on serial PPS: when the PPS signal is wired to a modem control line of the serial port, satpulsed timestamps the pulses itself, and sends samples with sufficient information for the NTP daemon to synchronize the system clock without any additional input {% include new-in-03.html %}
+
 SatPulse supports two protocols for communicating with an NTP daemon:
 - the refclock SOCK protocol used by chrony, and now also supported by ntpd-rs
-- the traditional shared memory protocol (driver type 28) used by the reference NTP implementation
+- the traditional shared memory protocol (driver type 28) used by the reference NTP implementation {% include new-in-03.html %}
+
+`satpulsetool` provides the [`serial`]({%link man/satpulsetool-serial.1.md%}) tool for working with serial ports:
+it can detect the speed of a connected GPS receiver, and can also detect PPS pulses on a modem control line. {% include new-in-03.html %}
 
 Most of SatPulse's timing functionality is designed to support use of a PHC. `satpulsed`:
 
@@ -41,7 +56,7 @@ Most of SatPulse's timing functionality is designed to support use of a PHC. `sa
 
 ## Positioning
 
-SatPulse is designed to support the use of hardware RTK. These features are new in 0.3.
+SatPulse is designed to support the use of hardware RTK. {% include new-in-03.html %}
 `satpulsed` can
 
 - act as an Ntrip caster, serving RTCM corrections from the GPS receiver to Ntrip clients
@@ -51,8 +66,8 @@ SatPulse is designed to support the use of hardware RTK. These features are new 
 
 `satpulsetool` provides the `ntrip` tool for fetching correction data from an Ntrip caster.
 
-Also new in 0.3, `satpulsetool` provides the [`convobs`]({%link man/satpulsetool-convobs.1.md%}) tool for converting raw observation data,
-in either RTCM MSM7 or vendor-specific formats, into RINEX.
+`satpulsetool` provides the [`convobs`]({%link man/satpulsetool-convobs.1.md%}) tool for converting raw observation data,
+in either RTCM MSM7 or vendor-specific formats, into RINEX. {% include new-in-03.html %}
 RINEX files can be sent to a post-processing service such as CSRS-PPP,
 in order to get the most accurate possible position estimate.
 
@@ -92,6 +107,10 @@ so that the user can tell whether a message was accepted by the receiver.
 `satpulsed` uses its configuration file to intelligently perform certain non-disruptive kinds of configuration.
 For example, if `satpulsed` is configured to synchronize a PHC, it will ensure PPS output and the needed timing messages are enabled.
 Configuration changes made by `satpulsed` are made only in RAM, and will be undone if the receiver is power cycled.
+
+SatPulse Workbench is a third frontend to the same configuration model (see [satpulsewb(1)]({%link man/satpulsewb.1.md%})). {% include new-in-03.html %}
+Its Configuration tab is a graphical view of high-level configuration, edited as a form.
+Its Message file tab sends message files chosen from the installed library.
 
 ## Observability
 
@@ -136,63 +155,13 @@ Packet logs can be captured by `satpulsed` or by the `gps` tool.
 
 ## Receiver protocol support
 
-NMEA and RTCM are vendor-independent protocols.
-SatPulse can support a broad range of functionality using just these protocols.
+All GPS receivers support the NMEA protocol, which is vendor-independent.
+SatPulse can support a broad range of functionality using just NMEA.
+SatPulse also supports RTCM, which is also vendor-independent.
 
 SatPulse also supports vendor-defined protocols.
 These protocols are used by receivers to
 - provide periodic data about the ongoing operation of the receiver; these are conceptually similar to NMEA, but provide richer information
 - allow configuration of the receiver; there are no vendor-independent protocols for this
 
-Supporting a protocol involves:
-- recognizing the protocol's packet formats; protocols differ in whether they use a single packet format for both periodic data and configuration
-- decoding the packet wire formats
-- for periodic data, mapping the decoded packets into the device-independent model that drives observability and timing
-- providing protocol-specific message types for conveniently describing protocol messages in message files
-- handling request/response correlation when sending messages defined in message files
-- providing message files to perform configuration
-- supporting high-level configuration
-- supporting conversion of raw observation messages into RINEX
-- validating the implementation with real hardware
-
-SatPulse defines two tiers of protocol support. These differ mainly as regards configuration:
-
-- for tier 1, the primary configuration mechanism is high-level configuration; the message files provide support for configuration features that are not covered by the device-independent configuration model
-- for tier 2, all configuration is handled by message files; high-level configuration is not supported
-
-Message files can provide full access to a receiver's functionality, but high-level configuration is more convenient and requires no device-specific knowledge from the user.
-The message files provided for tier 2 receivers follow device-independent tag naming conventions to reduce
-the device-specific knowledge needed to use them.
-
-In addition:
-
-- conversion of raw observation messages has currently only been implemented for tier 1 protocols
-- more extensive hardware validation has been performed for tier 1 protocols than for tier 2
-
-There is tier 1 support for the following protocols:
-
-- u-blox UBX protocol; support covers a wide range of receivers from LEA-6T through to ZED-X20P,
-  including standard precision, high precision and timing receivers
-- Unicore protocol used by the NebulasIV family of high precision boards and receivers,
-  i.e. the UM980 series (UM980, UM981, UM982 and UM960)
-
-The protocols with tier 2 support can be grouped as follows.
-There are binary, UBX-like protocols:
-
-- Allystar; support has been validated with the TAU1201 using the Cynosure III chip,
-  and the more recent TAU951M-P200 using the Cynosure IV chip
-- CASIC binary protocol used by Zhongke Microelectronics; there are two generations of this protocol, the first used by ATGM332D-5N and ATGM336H-5N series modules using the AT6558, and the second used by subsequent modules
-- SDBP protocol used by Techtotop/Taidou; support has been validated with the T303-5D, which is an L1/L5 timing module
-
-There are vendors using the NovAtel OEM6/OEM7 protocol. These protocols treat periodic data, which they call *logs*, differently from configuration. The logs have a dual ASCII/binary syntax and are very similar between vendors: in particular, the packet formats are indistinguishable. Configuration follows a similar style of line-oriented ASCII commands, but is not interoperable between vendors. Unicore UM980 protocol is similar to this, but the packet format is slightly different. There is tier 2 support for:
-
-- ByNav, validated on the M10 and M20
-- SinoGNSS, validated on the K901 and K902
-
-The Unicore UM980 series also has undocumented support for emitting OEM6/OEM7 compatible logs, and SatPulse supports this as well.
-
-Finally, there are vendors using protocols that use NMEA proprietary sentences starting with `P`.
-
-- PQTM protocol defined by Quectel, which has been validated with the LG290P and LC29H
-- PAIR protocol defined by Airoha, which has been validated on the Quectel LC29H (which uses the Airoha AG3335 chipset)
-
+See [GPS module support]({% link gps-module-support/index.md %}) for details of support for vendor-defined protocols.

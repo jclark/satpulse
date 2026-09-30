@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"time"
@@ -15,7 +16,6 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/scan"
-	"golang.org/x/exp/maps"
 )
 
 type Result struct {
@@ -41,8 +41,19 @@ type badCount struct {
 
 var _ gpsprot.NativeMsgHandler = &msgHandler{}
 
-var ErrNoProbeResponse = errors.New("no response to configuration probe message; not configuring GPS")
-var ErrNotDetected = errors.New("GPS detection failed")
+var ErrNoProbeResponse = errors.New("configuration probes could not identify GPS; not configuring GPS")
+
+// ErrNotDetected is matched by errors.Is when no configuration protocol
+// identified the GPS and no usable output was seen. The returned error is a
+// notDetectedError whose text describes the specific case.
+var ErrNotDetected = errors.New("GPS not detected")
+
+// notDetectedError is not wrapped around ErrNotDetected so that each case
+// can be worded on its own instead of behind a fixed prefix.
+type notDetectedError string
+
+func (e notDetectedError) Error() string        { return string(e) }
+func (e notDetectedError) Is(target error) bool { return target == ErrNotDetected }
 
 func Configure(ctx context.Context, lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.PacketProcessor, configProts []gpsprot.ConfigProtocol, target *gpsprot.ConfigTarget, packetCh <-chan scan.Packet, port gpsio.OutPort) (*Result, error) {
 	if ro := target.Props.ReadOnlyProps(); ro != 0 {
@@ -120,8 +131,7 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 		if len(msgIDs) == 0 {
 			continue
 		}
-		ids := maps.Keys(msgIDs)
-		slices.Sort(ids)
+		ids := slices.Sorted(maps.Keys(msgIDs))
 		lg.Info("message types received during configuration", "protocol", tag, "msgIDs", ids)
 		if rcvrInfo != nil {
 			if rcvrInfo.MsgTypes == nil {
@@ -219,16 +229,23 @@ func (mh *msgHandler) detect(ctx context.Context, port gpsio.OutPort, probeEnabl
 		if mh.bad.framingErrs > 0 {
 			msg = "framing errors reading GPS output (wrong speed?)"
 		} else if nativeOnly := mh.nativeOnlyTags(); len(nativeOnly) > 0 {
-			msg = fmt.Sprintf("only messages with these protocols detected: %s", strings.Join(nativeOnly, ", "))
+			tags := strings.Join(nativeOnly, ", ")
+			if probeEnabled {
+				msg = fmt.Sprintf("configuration probes could not identify GPS; no usable output (only formats detected: %s)", tags)
+			} else {
+				msg = fmt.Sprintf("no usable output from GPS (only formats detected: %s)", tags)
+			}
 		} else if mh.bad.invalidBytes+mh.bad.corruptMsgs == 0 {
-			msg = "no output detected from GPS"
+			msg = "no output from GPS"
 		} else if mh.bad.corruptMsgs > 0 {
 			msg = "corrupted GPS output (multiple processes reading from serial port?)"
+		} else if probeEnabled {
+			msg = "configuration probes could not identify GPS; output not in any recognized format"
 		} else {
-			msg = "cannot parse GPS output"
+			msg = "GPS output not in any recognized format"
 		}
 		mh.lg.Debug("not receiving data from GPS correctly", "bad", mh.bad, "nativeOnlyTags", mh.nativeOnlyTags())
-		return nil, fmt.Errorf("%w: %s", ErrNotDetected, msg)
+		return nil, notDetectedError(msg)
 	}
 	mh.lg.Info("detected a GPS")
 	mh.lg.Debug("received suitable output message from GPS", "msgCount", mh.msgCount, "bad", mh.bad)
@@ -514,13 +531,14 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 		return nil, nil, 0, err
 	}
 	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
+	serPort, _ := port.(*gpsio.SerialConn)
 	var knownErr error // error that we know how to handle
 	for action := range director.Actions() {
 		director.AdvanceTimeTo(time.Now())
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
 			var err error
-			if serPort, ok := port.(*gpsio.SerialConn); ok && action.Speed != 0 {
+			if serPort != nil && action.Speed != 0 {
 				_, err = serPort.WriteThenChangeSpeed(action.Packet, action.Speed)
 			} else {
 				_, err = port.Write(action.Packet)
@@ -544,6 +562,9 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 				mh.packet(packet)
 				if packet.ChecksumValid {
 					director.ValidPacketReceived(packet.TRead)
+					if serPort != nil {
+						serPort.SetDetected()
+					}
 				}
 			}
 

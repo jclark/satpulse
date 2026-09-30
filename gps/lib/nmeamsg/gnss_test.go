@@ -226,9 +226,12 @@ func TestParseRMC(t *testing.T) {
 		t.Fatalf("parse: %v", err)
 	}
 	want := RMCFields{
-		Time: tod(11, 46, 50, 0), Status: "A", Lat: lat(13, 4390931), LatSign: 1, Lon: lon(100, 3868511), LonSign: 1,
-		Speed: f64(0.005), Course: f64(221.7), Date: opt.Make(dateDMY(time.Date(2025, 5, 4, 0, 0, 0, 0, time.UTC))),
-		MagVar: f64(0.5), MagVarSign: -1, Mode: "A", NavStatus: "C",
+		RMC12Fields: RMC12Fields{
+			Time: tod(11, 46, 50, 0), Status: "A", Lat: lat(13, 4390931), LatSign: 1, Lon: lon(100, 3868511), LonSign: 1,
+			Speed: f64(0.005), Course: f64(221.7), Date: opt.Make(dateDMY(time.Date(2025, 5, 4, 0, 0, 0, 0, time.UTC))),
+			MagVar: f64(0.5), MagVarSign: -1, Mode: "A",
+		},
+		NavStatus: "C",
 	}
 	got := m.Body().(RMCFields)
 	if !reflect.DeepEqual(got, want) {
@@ -243,11 +246,11 @@ func TestParseRMC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse 12-field RMC: %v", err)
 	}
-	want12 := RMCFields{
+	want12 := RMC12Fields{
 		Time: tod(5, 4, 0, 0), Status: "A", Lat: lat(13, 4391095), LatSign: 1, Lon: lon(100, 3868425), LonSign: 1,
 		Speed: f64(0.028), Date: opt.Make(dateDMY(time.Date(2025, 6, 24, 0, 0, 0, 0, time.UTC))), Mode: "A",
 	}
-	r12 := m12.Body().(RMCFields)
+	r12 := m12.Body().(RMC12Fields)
 	if !reflect.DeepEqual(r12, want12) {
 		t.Errorf("12-field RMC\n got  %+v\n want %+v", r12, want12)
 	}
@@ -291,6 +294,7 @@ func TestParseDispatch(t *testing.T) {
 	}{
 		{"gga", frame("GNGGA,,,,,,0,00,99.99,,,,,,"), GGAFields{}, nil},
 		{"rmc", frame("GNRMC,114650.00,A,1343.9,N,10038.6,E,0,,040525,,,A,V"), RMCFields{}, nil},
+		{"rmc 12 fields", frame("GNRMC,114650.00,A,1343.9,N,10038.6,E,0,,040525,,,A"), RMC12Fields{}, nil},
 		{"unsupported gsv", frame("GPGSV,1,1,01,01,40,083,41"), nil, ErrUnsupportedSentence},
 		{"proprietary pubx", frame("PUBX,41,1"), nil, nil},
 		{"non-gnss talker", frame("XXTXT,01,01,02,hello"), nil, nil},
@@ -320,9 +324,9 @@ func TestParseDispatch(t *testing.T) {
 	}
 }
 
-// TestParseFieldCount rejects wrong field counts for known sentences. fieldenc
-// tolerates short input, so a truncated GGA/RMC must be a malformed known
-// message, not a half-populated struct.
+// TestParseFieldCount rejects wrong field counts for known sentences: a
+// truncated GGA/RMC must be a malformed known message, not a half-populated
+// struct.
 func TestParseFieldCount(t *testing.T) {
 	bad := []string{
 		frame("GPGGA"),                                                  // address only
@@ -371,6 +375,35 @@ func TestGGAJSON(t *testing.T) {
 	latObj, ok := obj["lat"].(map[string]any)
 	if !ok || latObj["deg"] != 13.0 || math.Abs(latObj["min"].(float64)-43.91072) > 1e-5 {
 		t.Errorf("lat = %v, want {deg:13, min:~43.91072}", obj["lat"])
+	}
+}
+
+// TestRMCJSON checks that the JSON distinguishes a 12-field RMC, which has no
+// navStatus, from a 13-field RMC whose navStatus is empty.
+func TestRMCJSON(t *testing.T) {
+	tests := []struct {
+		name   string
+		in     string
+		expect string
+	}{
+		{"12 fields", frame("GNRMC,,V,,,,,,,,,,N"), `{"status":"V","mode":"N"}`},
+		{"13 fields, empty navStatus", frame("GNRMC,,V,,,,,,,,,,N,"), `{"status":"V","mode":"N","navStatus":""}`},
+		{"13 fields", frame("GNRMC,,V,,,,,,,,,,N,V"), `{"status":"V","mode":"N","navStatus":"V"}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m, err := parseSentence(tc.in)
+			if err != nil {
+				t.Fatalf("parse: %v", err)
+			}
+			got, err := json.Marshal(m.Body())
+			if err != nil {
+				t.Fatalf("marshal: %v", err)
+			}
+			if string(got) != tc.expect {
+				t.Errorf("got  %s\nwant %s", got, tc.expect)
+			}
+		})
 	}
 }
 

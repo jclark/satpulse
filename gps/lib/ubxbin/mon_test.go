@@ -4,11 +4,11 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/lib/latin1z"
-	"golang.org/x/exp/slices"
 )
 
 func TestMonVer(t *testing.T) {

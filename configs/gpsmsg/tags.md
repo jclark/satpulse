@@ -164,15 +164,27 @@ set the message rate to 10.
 | `fixed-pos-example` | Set fixed ECEF position (example coordinates - replace with yours) |
 | `fixed-pos-off` | Clear fixed position |
 
+## Antenna height (base station)
+
+| Tag | Description |
+|-----|-------------|
+| `antenna-height-0` | Set antenna height above the marker to 0, with no horizontal offset |
+| `antenna-height-2000` | Set antenna height above the marker to 2000 mm (2 m), with no horizontal offset |
+
+The number is the vertical distance from the marker to the antenna reference point (ARP), in millimetres: the antenna height carried by RTCM 1006.
+
 ## RTCM output (base station)
 
 | Tag | Description |
 |-----|-------------|
 | `rtcm-arp` | Enable ARP message (1005) |
+| `rtcm-arph` | Enable ARP message with antenna height (1006); only for receivers with `antenna-height-*` |
 | `rtcm-msm4` | Enable MSM4 for all constellations (1074/1084/1094/1124) |
 | `rtcm-msm7` | Enable MSM7 for all constellations (1077/1087/1097/1127) |
 | `rtcm-eph` | Enable ephemeris messages (1019/1020/1041/1042/1044/1045/1046) |
 | `rtcm-eph-off` | Disable ephemeris messages |
+| `rtcm-legacy` | Enable legacy GPS and GLONASS L1/L2 observables (1004/1012) |
+| `rtcm-legacy-off` | Disable legacy observables |
 | `rtcm-4072-0` | Enable RTCM 4072.0 (example: numeric message with subtype) |
 | `rtcm-4072-0-off` | Disable RTCM 4072.0 |
 | `rtcm-4072-1` | Enable RTCM 4072.1 |

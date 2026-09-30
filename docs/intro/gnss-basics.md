@@ -1,6 +1,8 @@
 ---
 title: GPS and GNSS basics
 toc: false
+redirect_from:
+  - /intro/gnss.html
 ---
 
 On this page, we will explain the basics of GNSS in the context of computer systems.
@@ -11,6 +13,9 @@ are three other similar constellations with global coverage: Galileo, BeiDou, an
 European Union, China, and Russia, respectively. The technically correct term for such a constellation is
 GNSS (Global Navigation Satellite System).
 However, the term GPS is often used informally to refer to any GNSS system, and we will use it in that sense.
+Arguably the most advanced GNSS system today is Galileo, followed by BeiDou.
+GPS has fallen a bit behind. GLONASS made some different technical choices from the other three,
+which has put it at a disadvantage.
 There are also constellations with regional coverage: QZSS and NavIC, operated by Japan and India, respectively.
 
 A constellation means a system of satellites whose orbits are coordinated.
@@ -47,9 +52,14 @@ This enables receivers to compensate for the ionospheric error,
 which can improve accuracy to about 1-2 m.
 The earliest dual-band receivers are L1/L2, meaning they use the L2 band in addition to the L1 band.
 More modern dual-band receivers use the L5 band rather than the L2 band.
-High-end receivers can receive on all bands simultaneously.
+High-end receivers can use all three bands simultaneously.
+BeiDou pioneered the use of L5. Galileo also fully supports it.
+As of 2026Q3, GPS has not yet declared full operational capability for its L5 signal.
 
-TODO: compare constellations; GLONASS odd one out; mention NMA
+GNSS signals can be quite easily spoofed, and this is becoming an increasing problem.
+A partial solution is navigation message authentication (NMA),
+which cryptographically signs some of the information in the signals.
+Galileo and QZSS have both deployed NMA services: OSNMA and QZNMA, respectively.
 
 When a GNSS receiver is used with a computer system, it almost always has some sort of serial connection,
 such as a UART, USB or I2C.
@@ -66,11 +76,11 @@ Configuration includes such things as the speed of the serial interface,
 which constellations and bands are enabled, which messages should be emitted, and the rate at which they should be emitted.
 Sophisticated receivers have many hundreds of configurable parameters.
 
-Physically, a GNSS receiver suitable for use with a computer system is built around a module.
+Physically, a GNSS receiver suitable for use with a computer system is built around a [module]({% link hardware/gnss-modules.md %}).
 A module is a small, thin, rectangular, metal-shielded component with solder pads underneath, typically around 1-3 cm across and a few millimeters thick;
 it is built around a GNSS chip, which is the silicon that does the actual GNSS processing,
 and integrates other components such as flash memory and an oscillator.
 A GNSS module cannot be connected to a computer directly. It first needs to be integrated into a board.
 The board supports connections for serial IO to the host, for the antenna and for power.
-The board may be designed to go inside a computer's case, or it may have its own separate enclosure.
+The board may be designed to [go inside a computer's case]({% link hardware/gnss-boards.md %}), or it may have [its own separate enclosure]({% link hardware/gnss-enclosed.md %}).
 

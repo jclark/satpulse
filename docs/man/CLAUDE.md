@@ -6,20 +6,39 @@ from the filename (`name.section.md`), so files have no front matter:
 they start directly with `# NAME`. CLAUDE.md files are excluded from
 the published web site via the `exclude` list in `docs/_config.yml`.
 
+## What a man page is
+
+A man page states the command's contract at the level a user relies
+on. It is reference documentation for users: not a tutorial, not a
+detailed specification of the behaviour, and not an implementation
+document. It does not try to exhaustively describe what the command
+does, and behaviour it does not mention is not promised. What the
+program is built from - internal names, code structure, design
+concepts - never appears; neither does motivation for a feature's
+existence.
+
+Brevity is a key virtue. Every sentence must tell the user
+something needed to use the command; a fact that is self-evident,
+incidental, or of no consequence to the user is left out even
+though it is true and checkable. Judge a page by what the user
+needs, not by how completely it matches the code: a page is wrong
+for misstating behaviour, never for omitting it.
+
+Above all, be consistent in style with the existing man pages.
+
 ## Content
 
-Man pages are reference documentation for users, not tutorials and
-not implementation specifications. Above all, be consistent in style
-with the existing man pages.
-
 - Document observable behavior only: inputs, outputs, defaults,
-  constraints, side effects, exit codes. What the program is built
-  from - internal names, code structure, design concepts - never
-  appears; neither does motivation for a feature's existence.
+  constraints, side effects, exit codes. An EXIT STATUS entry names
+  the kinds of failure a code covers, not every path that produces
+  it.
 - Say what happens in the cases the reader would otherwise have to
-  guess: when an option is omitted, what is skipped, what is an
-  error. A guarantee of what the program does *not* do is content
-  ("does not rescan, re-encode, re-checksum").
+  guess: when an option is omitted, what is skipped. A guarantee of
+  what the program does *not* do can be content ("does not rescan,
+  re-encode, re-checksum").
+- A constraint gets a sentence only when the reader would otherwise
+  guess wrong; do not enumerate every invalid option combination or
+  error case.
 - Each fact lives where the user will look for it - an option's
   behavior at the option - and is cross-referenced from elsewhere,
   not repeated ("as with **\-\-gnss**", "see ENVIRONMENT").
@@ -49,6 +68,9 @@ with the existing man pages.
 - Short sentences, one fact each, one sentence per source line.
   After the opening sentence: value syntax, then defaults, then
   constraints and interactions.
+- Say each fact once; never restate it in a mirror clause ("reads
+  from serial ports but never writes to them", not "only reads from
+  serial ports; it never transmits to a connected device").
 - Stock phrasings for recurring facts: "The default is 2.",
   "Requires **\-\-gnss**.", "Cannot be combined with ...", "Applies
   only when ... is specified.", "This option may be repeated.",

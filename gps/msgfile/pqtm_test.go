@@ -56,6 +56,16 @@ func TestCorrelatorPQTM(t *testing.T) {
 			},
 		},
 		{
+			name: "query without R ACK with data",
+			tags: []string{"get-sn"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("PQTMSN,OK,1,15,MPY26A84V001632"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(0)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
 			name: "query NAK",
 			tags: []string{"get-pps"},
 			events: []event{
@@ -142,6 +152,23 @@ func TestCorrelatorPQTM(t *testing.T) {
 			},
 		},
 		{
+			name: "PQTMVERNO data with pending query",
+			tags: []string{"get-version", "get-pps"},
+			events: []event{
+				sendEvent{},
+				readyToSend{want: true},
+				sendEvent{},
+				// The query's data arrives in its ack, so it cannot claim
+				// the PQTMVERNO data.
+				recvNMEA("PQTMVERNO,LG290P03AANR01A03S,2024/04/30,10:53:07"),
+				expect{relevance: LevelSoleResponse},
+				recvNMEA("PQTMCFGPPS,OK,1,1,100000,1000,0,0"),
+				expect{ack: AckAck, relevance: LevelSoleResponse, msgIndex: intptr(1)},
+				checkDone{canAcceptMore: false},
+				checkMissing{},
+			},
+		},
+		{
 			name: "PQTMVERNO pacing unblocks after data received",
 			tags: []string{"get-version", "get-version"},
 			events: []event{
@@ -164,6 +191,25 @@ func TestCorrelatorPQTM(t *testing.T) {
 				// NAK must match the second request, not ambiguously match both.
 				recvNMEA("PQTMVERNO,ERROR,3"),
 				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(1)},
+				checkDone{canAcceptMore: false},
+			},
+		},
+		{
+			name: "hot start no reply",
+			tags: []string{"hot-start"},
+			events: []event{
+				sendEvent{},
+				checkDone{canAcceptMore: true},
+				checkMissing{},
+			},
+		},
+		{
+			name: "hot start NAK",
+			tags: []string{"hot-start"},
+			events: []event{
+				sendEvent{},
+				recvNMEA("PQTMHOT,ERROR,3"),
+				expect{ack: AckNak, relevance: LevelAckOnly, msgIndex: intptr(0)},
 				checkDone{canAcceptMore: false},
 			},
 		},

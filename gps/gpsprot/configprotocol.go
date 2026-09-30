@@ -175,7 +175,7 @@ type ReceiverInfo struct {
 	Hardware       string           `json:"hardware"`           // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
 	SupportedGNSS  GNSSSet          `json:"supportedGNSS"`      // supported GNSS constellations
 	MsgTypes       map[Tag][]string `json:"msgTypes,omitempty"` // message types received during configuration, sorted, per protocol; filled by the caller from observed traffic, not by the Configurator
-	VendorSpecific interface{}      `json:"-"`                  // vendor-specific information, excluded from JSON
+	VendorSpecific any              `json:"-"`                  // vendor-specific information, excluded from JSON
 }
 
 // ConfigRequestState represents the current state of a configuration request.

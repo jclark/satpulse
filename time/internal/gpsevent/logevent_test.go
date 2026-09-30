@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/ptime"
 )
@@ -17,15 +18,29 @@ func TestLogEventRoundTrip(t *testing.T) {
 		event LogEvent
 	}{
 		{
-			name: "pulseEdge",
+			name: "phcPulseEdge",
 			event: LogEvent{
-				Type: pulseEdgeType,
+				Type: phcPulseEdgeType,
 				T:    tm,
 				Mono: 1500 * gpsprot.Millisecond,
-				Data: &PulseEdge{
+				Data: &PHCPulseEdge{
 					T:     ptime.Time(100 * time.Second),
 					Era:   1,
 					TRead: ptime.Time(100*time.Second + 99*time.Microsecond),
+				},
+			},
+		},
+		{
+			name: "sysPulseEdge",
+			event: LogEvent{
+				Type: sysPulseEdgeType,
+				T:    tm,
+				Mono: 1500 * gpsprot.Millisecond,
+				Data: &SysPulseEdge{
+					T:           tm.Add(-26 * time.Microsecond),
+					Uncertainty: [2]gpsprot.Duration{26 * gpsprot.Microsecond, 28 * gpsprot.Microsecond},
+					PollWidths:  [2]gpsprot.Duration{20 * gpsprot.Microsecond, 24 * gpsprot.Microsecond},
+					Reject:      pps.RejectAnomalous,
 				},
 			},
 		},

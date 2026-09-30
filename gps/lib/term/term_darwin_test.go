@@ -35,8 +35,8 @@ func TestDevKind_Darwin(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
-			// Create a minimal Term with just the path set
-			term := &Term{path: tt.path}
+			// Create a minimal Unix terminal with just the path set.
+			term := &unixTerm{path: tt.path}
 			result := term.DevKind()
 
 			if result != tt.expected {

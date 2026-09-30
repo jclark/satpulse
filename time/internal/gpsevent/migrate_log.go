@@ -20,7 +20,7 @@ import (
 type OldLogEvent struct {
 	T          time.Time              `json:"t"`
 	Nanos      time.Duration          `json:"nanos"`
-	PulseEdge  *gpsevent.PulseEdge    `json:"pulseEdge,omitempty"`
+	PulseEdge  *gpsevent.PHCPulseEdge `json:"pulseEdge,omitempty"`
 	Time       *gpsprot.TimeMsg       `json:"time,omitempty"`
 	PosGeo     *gpsprot.PosGeoMsg     `json:"posGeo,omitempty"`
 	PosECEF    *gpsprot.PosECEFMsg    `json:"posECEF,omitempty"`
@@ -39,7 +39,7 @@ func migrateEvent(old OldLogEvent) (gpsevent.LogEvent, bool) {
 	e := gpsevent.LogEvent{T: old.T.UTC(), Mono: gpsprot.Duration(old.Nanos)}
 	switch {
 	case old.PulseEdge != nil:
-		e.Type = "pulseEdge"
+		e.Type = "phcPulseEdge"
 		e.Data = old.PulseEdge
 	case old.Time != nil:
 		e.Type, e.Data = old.Time.MsgType(), old.Time

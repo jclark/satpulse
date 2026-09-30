@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/jclark/satpulse/time/lib/circbuf"
-	"github.com/jclark/satpulse/time/clocksim"
-	"github.com/jclark/satpulse/time/phctime"
 	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/clocksim"
+	"github.com/jclark/satpulse/time/lib/circbuf"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 type genSampleTestCase struct {
@@ -233,19 +233,18 @@ func TestGenSampleForMessages(t *testing.T) {
 			var gen *resetSampleGenerator
 			var tRead []time.Time
 			var lastSec ptime.Time
+			baseTime := time.Now()
 
 			if tc.customIntervals != nil {
-				gen = setupGeneratorCustomIntervals(cfg, tc.customIntervals)
-				baseTime := time.Now()
+				gen = setupGeneratorCustomIntervals(cfg, baseTime, tc.customIntervals)
 				n := len(tc.customIntervals)
 				tRead = make([]time.Time, n)
-				for i := 0; i < n; i++ {
+				for i := range n {
 					tRead[i] = baseTime.Add(time.Duration(i)*time.Second + tc.msgDelay)
 				}
 				lastSec = ptime.Time(0).Add(time.Duration(n-1) * time.Second)
 			} else {
-				gen = setupGenerator(cfg, tc.numEdges, tc.interval, tc.msgDelay, tc.phcDrift, tc.pulseWidth, tc.startWithRising)
-				baseTime := time.Now()
+				gen = setupGenerator(cfg, baseTime, tc.numEdges, tc.interval, tc.msgDelay, tc.phcDrift, tc.pulseWidth, tc.startWithRising)
 
 				// Calculate number of pulses (messages)
 				numPulses := tc.numEdges
@@ -317,11 +316,13 @@ func TestGenSampleForMessages(t *testing.T) {
 }
 
 // setupGenerator creates an resetSampleGenerator with synthetic edge data.
-// It creates numEdges edges with the specified interval and message delay.
+// It creates numEdges edges with the specified interval and message delay,
+// starting at baseTime, which must be the time the caller's messages are
+// based on so that the measured delay is exactly msgDelay.
 // phcDrift specifies how much the PHC drifts from real time per second (e.g., 100e-9 for 100ns/s).
 // If pulseWidth > 0, generates dual edges (rising and falling) per pulse.
 // startWithRising determines whether first edge is rising (true) or falling (false).
-func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Duration, phcDrift float64, pulseWidth time.Duration, startWithRising bool) *resetSampleGenerator {
+func setupGenerator(cfg ResetConfig, baseTime time.Time, numEdges int, interval, msgDelay time.Duration, phcDrift float64, pulseWidth time.Duration, startWithRising bool) *resetSampleGenerator {
 	edgesPerPulse := 1
 	if pulseWidth > 0 {
 		edgesPerPulse = 2
@@ -345,12 +346,11 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 	}
 
 	// Generate edges
-	baseTime := time.Now()
 	basePHC := ptime.Time(0)
 
 	if edgesPerPulse == 1 {
 		// Single-edge mode
-		for i := 0; i < numEdges; i++ {
+		for i := range numEdges {
 			realTime := baseTime.Add(time.Duration(i) * interval)
 			// Multiply in time.Duration (int64) to avoid int overflow on 32-bit.
 			phcTime := basePHC.Add(time.Duration(float64(time.Duration(i)*interval) * (1.0 + phcDrift)))
@@ -393,7 +393,7 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 		}
 		edges := make([]edgeInfo, 0, numEdges)
 
-		for edgeIndex := 0; edgeIndex < numEdges; edgeIndex++ {
+		for edgeIndex := range numEdges {
 			pulseNum := edgeIndex / 2
 			// When startWithRising=true, even indices are rising; when false, even indices are falling
 			isRising := (edgeIndex%2 == 0) == startWithRising
@@ -440,7 +440,8 @@ func setupGenerator(cfg ResetConfig, numEdges int, interval, msgDelay time.Durat
 
 // setupGeneratorCustomIntervals creates an resetSampleGenerator with custom intervals.
 // intervals[0] should be 0, intervals[i] is the duration from edge i-1 to edge i.
-func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *resetSampleGenerator {
+// The first edge is at baseTime.
+func setupGeneratorCustomIntervals(cfg ResetConfig, baseTime time.Time, intervals []time.Duration) *resetSampleGenerator {
 	pt := PulseType{EdgesPerPulse: 1, PulseWidth: 0}
 	gen := &resetSampleGenerator{
 		timeMsgBuffer: nil,
@@ -452,12 +453,11 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 		freq:          0.0,
 	}
 
-	baseTime := time.Now()
 	basePHC := ptime.Time(0)
 	phcTime := basePHC
 	realTime := baseTime
 
-	for i := 0; i < len(intervals); i++ {
+	for i := range intervals {
 		if i > 0 {
 			phcTime = phcTime.Add(intervals[i])
 			realTime = realTime.Add(intervals[i])
@@ -478,7 +478,7 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, intervals []time.Duration) *
 // TestPulseTimestamps verifies that pulseTimestamps extracts timestamps in correct order
 func TestPulseTimestamps(t *testing.T) {
 	cfg := defaultResetConfig()
-	gen := setupGenerator(cfg, 3, time.Second, 100*time.Millisecond, 0, 0, true)
+	gen := setupGenerator(cfg, time.Now(), 3, time.Second, 100*time.Millisecond, 0, 0, true)
 
 	timestamps := gen.pulseTimestamps()
 	if len(timestamps) != 3 {
@@ -722,14 +722,10 @@ func TestGenSampleCapturesDetectLeap(t *testing.T) {
 	msgDelay := 100 * time.Millisecond
 
 	t.Run("SuccessCapturesClosure", func(t *testing.T) {
-		gen := setupGenerator(cfg, numEdges, interval, msgDelay, 0, 0, false)
-
-		// Build (lastSec, tRead) matching setupGenerator's edge schedule.
-		// setupGenerator and this test each call time.Now() independently;
-		// the resulting offset is well inside the alignment tolerance.
 		baseTime := time.Now()
+		gen := setupGenerator(cfg, baseTime, numEdges, interval, msgDelay, 0, 0, false)
 		tRead := make([]time.Time, numEdges)
-		for i := 0; i < numEdges; i++ {
+		for i := range numEdges {
 			tRead[i] = baseTime.Add(time.Duration(i)*interval + msgDelay)
 		}
 		lastSec := ptime.Time(0).Add(time.Duration(numEdges-1) * time.Second)
@@ -756,7 +752,7 @@ func TestGenSampleCapturesDetectLeap(t *testing.T) {
 	})
 
 	t.Run("FailurePreservesPriorClosure", func(t *testing.T) {
-		gen := setupGenerator(cfg, numEdges, interval, msgDelay, 0, 0, false)
+		gen := setupGenerator(cfg, time.Now(), numEdges, interval, msgDelay, 0, 0, false)
 
 		var sentinelCalled bool
 		sentinel := func(time.Duration) bool { sentinelCalled = true; return false }
@@ -815,17 +811,17 @@ func TestLastEdgeIndexUpdated(t *testing.T) {
 			interval := time.Second
 			msgDelay := 100 * time.Millisecond
 
-			gen := setupGenerator(cfg, numEdges, interval, msgDelay, 0, tc.pulseWidth, tc.startWithRising)
+			baseTime := time.Now()
+			gen := setupGenerator(cfg, baseTime, numEdges, interval, msgDelay, 0, tc.pulseWidth, tc.startWithRising)
 
 			// Before calling genSampleForMessages, lastEdgeIndex should be 9 (last appended edge)
 			if gen.lastEdgeIndex != 9 {
 				t.Fatalf("expected lastEdgeIndex=9 before genSampleForMessages, got %d", gen.lastEdgeIndex)
 			}
 
-			baseTime := time.Now()
 			numPulses := numEdges / 2
 			tRead := make([]time.Time, numPulses)
-			for i := 0; i < numPulses; i++ {
+			for i := range numPulses {
 				tRead[i] = baseTime.Add(time.Duration(i)*interval + msgDelay)
 			}
 			lastSec := ptime.Time(0).Add(time.Duration(numPulses-1) * time.Second)

@@ -727,9 +727,8 @@ func TestPVTOut(t *testing.T) {
 				casbin.Tim2LsID: casbin.CfgMsgRateEveryFix, casbin.Tim2TpxID: casbin.CfgMsgRateEveryFix},
 		},
 		{
-			name:   "V5 leap enables MSG-GPSUTC",
-			flags:  gpsprot.PVTMsgLeapSecond,
-			expect: map[casbin.MsgID]casbin.CfgMsgRate{casbin.MsgGPSUTCID: casbin.CfgMsgRateEveryFix},
+			name:  "V5 leap enables nothing",
+			flags: gpsprot.PVTMsgLeapSecond,
 		},
 		{
 			// The survey flag alone declares interest (satpulsed sets it

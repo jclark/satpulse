@@ -31,6 +31,18 @@ func (v *decUint8) UnmarshalText(text []byte) error {
 	return nil
 }
 
+// hexUint8 is a uint8 that parses as hexadecimal, as in PQTM flag fields.
+type hexUint8 uint8
+
+func (v *hexUint8) UnmarshalText(text []byte) error {
+	n, err := strconv.ParseUint(string(text), 16, 8)
+	if err != nil {
+		return err
+	}
+	*v = hexUint8(n)
+	return nil
+}
+
 // skip discards a field value during parsing. Used for reserved PQTM fields.
 type skip struct{}
 
@@ -52,7 +64,7 @@ type PVT struct {
 	VelN    opt.Val[float64] // m/s
 	VelE    opt.Val[float64] // m/s
 	VelD    opt.Val[float64] // m/s
-	Spd     opt.Val[float64] // m/s
+	Spd     opt.Val[float64] // m/s, ground speed
 	Heading opt.Val[float64] // deg
 	HDOP    opt.Val[float64]
 	PDOP    opt.Val[float64]
@@ -92,7 +104,7 @@ func (*EPE) ID() (string, uint8) { return "EPE", 2 }
 
 // DOP represents a PQTMDOP dilution of precision message.
 type DOP struct {
-	TOW  uint32 // ms, GPS time of week
+	TOW  opt.Val[uint32] // ms, GPS time of week
 	GDOP opt.Val[float64]
 	PDOP opt.Val[float64]
 	TDOP opt.Val[float64]
@@ -174,8 +186,8 @@ func (*NAV) ID() (string, uint8) { return "NAV", 1 }
 
 // PPPNAV represents a PQTMPPPNAV PPP navigation information message.
 // Same layout as NAV except field 8 is Datumid instead of reserved.
-// LG290P firmware R02A01S appends one extra trailing reserved field
-// beyond the v1.0 spec; Res18 absorbs it.
+// LG290P firmware sometimes appends an extra trailing reserved field
+// beyond those in the spec; ParsePeriodicMsg ignores it.
 type PPPNAV struct {
 	TimeStatus uint8           // 0=invalid, 1=valid
 	TimeRef    uint8           // 1=GPS
@@ -186,7 +198,7 @@ type PPPNAV struct {
 	LeapSec    opt.Val[uint8]  // seconds
 	Datumid    opt.Val[uint8]  // 1=WGS84, 2=PPP original, 3=CGCS2000
 	Res1       skip
-	SolType    opt.Val[uint8] // 0=none, 1=single, 2=SBAS, 5=DGPS, 6=PPP converging, 7=PPP convergenced, 8=RTK float, 12=RTK fixed
+	SolType    opt.Val[uint8] // 0=none, 1=single, 2=SBAS, 3=manual or survey-in, 5=DGPS, 6=PPP converging, 7=PPP convergenced, 8=RTK float, 12=RTK fixed
 	Res2       skip
 	Lat        opt.Val[float64] // deg
 	Lon        opt.Val[float64] // deg
@@ -219,7 +231,6 @@ type PPPNAV struct {
 	COG        opt.Val[float64] // deg, 0-360
 	Res16      skip
 	Res17      skip
-	Res18      skip
 }
 
 func (*PPPNAV) periodicMsg()        {}
@@ -289,14 +300,71 @@ func (*AntennaStatus) ID() (string, uint8) { return "ANTENNASTATUS", 1 }
 
 // EOE represents a PQTMEOE end-of-epoch message.
 type EOE struct {
-	UTC  string // hhmmss.sss
-	Date string // yyyymmdd
-	WN   uint16 // GPS week number
-	TOW  uint32 // ms, GPS time of week
+	UTC  string          // hhmmss.sss
+	Date string          // yyyymmdd
+	WN   opt.Val[uint16] // GPS week number
+	TOW  opt.Val[uint32] // ms, GPS time of week
 }
 
 func (*EOE) periodicMsg()        {}
 func (*EOE) ID() (string, uint8) { return "EOE", 1 }
+
+// ENV represents a PQTMENV environment information message.
+type ENV struct {
+	TOW             opt.Val[uint32]  // ms, GPS time of week
+	WN              opt.Val[uint16]  // GPS week number
+	Date            string           // yyyymmdd
+	Time            string           // hhmmss.sss, UTC
+	BaseScore       opt.Val[uint8]   // base mode: 90-100 excellent, 85-90 good, 80-85 general, below 80 not suitable
+	ConfidenceLevel opt.Val[float64] // rover mode
+	SatVis          opt.Val[uint8]   // rover mode, satellite visibility
+	SatSlo          opt.Val[uint8]   // rover mode, satellite utilization
+	MovedFlag       opt.Val[uint8]   // 0=not moved, 1=moved since power-on, 2=not available
+	MovingFlag      opt.Val[uint8]   // 0=static, 1=moving
+	PosDiff         opt.Val[float64] // distance from fixed base position, 0 if not base
+	SloType         opt.Val[uint8]   // position type
+	BaseSatNum      opt.Val[uint8]   // satellites of base
+	PubSatNum       opt.Val[uint8]   // satellites in common view of base and rover
+}
+
+func (*ENV) periodicMsg()        {}
+func (*ENV) ID() (string, uint8) { return "ENV", 1 }
+
+// RTCMIS represents a PQTMRTCMIS RTCM input status message, which the
+// receiver outputs for each RTCM message it receives. The per-signal
+// SigID and SigSatNum pairs that follow SigNum are not decoded.
+type RTCMIS struct {
+	RecvUTC  string          // hhmmss.sss, UTC
+	PortType uint8           // 1=UART
+	PortID   uint8           // 1-3
+	MsgType  uint16          // RTCM message number
+	SubType  opt.Val[uint16] // proprietary message subtype
+	RefStaID opt.Val[uint16] // reference station ID (DF003)
+	Flag     hexUint8        // RTCMISFlag* bits
+	MsgLen   uint16          // bytes, preamble to CRC
+	MsgNum   uint32          // messages of this type received (spec says of all types; LG290P R02A01S counts per type)
+	SatNum   uint8           // MSM satellites (bits set in DF394)
+	SigNum   uint8           // MSM signals (bits set in DF395)
+}
+
+// PQTMRTCMIS Flag bits.
+const (
+	RTCMISFlagCRCFailed = 0x01 // CRC check failed
+	RTCMISFlagUsage     = 0x06 // mask for whether the message was used
+	RTCMISFlagNotUsed   = 0x02
+	RTCMISFlagUsed      = 0x04
+)
+
+func (*RTCMIS) periodicMsg()        {}
+func (*RTCMIS) ID() (string, uint8) { return "RTCMIS", 1 }
+
+// JammingStatus represents a PQTMJAMMINGSTATUS jamming detection message.
+type JammingStatus struct {
+	Status uint8 // 0=unknown, 1=no jamming, 2=warning, 3=critical
+}
+
+func (*JammingStatus) periodicMsg()        {}
+func (*JammingStatus) ID() (string, uint8) { return "JAMMINGSTATUS", 1 }
 
 // checkVersion parses and validates the version field at the start of a PQTM
 // message, returning the remaining fields.
@@ -324,6 +392,9 @@ func checkVersion(fields []string, expected uint8) ([]string, error) {
 //
 // It returns a non-nil error if the message is a recognized periodic
 // type but cannot be parsed (unsupported version or malformed fields).
+//
+// Fields beyond those of the message type are ignored, since firmware
+// can append fields without changing the message version.
 func ParsePeriodicMsg(payload string) (PeriodicMsg, error) {
 	if !strings.HasPrefix(payload, "PQTM") {
 		return nil, nil
@@ -337,14 +408,20 @@ func ParsePeriodicMsg(payload string) (PeriodicMsg, error) {
 	if ctor == nil {
 		return nil, nil
 	}
+	fields := strings.Split(payload[comma+1:], ",")
+	// A command reply named after a periodic message, such as the
+	// PQTMEOE,ERROR,3 an LG290P sends when it receives its own output,
+	// is not periodic output.
+	if fields[0] == "OK" || fields[0] == "ERROR" {
+		return nil, nil
+	}
 	msg := ctor()
 	_, ver := msg.ID()
-	fields := strings.Split(payload[comma+1:], ",")
 	fields, err := checkVersion(fields, ver)
 	if err != nil {
 		return nil, fmt.Errorf("qtmmsg: %s: %w", msgType, err)
 	}
-	if err := fieldenc.Decode(fields, msg); err != nil {
+	if _, err := fieldenc.PartialDecode(fields, msg); err != nil {
 		return nil, fmt.Errorf("qtmmsg: %s: %w", msgType, err)
 	}
 	return msg, nil
@@ -383,6 +460,9 @@ func init() {
 	regPeriodic[NAV]()
 	regPeriodic[PPPNAV]()
 	regPeriodic[EOE]()
+	regPeriodic[ENV]()
+	regPeriodic[RTCMIS]()
+	regPeriodic[JammingStatus]()
 	regPeriodic[GeofenceStatus]()
 	regPeriodic[TXT]()
 	regPeriodic[PL]()
