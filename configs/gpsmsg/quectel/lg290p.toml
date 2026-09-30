@@ -804,9 +804,14 @@ description = "Set antenna height above the marker to 2 m"
 
 # Enable RTCM MSM4 messages for all constellations
 # First set MSM type to 4, then enable all constellation outputs
-# 107X = GPS, 108X = GLO, 109X = GAL, 112X = BDS
+# EPH_Mode 1 (the default) outputs each ephemeris when it updates.
+# Verified OK and 1005, 1074, 1084, 1094, 1114, 1124, 1134 appear in rover
+# mode on LG290P (R02A01S)
+# Verified with rtcm-eph, save and reset: PQTMCFGRTCM reads back EPH_Mode 1
+# and ephemerides (1046) are output on LG290P (R02A01S)
+# 107X = GPS, 108X = GLO, 109X = GAL, 112X = BDS, 111X = QZSS, 113X = NavIC
 [[nmea]]
-text = "PQTMCFGRTCM,W,4,0,-90.0,07,06,0,0"
+text = "PQTMCFGRTCM,W,4,0,-90.0,07,06,1,0"
 tag = "rtcm-msm4"
 description = "Enable RTCM MSM4 messages for all constellations"
 [[nmea]]
@@ -821,11 +826,24 @@ tag = "rtcm-msm4"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
 tag = "rtcm-msm4"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-111X,1,0"
+tag = "rtcm-msm4"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-113X,1,0"
+tag = "rtcm-msm4"
 
 # Enable RTCM MSM7 messages for all constellations
 # First set MSM type to 7, then enable all constellation outputs
+# EPH_Mode 1 (the default) outputs each ephemeris when it updates.
+# Verified OK on LG290P (R02A01S), but the receiver kept outputting MSM4
+# (1074...): the stored MSM type did not take effect live
+# Verified after save and reset in rover mode: 1077, 1087, 1097, 1117, 1127,
+# 1137 on LG290P (R02A01S). mode-base sets the MSM type back to 4; rtcm-msm7
+# sent in base mode, then save and reset, gives 1077, 1087, 1097, 1127 with
+# 1005 and 1033
 [[nmea]]
-text = "PQTMCFGRTCM,W,7,0,-90.0,07,06,0,0"
+text = "PQTMCFGRTCM,W,7,0,-90.0,07,06,1,0"
 tag = "rtcm-msm7"
 description = "Enable RTCM MSM7 messages for all constellations"
 [[nmea]]
@@ -839,6 +857,12 @@ text = "PQTMCFGMSGRATE,W,RTCM3-109X,1,0"
 tag = "rtcm-msm7"
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,RTCM3-112X,1,0"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-111X,1,0"
+tag = "rtcm-msm7"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RTCM3-113X,1,0"
 tag = "rtcm-msm7"
 
 # Enable RTCM ephemeris messages: GPS (1019), GLONASS (1020), NavIC (1041),
