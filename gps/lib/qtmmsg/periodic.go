@@ -52,7 +52,7 @@ type PVT struct {
 	VelN    opt.Val[float64] // m/s
 	VelE    opt.Val[float64] // m/s
 	VelD    opt.Val[float64] // m/s
-	Spd     opt.Val[float64] // m/s
+	Spd     opt.Val[float64] // m/s, ground speed
 	Heading opt.Val[float64] // deg
 	HDOP    opt.Val[float64]
 	PDOP    opt.Val[float64]

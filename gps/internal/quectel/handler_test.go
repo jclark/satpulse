@@ -108,14 +108,14 @@ func TestPVTBundle(t *testing.T) {
 	if ned[2] != gpsprot.MetersPerSecondFromFloat(0.238) {
 		t.Errorf("VelD = %v, want %v", ned[2], gpsprot.MetersPerSecondFromFloat(0.238))
 	}
-	if !vg.Speed3D.IsSet() || vg.Speed3D.Get() != gpsprot.MetersPerSecondFromFloat(4.346) {
-		t.Errorf("Speed3D = %v, want %v", vg.Speed3D.Get(), gpsprot.MetersPerSecondFromFloat(4.346))
+	if !vg.GroundSpeed.IsSet() || vg.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(4.346) {
+		t.Errorf("GroundSpeed = %v, want %v", vg.GroundSpeed.Get(), gpsprot.MetersPerSecondFromFloat(4.346))
 	}
 	if !vg.Course.IsSet() || vg.Course.Get() != gpsprot.DegreesFromFloat(34.12) {
 		t.Errorf("Course = %v, want %v", vg.Course.Get(), gpsprot.DegreesFromFloat(34.12))
 	}
-	if vg.GroundSpeed.IsSet() {
-		t.Error("PVT should not set GroundSpeed")
+	if vg.Speed3D.IsSet() {
+		t.Error("PVT should not set Speed3D")
 	}
 	// Quality fields from PVT (FixType=3)
 	if epoch.FixLevel != gpsprot.FixLevelCode {

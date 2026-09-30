@@ -120,7 +120,7 @@ func msgsPVT(m *qtmmsg.PVT, epoch *nmea.NavEpoch) []gpsprot.Msg {
 			gpsprot.MetersPerSecondFromFloat(m.VelD.Get()),
 		})
 		if m.Spd.IsSet() {
-			vel.Speed3D.Set(gpsprot.MetersPerSecondFromFloat(m.Spd.Get()))
+			vel.GroundSpeed.Set(gpsprot.MetersPerSecondFromFloat(m.Spd.Get()))
 		}
 		if m.Heading.IsSet() {
 			vel.Course.Set(gpsprot.DegreesFromFloat(m.Heading.Get()))
