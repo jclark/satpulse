@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -17,12 +18,16 @@ type msgRec struct {
 	posGeo  []*gpsprot.PosGeoMsg
 	velGeo  []*gpsprot.VelGeoMsg
 	surveys []*gpsprot.SurveyMsg
+	cors    []*gpsprot.CorReportMsg
 }
 
 func (r *msgRec) Time(m *gpsprot.TimeMsg, _ time.Time)     { r.times = append(r.times, m) }
 func (r *msgRec) PosGeo(m *gpsprot.PosGeoMsg, _ time.Time) { r.posGeo = append(r.posGeo, m) }
 func (r *msgRec) VelGeo(m *gpsprot.VelGeoMsg, _ time.Time) { r.velGeo = append(r.velGeo, m) }
 func (r *msgRec) Survey(m *gpsprot.SurveyMsg, _ time.Time) { r.surveys = append(r.surveys, m) }
+func (r *msgRec) CorReport(m *gpsprot.CorReportMsg, _ time.Time) {
+	r.cors = append(r.cors, m)
+}
 
 func dispatch(msgs []gpsprot.Msg) *msgRec {
 	var r msgRec
@@ -37,7 +42,7 @@ const (
 	pvtPayload  = "PQTMPVT,1,31075000,20221225,083737.000,,3,09,18,31.12738291,117.26372910,34.212,5.267,3.212,2.928,0.238,4.346,34.12,2.16,4.38"
 	velPayload  = "PQTMVEL,1,154512.100,1.251,2.452,1.245,2.752,3.021,180.512,0.124,0.254,0.250"
 	epePayload  = "PQTMEPE,2,1.000,1.000,1.000,1.414,1.732"
-	svinPayload = "PQTMSVINSTATUS,1,1000,1,01,20,100,-2484434.3645,4875976.9741,3266161.3412,1.2415"
+	svinPayload = "PQTMSVINSTATUS,1,195574000,1,,11,48,60,-1144697.6622,6090334.0771,1504169.9462,0.1911"
 	navPayload  = "PQTMNAV,1,1,1,190423.000,20241224,212681000,2346,18,,,12,,31.45874521,117.41532415,45.1254,-6.1245,,,1.2451,2.1254,5.1242,,,290,1.0,,78,56,,,,,,,1.2101,1.2148,0.4578,1.1547,,,45.124,,"
 	// Captured from LG290P with PPP HAS enabled. DiffID=9002 (E6 HAS),
 	// SolType=6 (PPP converging), Datumid=1 (WGS84).
@@ -108,14 +113,14 @@ func TestPVTBundle(t *testing.T) {
 	if ned[2] != gpsprot.MetersPerSecondFromFloat(0.238) {
 		t.Errorf("VelD = %v, want %v", ned[2], gpsprot.MetersPerSecondFromFloat(0.238))
 	}
-	if !vg.Speed3D.IsSet() || vg.Speed3D.Get() != gpsprot.MetersPerSecondFromFloat(4.346) {
-		t.Errorf("Speed3D = %v, want %v", vg.Speed3D.Get(), gpsprot.MetersPerSecondFromFloat(4.346))
+	if !vg.GroundSpeed.IsSet() || vg.GroundSpeed.Get() != gpsprot.MetersPerSecondFromFloat(4.346) {
+		t.Errorf("GroundSpeed = %v, want %v", vg.GroundSpeed.Get(), gpsprot.MetersPerSecondFromFloat(4.346))
 	}
 	if !vg.Course.IsSet() || vg.Course.Get() != gpsprot.DegreesFromFloat(34.12) {
 		t.Errorf("Course = %v, want %v", vg.Course.Get(), gpsprot.DegreesFromFloat(34.12))
 	}
-	if vg.GroundSpeed.IsSet() {
-		t.Error("PVT should not set GroundSpeed")
+	if vg.Speed3D.IsSet() {
+		t.Error("PVT should not set Speed3D")
 	}
 	// Quality fields from PVT (FixType=3)
 	if epoch.FixLevel != gpsprot.FixLevelCode {
@@ -426,20 +431,69 @@ func TestSVINStatusBundle(t *testing.T) {
 	if sv.Valid {
 		t.Error("expected not Valid for Valid=1")
 	}
-	if sv.ObsCount != 20 {
-		t.Errorf("ObsCount = %d, want 20", sv.ObsCount)
+	if sv.ObsCount != 48 {
+		t.Errorf("ObsCount = %d, want 48", sv.ObsCount)
 	}
-	if sv.Position[0] != gpsprot.Meters(-2484434.3645) {
-		t.Errorf("MeanX = %v, want %v", sv.Position[0], gpsprot.Meters(-2484434.3645))
+	if sv.Position[0] != gpsprot.Meters(-1144697.6622) {
+		t.Errorf("MeanX = %v, want %v", sv.Position[0], gpsprot.Meters(-1144697.6622))
 	}
-	if sv.Position[1] != gpsprot.Meters(4875976.9741) {
-		t.Errorf("MeanY = %v, want %v", sv.Position[1], gpsprot.Meters(4875976.9741))
+	if sv.Position[1] != gpsprot.Meters(6090334.0771) {
+		t.Errorf("MeanY = %v, want %v", sv.Position[1], gpsprot.Meters(6090334.0771))
 	}
-	if sv.Position[2] != gpsprot.Meters(3266161.3412) {
-		t.Errorf("MeanZ = %v, want %v", sv.Position[2], gpsprot.Meters(3266161.3412))
+	if sv.Position[2] != gpsprot.Meters(1504169.9462) {
+		t.Errorf("MeanZ = %v, want %v", sv.Position[2], gpsprot.Meters(1504169.9462))
 	}
-	if sv.Accuracy != gpsprot.Meters(1.2415) {
-		t.Errorf("Accuracy = %v, want %v", sv.Accuracy, gpsprot.Meters(1.2415))
+	if sv.Accuracy != gpsprot.Meters(0.1911) {
+		t.Errorf("Accuracy = %v, want %v", sv.Accuracy, gpsprot.Meters(0.1911))
+	}
+}
+
+func TestRTCMISCorReport(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		want    gpsprot.CorReportMsg
+	}{
+		{
+			name:    "MSM used",
+			payload: "PQTMRTCMIS,1,190423.412,1,1,1074,,290,04,82,1451,9,3,2,9,15,5,24,3",
+			want: gpsprot.CorReportMsg{
+				Source:        gpsprot.CorReportSourceReceiver,
+				Tag:           "RTCM",
+				MsgID:         "1074",
+				NBytes:        opt.Make(82),
+				ChecksumOK:    opt.Make(true),
+				Used:          opt.Make(true),
+				RTCMRefBaseID: opt.Make[uint16](290),
+			},
+		},
+		{
+			name:    "CRC failed, not used, no station ID",
+			payload: "PQTMRTCMIS,1,190423.412,1,1,1019,,,03,67,1452,0,0",
+			want: gpsprot.CorReportMsg{
+				Source:     gpsprot.CorReportSourceReceiver,
+				Tag:        "RTCM",
+				MsgID:      "1019",
+				NBytes:     opt.Make(67),
+				ChecksumOK: opt.Make(false),
+				Used:       opt.Make(false),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgs, _, err := NewHandler().HandleSentence(propFlags, tt.payload, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := dispatch(msgs)
+			if len(r.cors) != 1 {
+				t.Fatalf("got %d CorReportMsg, want 1", len(r.cors))
+			}
+			if *r.cors[0] != tt.want {
+				t.Errorf("got %+v\nwant %+v", *r.cors[0], tt.want)
+			}
+		})
 	}
 }
 
@@ -527,6 +581,7 @@ func TestNavSolQuality(t *testing.T) {
 		{0, gpsprot.FixLevelNone, 0, 0, true},
 		{1, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, true},
 		{2, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrSBAS | gpsprot.CorrSSR | gpsprot.CorrUsed, true},
+		{3, gpsprot.FixLevelNotMeasured, 0, 0, true},
 		{5, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},
 		{8, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},
 		{12, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},

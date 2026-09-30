@@ -315,6 +315,11 @@ func (c *Correlator) correlateData(tag gpsprot.Tag, data string, confirmed, uncl
 		if unclaimedAck && rs.analysis.expectAck != ExpectAckNone {
 			continue
 		}
+		// Such a request's data arrives only in its ack, so a separate
+		// packet cannot be its data.
+		if rs.analysis.expectData == expectDataWithAck {
+			continue
+		}
 		if rs.data != dataWait &&
 			!(rs.data == dataReceived && rs.analysis.expectData == expectDataMultiple) {
 			continue
