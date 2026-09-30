@@ -9,6 +9,13 @@ text = "PQTMVERNO"
 tag = "get-version"
 description = "Get firmware and hardware version"
 
+# Get module unique ID
+# Verified on LG290P (R02A01S): returns the unique ID
+[[nmea]]
+text = "PQTMUNIQID"
+tag = "get-uniqid"
+description = "Get module unique ID"
+
 # Get PPS configuration
 [[nmea]]
 text = "PQTMCFGPPS,R,1"
@@ -132,6 +139,47 @@ description = "Set elevation threshold to 40 degrees"
 text = "PQTMCFGELETHD,W,45.0"
 tag = "min-elev-45"
 description = "Set elevation threshold to 45 degrees"
+
+# C/N0 threshold for the position engine (PQTMCFGCNRTHD)
+# Range: 0.0 to 99.9 dBHz, 0 = no limit, default 10.0
+# Verified on LG290P (R02A01S): returns 10.0 (default)
+[[nmea]]
+text = "PQTMCFGCNRTHD,R"
+tag = "get-min-cno"
+description = "Get C/N0 threshold"
+
+# Verified OK and get-min-cno returns 10.0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGCNRTHD,W,10.0"
+tag = "min-cno-10"
+description = "Set minimum C/N0 to 10 dBHz (default)"
+
+# Verified OK and get-min-cno returns 25.0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGCNRTHD,W,25.0"
+tag = "min-cno-25"
+description = "Set minimum C/N0 to 25 dBHz"
+
+# Navigation mode (PQTMCFGNAVMODE)
+# 0 = normal, 5 = dynamic flight, 11 = mower, 14 = agriculture.
+# The LG290P default is 11 (mower).
+# Verified on LG290P (R02A01S): returns 11 (default)
+[[nmea]]
+text = "PQTMCFGNAVMODE,R"
+tag = "get-nav-mode"
+description = "Get navigation mode"
+
+# Verified OK and get-nav-mode returns 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNAVMODE,W,0"
+tag = "nav-mode-normal"
+description = "Set navigation mode to normal"
+
+# Verified OK and get-nav-mode returns 11 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGNAVMODE,W,11"
+tag = "nav-mode-mower"
+description = "Set navigation mode to mower (LG290P default)"
 
 # Enable PPS: 100ms pulse, only when locked, rising edge
 # Index=1, Enable=1, Duration=100, Mode=2 (fix only), Polarity=1 (high), Reserved=0
