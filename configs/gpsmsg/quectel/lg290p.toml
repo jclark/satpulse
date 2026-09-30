@@ -589,6 +589,82 @@ text = "PQTMCFGMSGRATE,W,PQTMPPPNAV,0,1"
 tag = "pqtm-pppnav-off"
 description = "Disable PQTMPPPNAV message"
 
+# Enable PQTMENV message (environment information)
+# Added in R01A06S firmware
+# Verified OK and PQTMENV messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMENV,1,1"
+tag = "pqtm-env"
+description = "Enable PQTMENV message (rate of one per fix)"
+
+# Verified OK and PQTMENV messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMENV,0,1"
+tag = "pqtm-env-off"
+description = "Disable PQTMENV message"
+
+# Enable PQTMJAMMINGSTATUS message (jamming detection status)
+# Added in R02A01S firmware
+# Verified OK and PQTMJAMMINGSTATUS messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,1,1"
+tag = "pqtm-jammingstatus"
+description = "Enable PQTMJAMMINGSTATUS message (rate of one per fix)"
+
+# Verified OK and PQTMJAMMINGSTATUS messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,0,1"
+tag = "pqtm-jammingstatus-off"
+description = "Disable PQTMJAMMINGSTATUS message"
+
+# Enable PQTMRTCMIS message (status of each RTCM message received)
+# Added in R01A06S firmware; the rate must be 1. Output only while RTCM
+# is being received.
+# Verified OK and PQTMRTCMIS appears for each RTCM message received (except 1230) on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMRTCMIS,1,1"
+tag = "pqtm-rtcmis"
+description = "Enable PQTMRTCMIS message (one per RTCM message received)"
+
+# Verified OK and PQTMCFGMSGRATE read returns rate 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMRTCMIS,0,1"
+tag = "pqtm-rtcmis-off"
+description = "Disable PQTMRTCMIS message"
+
+# Enable PQTMODO message (odometer)
+# Verified OK and PQTMODO messages appear in capture after enable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMODO,1,1"
+tag = "pqtm-odo"
+description = "Enable PQTMODO message (rate of one per fix)"
+
+# Verified OK and PQTMODO messages no longer appear after disable on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMODO,0,1"
+tag = "pqtm-odo-off"
+description = "Disable PQTMODO message"
+
+# Enable PQTMTXT message (text); enabled by default
+# Verified OK and PQTMCFGMSGRATE read returns rate 1 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMTXT,1,1"
+tag = "pqtm-txt"
+description = "Enable PQTMTXT message"
+
+# Verified OK and PQTMCFGMSGRATE read returns rate 0 on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMTXT,0,1"
+tag = "pqtm-txt-off"
+description = "Disable PQTMTXT message"
+
+# Disable all message output on the current port (PQTMCLRMSG)
+# Verified OK and no output at all after it on LG290P (R02A01S)
+[[nmea]]
+text = "PQTMCLRMSG"
+tag = "msg-all-off"
+description = "Disable all message output"
+
 # Enable PQTMSVINSTATUS message (survey-in status)
 # Does not work on R02 firmware
 [[nmea]]
