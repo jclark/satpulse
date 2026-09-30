@@ -48,6 +48,7 @@ SatPulse decodes the following PQTM sentences.
 | PQTMPL | decode only |
 | PQTMPPPNAV | UTC time, TAI time, geodetic position, geodetic velocity, solution quality |
 | PQTMPVT | UTC time, TAI offset, geodetic position, geodetic velocity, solution quality |
+| PQTMRTCMIS | corrections usage |
 | PQTMSVINSTATUS | survey |
 | PQTMTXT | decode only |
 | PQTMVEL | geodetic velocity, solution quality |

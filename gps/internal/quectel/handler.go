@@ -8,9 +8,11 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/nmea"
+	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/lib/qtmmsg"
+	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -70,6 +72,8 @@ func (h *Handler) HandleSentence(
 		epoch = nmea.CheckEpoch(epoch, "")
 		dopQuality(m, epoch)
 		return nil, epoch, nil
+	case *qtmmsg.RTCMIS:
+		return []gpsprot.Msg{corReportRTCMIS(m)}, nil, nil
 	case *qtmmsg.EOE:
 		return nil, nil, nil
 	default:
@@ -446,6 +450,31 @@ func msgsSVIN(m *qtmmsg.SVINStatus) []gpsprot.Msg {
 		sv.Accuracy = gpsprot.Meters(m.MeanAcc.Get())
 	}
 	return []gpsprot.Msg{sv}
+}
+
+// corReportRTCMIS converts a PQTMRTCMIS report of a received RTCM message
+// to a CorReportMsg.
+func corReportRTCMIS(m *qtmmsg.RTCMIS) *gpsprot.CorReportMsg {
+	mt := rtcmbin.MsgType(m.MsgType)
+	msgID := mt.String()
+	if mt == 4072 && m.SubType.IsSet() {
+		msgID = fmt.Sprintf("%d.%d", mt, m.SubType.Get())
+	}
+	msg := &gpsprot.CorReportMsg{
+		Source:     gpsprot.CorReportSourceReceiver,
+		Tag:        rtcm.Tag,
+		MsgID:      msgID,
+		NBytes:     opt.Make(int(m.MsgLen)),
+		ChecksumOK: opt.Make(m.Flag&qtmmsg.RTCMISFlagCRCFailed == 0),
+	}
+	switch m.Flag & qtmmsg.RTCMISFlagUsage {
+	case qtmmsg.RTCMISFlagNotUsed:
+		msg.Used = opt.Make(false)
+	case qtmmsg.RTCMISFlagUsed:
+		msg.Used = opt.Make(true)
+	}
+	msg.RTCMRefBaseID = m.RefStaID
+	return msg
 }
 
 func parseDateTime(date, tod string) (ptime.UTCTime, bool) {

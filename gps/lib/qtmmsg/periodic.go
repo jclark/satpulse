@@ -31,6 +31,18 @@ func (v *decUint8) UnmarshalText(text []byte) error {
 	return nil
 }
 
+// hexUint8 is a uint8 that parses as hexadecimal, as in PQTM flag fields.
+type hexUint8 uint8
+
+func (v *hexUint8) UnmarshalText(text []byte) error {
+	n, err := strconv.ParseUint(string(text), 16, 8)
+	if err != nil {
+		return err
+	}
+	*v = hexUint8(n)
+	return nil
+}
+
 // skip discards a field value during parsing. Used for reserved PQTM fields.
 type skip struct{}
 
@@ -318,6 +330,34 @@ type ENV struct {
 func (*ENV) periodicMsg()        {}
 func (*ENV) ID() (string, uint8) { return "ENV", 1 }
 
+// RTCMIS represents a PQTMRTCMIS RTCM input status message, which the
+// receiver outputs for each RTCM message it receives. The per-signal
+// SigID and SigSatNum pairs that follow SigNum are not decoded.
+type RTCMIS struct {
+	RecvUTC  string          // hhmmss.sss, UTC
+	PortType uint8           // 1=UART
+	PortID   uint8           // 1-3
+	MsgType  uint16          // RTCM message number
+	SubType  opt.Val[uint16] // proprietary message subtype
+	RefStaID opt.Val[uint16] // reference station ID (DF003)
+	Flag     hexUint8        // RTCMISFlag* bits
+	MsgLen   uint16          // bytes, preamble to CRC
+	MsgNum   uint32          // messages of this type received (spec says of all types; LG290P R02A01S counts per type)
+	SatNum   uint8           // MSM satellites (bits set in DF394)
+	SigNum   uint8           // MSM signals (bits set in DF395)
+}
+
+// PQTMRTCMIS Flag bits.
+const (
+	RTCMISFlagCRCFailed = 0x01 // CRC check failed
+	RTCMISFlagUsage     = 0x06 // mask for whether the message was used
+	RTCMISFlagNotUsed   = 0x02
+	RTCMISFlagUsed      = 0x04
+)
+
+func (*RTCMIS) periodicMsg()        {}
+func (*RTCMIS) ID() (string, uint8) { return "RTCMIS", 1 }
+
 // JammingStatus represents a PQTMJAMMINGSTATUS jamming detection message.
 type JammingStatus struct {
 	Status uint8 // 0=unknown, 1=no jamming, 2=warning, 3=critical
@@ -421,6 +461,7 @@ func init() {
 	regPeriodic[PPPNAV]()
 	regPeriodic[EOE]()
 	regPeriodic[ENV]()
+	regPeriodic[RTCMIS]()
 	regPeriodic[JammingStatus]()
 	regPeriodic[GeofenceStatus]()
 	regPeriodic[TXT]()

@@ -247,6 +247,22 @@ func TestParsePeriodicMsg(t *testing.T) {
 			},
 		},
 		{
+			name:    "RTCMIS",
+			payload: "PQTMRTCMIS,1,190423.412,1,1,1074,,290,04,82,1451,9,3,2,9,15,5,24,3",
+			want: &RTCMIS{
+				RecvUTC:  "190423.412",
+				PortType: 1,
+				PortID:   1,
+				MsgType:  1074,
+				RefStaID: opt.Make[uint16](290),
+				Flag:     4,
+				MsgLen:   82,
+				MsgNum:   1451,
+				SatNum:   9,
+				SigNum:   3,
+			},
+		},
+		{
 			name:    "JammingStatus",
 			payload: "PQTMJAMMINGSTATUS,1,0",
 			want:    &JammingStatus{Status: 0},
@@ -390,6 +406,7 @@ func TestPeriodicMsgID(t *testing.T) {
 		{&ODO{}, "ODO", 1},
 		{&AntennaStatus{}, "ANTENNASTATUS", 1},
 		{&ENV{}, "ENV", 1},
+		{&RTCMIS{}, "RTCMIS", 1},
 		{&JammingStatus{}, "JAMMINGSTATUS", 1},
 	}
 	for _, tt := range tests {

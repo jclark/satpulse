@@ -7,6 +7,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/lib/opt"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -17,12 +18,16 @@ type msgRec struct {
 	posGeo  []*gpsprot.PosGeoMsg
 	velGeo  []*gpsprot.VelGeoMsg
 	surveys []*gpsprot.SurveyMsg
+	cors    []*gpsprot.CorReportMsg
 }
 
 func (r *msgRec) Time(m *gpsprot.TimeMsg, _ time.Time)     { r.times = append(r.times, m) }
 func (r *msgRec) PosGeo(m *gpsprot.PosGeoMsg, _ time.Time) { r.posGeo = append(r.posGeo, m) }
 func (r *msgRec) VelGeo(m *gpsprot.VelGeoMsg, _ time.Time) { r.velGeo = append(r.velGeo, m) }
 func (r *msgRec) Survey(m *gpsprot.SurveyMsg, _ time.Time) { r.surveys = append(r.surveys, m) }
+func (r *msgRec) CorReport(m *gpsprot.CorReportMsg, _ time.Time) {
+	r.cors = append(r.cors, m)
+}
 
 func dispatch(msgs []gpsprot.Msg) *msgRec {
 	var r msgRec
@@ -440,6 +445,55 @@ func TestSVINStatusBundle(t *testing.T) {
 	}
 	if sv.Accuracy != gpsprot.Meters(0.1911) {
 		t.Errorf("Accuracy = %v, want %v", sv.Accuracy, gpsprot.Meters(0.1911))
+	}
+}
+
+func TestRTCMISCorReport(t *testing.T) {
+	tests := []struct {
+		name    string
+		payload string
+		want    gpsprot.CorReportMsg
+	}{
+		{
+			name:    "MSM used",
+			payload: "PQTMRTCMIS,1,190423.412,1,1,1074,,290,04,82,1451,9,3,2,9,15,5,24,3",
+			want: gpsprot.CorReportMsg{
+				Source:        gpsprot.CorReportSourceReceiver,
+				Tag:           "RTCM",
+				MsgID:         "1074",
+				NBytes:        opt.Make(82),
+				ChecksumOK:    opt.Make(true),
+				Used:          opt.Make(true),
+				RTCMRefBaseID: opt.Make[uint16](290),
+			},
+		},
+		{
+			name:    "CRC failed, not used, no station ID",
+			payload: "PQTMRTCMIS,1,190423.412,1,1,1019,,,03,67,1452,0,0",
+			want: gpsprot.CorReportMsg{
+				Source:     gpsprot.CorReportSourceReceiver,
+				Tag:        "RTCM",
+				MsgID:      "1019",
+				NBytes:     opt.Make(67),
+				ChecksumOK: opt.Make(false),
+				Used:       opt.Make(false),
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			msgs, _, err := NewHandler().HandleSentence(propFlags, tt.payload, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			r := dispatch(msgs)
+			if len(r.cors) != 1 {
+				t.Fatalf("got %d CorReportMsg, want 1", len(r.cors))
+			}
+			if *r.cors[0] != tt.want {
+				t.Errorf("got %+v\nwant %+v", *r.cors[0], tt.want)
+			}
+		})
 	}
 }
 
