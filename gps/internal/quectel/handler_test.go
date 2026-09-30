@@ -527,6 +527,7 @@ func TestNavSolQuality(t *testing.T) {
 		{0, gpsprot.FixLevelNone, 0, 0, true},
 		{1, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, 0, true},
 		{2, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrSBAS | gpsprot.CorrSSR | gpsprot.CorrUsed, true},
+		{3, gpsprot.FixLevelNotMeasured, 0, 0, true},
 		{5, gpsprot.FixLevelCode, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},
 		{8, gpsprot.FixLevelCarrierFloat, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},
 		{12, gpsprot.FixLevelCarrierFixed, gpsprot.SolutionDim3D, gpsprot.CorrOSR | gpsprot.CorrUsed, true},

@@ -370,6 +370,8 @@ func navSolQuality(solType uint8) (gpsprot.FixLevel, gpsprot.SolutionDim, gpspro
 	case 2:
 		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D,
 			gpsprot.CorrSBAS | gpsprot.CorrSSR | gpsprot.CorrUsed, true
+	case 3:
+		return gpsprot.FixLevelNotMeasured, 0, 0, true
 	case 5:
 		return gpsprot.FixLevelCode, gpsprot.SolutionDim3D,
 			gpsprot.CorrOSR | gpsprot.CorrUsed, true

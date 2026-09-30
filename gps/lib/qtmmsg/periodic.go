@@ -186,7 +186,7 @@ type PPPNAV struct {
 	LeapSec    opt.Val[uint8]  // seconds
 	Datumid    opt.Val[uint8]  // 1=WGS84, 2=PPP original, 3=CGCS2000
 	Res1       skip
-	SolType    opt.Val[uint8] // 0=none, 1=single, 2=SBAS, 5=DGPS, 6=PPP converging, 7=PPP convergenced, 8=RTK float, 12=RTK fixed
+	SolType    opt.Val[uint8] // 0=none, 1=single, 2=SBAS, 3=manual or survey-in, 5=DGPS, 6=PPP converging, 7=PPP convergenced, 8=RTK float, 12=RTK fixed
 	Res2       skip
 	Lat        opt.Val[float64] // deg
 	Lon        opt.Val[float64] // deg
