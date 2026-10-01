@@ -104,3 +104,68 @@ describe('optional corrections transport', () => {
         await vi.waitFor(() => expect(button('Connect')?.disabled).toBe(false));
     });
 });
+
+describe('device picker capability', () => {
+    async function mount(choosePort?: () => Promise<{device: string; display: string} | null>, device = '') {
+        let ports: {device: string; display: string}[] = [];
+        const t = mockTransport();
+        t.getConnection = async () => ({state: 'disconnected', device, speed: 38400});
+        t.connection = {
+            listPorts: vi.fn(async () => ports),
+            connect: vi.fn(async () => {}),
+            disconnect: async () => {},
+            choosePort: choosePort && vi.fn(async () => {
+                const p = await choosePort();
+                if (p) ports = [p];
+                return p;
+            }),
+        };
+        setTransport(t);
+        await act(async () => render(<App/>, root));
+        await vi.waitFor(() => expect(root.querySelector<HTMLInputElement>('header input')?.value).toBe(device));
+        return t.connection;
+    }
+
+    async function choose() {
+        await act(async () => root.querySelector<HTMLButtonElement>('button[aria-label="Select port"]')!.click());
+        expect(root.querySelector('header ul li:last-child')?.textContent?.trim()).toBe('Add a device...');
+        await act(async () => button('Add a device...')!.click());
+    }
+
+    it('adds the selected device, refreshes choices and uses it for Connect', async () => {
+        const connection = await mount(async () => ({device: 'serial:1', display: 'Receiver'}));
+        await choose();
+        await vi.waitFor(() => expect((root.querySelector('header input') as HTMLInputElement).value).toBe('serial:1'));
+        expect(connection.choosePort).toHaveBeenCalledOnce();
+        expect(button('Add a device...')).toBeUndefined();
+        expect((root.querySelector('header input') as HTMLInputElement).readOnly).toBe(true);
+        await act(async () => button('Connect')!.click());
+        expect(connection.connect).toHaveBeenCalledExactlyOnceWith('serial:1', 38400);
+        await act(async () => root.querySelector<HTMLButtonElement>('button[aria-label="Select port"]')!.click());
+        expect(root.querySelector('header ul')?.textContent).toContain('Receiver');
+    });
+
+    it('cancellation preserves the selected device', async () => {
+        const connection = await mount(async () => null, 'serial:1');
+        await choose();
+        expect(connection.choosePort).toHaveBeenCalledOnce();
+        expect((root.querySelector('header input') as HTMLInputElement).value).toBe('serial:1');
+        expect(button('Connect')?.disabled).toBe(false);
+    });
+
+    it('picker errors are visible and preserve the selected device', async () => {
+        await mount(async () => { throw new Error('Permission denied'); }, 'serial:1');
+        await choose();
+        await vi.waitFor(() => expect(root.textContent).toContain('Permission denied'));
+        expect((root.querySelector('header input') as HTMLInputElement).value).toBe('serial:1');
+    });
+
+    it('a transport without a picker keeps an editable device path and no add action', async () => {
+        await mount(undefined, '/dev/ttyTEST');
+        await act(async () => root.querySelector<HTMLButtonElement>('button[aria-label="Select port"]')!.click());
+        expect(button('Add a device...')).toBeUndefined();
+        const input = root.querySelector('header input') as HTMLInputElement;
+        expect(input.readOnly).toBe(false);
+        expect(input.placeholder).toBe('device path');
+    });
+});
