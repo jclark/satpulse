@@ -302,7 +302,6 @@ Finally restart chrony by using the GUI or running the command
 
 ```
 sudo launchctl kickstart -k system/org.chrony-project.chronyd
-
 ```
 
 If everything is working, then chrony should switch over to using the `CTS` refclock.
