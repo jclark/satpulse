@@ -347,12 +347,6 @@ func (s *server) handleState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.sess.State())
 }
 
-type connectionInfo struct {
-	State  session.ConnState `json:"state"`
-	Device string            `json:"device"`
-	Speed  int               `json:"speed,omitempty"` // 0 (absent): no speed specified or chosen yet
-}
-
 var (
 	errDeviceRequired = errors.New("device is required")
 	errInvalidSpeed   = errors.New("speed must be greater than zero")
@@ -362,14 +356,14 @@ var (
 // the session's speed is authoritative: configuration can change it after the
 // port was opened. Reading the snapshot also retains that speed for the next
 // disconnected view.
-func (s *server) connection() connectionInfo {
+func (s *server) connection() session.ConnectionInfo {
 	state := s.sess.State()
 	activeSpeed := s.sess.Speed()
 	s.connMu.Lock()
 	if activeSpeed != 0 {
 		s.speed = activeSpeed
 	}
-	info := connectionInfo{State: state, Device: s.device, Speed: s.speed}
+	info := session.ConnectionInfo{State: state, Device: s.device, Speed: s.speed}
 	s.connMu.Unlock()
 	return info
 }
