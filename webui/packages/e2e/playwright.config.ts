@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import * as path from 'node:path';
 
 // The suite launches real satpulsed/satpulsewb daemons and replays packet logs,
 // so a single worker runs the tests serially against its worker-scoped servers
@@ -23,6 +24,13 @@ export default defineConfig({
   use: {
     browserName: 'chromium',
     trace: 'retain-on-failure',
+  },
+  // The mock-transport fixture uses the existing frontend dev server.
+  webServer: {
+    command: 'npm run dev --workspace=@satpulse/workbench-http -- --host 127.0.0.1 --port 4175 --strictPort',
+    cwd: path.resolve(__dirname, '../..'),
+    url: 'http://127.0.0.1:4175',
+    reuseExistingServer: false,
   },
   projects: [
     { name: 'dashboard', testDir: './dashboard' },
