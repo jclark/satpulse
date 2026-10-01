@@ -1,0 +1,27 @@
+# Compile the GPS tree for js/wasm without a wasm runtime.
+
+name: Build (js/wasm)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.26.x'
+
+    - name: Compile GPS packages
+      env:
+        GOOS: js
+        GOARCH: wasm
+      run: go build ./gps/...
