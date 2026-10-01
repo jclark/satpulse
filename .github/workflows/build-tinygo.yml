@@ -55,7 +55,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1]
+        shard: [0, 1, 2]
     steps:
     - uses: actions/checkout@v6
 
@@ -72,7 +72,7 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends qemu-system-misc
 
-    # Split across two runners because the cost here is the compiler, not
+    # Split across three runners because the cost here is the compiler, not
     # the tests: TinyGo builds each test binary whole-program, with no
     # prebuilt standard library to link against, so a package costs several
     # seconds before a test runs. -short cuts the one test that is slow
@@ -81,5 +81,5 @@ jobs:
     - name: Test
       run: |
         pkgs=$(go list -f '{{if and (ne .Name "main") (or .TestGoFiles .XTestGoFiles)}}{{.ImportPath}}{{end}}' ./gps/... |
-          grep . | awk 'NR % 2 == ${{ matrix.shard }}')
-        tinygo test -target=riscv-qemu -short -p 8 $pkgs
+          grep . | awk 'NR % 3 == ${{ matrix.shard }}')
+        tinygo test -target=riscv-qemu -short $pkgs
