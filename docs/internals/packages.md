@@ -70,7 +70,7 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
 
-`gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (currently a serial device), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
+`gps/app/session` manages interactive GPS receiver sessions for GUI applications. It handles connections, probing, configuration, message-file sending and correction streams, and delivers events through a `Sink` interface.
 
 `gps/app/pps` handles PPS edges timestamped by the system clock, independently of how they are detected: it combines an edge's timestamp with recent receiver UTC messages to generate a refclock sample, and provides the adaptive polling loop that detects edges on a pin whose level can only be read, predicting each pulse and polling in a window around it.
 
