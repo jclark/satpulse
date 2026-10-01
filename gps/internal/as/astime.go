@@ -9,6 +9,21 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
+// navTowGrid is what the millisecond time of week in NAV-TIME and NAV-TIMEUTC
+// is rounded to. This looks wrong, but the receivers do not follow the protocol
+// specification here, and different models behave differently. The TAU1201
+// rounds the time of week down to the millisecond, so a solution just before
+// the second has a time of week ending in 999, whereas the TAU951M-P200 rounds
+// it to the nearest millisecond. The sub-millisecond fields, NAV-TIME Fractow
+// and NAV-TIMEUTC nano, do not mean what the specification says and are encoded
+// differently by different models, so they are ignored.
+//
+// We need only the nominal time, which is a multiple of the navigation period.
+// 10ms is well below the navigation period (the navigation rate is at most
+// 10Hz), so rounding to it recovers the nominal time without knowing which
+// receiver it is.
+const navTowGrid = 10 * time.Millisecond
+
 // timeNavTimeUTC converts asbin.NavTimeUTC to gpsprot.TimeMsg.
 // Always returns a TimeMsg, but with nil UTCTime when the time is invalid.
 func timeNavTimeUTC(m *asbin.NavTimeUTC) *gpsprot.TimeMsg {
@@ -17,7 +32,15 @@ func timeNavTimeUTC(m *asbin.NavTimeUTC) *gpsprot.TimeMsg {
 	if m.ValidFlag&fullyValid != fullyValid {
 		return &t
 	}
-	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, m.Nano))
+	// hour:min:sec has no fraction of a second, so take the fraction from iTow
+	// (see navTowGrid); at 5Hz, this is what distinguishes the solutions within
+	// a second. hour:min:sec is the second of the receiver's time rounded to the
+	// millisecond, so when rounding iTow carries into the next second,
+	// hour:min:sec already includes the carry, provided the solution is less
+	// than 0.5ms before the second, as in every capture so far. If it were more,
+	// this time would be a second early.
+	frac := (time.Duration(m.ITow) * time.Millisecond).Round(navTowGrid) % time.Second
+	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, int32(frac)))
 	t.Accuracy = time.Duration(m.TAcc) * time.Nanosecond
 	t.GNSS = utcStandardToGNSS(m.ValidFlag.UTCStandard())
 	return &t
@@ -31,8 +54,8 @@ func timeNavTime(m *asbin.NavTime) *gpsprot.TimeMsg {
 		asbin.NavTimeFlagWeekValid|asbin.NavTimeFlagSecondValid {
 		return &t
 	}
-	// Convert time of week: RefTow is in ms, Fractow is in ns
-	tow := time.Duration(m.RefTow)*time.Millisecond + time.Duration(m.Fractow)*time.Nanosecond
+	// Fractow is deliberately ignored; see navTowGrid.
+	tow := (time.Duration(m.RefTow) * time.Millisecond).Round(navTowGrid)
 	if m.Week > math.MaxInt16 {
 		return &t
 	}

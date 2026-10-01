@@ -30,13 +30,13 @@ func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 }
 
 // timeNavSol converts NavSol to TimeMsg.
-// Always returns a TimeMsg, but with zero TAITime when the solution is invalid.
+// Always returns a TimeMsg, but with no time when the solution is invalid.
 func timeNavSol(m *casbin.NavSol) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-SOL"}
 	if m.PosValid < casbin.NavPos3D {
 		return &t
 	}
-	t.GNSS, t.TAITime = gnssTime(m.TimeSrc, m.Week, m.TOW)
+	setGNSSTime(&t, m.TimeSrc, m.Week, m.TOW)
 	return &t
 }
 
@@ -44,7 +44,7 @@ func timeNavSol(m *casbin.NavSol) *gpsprot.TimeMsg {
 // The TimTP message gives the time of the next pulse, emitted before the pulse.
 func timeTimTP(m *casbin.TimTP) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "TIM-TP"}
-	t.GNSS, t.TAITime = gnssTime(m.RefTimeGNSS(), m.Wn, m.TOW)
+	setGNSSTime(&t, m.RefTimeGNSS(), m.Wn, m.TOW)
 	return &t
 }
 
@@ -97,19 +97,22 @@ func timeNav2Sol(m *casbin.Nav2Sol, gnss gpsprot.GNSS) *gpsprot.TimeMsg {
 	return &t
 }
 
-// gnssTime converts CASIC GNSS ID, week number, and TOW to gpsprot.GNSS and TAI time.
-// Returns zero GNSS and Time for unsupported GNSS IDs.
-func gnssTime(id casbin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptime.Time) {
+// setGNSSTime sets the GNSS and time of t from a CASIC GNSS ID, week number,
+// and TOW. It sets nothing for unsupported GNSS IDs.
+// The V5 specification does not say what time scale the GLONASS week and TOW
+// use; the ATGM332D-5N71 gives them aligned with UTC, so, as for the V6 TIM2
+// messages, they give UTCTime rather than TAITime.
+func setGNSSTime(t *gpsprot.TimeMsg, id casbin.GNSSID, week uint16, towSec float64) {
 	tow := ptime.Seconds(towSec)
 	switch id {
 	case casbin.GPS:
-		return gpsprot.GPS, ptime.GPS(int16(week), tow)
+		t.GNSS, t.TAITime = gpsprot.GPS, ptime.GPS(int16(week), tow)
 	case casbin.BDS:
-		return gpsprot.BDS, ptime.BeiDou(int16(week), tow)
+		t.GNSS, t.TAITime = gpsprot.BDS, ptime.BeiDou(int16(week), tow)
 	case casbin.GLN:
-		return gpsprot.GLO, ptime.GLONASSWeek(int16(week), tow)
+		t.GNSS = gpsprot.GLO
+		t.UTCTime.Set(ptime.GLONASSWeekUTC(week, tow))
 	}
-	return 0, 0
 }
 
 // timeNav2TimeUTC converts Nav2TimeUTC to TimeMsg.

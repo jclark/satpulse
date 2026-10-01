@@ -1,7 +1,8 @@
 SatPulse is a suite of software for using a GPS/GNSS receiver attached to a computer running Linux, macOS or Windows.
 It allows you to:
 
-- run a stratum-1 NTP server using chrony, ntpd-rs or NTPsec
+- run a stratum 1 NTP server using chrony, ntpd-rs or NTPsec on Linux
+- run a stratum 1 NTP server using chrony on macOS
 - run a PTP grandmaster with a Raspberry Pi CM4/CM5 or an Intel NIC using linuxptp
 - act as an RTK base station or rover
 - configure, monitor and evaluate GPS receivers from a wide range of vendors using a web-based GUI

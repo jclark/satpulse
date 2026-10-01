@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"crypto/subtle"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -156,15 +157,18 @@ func newCaster(lg *slog.Logger, cfg Config, version string,
 // newServer constructs a configured *http.Server backing the caster.
 // It disables HTTP/2 (needed for hijacking) and routes all requests
 // through serveHTTP.
+//
+// An empty, non-nil TLSNextProto is the old way to turn HTTP/2 off.
+// Server.Protocols is the clearer way, but it needs Go 1.24. TinyGo's
+// net/http is a fork of Go 1.21.4, which has no such field, so using it
+// breaks the build there. Switch to Protocols when TinyGo catches up.
 func (c *caster) newServer() *http.Server {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", c.serveHTTP)
-	var protos http.Protocols
-	protos.SetHTTP1(true)
 	return &http.Server{
-		Handler:   mux,
-		ErrorLog:  slogErrorLog(c.lg),
-		Protocols: &protos,
+		Handler:      mux,
+		ErrorLog:     slogErrorLog(c.lg),
+		TLSNextProto: map[string]func(*http.Server, *tls.Conn, http.Handler){},
 	}
 }
 
