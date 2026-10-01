@@ -45,7 +45,7 @@ A message file is a file in TOML format that defines a collection of named messa
 SatPulse provides a library of message files, which can be used to configure a wide variety of different GPS receivers.
 
 If no options other than connection options, `--packet-log` and `--capture` are specified,
-then it will detect the receiver and show information about it,
+then it probes the receiver to identify it and determine whether it supports high-level configuration,
 as if the `--show-receiver` option had been specified.
 
 # OPTIONS
@@ -77,7 +77,7 @@ This is for use with the `proxy.socket` table array in the TOML config file for 
 The following options query the receiver.
 
 **\-\-show\-receiver**
-: Detect the GPS receiver and show information about it.
+: Probe the GPS receiver to identify it and determine whether it supports high-level configuration.
 
 **\-c**, **\-\-show\-config**
 : Show the current configuration of the GPS receiver.

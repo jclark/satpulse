@@ -32,14 +32,14 @@ func openTestPTY(t *testing.T, speed int) (*os.File, *SerialConn) {
 		t.Fatal(err)
 	}
 	device := fmt.Sprintf("/dev/pts/%d", n)
-	setup, err := term.Open(device, term.Speed(speed))
+	setup, _, err := term.Open(device, term.Speed(speed))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if err := setup.Close(); err != nil {
 		t.Fatal(err)
 	}
-	conn, _, err := OpenSerial(device, 0)
+	conn, _, err := OpenSerial(testLogger(), device, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestDetectSpeedPTYSilent(t *testing.T) {
 	if err := conn.Close(); err != nil {
 		t.Fatal(err)
 	}
-	reopened, speed, err := OpenSerial(device, 0)
+	reopened, speed, err := OpenSerial(testLogger(), device, 0)
 	if err != nil {
 		t.Fatal(err)
 	}

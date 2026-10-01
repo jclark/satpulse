@@ -117,6 +117,7 @@ type Dispatcher struct {
 	ggaSynth              *nmeasyn.Synth
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
+	sysPulseStartup       *sysPulseStartup // nil once the startup check is over
 	tStart                time.Time
 }
 
@@ -189,9 +190,8 @@ func NewDispatcher(
 }
 
 const (
-	tickPeriod               = time.Second / 4
-	sysPulseFirstEdgeTimeout = 30 * time.Second
-	sysPulseMaxUncertainty   = time.Millisecond
+	tickPeriod             = time.Second / 4
+	sysPulseStartupTimeout = 30 * time.Second
 )
 
 func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
@@ -214,7 +214,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
-	var firstSysPulseDeadline <-chan time.Time
+	var sysPulseStartupDeadline <-chan time.Time
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -227,7 +227,8 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	if ppsCh != nil {
 		// Adaptive polling can take several seconds to acquire a narrow pulse.
 		// Allow comfortably more before warning.
-		firstSysPulseDeadline = time.After(sysPulseFirstEdgeTimeout)
+		sysPulseStartupDeadline = time.After(sysPulseStartupTimeout)
+		d.sysPulseStartup = &sysPulseStartup{rejected: make(map[pps.RejectReason]int)}
 	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
@@ -273,14 +274,15 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 			}
 		case ce, ok := <-ppsCh:
 			if ok {
-				// Any candidate, settled or not, proves the pin is wired and
-				// pulsing, which is all this warning is about.
-				firstSysPulseDeadline = nil
-				d.sysPulseCandidateEdge(ce)
+				usable := d.sysPulseCandidateEdge(ce)
+				if s := d.sysPulseStartup; s != nil {
+					s.edge(usable, ce.Reject)
+				}
 			} else {
 				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
 				ppsCh = nil
-				firstSysPulseDeadline = nil
+				sysPulseStartupDeadline = nil
+				d.sysPulseStartup = nil
 			}
 
 		case pkt, ok := <-pktCh:
@@ -302,9 +304,10 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
-		case <-firstSysPulseDeadline:
-			lg.Warn("no serial PPS edges are being received; check pps.pin in the [serial] table, PPS wiring, and receiver pulse width")
-			firstSysPulseDeadline = nil
+		case <-sysPulseStartupDeadline:
+			d.sysPulseStartup.report(lg)
+			sysPulseStartupDeadline = nil
+			d.sysPulseStartup = nil
 		case <-sig:
 			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)
@@ -312,23 +315,60 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	}
 }
 
-func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) {
+// sysPulseStartup checks that serial PPS receives what it needs to produce
+// samples: a usable edge and a post-pulse time message with a UTC time,
+// which is what feeds the Generator. It reports once, at the startup timeout.
+type sysPulseStartup struct {
+	rejected      map[pps.RejectReason]int
+	usableEdge    bool
+	usableTimeMsg bool
+}
+
+func (s *sysPulseStartup) edge(usable bool, reject pps.RejectReason) {
+	if usable {
+		s.usableEdge = true
+	} else {
+		s.rejected[reject]++
+	}
+}
+
+func (s *sysPulseStartup) timeMsg(msg *gpsprot.TimeMsg) {
+	if msg.UTCTime.IsSet() && msg.Ref != gpsprot.PrePulse {
+		s.usableTimeMsg = true
+	}
+}
+
+func (s *sysPulseStartup) report(lg *slog.Logger) {
+	if !s.usableEdge {
+		if len(s.rejected) == 0 {
+			lg.Warn("no serial PPS edges being received")
+		} else {
+			lg.Warn("no usable serial PPS edges being received", "rejected", s.rejected)
+		}
+	}
+	if !s.usableTimeMsg {
+		lg.Warn("no usable time messages being received")
+	}
+}
+
+// sysPulseCandidateEdge reports whether ce is usable according to its reader,
+// independently of whether it can be matched to a receiver time message.
+func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) bool {
 	d.logEvent(LogEvent{
 		Type: sysPulseEdgeType,
 		T:    ce.TRead,
 		Data: &SysPulseEdge{
 			T:           ce.Timestamp,
-			Uncertainty: gpsprot.Duration(ce.Uncertainty),
-			Settled:     ce.Settled,
-			Outlier:     ce.Outlier,
+			Uncertainty: [2]gpsprot.Duration{gpsprot.Duration(ce.Uncertainty[0]), gpsprot.Duration(ce.Uncertainty[1])},
+			PollWidths:  [2]gpsprot.Duration{gpsprot.Duration(ce.PollWidths[0]), gpsprot.Duration(ce.PollWidths[1])},
+			Reject:      ce.Reject,
 		},
 	})
-	// An outlier's bracket is a stalled read, so its midpoint can be off by
-	// most of the bracket; the refclock protocol carries no uncertainty, so
-	// the only protection for the time consumer is not to send it.
-	if (ce.Uncertainty <= sysPulseMaxUncertainty || ce.Settled) && !ce.Outlier {
-		d.sysPulseSample(ce.Edge)
+	if ce.Reject != "" {
+		return false
 	}
+	d.sysPulseSample(ce.Edge)
+	return true
 }
 
 func (d *Dispatcher) sysPulseSample(edge pps.Edge) {
@@ -419,10 +459,10 @@ type PHCPulseEdge struct {
 const sysPulseEdgeType = "sysPulseEdge"
 
 type SysPulseEdge struct {
-	T           time.Time        `json:"t"`
-	Uncertainty gpsprot.Duration `json:"uncertainty"`
-	Settled     bool             `json:"settled"`
-	Outlier     bool             `json:"outlier"`
+	T           time.Time           `json:"t"`
+	Uncertainty [2]gpsprot.Duration `json:"uncertainty,omitzero"`
+	PollWidths  [2]gpsprot.Duration `json:"pollWidths,omitzero"`
+	Reject      pps.RejectReason    `json:"reject,omitempty"`
 }
 
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:
@@ -530,6 +570,9 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	d.logMsg(mt, tRead)
 
 	d.timeMsgBuffer.Time(mt, tRead)
+	if s := d.sysPulseStartup; s != nil {
+		s.timeMsg(mt)
+	}
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {

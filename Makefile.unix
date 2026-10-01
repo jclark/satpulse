@@ -9,6 +9,7 @@ PANDOC=pandoc
 PYTHON=python3
 CMD=github.com/jclark/satpulse/gps/app/cmd
 TAGS=netgo,osusergo
+PACKAGES=./cmd/... ./gps/... ./internal/... ./time/...
 TARGETS=./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
 MAN1=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 \
   satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 \
@@ -62,7 +63,7 @@ man:
 	done
 
 test:
-	$(GO) test ./...
+	$(GO) test $(PACKAGES)
 
 smoketest:
 	$(PYTHON) smoketest/run.py

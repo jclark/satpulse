@@ -14,14 +14,22 @@ type Term interface {
 
 	Path() string
 	Buffered() (int, error)
-	Change(...AttrSetter) error
+	// Change returns the earliest safe write time after a speed change.
+	// A zero time means no wait is needed. The caller must delay writes until then.
+	Change(...AttrSetter) (time.Time, error)
 	Speed() int
 	TransmitTime(int) time.Duration
 	DevKind() DevKind
 	ModemControlPinState() (ModemControlPinState, error)
 	Flush() error
 	Drain() error
-	Restore() error
+	// Restore restores the attributes saved at open. If exceptHardware is true,
+	// it does not restore attributes affecting the UART hardware, i.e. speed,
+	// word length, parity, stop bits, hardware flow control, and the break
+	// and parity error handling input flags. On Unix, it never restores echo,
+	// to avoid echoing the receiver's output back to it between Restore and
+	// close, and between the next open and setting the attributes.
+	Restore(exceptHardware bool) error
 }
 
 // ErrNotATTY is returned when a device does not support termios.

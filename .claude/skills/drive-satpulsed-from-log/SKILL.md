@@ -1,11 +1,13 @@
 ---
 name: drive-satpulsed-from-log
-description: Drive a test satpulsed instance from a recorded packet log, with no GPS hardware, by replaying the log through a FIFO with original packet pacing. Use to exercise the full scan/decode/event pipeline or the web interface from a capture.
+description: Drive a test satpulsed instance from a recorded packet log, with no GPS hardware, by replaying the log through a FIFO with original packet pacing. Use only when the running daemon itself is under test, such as its web interface or HTTP endpoints. To see the events a packet log produces, or to check that a decoding change still handles a capture, use `satpulsetool replay` instead, which needs no daemon.
 user-invocable: true
 allowed-tools: Read, Bash, Glob, Grep, Write, Edit, AskUserQuestion
 ---
 
 # Drive satpulsed from a packet log
+
+If you only need the events a packet log produces, for example to check that a decoding change still handles a capture, do not use this skill: run `satpulsetool replay --vendor <vendor> <log>`, which writes the events the log generates as JSONL to standard output, like an event log, with no daemon, FIFO, or config (see **satpulsetool(1)**). Use this skill only when the running daemon itself is under test.
 
 Replay a recorded JSONL packet log into `satpulsed` through a FIFO, so the daemon runs its normal serial-input path with no GPS hardware attached. Useful for testing the web interface, or verifying the scan/decode/event pipeline, from a captured log.
 

@@ -3,7 +3,7 @@ title: Dissecting serial PPS latency
 ---
 
 The upcoming SatPulse 0.3 release adds support for reading a GPS PPS signal from a modem-control pin on a serial port.
-This is the classic way of building a stratum-1 NTP server: wire the time pulse to the DCD pin, and the kernel timestamps the interrupt that the UART generates when the pin changes.
+This is the classic way of building a stratum 1 NTP server: wire the time pulse to the DCD pin, and the kernel timestamps the interrupt that the UART generates when the pin changes.
 Everybody knows that the accuracy you get this way is in the microsecond range, a few orders of magnitude worse than timestamping the pulse with a PTP hardware clock (PHC).
 But I wanted to understand exactly where those microseconds come from.
 This post describes a series of experiments that account for them rather precisely, with a couple of surprises along the way.

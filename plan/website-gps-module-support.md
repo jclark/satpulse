@@ -14,7 +14,7 @@ A new top-level nav section, "GPS module support", after "GPS configuration". Th
 
 The entry page is "Supported vendors": an index, not an overview. It lists the vendors, with aliases where the vendor is known under more than one name (SinoGNSS/COMNav, Techtotop/Taidou, Zhongke/CASIC), and points to the per-vendor pages. A tick/cross support matrix summarizing the dimensions may be added eventually; initially it is just the list. The uniform shape of the vendor pages does the explaining; the index does not define terms up front.
 
-One page per vendor, covering every supported vendor from the start: u-blox, Unicore, Zhongke/CASIC, Allystar, Techtotop/Taidou, Septentrio, ByNav, SinoGNSS/COMNav, Quectel, Airoha. A page does not have to be long to be useful; a few lines of verified key facts answers the reader's whole question, and having a page for every supported vendor is itself the impressive fact.
+One page per vendor, covering every supported vendor from the start: u-blox, Unicore, Zhongke/CASIC, Allystar, Techtotop/Taidou, Septentrio, Bynav, SinoGNSS/COMNav, Quectel, Airoha. A page does not have to be long to be useful; a few lines of verified key facts answers the reader's whole question, and having a page for every supported vendor is itself the impressive fact.
 
 The section is built breadth first, in slices: each slice adds a small increment to every vendor page, then the next slice adds another, so the pages grow gradually and stay uniform in depth. The first slice might be just what `intro/satpulse.md` currently says about each vendor. u-blox will eventually be the deepest page, but it is not the template; the simple key-facts shape is.
 
@@ -71,7 +71,7 @@ The first slice is done:
 - The nav section exists, between Setup and Man pages for now; it moves after GPS configuration when the website-gps-config branch is merged.
 - The index page lists the vendors with links. It also carries the supporting-a-protocol dimension list (moved out of `intro/satpulse.md`), so it is not the bare index sketched above.
 - All nine vendor pages have the settled shape: opening paragraph, protocol paragraph, dimension bullets, tested models, supported-message table.
-- There is additionally a NovAtel page, not in the original plan: it documents the OEM6/OEM7 protocol structure once, with the full decoded-log table; the ByNav and SinoGNSS pages link to it and state their vendor-specific differences (own logs, position type values, command syntax), as does the Unicore compatible-logs paragraph. No NovAtel receiver has been tested; the page says so.
+- There is additionally a NovAtel page, not in the original plan: it documents the OEM6/OEM7 protocol structure once, with the full decoded-log table; the Bynav and SinoGNSS pages link to it and state their vendor-specific differences (own logs, position type values, command syntax), as does the Unicore compatible-logs paragraph. No NovAtel receiver has been tested; the page says so.
 - There is no Airoha page; the PAIR material lives on the Quectel page.
 - The tier 1/tier 2 vocabulary is gone from the site.
 - Interaction items done: `intro/satpulse.md`'s protocol-support section shrinks to the NMEA/RTCM framing plus a pointer to the index; the home page links the section; `setup/satpulsed.md` and `setup/rtk.md` link instead of enumerating the high-level vendors; `hardware/gnss-modules.md` links each of its vendor sections to the vendor's support page.

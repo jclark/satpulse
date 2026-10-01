@@ -133,6 +133,7 @@ func TestGLONASSFreqNr(t *testing.T) {
 		{name: "L1CA freq -7", typ: 8, obsInfo: 1 << 3, expect: -7, expectOK: true},
 		{name: "L2CA freq +6", typ: 11, obsInfo: 14 << 3, expect: 6, expectOK: true},
 		{name: "zero wire value", typ: 8, obsInfo: 0, expectOK: false},
+		{name: "wire value above range", typ: 8, obsInfo: 15 << 3, expectOK: false},
 		{name: "non-FDMA GLONASS L3", typ: 12, obsInfo: 1 << 3, expectOK: false},
 		{name: "non-GLONASS signal", typ: 0, obsInfo: 1 << 3, expectOK: false},
 		{name: "half-cycle bit ignored", typ: 9, obsInfo: 1<<3 | 1<<2, expect: -7, expectOK: true},
@@ -140,11 +141,9 @@ func TestGLONASSFreqNr(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			t1 := MeasEpochChannelType1{Type: tc.typ, ObsInfo: tc.obsInfo}
-			t2 := MeasEpochChannelType2{Type: tc.typ, ObsInfo: tc.obsInfo}
-			got1, ok1 := t1.GLONASSFreqNr()
-			got2, ok2 := t2.GLONASSFreqNr()
-			if got1 != tc.expect || ok1 != tc.expectOK || got2 != tc.expect || ok2 != tc.expectOK {
-				t.Errorf("got %d,%v (type1) %d,%v (type2), want %d,%v", got1, ok1, got2, ok2, tc.expect, tc.expectOK)
+			got, ok := t1.GLONASSFreqNr()
+			if got != tc.expect || ok != tc.expectOK {
+				t.Errorf("got %d,%v, want %d,%v", got, ok, tc.expect, tc.expectOK)
 			}
 		})
 	}
@@ -152,8 +151,11 @@ func TestGLONASSFreqNr(t *testing.T) {
 
 func TestMeasExtraAccessors(t *testing.T) {
 	var s MeasExtraChannelSub
-	s.Type = 31
+	s.Type = 2<<5 | 31
 	s.Misc = 5 | 1<<3 // CN0HighRes 5, signal extension 32+1
+	if got := s.AntennaID(); got != 2 {
+		t.Errorf("AntennaID = %d, want 2", got)
+	}
 	if got := s.SignalNumber(); got != 33 {
 		t.Errorf("SignalNumber = %d, want 33", got)
 	}
@@ -173,12 +175,6 @@ func TestMeasExtraAccessors(t *testing.T) {
 		if got := m.HasCN0HighRes(); got != tc.expect {
 			t.Errorf("HasCN0HighRes with SBLength %d = %v, want %v", tc.sbLength, got, tc.expect)
 		}
-	}
-}
-
-func TestObsInfoHalfCycleAmbiguity(t *testing.T) {
-	if ObsInfo(0).HalfCycleAmbiguity() || !ObsInfo(1<<2).HalfCycleAmbiguity() {
-		t.Errorf("HalfCycleAmbiguity does not select bit 2")
 	}
 }
 

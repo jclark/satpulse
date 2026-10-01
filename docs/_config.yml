@@ -177,6 +177,7 @@ exclude:
   - gulpfile.js
   - LICENSE
   - CLAUDE.md
+  - gps-module-support/CLAUDE.md
   - log
   - man/CLAUDE.md
   - workbench/CLAUDE.md

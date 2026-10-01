@@ -2,8 +2,9 @@ package rinex
 
 // SignalFrequencyHz returns the carrier frequency in Hz for a RINEX system
 // letter and signal id. frq is the GLONASS FDMA frequency channel and must be
-// non-nil for GLONASS; it is ignored for other systems. It reports false when
-// the system, signal band, or (for GLONASS) channel is not recognised.
+// non-nil for the GLONASS FDMA bands 1 and 2; it is ignored otherwise. It
+// reports false when the system, signal band, or (for GLONASS FDMA) channel is
+// not recognised.
 func SignalFrequencyHz(sys string, sig SignalID, frq *int8) (float64, bool) {
 	f, ok := signalFrequencyMHz(sys, sig, frq)
 	if !ok {
@@ -35,6 +36,9 @@ func signalFrequencyMHz(sys string, sig SignalID, frq *int8) (float64, bool) {
 			return 1176.450, true
 		}
 	case "R":
+		if band == '3' {
+			return 1202.025, true
+		}
 		if frq == nil {
 			return 0, false
 		}
@@ -91,6 +95,8 @@ func signalFrequencyMHz(sys string, sig SignalID, frq *int8) (float64, bool) {
 		}
 	case "I":
 		switch band {
+		case '1':
+			return 1575.420, true
 		case '5':
 			return 1176.450, true
 		case '9':

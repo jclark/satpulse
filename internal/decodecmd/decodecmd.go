@@ -22,19 +22,23 @@ type output struct {
 	gpsdecode.DecodeResult
 }
 
-const summary = `[-h|--help] [-c|--compact] [--out] [--bin|--line] data`
+const summary = `[-h|--help] [-c|--compact] [--out] [--vendor name] [--bin|--line] data`
 
 // Cmd implements the decode subcommand.
 // DATA is a required positional argument containing the packet data.
 // By default, DATA is auto-detected as hex (if all characters are hex digits)
 // or ASCII text (with \r\n appended).
 // --bin forces hex interpretation; --line forces ASCII interpretation.
+// --vendor selects the vendor's variant of the NovAtel protocol for
+// NovAtel packets; it does not restrict the packet formats recognized.
+// Without it, SATPULSE_VENDORS applies, as for other commands.
 func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
 	help := false
 	compact := false
 	out := false
 	binFlag := false
 	lineFlag := false
+	vendorStr := ""
 
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
@@ -42,6 +46,7 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 	flags.BoolVar(&out, "out", false, "treat packet as outgoing (affects CFG-VAL* decoding)")
 	flags.BoolVar(&binFlag, "bin", false, "treat data as hex-encoded binary")
 	flags.BoolVar(&lineFlag, "line", false, "treat data as ASCII text (\\r\\n appended)")
+	flags.StringVar(&vendorStr, "vendor", "", "GPS vendor `name` whose variant of the NovAtel protocol to use for NovAtel packets")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
 		return usageFunc(progName), err
@@ -57,6 +62,14 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 	}
 	if binFlag && lineFlag {
 		return usageFunc(progName), fmt.Errorf("--bin and --line are mutually exclusive")
+	}
+	vendor, err := gpsreg.ParseVendor(vendorStr)
+	if err != nil {
+		return usageFunc(progName), err
+	}
+	vendors, err := cmd.ResolveVendors(vendor)
+	if err != nil {
+		return "", err
 	}
 	data := flags.Arg(0)
 	var pktBytes []byte
@@ -78,7 +91,7 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 			pktBytes = []byte(data + "\r\n")
 		}
 	}
-	return "", runDecode(pktBytes, out, compact)
+	return "", runDecode(pktBytes, out, compact, vendors)
 }
 
 func isAllHex(s string) bool {
@@ -90,8 +103,8 @@ func isAllHex(s string) bool {
 	return true
 }
 
-func runDecode(data []byte, out, compact bool) error {
-	pf, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, out)
+func runDecode(data []byte, out, compact bool, vendors []gpsreg.Vendor) error {
+	pf, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, out, vendors)
 	if err != nil {
 		return err
 	}

@@ -18,10 +18,9 @@ SatPulse supports:
 - low-level configuration
   - message files for configuration
   - a `septentrio` response pattern in message files, for correlation of responses
+- [conversion]({%link man/satpulsetool-convobs.1.md%}) of raw observation (MeasEpoch and MeasExtra) blocks into RINEX
 
-[High-level configuration](https://github.com/jclark/satpulse/pull/354)
-and [conversion of raw observations into RINEX](https://github.com/jclark/satpulse/pull/356)
-are under development.
+[High-level configuration](https://github.com/jclark/satpulse/pull/354) is under development.
 
 SatPulse has been tested with the mosaic-G5 P3.
 
@@ -31,14 +30,14 @@ SatPulse decodes the following SBF blocks.
 
 | Block | Number | Used for |
 |-------|--------|----------|
-| MeasExtra | 4000 | decode only |
+| MeasExtra | 4000 | raw observations |
 | DOP | 4001 | solution quality |
 | PVTCartesian | 4006 | TAI time, ECEF position, ECEF velocity, solution quality, survey |
 | PVTGeodetic | 4007 | TAI time, geodetic position, geodetic velocity, solution quality |
 | SatVisibility | 4012 | decode only |
 | ChannelStatus | 4013 | satellites |
 | ReceiverStatus | 4014 | decode only |
-| MeasEpoch | 4027 | satellite signals |
+| MeasEpoch | 4027 | satellite signals, raw observations |
 | GALUtc | 4031 | leap second |
 | QualityInd | 4082 | decode only |
 | RFStatus | 4092 | decode only |

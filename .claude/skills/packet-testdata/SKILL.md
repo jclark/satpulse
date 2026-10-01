@@ -75,6 +75,10 @@ For u-blox receivers specifically, also read `ubx-config.md`.
 
 For Unicore receivers (UM980, UM981, UM982), also read `unicore-config.md`.
 
+For NovAtel-format receivers configured with message files (Bynav, SinoGNSS), read `novatel-config.md`, which refers to a file for each vendor.
+
+For Quectel LG290P receivers, read `quectel-config.md` - it has safety rules: some command sequences hang the receiver until it is power cycled.
+
 For CASIC (Zhongke) receivers, read `casic-config.md` - it maps which captures are possible on which attached unit (CASIC firmware acknowledges enabling messages it never emits).
 
 For all receivers, message files in the per-vendor subdirectories of `configs/gpsmsg/` provide low-level message tags. Read `lowlevel-config.md` for how to use these.
@@ -119,7 +123,9 @@ The script replays every `.jsonl` file through `satpulsetool replay`, collects a
 - TIM-TP events have ref field
 - NAV-TIMEUTC events have gnss field (known to be absent for GLONASS-only configs on u-blox)
 - Leap second consistency within and across files
-- Per-epoch TAI agreement across post-pulse time message variants (10ms tolerance)
+- Time agreement between messages for the same navigation solution, to the millisecond, across TAI and UTC, native and NMEA (pre-pulse messages excluded)
+- Times on the navigation-period grid (whole seconds at 1 Hz) and increasing; off-grid times that another message confirms are reported as diagnostics (receiver converging after a start)
+- Times against the capture's wall clock: each non-pre-pulse message is read within 1 s after the time it gives, which catches whole-second errors such as a wrong leap second or week
 - Position (lat/lon and ECEF) plausibility
 - Velocity plausibility for stationary receivers
 - DOP values reasonable

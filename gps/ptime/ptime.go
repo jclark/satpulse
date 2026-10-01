@@ -94,6 +94,20 @@ func GPS(week int16, tow time.Duration) Time {
 	return gnss(week, tow, epochGPS, TAIMinusGPS)
 }
 
+// ExtendGPSWeek extends GPS week numbers below 2048 into the range 2048–3071
+// (2019–2038), compensating for receivers that omit one or both high bits.
+// Week numbers of 2048 or greater are returned unchanged.
+func ExtendGPSWeek(week uint16) uint16 {
+	if week >= 2048 {
+		return week
+	}
+	add := uint16(2048)
+	if week >= 1024 {
+		add = 1024
+	}
+	return week + add
+}
+
 func GPSDate(week uint16, day time.Weekday) time.Time {
 	return epochGPS.AddDate(0, 0, int(week)*7+int(day))
 }
@@ -110,14 +124,6 @@ func Galileo(week int16, tow time.Duration) Time {
 // tow is duration since start of week
 func BeiDou(week int16, tow time.Duration) Time {
 	return gnss(week, tow, epochBeiDou, TAIMinusBeiDou)
-}
-
-// GLONASSWeek creates a Time from a GLONASS week number and time of week.
-// See epochGLONASS week for explanation of GLONASS week number concept.
-// GLONASS time is aligned with UTC (except for leap seconds), and CASIC uses
-// the same TAI offset as GPS.
-func GLONASSWeek(week int16, tow time.Duration) Time {
-	return gnss(week, tow, epochGLONASSWeek, TAIMinusGPS)
 }
 
 func gnss(week int16, tow time.Duration, epoch time.Time, epochTAIOffset int64) Time {

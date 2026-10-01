@@ -71,7 +71,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	}
 	var conn gpsio.Conn
 	if v.serialDevice != "" {
-		conn, _, err = gpsio.OpenSerial(v.serialDevice, v.localSpeed)
+		conn, _, err = gpsio.OpenSerial(lg, v.serialDevice, v.localSpeed)
 	} else {
 		conn, err = gpsio.OpenSocket(v.socketPath)
 	}
@@ -399,11 +399,13 @@ func logFailedProps(lg *slog.Logger, reqProps *gpsprot.ConfigProps, rsltProps *g
 }
 
 func printReceiverInfo(f *os.File, info *gpsprot.ReceiverInfo) {
+	vendor := "not supported"
+	if info != nil {
+		vendor = info.Vendor
+	}
+	fmt.Fprintf(f, "High-level configuration: %s\n", vendor)
 	if info == nil {
 		return
-	}
-	if info.Vendor != "" {
-		fmt.Fprintf(f, "Vendor: %s\n", info.Vendor)
 	}
 	if info.Hardware != "" {
 		fmt.Fprintf(f, "Hardware: %s\n", info.Hardware)

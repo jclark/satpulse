@@ -21,6 +21,7 @@ all:
         abondance.lan:
         abondance-ttySEP0.lan:
         brie.lan:
+        burrata.lan:
         caciocavallo.lan:
         chaource.lan:
         gubbeen.lan:
@@ -31,6 +32,7 @@ all:
         roquefort.lan:
         serpa.lan:
         taleggio.lan:
+        vacherin.lan:
         valdeon.lan:
         valencay.lan:
         valtellina.lan:
@@ -49,20 +51,22 @@ all:
         fontina.lan:
         montasio.lan:
         raschera.lan:
-        vacherin.lan:
     virtual_hosts:
       hosts:
         abondance-ttySEP0.lan:
   
   hosts:
-    vacherin.lan:
-      speed: 115200
-      instance: ttyUSB0
-
     # ZED-X20P on USB
-    roquefort.lan:
+    vacherin.lan:
       speed: 230400
       instance: ttyACM0
+
+    # Quectel LG290P on USB (Mozihao board, CH340)
+    roquefort.lan:
+      speed: 460800
+      instance: ttyUSB0
+      config: "false"
+      vendor: '"Quectel"'
 
     # LEA-6T
     pecorino.lan:
@@ -129,11 +133,11 @@ all:
     mascarpone.lan:
       speed: 115200
 
-    # Quectel LG290P on a CM4
+    # Allystar TAU1201 on UART
     chaource.lan:
-      speed: 460800
+      speed: 115200
       config: "false"
-      vendor: '"Quectel"'
+      vendor: '"Allystar"'
 
     # UM960 on UART
     wensleydale.lan:
@@ -186,6 +190,11 @@ all:
     # Raspberry Pi 4
     beaufort.lan:
       interface: ""
+
+    # Zhongke F8N-76 on UART; CM4 running 32-bit Raspberry Pi OS (armhf userland on the 64-bit kernel)
+    burrata.lan:
+      vendor: '"casic"'
+      speed: 115200
 
     feta.lan:
       interface: ""

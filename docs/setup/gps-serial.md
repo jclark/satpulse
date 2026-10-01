@@ -58,7 +58,7 @@ SatPulse assumes serial connection uses 8 data bits, no parity and 1 stop bit (c
 many modules support only this and it is the default on all modules.
 
 A native USB port on a GPS module does not have a serial speed.
-It will typically appear as a `/dev/ttyACM0` device,
+On Linux, it will typically appear as a `/dev/ttyACM0` device,
 and the speed you specify for that device does not affect the speed at which the connection operates.
 
 ### Linux
@@ -78,42 +78,14 @@ When you plug such a device in, there will be a kernel log message, which you ca
 
 ### macOS
 
-On macOS, a USB serial device shows up as a pair of device nodes,
+On macOS, a USB serial adapter shows up as a pair of devices,
 for example `/dev/cu.usbmodem11301` and `/dev/tty.usbmodem11301`;
-the one intended for outbound use is `/dev/cu.*`.
-The device name changes depending on which USB port or hub the device is plugged into,
-and macOS has no equivalent of the stable device names that udev provides on Linux.
-SatPulse provides `find-serial` for dealing with this:
-a macOS-specific utility written in C, which is included in the Homebrew tap. {% include new-in-03.html %}
+you should use the one starting with `/dev/cu.`.
 
-Run `find-serial` with no arguments to show the USB serial devices currently plugged in.
-It will print something like
-
-```
-device=/dev/cu.usbmodem11301 vid=1546 pid=01A9 model="u-blox GNSS receiver" vendor="u-blox AG - www.u-blox.com"
-```
-
-`model` and `vendor` are the device's own USB strings, so the GPS is usually identifiable at a glance.
-If you have more than one USB serial device plugged in,
-the `--vid` and `--pid` options (hexadecimal) narrow the matches by USB vendor and product ID.
-
-With `--exec`, find-serial instead runs a command,
-replacing one `{}` argument with the matched device path
-(this requires exactly one device to match).
-This means you do not have to look up the device name at all:
-
-```
-find-serial --exec -- satpulsetool gps -s 9600 -d {}
-```
-
-Adding `--wait` makes find-serial wait for a matching device to appear
-(using hot-plug notifications, not polling)
-instead of failing when none is present,
-so you can run the command first and plug the receiver in afterwards.
-
-The service installed by the Homebrew tap uses find-serial in the same way
-to locate the GPS receiver when it starts,
-so on macOS the device does not normally need to be configured in `satpulse.toml`.
+Some USB serial devices, for example, genuine FT232R adapters, have a unique serial number.
+In this case, the device will be named something like `/dev/cu.usbserial-BG03U08C`,
+where `BG03U08C` is the serial number.
+Otherwise, the device name will depend on which USB port it is connected to, for example `/dev/cu.usbmodem11301`.
 
 ### Windows
 

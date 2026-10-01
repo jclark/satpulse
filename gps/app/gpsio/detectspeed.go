@@ -57,6 +57,12 @@ const (
 type DetectResult struct {
 	Outcome DetectOutcome
 	Speed   int // the detected speed; set only when Outcome is DetectFound
+	// GaplessWindow is set when Outcome is DetectUnrecognized and the complete
+	// try window at every tried speed passed without a read timeout. A device
+	// whose output has no gaps leaves the UART no idle line from which to find
+	// the true start of a frame, so it can stay locked onto a false one and
+	// receive garbage at the right speed.
+	GaplessWindow bool
 }
 
 const (
@@ -85,6 +91,7 @@ type trySpeedStats struct {
 	pairs         int
 	framingErrors int
 	readErrors    int
+	timeouts      int
 	stalePackets  int
 	prevBit       byte
 	havePrevBit   bool
@@ -118,7 +125,9 @@ func (s *trySpeedStats) transitionRatio() float64 {
 
 func (s *trySpeedStats) addPacket(pkt scan.Packet, procs map[gpsprot.Tag]gpsprot.PacketProcessor) trySpeedResult {
 	s.addData(pkt.Data)
-	if pkt.ReadError != nil && !pkt.IsInterPacketTimeout() {
+	if pkt.IsInterPacketTimeout() {
+		s.timeouts++
+	} else if pkt.ReadError != nil {
 		s.readErrors++
 		s.framingErrors += framingErrorCount(pkt.ReadError)
 	}
@@ -212,6 +221,7 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 	}
 	currentSpeed := conn.Speed()
 	candidates := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)
+	idle := false
 	attempt := func(speed int) (trySpeedResult, bool, error) {
 		if speed != currentSpeed {
 			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
@@ -230,11 +240,14 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 			"transitionRatio", stats.transitionRatio(),
 			"framingErrors", stats.framingErrors,
 			"readErrors", stats.readErrors,
+			"timeouts", stats.timeouts,
 			"stalePackets", stats.stalePackets)
+		idle = idle || stats.timeouts > 0
 		return result, streamEnded, err
 	}
-
-	return walkSpeedCandidates(candidates, attempt, stopSilent)
+	result, err := walkSpeedCandidates(candidates, attempt, stopSilent)
+	result.GaplessWindow = result.Outcome == DetectUnrecognized && !idle
+	return result, err
 }
 
 // resolveSpeedCandidates replaces each zero candidate with the speed the port

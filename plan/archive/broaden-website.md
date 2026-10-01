@@ -356,7 +356,7 @@ are settled, and neither was a wrong claim. `intro/satpulse.md` said
 SinoGNSS support was "validated on the K901" while every verification
 comment in `configs/gpsmsg/sinognss/sinognss.toml` names a K902; both
 modules were used, so the page now says "the K901 and K902", matching
-NEWS. The ByNav M2 versus M20 naming also came up, and is genuinely
+NEWS. The Bynav M2 versus M20 naming also came up, and is genuinely
 confusing, but the confusion is in the vendor's naming and in the
 message file, not on the website: the site says M10 and M20
 throughout, and the only occurrence of M2 is a shipped 0.2 NEWS

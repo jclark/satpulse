@@ -21,6 +21,7 @@ _Not yet released_
 - SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
 - Decoded SBF blocks are translated into the device-independent GPS model: time, leap-second, position, velocity, per-epoch solution quality, satellite, survey, and correction-report information is extracted and exposed in the JSONL event log, the web dashboard, and the NTP/PPS timing path. (#340)
 - `satpulsetool gps` can configure Septentrio receivers from a message file: it frames the receiver's ASCII command-line replies and reports whether each command succeeded or was rejected. Message files for the mosaic-G5 (and the shared mosaic entries) are included. (#340)
+- `satpulsetool convobs` converts Septentrio SBF raw observations (MeasEpoch/MeasExtra) to RINEX, from raw SBF streams or packet logs, with a new `sbf` input format. (#342)
 
 ### u-blox protocol-specific support
 
@@ -62,6 +63,8 @@ _Not yet released_
 - Passive serial packet logging has moved from `satpulsetool gps` to `satpulsetool serial`. The `gps` command now always probes or configures the receiver; `--show-receiver` is always implied when no operation is specified, even if `--capture` is specified. (#408)
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
+- Message files have a new `novatel` response pattern, which allows responses from Bynav receivers to be correlated with the commands sent.
+- `satpulsetool decode` and `satpulsetool annotate` have a new `--vendor` option, which decodes NovAtel-format packets using that vendor's variant of the protocol; without it, `SATPULSE_VENDORS` applies. SatPulse Workbench decodes packets using the vendors it was given in the same way.
 - `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)
 
 ### Miscellaneous
@@ -74,6 +77,7 @@ _Not yet released_
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
 - The JSONL event log now uses a natural event shape with a `type` discriminator and a `data` payload, replacing the previous one-field-per-type record shape. The `nanos` integer field is replaced by a `mono` field holding monotonic elapsed seconds. This matches the envelope already emitted by `satpulsetool replay`. Existing event logs in the old format can be converted with the `migrate_log.go` tool in `time/internal/gpsevent`. (#277)
 - The `pulseEdge` event type in the JSONL event log has been renamed to `phcPulseEdge`, because SatPulse now supports two different kinds of pulse edge: PHC-timestamped and system-clock-timestamped. (#402)
+- On exit, the serial port is no longer restored exactly to how it was before SatPulse started. If a GPS receiver has been successfully detected at some serial speed, the port is left at that speed; this avoids an unnecessary speed change when the port is next opened, minimizing the risk of serial corruption on Raspberry Pi UARTs. Echo is always left turned off, so that the receiver's output is not transmitted back to it while the port is being closed or next opened.
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
 - Building from source now uses `make` on macOS and FreeBSD as well as Linux, replacing the `unix-build.sh` script. `make install` works there too, installing under `/usr/local` by default, or under a prefix given by `prefix=`. (#420)
 
@@ -120,7 +124,7 @@ _Released 2026-05-07_
 - The CASIC binary protocol is supported, with message files for Zhongke ATGM332D/ATGM336H receivers and the AT632-6T-30 timing receiver.
 - The Quectel PQTM NMEA-based protocol is supported, with a message file for the Quectel LG290P.
 - The Airoha PAIR NMEA-based protocol is supported, with a message file for the Quectel LC29H (which uses a combination of the PQTM and PAIR protocols).
-- The NovAtel OEM6/7 binary and ASCII protocol is supported in the variants used by ByNav and SinoGNSS/ComNav, with message files for ByNav M2 and SinoGNSS/ComNav K901/K902.
+- The NovAtel OEM6/7 binary and ASCII protocol is supported in the variants used by Bynav and SinoGNSS/ComNav, with message files for Bynav M2 and SinoGNSS/ComNav K901/K902.
 - The Techtotop/Taidou SDBP protocol is supported, with a message file for the Techtotop/Taidou T303-5D receiver.
 
 ### NTP support without a PHC

@@ -34,6 +34,7 @@ endif
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
 XFLAGS:=-X \"$(CMD).version=$(CMD_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
+PACKAGES=./cmd/... ./gps/... ./internal/... ./time/...
 # ARM architecture version for 32-bit arm builds; ignored when GOARCH is not arm.
 GOARM=6
 # The GOARCHs we support.
@@ -59,7 +60,7 @@ all: $(GOARCH) out/$(GOARCH)/satpulse.toml
 allarch: $(ALL_GOARCH) $(TOMLS)
 
 $(ALL_GOARCH):
-	env GOOS=linux GOARCH=$@ GOARM=$(GOARM) go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./...
+	env GOOS=linux GOARCH=$@ GOARM=$(GOARM) go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" $(PACKAGES)
 
 windows_amd64:
 	env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
@@ -137,7 +138,7 @@ uninstall:
 	systemctl daemon-reload
 
 test:
-	go test ./...
+	go test $(PACKAGES)
 
 smoketest: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulsewb
 	python3 smoketest/run.py

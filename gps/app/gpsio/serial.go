@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"os"
 	"sync"
@@ -24,7 +25,10 @@ import (
 // nor more than one concurrent Write, nor more than one concurrent Close.
 // Stop can be called before Close to prevent further reads and writes.
 // Close will wait for any in-progress reads or writes to complete,
-// before restoring serial settings and closing the underlying file descriptor.
+// before restoring serial attributes and closing the underlying file descriptor.
+// Attributes affecting the UART hardware are not restored if a valid packet
+// was received since the last speed change (see SetDetected), since they then
+// describe the real state of the link.
 // At most one WaitSerialPinChange call may be in progress, and it must
 // have returned before Close is called. Its context cancels it, and Stop
 // prevents further waits and cancels the watch; how soon a cancelled wait
@@ -36,17 +40,20 @@ import (
 // may not be before the process exits. That separate claim is what makes the
 // wait safe relative to Close.
 type SerialConn struct {
-	file         ioFile
-	kind         term.DevKind
-	mu           sync.Mutex
-	stopped      bool // protected by mu
-	readLock     chan struct{}
-	writeLock    chan struct{}
-	pktLog       *PacketLog
-	lastWriteLen int // bytes of the most recent write; read by Drain
-	watch        term.ModemControlPinWatch
-	watchPin     SerialPin
-	watchMethod  PPSMethod
+	lg            *slog.Logger
+	file          ioFile
+	kind          term.DevKind
+	mu            sync.Mutex
+	stopped       bool // protected by mu
+	detected      bool // protected by mu
+	readLock      chan struct{}
+	writeLock     chan struct{}
+	pktLog        *PacketLog
+	lastWriteLen  int       // bytes of the most recent write; read by Drain
+	safeWriteTime time.Time // protected by writeLock
+	watch         term.ModemControlPinWatch
+	watchPin      SerialPin
+	watchMethod   PPSMethod
 }
 
 // ioFile is the minimal file-like interface SerialConn needs.
@@ -66,10 +73,12 @@ var _ SerialOutPort = (*SerialConn)(nil)
 // speed can be 0 meaning to use the current speed.
 // It returns the actual speed configured on the device; for devices
 // that are not TTYs the returned speed is 0.
-func OpenSerial(path string, speed int) (*SerialConn, int, error) {
-	t, err := openTerm(path, speed)
+func OpenSerial(lg *slog.Logger, path string, speed int) (*SerialConn, int, error) {
+	t, safe, err := openTerm(path, speed)
 	if err == nil {
-		return newSerialConn(t, t.DevKind()), t.Speed(), nil
+		c := newSerialConn(lg, t, t.DevKind())
+		c.setSafeWriteTime(safe, "open")
+		return c, t.Speed(), nil
 	}
 	if !errors.Is(err, term.ErrNotATTY) {
 		return nil, 0, err
@@ -82,15 +91,23 @@ func OpenSerial(path string, speed int) (*SerialConn, int, error) {
 	if pf != nil {
 		f = newPollingFile(pf, readTimeout)
 	}
-	return newSerialConn(f, kind), 0, nil
+	return newSerialConn(lg, f, kind), 0, nil
 }
 
-func newSerialConn(f ioFile, kind term.DevKind) *SerialConn {
+func newSerialConn(lg *slog.Logger, f ioFile, kind term.DevKind) *SerialConn {
 	readLock := make(chan struct{}, 1)
 	readLock <- struct{}{}
 	writeLock := make(chan struct{}, 1)
 	writeLock <- struct{}{}
-	return &SerialConn{file: f, readLock: readLock, writeLock: writeLock, kind: kind}
+	return &SerialConn{lg: lg, file: f, readLock: readLock, writeLock: writeLock, kind: kind}
+}
+
+// setSafeWriteTime is called before publishing the connection or with writeLock held.
+func (c *SerialConn) setSafeWriteTime(safe time.Time, operation string) {
+	c.safeWriteTime = safe
+	if !safe.IsZero() {
+		c.lg.Debug("serial write wait received", "path", c.file.Path(), "operation", operation, "until", safe, "wait", time.Until(safe))
+	}
 }
 
 func (c *SerialConn) LocalAddr() string {
@@ -326,6 +343,13 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 		c.writeLock <- struct{}{}
 	}()
 	// now we have the write lock
+	if !c.safeWriteTime.IsZero() {
+		if d := time.Until(c.safeWriteTime); d > 0 {
+			c.lg.Info("waiting before serial write after speed change", "path", c.file.Path(), "wait", d)
+			time.Sleep(d)
+		}
+		c.safeWriteTime = time.Time{}
+	}
 	if c.isStopped() {
 		return 0, net.ErrClosed
 	}
@@ -349,9 +373,15 @@ func (c *SerialConn) writeThenChangeSpeed(p []byte, speed int, pktFmt gpsprot.Pa
 					delay += t.TransmitTime(n)
 				}
 				time.Sleep(delay)
-				err = t.Change(term.Speed(speed))
+				var safe time.Time
+				safe, err = t.Change(term.Speed(speed))
+				c.setSafeWriteTime(safe, "change")
 				if err != nil {
 					speed = 0
+				} else {
+					c.mu.Lock()
+					c.detected = false
+					c.mu.Unlock()
 				}
 			} else {
 				// speed change is meaningless on a non-TTY device
@@ -372,6 +402,14 @@ func (c *SerialConn) isStopped() bool {
 	defer c.mu.Unlock()
 	c.mu.Lock()
 	return c.stopped
+}
+
+// SetDetected records that a valid packet was received at the current
+// settings, so that Close leaves the UART hardware settings in place.
+func (c *SerialConn) SetDetected() {
+	c.mu.Lock()
+	c.detected = true
+	c.mu.Unlock()
 }
 
 func (c *SerialConn) Stop() {
@@ -424,13 +462,16 @@ func (c *SerialConn) Close() error {
 	c.mu.Lock()
 	w := c.watch
 	c.watch = nil
+	detected := c.detected
 	c.mu.Unlock()
 	if w != nil {
 		_ = w.Close()
 	}
 	var restoreErr error
 	if t := c.term(); t != nil {
-		restoreErr = t.Restore()
+		// Hardware settings at which a valid packet was received describe
+		// the real state of the link, so leave them for the next open.
+		restoreErr = t.Restore(detected)
 	}
 	closeErr := c.file.Close()
 	if restoreErr != nil {
@@ -464,7 +505,7 @@ const readTimeout = time.Millisecond * 100
 // settings, on top of the computed transmit time for non-UART devices.
 const minDelay = time.Millisecond
 
-func openTerm(path string, speed int) (term.Term, error) {
+func openTerm(path string, speed int) (term.Term, time.Time, error) {
 	opts := []term.AttrSetter{
 		term.RawMode,
 		term.Local,
@@ -474,21 +515,21 @@ func openTerm(path string, speed int) (term.Term, error) {
 	}
 	if speed != 0 {
 		if !term.IsValidSpeed(speed) {
-			return nil, fmt.Errorf("non-standard serial speed %d is not supported", speed)
+			return nil, time.Time{}, fmt.Errorf("non-standard serial speed %d is not supported", speed)
 		}
 		opts = append(opts, term.Speed(speed))
 	}
-	t, err := term.Open(path, opts...)
+	t, safe, err := term.Open(path, opts...)
 	if err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
 	err = t.Flush()
 	if err != nil {
-		t.Restore()
+		t.Restore(false)
 		t.Close()
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, safe, nil
 }
 
 // pollingFile is an ioFile implementation backed by an *os.File opened

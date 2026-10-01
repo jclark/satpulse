@@ -1,0 +1,337 @@
+// Package rnxsbf converts Septentrio SBF raw observation messages to RINEX records.
+package rnxsbf
+
+import (
+	"fmt"
+
+	"github.com/jclark/satpulse/gps/lib/opt"
+	"github.com/jclark/satpulse/gps/lib/rinex"
+	"github.com/jclark/satpulse/gps/lib/sbfbin"
+)
+
+const speedOfLight = 299792458.0
+
+// Converter converts SBF MeasEpoch blocks to RINEX observations.
+type Converter struct {
+	sink    rinex.Sink
+	state   map[signalKey]signalState
+	ts      sbfbin.TimeStamp
+	pending *sbfbin.MeasEpoch
+	extra   *sbfbin.MeasExtra
+}
+
+type signalKey struct {
+	sat rinex.SatelliteID
+	sig rinex.SignalID
+}
+
+type signalState struct {
+	lock    uint16
+	ceil    uint16 // clip ceiling of the sub-block type lock came from
+	cumLoss uint8
+	arc     uint32
+	pending bool
+	seen    bool
+	cumSeen bool
+	half    bool // half-cycle bit of the last epoch with a carrier phase
+}
+
+// master carries the Type1 master values a Type2 slave sub-block needs to
+// reconstruct its absolute measurements.
+type master struct {
+	pr, do     float64
+	prOK, doOK bool
+	freqHz     float64 // master carrier frequency; 0 when unknown
+	frq        opt.Val[int8]
+}
+
+// extraKey correlates a MeasExtra sub-block with a MeasEpoch sub-block of the
+// same epoch: the two blocks are not guaranteed to list sub-blocks in the
+// same order, so they are matched on receiver channel and signal number.
+type extraKey struct {
+	rxChannel uint8
+	sigNum    uint8
+}
+
+type extraInfo struct {
+	cn0HighRes  float64
+	cumLossCont uint8
+}
+
+// cpInfo describes the carrier phase an epoch reports for a signal.
+type cpInfo struct {
+	halfCycle bool // the carrier phase has a half-cycle ambiguity
+}
+
+// New creates a Converter that writes records to sink.
+func New(sink rinex.Sink) *Converter {
+	return &Converter{sink: sink, state: make(map[signalKey]signalState)}
+}
+
+// ConvertBlock converts one SBF block, reporting whether it was a MeasEpoch.
+// The guide does not fix the order of MeasEpoch and MeasExtra within an
+// epoch, so whichever arrives first is held until the other arrives with the
+// same timestamp, and the pair is then converted together. A measurement
+// block with a new timestamp shows the held epoch is complete, and flushes
+// it. Blocks of other types are ignored and leave the held blocks in place.
+// A MeasEpoch whose measurements are scrambled, which the receiver does when
+// it lacks the Measurement Availability permission, is an error. Call Flush
+// after the last block of the stream.
+func (c *Converter) ConvertBlock(b *sbfbin.Block) (bool, error) {
+	m, isEpoch := b.Params.(*sbfbin.MeasEpoch)
+	extra, isExtra := b.Params.(*sbfbin.MeasExtra)
+	if !isEpoch && !isExtra {
+		return false, nil
+	}
+	if isEpoch && m.CommonFlags&sbfbin.CommonFlagsScrambling != 0 {
+		return true, fmt.Errorf("SBF MeasEpoch measurements are scrambled: the receiver lacks the Measurement Availability permission")
+	}
+	if b.TimeStamp != c.ts {
+		if err := c.Flush(); err != nil {
+			return isEpoch, err
+		}
+		c.ts = b.TimeStamp
+	}
+	if isEpoch {
+		c.pending = m
+	} else {
+		c.extra = extra
+	}
+	if c.pending == nil || c.extra == nil {
+		return isEpoch, nil
+	}
+	return isEpoch, c.Flush()
+}
+
+// Flush converts a MeasEpoch held by ConvertBlock, with its MeasExtra if one
+// has arrived, and discards a MeasExtra held without a MeasEpoch. Call it
+// after the last block of the stream.
+func (c *Converter) Flush() error {
+	m, extra := c.pending, c.extra
+	c.pending, c.extra = nil, nil
+	if m == nil {
+		return nil
+	}
+	return c.convertMeasEpoch(c.ts, m, extra)
+}
+
+// convertMeasEpoch converts one SBF MeasEpoch block, and the MeasExtra block
+// for the same epoch if available, to RINEX observations. ts is the MeasEpoch
+// block-header timestamp; extra is nil when MeasExtra output is not enabled
+// or did not arrive for this epoch.
+func (c *Converter) convertMeasEpoch(ts sbfbin.TimeStamp, m *sbfbin.MeasEpoch, extra *sbfbin.MeasExtra) error {
+	if ts.TOW == sbfbin.TOWDNU || ts.WNc == sbfbin.WNcDNU {
+		return nil
+	}
+	t := rinex.TimeFromGPSWeekMillis(int64(ts.WNc), ts.TOW)
+	hr := extraInfos(extra)
+	for i := range m.Type1 {
+		t1 := &m.Type1[i]
+		if t1.AntennaID() != 0 {
+			continue
+		}
+		sys := sbfbin.RINEXSys(t1.SVID)
+		num := sbfbin.RINEXSatNum(t1.SVID)
+		if sys == "" || num == 0 {
+			continue
+		}
+		sat := rinex.SatelliteID(fmt.Sprintf("%s%02d", sys, num))
+		obs, mst, ok := c.masterObservation(t, sat, sys, m.CommonFlags, t1, hr)
+		if ok {
+			if err := c.sink.Observation(obs); err != nil {
+				return err
+			}
+		}
+		for j := range m.Type2[i] {
+			t2 := &m.Type2[i][j]
+			if t2.AntennaID() != 0 {
+				continue
+			}
+			obs, ok := c.slaveObservation(t, sat, sys, m.CommonFlags, t1.RxChannel, t2, mst, hr)
+			if !ok {
+				continue
+			}
+			if err := c.sink.Observation(obs); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func extraInfos(extra *sbfbin.MeasExtra) map[extraKey]extraInfo {
+	if extra == nil {
+		return nil
+	}
+	hasCN0 := extra.HasCN0HighRes()
+	m := make(map[extraKey]extraInfo, len(extra.Channels))
+	for i := range extra.Channels {
+		s := &extra.Channels[i]
+		if s.AntennaID() != 0 {
+			continue
+		}
+		info := extraInfo{cumLossCont: s.CumLossCont}
+		if hasCN0 {
+			info.cn0HighRes = s.CN0HighRes()
+		}
+		m[extraKey{s.RxChannel, s.SignalNumber()}] = info
+	}
+	return m
+}
+
+// masterObservation builds the observation for a Type1 master sub-block. It
+// always returns the master values needed by the Type2 slaves; ok is false
+// when there is no observation to emit for the master itself.
+func (c *Converter) masterObservation(t rinex.Time, sat rinex.SatelliteID, sys string, flags sbfbin.CommonFlags, t1 *sbfbin.MeasEpochChannelType1, hr map[extraKey]extraInfo) (rinex.SignalObservation, master, bool) {
+	var mst master
+	mst.pr, mst.prOK = t1.Pseudorange()
+	mst.do, mst.doOK = t1.DopplerHz()
+	if k, ok := t1.GLONASSFreqNr(); ok {
+		mst.frq = opt.Make(k)
+	}
+	sigSys, sigCode := sbfbin.RINEXSig(t1.SignalNumber(), flags)
+	if sigCode == "" || sigSys != sys {
+		return rinex.SignalObservation{}, mst, false
+	}
+	sig := rinex.SignalID(sigCode)
+	if f, ok := rinex.SignalFrequencyHz(sys, sig, mst.frq.Ptr()); ok {
+		mst.freqHz = f
+	}
+	obs := rinex.SignalObservation{T: t, Sat: sat, Sig: sig}
+	obs.Frq = mst.frq
+	if mst.prOK {
+		obs.PR = opt.Make(mst.pr)
+	}
+	var cp *cpInfo
+	if off, ok := t1.CarrierOffsetCycles(); ok && mst.prOK && mst.freqHz > 0 {
+		obs.CP = opt.Make(mst.pr/(speedOfLight/mst.freqHz) + off)
+		cp = &cpInfo{halfCycle: t1.ObsInfo&sbfbin.ObsInfoHalfCycle != 0}
+	}
+	info, infoOK := hr[extraKey{t1.RxChannel, t1.SignalNumber()}]
+	var cumLoss *uint8
+	if infoOK {
+		cumLoss = &info.cumLossCont
+	}
+	obs.Arc, obs.HC = c.arcHC(signalKey{sat, sig}, validLock(t1.LockTime, sbfbin.MeasType1LockTimeDNU), sbfbin.MeasType1LockTimeClipped, cumLoss, cp)
+	if mst.doOK {
+		obs.Do = opt.Make(mst.do)
+	}
+	if v, ok := t1.CN0dBHz(); ok {
+		obs.CN0 = opt.Make(float32(v + info.cn0HighRes))
+	}
+	if !obs.PR.IsSet() && !obs.CP.IsSet() && !obs.Do.IsSet() && !obs.CN0.IsSet() {
+		return rinex.SignalObservation{}, mst, false
+	}
+	return obs, mst, true
+}
+
+// slaveObservation builds the observation for a Type2 slave sub-block,
+// reconstructing absolute values from the deltas relative to its master.
+func (c *Converter) slaveObservation(t rinex.Time, sat rinex.SatelliteID, sys string, flags sbfbin.CommonFlags, rxChannel uint8, t2 *sbfbin.MeasEpochChannelType2, mst master, hr map[extraKey]extraInfo) (rinex.SignalObservation, bool) {
+	sigSys, sigCode := sbfbin.RINEXSig(t2.SignalNumber(), flags)
+	if sigCode == "" || sigSys != sys {
+		return rinex.SignalObservation{}, false
+	}
+	sig := rinex.SignalID(sigCode)
+	frq := opt.Val[int8]{}
+	if n := t2.SignalNumber(); n >= sbfbin.SigNumGLONASSL1CA && n <= sbfbin.SigNumGLONASSL2CA {
+		// Type2 ObsInfo does not encode FreqNr; the FDMA channel comes from
+		// the parent Type1 sub-block.
+		frq = mst.frq
+	}
+	freqHz, freqOK := rinex.SignalFrequencyHz(sys, sig, frq.Ptr())
+	obs := rinex.SignalObservation{T: t, Sat: sat, Sig: sig}
+	obs.Frq = frq
+	var pr float64
+	prOK := false
+	if off, ok := t2.PseudorangeOffset(); ok && mst.prOK {
+		pr = mst.pr + off
+		obs.PR = opt.Make(pr)
+		prOK = true
+	}
+	var cp *cpInfo
+	if off, ok := t2.CarrierOffsetCycles(); ok && prOK && freqOK {
+		obs.CP = opt.Make(pr/(speedOfLight/freqHz) + off)
+		cp = &cpInfo{halfCycle: t2.ObsInfo&sbfbin.ObsInfoHalfCycle != 0}
+	}
+	info, infoOK := hr[extraKey{rxChannel, t2.SignalNumber()}]
+	var cumLoss *uint8
+	if infoOK {
+		cumLoss = &info.cumLossCont
+	}
+	obs.Arc, obs.HC = c.arcHC(signalKey{sat, sig}, validLock(uint16(t2.LockTime), sbfbin.MeasType2LockTimeDNU), sbfbin.MeasType2LockTimeClipped, cumLoss, cp)
+	if off, ok := t2.DopplerOffsetHz(); ok && mst.doOK && mst.freqHz > 0 && freqOK {
+		obs.Do = opt.Make(mst.do*(freqHz/mst.freqHz) + off)
+	}
+	if v, ok := t2.CN0dBHz(); ok {
+		obs.CN0 = opt.Make(float32(v + info.cn0HighRes))
+	}
+	if !obs.PR.IsSet() && !obs.CP.IsSet() && !obs.Do.IsSet() && !obs.CN0.IsSet() {
+		return rinex.SignalObservation{}, false
+	}
+	return obs, true
+}
+
+// arcHC tracks per-signal loss-of-lock state across epochs. A lock-time
+// decrease since the last valid value, or any change in the MeasExtra
+// CumLossCont counter (which the receiver increments at each initial lock
+// after (re)acquisition or detected cycle slip), marks a pending arc
+// increment, applied at the next epoch that actually reports a carrier phase
+// (cp not nil). A zero lock-time alone does not: the lock-time is in whole
+// seconds, so at output rates above 1 Hz it stays zero for several epochs
+// after a fresh lock. A Do-Not-Use lock-time (nil lock) or an absent
+// MeasExtra entry (nil cumLoss) leaves the corresponding state untouched.
+// CumLossCont catches slips the lock-time comparison cannot see, such as a
+// slip followed by an outage long enough for the counter to re-clip.
+//
+// The half-cycle bit clearing also marks an arc increment: the receiver can
+// shift the phase by half a cycle when it resolves the ambiguity, without
+// resetting the lock time, so the resolved phase must not be tied to the
+// flagged phase before it.
+//
+// A signal can move between the Type1 master and a Type2 slave position when
+// the receiver re-selects the master, and the two encodings clip the same
+// underlying lock time at different ceilings (65534 vs 254), so the decrease
+// comparison clamps both sides to the smaller of the two ceilings involved.
+func (c *Converter) arcHC(k signalKey, lock *uint16, ceil uint16, cumLoss *uint8, cp *cpInfo) (uint32, bool) {
+	st := c.state[k]
+	if lock != nil && st.seen {
+		clip := min(ceil, st.ceil)
+		if min(*lock, clip) < min(st.lock, clip) {
+			st.pending = true
+		}
+	}
+	if cumLoss != nil && st.cumSeen && *cumLoss != st.cumLoss {
+		st.pending = true
+	}
+	if cp != nil {
+		if st.half && !cp.halfCycle {
+			st.pending = true
+		}
+		st.half = cp.halfCycle
+		if st.pending {
+			st.arc++
+			st.pending = false
+		}
+	}
+	if lock != nil {
+		st.lock = *lock
+		st.ceil = ceil
+		st.seen = true
+	}
+	if cumLoss != nil {
+		st.cumLoss = *cumLoss
+		st.cumSeen = true
+	}
+	c.state[k] = st
+	return st.arc, cp != nil && cp.halfCycle
+}
+
+// validLock returns a pointer to lock, or nil if lock is the Do-Not-Use value
+// dnu.
+func validLock(lock, dnu uint16) *uint16 {
+	if lock == dnu {
+		return nil
+	}
+	return &lock
+}

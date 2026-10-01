@@ -430,6 +430,25 @@ func TestCorrelatorLine(t *testing.T) {
 			},
 		},
 		{
+			name: "line message shows NMEA VER as maybe response",
+			tags: []string{"raw-cmd"},
+			events: []event{
+				sendEvent{},
+				// From a Bynav M10 (firmware V7.82_AB1AD3_T).
+				recvNMEA("BDVER,V7.82_AB1AD3_T,24081625,24110741,2408163A,24102627,23060503,,,24081609,00000000"),
+				expect{relevance: LevelMaybeResponse},
+			},
+		},
+		{
+			name: "line message shows an unclaimed ack as maybe response",
+			tags: []string{"raw-cmd"},
+			events: []event{
+				sendEvent{},
+				recvNOVAA(novOK),
+				expect{relevance: LevelMaybeResponse},
+			},
+		},
+		{
 			name: "line message rejects binary data",
 			tags: []string{"raw-cmd"},
 			events: []event{

@@ -244,6 +244,12 @@ type Conn interface {
 	// Drain blocks until pending output has been transmitted. It is a
 	// no-op on connections with no serial output buffer.
 	Drain() error
+	// SetDetected records that a valid packet was received at the
+	// connection's current serial settings. Scan calls it for the first
+	// valid packet only; a speed change clears it, so code that changes the
+	// speed after that calls it again once a valid packet confirms the new
+	// speed. It is a no-op on connections with no serial hardware.
+	SetDetected()
 }
 
 const scanBufSize = 16
@@ -262,8 +268,13 @@ func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet
 		<-ctx.Done()
 		conn.Stop()
 	}()
+	detected := false
 	for {
 		pkt, err := scanner.Scan()
+		if !detected && pkt.ChecksumValid && pkt.Format != nil {
+			conn.SetDetected()
+			detected = true
+		}
 		ch <- pkt
 		if pLog != nil {
 			pLog.LogInput(pkt)
