@@ -42,11 +42,7 @@ With rpm, use `-U` instead of `-i` if you are upgrading from an earlier version.
 
 ## Install on macOS with Homebrew
 
-On macOS, SatPulse builds and installs from source via the Homebrew tap
-[`jclark/satpulse`](https://github.com/jclark/homebrew-satpulse). {% include new-in-03.html %}
-The macOS port is still new, so use the prerelease channel;
-the tap's README gives the install commands,
-and covers running satpulsed as a service and where files are installed.
+See [Setup on macOS]({% link setup/macos.md %}#install-satpulse).
 
 ## Install on Windows
 
