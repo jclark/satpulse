@@ -21,11 +21,17 @@ adapter, which is why they belong in one plan.
 
 ## What builds today
 
-Every package under `gps/` compiles for `-target=riscv-qemu`, except
-`gps/lib/rinex/diffobs`, which is a program rather than a library. That
-includes `gpsreg` and its dependencies: `gpsprot`, the protocol packages under
-`gps/internal/`, and the message and binary-format libraries. Most of those
-packages also pass `tinygo test -target=riscv-qemu`.
+All 65 non-main packages under `gps/` compile for `-target=riscv-qemu`,
+checked by blank-importing every one of them from a single `main` package.
+That includes `gpsreg` and its dependencies: `gpsprot`, the protocol packages
+under `gps/internal/`, and the message and binary-format libraries. Most of
+those packages also pass `tinygo test -target=riscv-qemu`.
+
+That one-probe check is worth repeating after any change to a
+platform-specific file. A file whose name already restricts it to Linux needs
+`!baremetal` as well, and it is easy to miss: `gps/app/pps/sleep_linux.go` was
+exactly that, and nothing caught it until a reviewer read the rule and looked
+for files it had not been applied to.
 
 `-target=riscv-qemu` is the compile check to trust. TinyGo sets `GOOS=linux` on
 bare-metal targets, so on ARM targets such as `pico` and `esp32c3` the
