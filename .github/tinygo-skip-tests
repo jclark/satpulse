@@ -1,0 +1,15 @@
+# Packages whose tests are not run under TinyGo on bare metal, as regular
+# expressions matching the end of an import path. Blank lines and lines
+# starting with # are ignored. See plan/tinygo.md for the detail.
+
+# Reaches a file system, which bare metal does not have.
+gps/internal/septentrio$
+gps/msgfile$
+
+# Host-only by nature: generates TypeScript, measures Linux wake-up latency.
+gps/ts$
+gps/lib/wakeup$
+
+# Known failures, uninvestigated.
+gps/app/ntrip$
+gps/app/stream$

@@ -27,11 +27,18 @@ That includes `gpsreg` and its dependencies: `gpsprot`, the protocol packages
 under `gps/internal/`, and the message and binary-format libraries. Most of
 those packages also pass `tinygo test -target=riscv-qemu`.
 
-That one-probe check is worth repeating after any change to a
-platform-specific file. A file whose name already restricts it to Linux needs
-`!baremetal` as well, and it is easy to miss: `gps/app/pps/sleep_linux.go` was
-exactly that, and nothing caught it until a reviewer read the rule and looked
-for files it had not been applied to.
+That one-probe check is what the `Build (TinyGo)` workflow runs, generating
+the probe from `go list` so it cannot go stale. A file whose name already
+restricts it to Linux needs `!baremetal` as well, and it is easy to miss:
+`gps/app/pps/sleep_linux.go` was exactly that, and nothing caught it until a
+reviewer read the rule and looked for files it had not been applied to.
+
+The same workflow runs the tests under QEMU, sharded four ways and four at a
+time within each shard, which keeps it to about a minute against a sweep that
+takes nearly four minutes end to end. `.github/tinygo-skip-tests` lists the
+packages left out and why; it is the machine-readable half of the known
+limits below. TinyGo is pinned there, so a version bump fails CI, which is the
+point: the `bcast` adapter has to be rechecked against the new runtime.
 
 `-target=riscv-qemu` is the compile check to trust. TinyGo sets `GOOS=linux` on
 bare-metal targets, so on ARM targets such as `pico` and `esp32c3` the
