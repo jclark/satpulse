@@ -1,16 +1,21 @@
 # webui
 
-The frontend workspace. Its packages are built by vite into `dist` directories
-that are checked in and compiled into the Go binaries with `//go:embed`:
+The frontend workspace. Its entry packages are built by vite into `dist`
+directories. Native frontend assets are checked in and compiled into the Go
+binaries with `//go:embed`:
 
 - `packages/dashboard` is the `satpulsed` web UI, embedded via
   `time/internal/web/embed.go`.
 - `packages/workbench` is a component library with no standalone app. It is
-  consumed by the entry package `packages/workbench-http`, which is the
-  `satpulsewb` UI, embedded via `cmd/satpulsewb/embed.go`.
+  consumed by `packages/workbench-http` and `packages/workbench-wasm`.
+  The HTTP entry package is the `satpulsewb` UI, embedded via
+  `cmd/satpulsewb/embed.go`.
+- `packages/workbench-wasm` is the browser-only entry package. Its generated
+  assets are ignored under `cmd/satpulsewbwasm/dist`; `Makefile.wasm` assembles them with
+  the wasm module and matching Go runtime support into a static site.
 
-Nothing else depends on `packages/workbench`, and `packages/dashboard` does not
-depend on it, so the two frontends regenerate independently.
+`packages/dashboard` does not depend on `packages/workbench`, so it regenerates
+independently of the two Workbench frontends.
 
 ## Regenerating the embedded assets
 
@@ -28,11 +33,32 @@ Commit the regenerated `dist/` in the same change as the source edit. `make`
 does not run `go generate`, so nothing catches a stale `dist/`: the binary
 silently keeps serving the old frontend.
 
-Both builds need the workspace dependencies installed once:
+After changing `packages/workbench/` or `packages/workbench-wasm/`, regenerate
+the standalone browser assets too:
+
+    npm --prefix webui run embed-workbench-wasm
+
+Use `make -f Makefile.wasm` to build the complete browser site, and `make -f
+Makefile.wasm test-browser` to test it against the hardware-free simulator. The optional cold-start
+benchmark is `make -f Makefile.wasm benchmark`; it is excluded from normal e2e.
+`test-assets` prepares the browser tests without running them, and `test-go`
+runs the shell tests under Node.
+
+For a full Playwright run, prepare both native binaries and WASM test assets
+from the repo root:
+
+    make
+    make -f Makefile.wasm test-assets
+    npm --prefix webui/packages/e2e run e2e
+
+The suite builds nothing itself. The WASM project needs the browser site in
+`out/workbench-wasm` and the simulator at `out/wasm-test/wasmsim`.
+
+Frontend builds need the workspace dependencies installed once:
 
     npm --prefix webui ci
 
-Content hashing is disabled in both vite configs, so the output filenames are
+Content hashing is disabled in the entry package vite configs, so output filenames are
 stable and regenerating without a source change produces no diff.
 
 Regeneration is not needed for edits to markdown under `plan/`.

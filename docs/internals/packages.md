@@ -32,6 +32,8 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
+`cmd/satpulsewbwasm` provides main for SatPulse Workbench in the browser, built for `js/wasm` and using Web Serial.
+
 ### gps/
 
 These packages provide the public API for GPS processing. They are in the domain layer.
@@ -70,7 +72,7 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
 
-`gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (serial device or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
+`gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`, `cmd/satpulsewbwasm`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (native serial, Web Serial, or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
 
 `gps/app/pps` handles PPS edges timestamped by the system clock, independently of how they are detected: it combines an edge's timestamp with recent receiver UTC messages to generate a refclock sample, and provides the adaptive polling loop that detects edges on a pin whose level can only be read, predicting each pulse and polling in a window around it.
 
@@ -282,13 +284,19 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/sdpcmd` implements the `sdp` subcommand of satpulsetool. It provides interfaces to manage software-defined pins (SDPs) on PTP hardware clocks, including listing available interfaces and pins, capturing external timestamps, configuring periodic output, and disabling pins.
 
+### webui/packages/e2e/
+
+`webui/packages/e2e/wasmsim` runs the u-blox simulator over stdin/stdout for browser Workbench tests.
+
 ## npm packages
 
-These hold the web frontend source. They are not Go packages: they are built with npm, and the build output is embedded into the Go binaries (see `time/internal/web`). GPS JSON wire types are published from `gps/ts` as `@satpulse/gps` and consumed here rather than redefined.
+These hold the web frontend source. They are built with npm, and the output is embedded into native Go binaries or served as standalone browser assets. GPS JSON wire types are published from `gps/ts` as `@satpulse/gps` and consumed here rather than redefined.
 
 ### webui/
 
-`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). Three of its packages are bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management, message-file, and correction-forwarding capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. `@satpulse/e2e` (`packages/e2e`) is the Playwright browser-test suite for the two embedded frontends; it builds nothing, launching the real `satpulsed`/`satpulsewb` binaries from `out/<arch>` and driving them with the smoketest's hardware-free packet sources (a FIFO packet-log replay, the `satpulsetool ubxsim` simulator). Its `harness.ts` provides the launch fixtures, and its two Playwright projects (`dashboard`, `workbench`) mirror the two frontends; it has no `test` script, so `npm test` does not run it (the runner is `npm run e2e`). The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
+`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). Its entry packages are bundled by Vite with content hashing disabled so the asset filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management, message-file, and correction-forwarding capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. `@satpulse/e2e` (`packages/e2e`) is the Playwright browser-test suite for the native and WASM frontends. Its `harness.ts` launches native binaries from `out/<arch>` with hardware-free packet sources; `dashboard` and `workbench` test the embedded frontends, while `workbench-wasm` uses the site in `out/workbench-wasm`, mocked Web Serial, and `out/wasm-test/wasmsim`. The suite builds nothing: before running `npm run e2e` in `packages/e2e`, run `make` and `make -f Makefile.wasm test-assets` from the repo root. It has no `test` script, so `npm test` does not run it. The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
+
+`@satpulse/workbench-wasm` (`packages/workbench-wasm`) is the browser entry point, loading the Go wasm module and providing the Web Serial transport.
 
 ## Python packages
 

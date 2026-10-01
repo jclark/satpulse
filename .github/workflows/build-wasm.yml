@@ -25,3 +25,9 @@ jobs:
         GOOS: js
         GOARCH: wasm
       run: go build ./gps/...
+
+    - name: Compile browser shell
+      env:
+        GOOS: js
+        GOARCH: wasm
+      run: go build -o /dev/null ./cmd/satpulsewbwasm

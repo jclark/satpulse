@@ -41,6 +41,9 @@ jobs:
     - name: Build
       run: make
 
+    - name: Prepare browser Workbench tests
+      run: make -f Makefile.wasm test-assets test-go
+
     - name: Playwright version
       id: playwright
       run: |
