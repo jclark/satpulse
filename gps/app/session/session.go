@@ -699,6 +699,7 @@ func (s *Session) runConn(connCtx context.Context, conn Conn) connVerdict {
 	// reconnect must not resume from the dead connection's state.
 	procs := gpsreg.CreatePacketProcessors(s.vendors)
 	configCh := make(chan configRequest)
+	speed := conn.Speed()
 	s.mu.Lock()
 	s.conn = conn
 	s.runCtx = runCtx
@@ -706,7 +707,7 @@ func (s *Session) runConn(connCtx context.Context, conn Conn) connVerdict {
 	s.portLock = portLock
 	s.pb = pb
 	s.configCh = configCh
-	s.speed = conn.Speed()
+	s.speed = speed
 	s.resetPending = false
 	s.mu.Unlock()
 	v := s.packetWorker(runCtx, conn, procs, pktSub, configCh, portLock)
@@ -1755,9 +1756,9 @@ func (s *Session) sendConfigRequest(ctx context.Context, target *gpsprot.ConfigT
 // Called after any gpscfg.Configure since that is the only path that can
 // change the host speed (via SerialOutPort.WriteThenChangeSpeed).
 func (s *Session) emitSpeed(conn Conn) {
+	speed := conn.Speed()
 	s.mu.Lock()
-	s.speed = conn.Speed()
-	speed := s.speed
+	s.speed = speed
 	s.mu.Unlock()
 	s.emit(SpeedEvent(speed))
 }

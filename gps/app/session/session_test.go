@@ -358,6 +358,80 @@ func TestConnSpeedAndOutputLog(t *testing.T) {
 	})
 }
 
+// snapshotSink holds the first packet event until gate opens, then reads
+// the session's cached speed as a UI sink may do.
+type snapshotSink struct {
+	fakeSink
+	s    *Session
+	gate chan struct{}
+	once sync.Once
+}
+
+func (fs *snapshotSink) Emit(ev Event) {
+	if ev.EventName() == EventPacket {
+		fs.once.Do(func() {
+			<-fs.gate
+			fs.s.Speed()
+		})
+	}
+	fs.fakeSink.Emit(ev)
+}
+
+// speedNotifyConn signals when Speed enters before waiting for the write lock.
+type speedNotifyConn struct {
+	*fakeConn
+	entered chan struct{}
+}
+
+func (c *speedNotifyConn) Speed() int {
+	close(c.entered)
+	return c.fakeConn.Speed()
+}
+
+// TestEmitSpeedWithBlockedOutput checks that reading the connection speed
+// leaves Session accessors available to the sink draining its output log.
+func TestEmitSpeedWithBlockedOutput(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &snapshotSink{fakeSink: fakeSink{wantPacket: true}, gate: make(chan struct{})}
+		s := New(slog.New(slog.DiscardHandler), fs, Options{})
+		fs.s = s
+		c := &speedNotifyConn{fakeConn: newFakeConn(), entered: make(chan struct{})}
+		pl, ch := gpsio.NewPacketLog(nil, gpsio.MinPacketLogChannelSize)
+		c.SetPacketLog(pl)
+		logDone := make(chan struct{})
+		go func() {
+			s.packetLogWorker(ch)
+			close(logDone)
+		}()
+		c.Write([]byte("first"))
+		synctest.Wait()
+		for range gpsio.MinPacketLogChannelSize {
+			c.Write([]byte("buffered"))
+		}
+		writeDone := make(chan struct{})
+		go func() {
+			c.Write([]byte("blocked"))
+			close(writeDone)
+		}()
+		synctest.Wait()
+		speedDone := make(chan struct{})
+		go func() {
+			s.emitSpeed(c)
+			close(speedDone)
+		}()
+		<-c.entered
+		close(fs.gate)
+		<-writeDone
+		<-speedDone
+		if got := s.Speed(); got != 9600 {
+			t.Errorf("Speed() = %d, want 9600", got)
+		}
+		c.Stop()
+		pl.SemiClose()
+		<-logDone
+	})
+}
+
 // TestConnectSuperseded checks the supersession contract: a Connect or
 // Disconnect issued while another Connect's open is pending wins; the
 // pending attempt returns an error, closes its late-opened transport,
