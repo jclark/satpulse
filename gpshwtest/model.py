@@ -474,10 +474,13 @@ def emission_intervals(log: Path) -> dict[tuple[str, str], float]:
     two arrivals. Only single-per-epoch message types give a meaningful
     cadence (see RATE_SAFE_NMEA and the MSM numbers); a type emitted several
     times per epoch would show intra-epoch gaps, so callers select the safe
-    types before drawing a rate verdict."""
+    types before drawing a rate verdict. An MSM type split over several
+    messages in one epoch (more satellites or signals than one message holds)
+    counts once per epoch, at its first arrival."""
     entries = [json.loads(line) for line in log.read_text().splitlines()]
     start = observation_start(log)
     times: dict[tuple[str, str], list[datetime.datetime]] = {}
+    msm_seen: set[tuple[str, int]] = set()
     for e in entries:
         tag, msg = e.get("tag"), e.get("msg")
         if e.get("out") or not isinstance(tag, str) or not isinstance(msg, str):
@@ -485,6 +488,12 @@ def emission_intervals(log: Path) -> dict[tuple[str, str], float]:
         t = parse_t(e["t"])
         if start is not None and t <= start:
             continue
+        if tag == "RTCM" and msg in RATE_SAFE_RTCM:
+            ep = msm_epoch(e.get("bin"))
+            if ep is not None:
+                if (msg, ep) in msm_seen:
+                    continue
+                msm_seen.add((msg, ep))
         times.setdefault((tag, msg), []).append(t)
     out: dict[tuple[str, str], float] = {}
     for k, ts in times.items():
@@ -492,6 +501,23 @@ def emission_intervals(log: Path) -> dict[tuple[str, str], float]:
         if iv is not None:
             out[k] = iv
     return out
+
+
+def msm_epoch(frame: Any) -> int | None:
+    """The GNSS epoch time (DF004 and its per-GNSS equivalents, 30 bits after
+    the message number and reference station ID) of an RTCM MSM frame logged
+    as hex, or None when the frame is absent or too short. The multiple
+    message bit cannot identify the parts of one split message: it is set
+    while any MSM of the epoch follows, for the same or another GNSS."""
+    if not isinstance(frame, str):
+        return None
+    try:
+        b = bytes.fromhex(frame)
+    except ValueError:
+        return None
+    if len(b) < 10:
+        return None
+    return (int.from_bytes(b[6:10], "big") >> 2) & 0x3FFFFFFF
 
 
 def nmea_rate_intervals(iv: dict[tuple[str, str], float]) -> dict[str, float]:
