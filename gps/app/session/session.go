@@ -529,7 +529,7 @@ const deviceWaitInterval = 200 * time.Millisecond
 // different name is not found (known limitation).
 func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (Conn, error) {
 	for {
-		conn, _, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
+		conn, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
 		if err == nil {
 			return conn, nil
 		}
