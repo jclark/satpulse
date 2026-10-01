@@ -1,13 +1,14 @@
 import {h, render} from 'preact';
 import {App} from '../src/app';
 import {setTransport} from '../src/transport';
-import type {Transport} from '../src/transport';
+import type {PortInfo, Transport} from '../src/transport';
 import '../src/style.css';
 
 // This entry point is served by the existing Vite dev server only for tests.
 // It mounts the real app against a mock transport, without a backend or WASM.
 const listeners = new Map<string, Set<(data: unknown) => void>>();
 const calls: {method: string; args: unknown[]}[] = [];
+const params = new URLSearchParams(location.search);
 declare global {
     interface Window {
         workbenchTest: {
@@ -49,7 +50,7 @@ const transport: Transport = {
     openURL: () => {},
 };
 
-if (new URLSearchParams(location.search).has('corrections')) {
+if (params.has('corrections')) {
     transport.corrections = {
         getCorrectionsState: async () => {
             record('getCorrectionsState');
@@ -64,6 +65,30 @@ if (new URLSearchParams(location.search).has('corrections')) {
             emit('gps:corrections', {state: 'stopped'});
         },
     };
+}
+
+const picker = params.get('picker');
+if (picker !== null) {
+    let ports: PortInfo[] = [];
+    transport.getConnection = async () => ({state: 'disconnected', device: params.get('device') ?? '', speed: 38400});
+    transport.connection = {
+        listPorts: async () => {
+            record('listPorts');
+            return ports;
+        },
+        connect: async (device, speed) => { record('connect', device, speed); },
+        disconnect: async () => {},
+    };
+    if (picker !== 'none') {
+        transport.connection.choosePort = async () => {
+            record('choosePort');
+            if (picker === 'cancel') return null;
+            if (picker === 'error') throw new Error('Permission denied');
+            const port = {device: 'serial:1', display: 'Receiver'};
+            ports = [port];
+            return port;
+        };
+    }
 }
 
 setTransport(transport);
