@@ -156,4 +156,5 @@ test('the port dropdown renders its enumerated ports or the empty state', async 
     const list = banner(page).getByRole('list');
     await expect(list).toBeVisible();
     await expect(list.getByRole('listitem').first()).toBeVisible();
+    await expect(banner(page).getByRole('button', { name: 'Add a device...' })).toHaveCount(0);
 });

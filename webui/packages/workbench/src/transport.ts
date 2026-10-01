@@ -141,6 +141,8 @@ export interface ConnectionTransport {
     connect(device: string, speed: number): Promise<void>;
     disconnect(): Promise<void>;
     listPorts(): Promise<PortInfo[]>;
+    // choosePort runs a browser permission picker directly from a user gesture.
+    choosePort?(): Promise<PortInfo | null>;
 }
 
 // MsgFileTransport is the message-file capability. A backend obtains the
