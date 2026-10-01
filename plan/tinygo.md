@@ -85,9 +85,8 @@ Two incidental findings. `net/http` costs 4,647 bytes of flash in the TinyGo
 build and `crypto/tls` is absent entirely, because whole-program dead-code
 elimination already drops the unreachable Ntrip caster: a `nohttp` build tag
 and TinyGo address the same waste, and their savings do not add up. And
-go-toml works under TinyGo on wasm, listing and parsing the built-in
-message-file catalog, so the decoder crash seen on bare metal is not a browser
-concern.
+go-toml works under TinyGo, listing and parsing the built-in message-file
+catalog on wasm and on `riscv-qemu` alike.
 
 The figures were taken before the `reflect.Select` adapter below, so they
 measure a module that compiled but panicked on the first broadcast. The
@@ -184,11 +183,17 @@ and delete the comment.
   directory, so embedding the packet logs would need more thought.
 - `gps/ts` generates TypeScript and `gps/lib/wakeup` measures Linux wake-up
   latency; both are host-only by nature.
-- go-toml decoding crashes on bare metal, though not on wasm.
-- `gps/app/ntrip` fails its `TestAuth` case under TinyGo, with a slice range
-  panic on `riscv-qemu` and a nil dereference on wasm. Uninvestigated, and
-  unrelated to `bcast`: it is what the tests reach now that `reflect.Select`
-  no longer stops them.
+- Bare metal has no network either. `net.Listen` returns "Netdev not set", so
+  `gps/app/ntrip`'s caster fixture cannot start and `TestAuth` fails. It does
+  not fail cleanly: the fixture reports the listen error through `t.Fatalf`
+  before it has registered its cleanup, abandoning the running `bcast`
+  goroutine, and the binary then dies with a load access fault rather than a
+  test failure. The fault is a consequence of the abandoned goroutine, not of
+  the caster.
+- `testing/synctest` has no TinyGo implementation, and a package using it
+  fails to link rather than to run, taking every test in the package with it.
+  `gps/app/stream` is the one still in that state: `push_test.go` and
+  `pull_test.go` need the `!tinygo` tag the other synctest users already have.
 - Serving time on a device is out of scope. SatPulse feeds a server that
   already exists, chrony or a PHC for linuxptp, and a microcontroller has
   neither.
