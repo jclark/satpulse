@@ -61,7 +61,8 @@ serial satisfy this interface with their existing methods. `session.Sink`,
 
 ### Shared shell data
 
-`session.ConnectionInfo` supplies the connection snapshot's common JSON shape;
+The `wb-shell-data` prerequisite (#489) supplies `session.ConnectionInfo`, the
+connection snapshot's common JSON shape;
 port selection and retention of speed still belong to each shell.
 `Session.MsgFilePreselect` matches an asserted vendor, or otherwise the detected
 vendor, against the catalog and returns the catalog's spelling. Both native
@@ -332,9 +333,14 @@ frontend capability. These are the foundation PRs for #486.
 
 `wb-device-picker` (#488) is stacked on `wb-corrections-transport` and adds the
 optional picker contract, shared UI, browser tests and regenerated native
-assets. It is also merged here. The main browser PR (#487) targets
-`wb-device-picker`, so its diff has no `cmd/satpulsewb/dist` changes. Merge #485
-before #488; merge all the foundation PRs before #487.
+assets. It is also merged here.
+
+`wb-shell-data` (#489) is stacked on `wb-device-picker` for review and shares
+the connection snapshot and message-file preselection logic between shells.
+The refactor itself has no UI or serial-connection dependency. It is also
+merged here. The main browser PR (#487) targets `wb-shell-data`, so its diff
+has no native `cmd/satpulsewb` Go or asset changes. Merge #485, then #488, then
+#489; merge all the foundation PRs before #487.
 
 ## Commit strategy
 
@@ -342,7 +348,8 @@ The implementation has three independently reviewable commit boundaries:
 
 1. **Plan.** This document, including deployment design and future work.
 2. **Shared shell data.** The common connection snapshot type and message-file
-   preselection helper, native shell adoption and focused Go tests. Correction
+   preselection helper, native shell adoption and focused Go tests, supplied by
+   the `wb-shell-data` prerequisite. Correction
    capabilities, the device picker, their browser tests and regenerated native
    assets belong to the prerequisite branches.
 3. **Browser implementation.** The Go wasm shell and serial adapter, JavaScript
