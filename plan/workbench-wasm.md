@@ -72,7 +72,8 @@ and browser shells use it, avoiding divergent selection rules.
 Optional capabilities are defined in
 `webui/packages/workbench/src/transport.ts`:
 
-- `ConnectionTransport.choosePort?(): Promise<PortInfo | null>` lets the
+- `ConnectionTransport.choosePort?(): Promise<PortInfo | null>`, supplied by
+  `wb-device-picker` (#488), lets the
   browser show its permission picker directly from a user gesture. `null`
   means the user cancelled. `connect(device, speed)` still opens an already
   selected port, and `listPorts()` still supplies the dropdown.
@@ -329,16 +330,21 @@ and merged here. The first two provide platform support and explicit serial
 connection contracts; the third makes correction forwarding an optional
 frontend capability. These are the foundation PRs for #486.
 
+`wb-device-picker` (#488) is stacked on `wb-corrections-transport` and adds the
+optional picker contract, shared UI, browser tests and regenerated native
+assets. It is also merged here. The main browser PR (#487) targets
+`wb-device-picker`, so its diff has no `cmd/satpulsewb/dist` changes. Merge #485
+before #488; merge all the foundation PRs before #487.
+
 ## Commit strategy
 
 The implementation has three independently reviewable commit boundaries:
 
 1. **Plan.** This document, including deployment design and future work.
-2. **Shared Workbench changes.** The common connection snapshot type and
-   message-file preselection helper, native shell adoption, focused Go tests,
-   optional device picker, independent mock-transport tests, and all regenerated
-   `cmd/satpulsewb/dist` assets. Correction capabilities and their tests belong
-   to the prerequisite refactor.
+2. **Shared shell data.** The common connection snapshot type and message-file
+   preselection helper, native shell adoption and focused Go tests. Correction
+   capabilities, the device picker, their browser tests and regenerated native
+   assets belong to the prerequisite branches.
 3. **Browser implementation.** The Go wasm shell and serial adapter, JavaScript
    transport and entry package, build/workspace/CI configuration, unit and
    browser integration tests, simulator, and related documentation and notes.
