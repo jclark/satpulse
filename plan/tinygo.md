@@ -34,13 +34,24 @@ restricts it to Linux needs `!baremetal` as well, and it is easy to miss:
 `gps/app/pps/sleep_linux.go` was exactly that, and nothing caught it until a
 reviewer read the rule and looked for files it had not been applied to.
 
-The same workflow then runs `tinygo test -short ./gps/...` under QEMU. There
-is no list of packages to leave out: a package that cannot run on bare metal
-says so itself, either with a build tag on the test file or with a skip at the
-helper that needs the facility. `-short` matters because everything runs under
-emulation, where a test that is instant on a host can take a minute and a half.
-TinyGo is pinned in the workflow, so a version bump fails CI, which is the
-point: the `bcast` adapter has to be rechecked against the new runtime.
+The same workflow then runs the tests under QEMU, split across two runners.
+There is no list of packages to leave out: a package that cannot run on bare
+metal says so itself, either with a build tag on the test file or with a skip
+at the helper that needs the facility. TinyGo is pinned in the workflow, so a
+version bump fails CI, which is the point: the `bcast` adapter has to be
+rechecked against the new runtime.
+
+The sweep is slow, and the cost is the compiler rather than the tests. TinyGo
+builds each test binary whole-program, with no prebuilt standard library to
+link against, so a package costs 4 seconds warm and 10 cold before a single
+test runs -- `gps/ptime` has one test taking 0.05s and takes 4s to get there.
+Across 59 packages that is minutes: locally, at the parallelism a standard
+runner has, 2m02 warm and 2m54 cold, and on CI 5m22 in one job. Hence the two
+shards. Two further levers are untried: `tinygo test -p`, which defaults to
+the core count, and caching `~/.cache/tinygo` between runs, which is what the
+cold-to-warm difference above would buy.
+
+It passes `-short`, for the reason given under the test volume below.
 
 Note that a link failure, unlike a test failure, aborts the whole `./gps/...`
 run at the package where it happens, so a package that fails to link hides
