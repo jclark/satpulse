@@ -211,21 +211,6 @@ type Options struct {
 	PacketLog io.Writer // optional JSONL packet log; writes are serialized (nil to disable)
 }
 
-// Conn is a receiver connection with the capabilities a Session needs.
-type Conn interface {
-	gpsio.Conn
-	stream.PacketWriter
-	// Speed returns the current host serial port speed, or 0 if there is none.
-	Speed() int
-	// SetPacketLog takes ownership of the log's output half. The connection
-	// must call SemiClose exactly once after its last LogOutput, normally
-	// when stopped. A connection with no output logging must complete that
-	// half immediately. Attach the log before starting the packet pipeline.
-	SetPacketLog(*gpsio.PacketLog)
-}
-
-var _ Conn = (*gpsio.SerialConn)(nil)
-
 // Session is an interactive session with a GPS receiver.
 // Its methods are safe for concurrent use.
 type Session struct {
@@ -500,6 +485,22 @@ func (s *Session) enterReconnect() bool {
 	s.emitStateChange()
 	return true
 }
+
+// Conn is a receiver connection with the capabilities a Session needs.
+type Conn interface {
+	gpsio.Conn
+	stream.PacketWriter
+	// Speed returns the current host serial port speed, or 0 if there is none.
+	Speed() int
+	// SetPacketLog takes ownership of the log's output half. The connection
+	// must call SemiClose exactly once after its last LogOutput, normally
+	// when stopped. A connection with no output logging must complete that
+	// half immediately. Attach the log before starting the packet pipeline.
+	SetPacketLog(*gpsio.PacketLog)
+}
+
+var _ Conn = (*gpsio.SerialConn)(nil)
+var _ Conn = (*gpsio.NetConn)(nil)
 
 // Opener opens (and re-opens) the connection to the receiver.
 type Opener interface {
