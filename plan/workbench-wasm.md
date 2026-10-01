@@ -127,8 +127,10 @@ a session operation is emitting an event under a lock.
 It adapts reads to the scanner, serializes writes, logs outgoing packets,
 retains speed for reconnects, and separates `Stop` from final `Close` cleanup.
 
-The browser URL accepts `?vendor=Zhongke`, equivalent to native Workbench's
-`--vendor Zhongke`. The frontend passes the value to the wasm shell's `init`;
+The browser's `vendor` query parameter is equivalent to satpulsewb's `--vendor`
+option: it enables experimental support for the specified vendor, for example
+`?vendor=zhongke`, equivalent to `--vendor zhongke`.
+The frontend passes the value to the wasm shell's `init`;
 Go validates it with `gpsreg.ParseVendor` before mounting the UI. Vendor names
 are case-insensitive and aliases such as `CASIC` are accepted. The shell
 passes the singleton vendor list to every `Session.Connect`, enabling that
@@ -313,7 +315,7 @@ add a DNS CNAME pointing to `jclark.github.io`, and enable HTTPS enforcement
 after certificate provisioning. See [custom subdomain setup](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site#configuring-a-subdomain).
 
 Before publishing, verify startup from a version directory, including
-`?vendor=Zhongke`, the wasm response's `application/wasm` content type, and
+`?vendor=zhongke`, the wasm response's `application/wasm` content type, and
 actual transfer compression. Generated `.gz` or `.br` files alone do not
 establish how Pages will serve them. Account for the size of all retained
 versions against the published-site limit of 1 GB and the soft bandwidth limit

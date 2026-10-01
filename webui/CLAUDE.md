@@ -53,6 +53,10 @@ from the repo root:
 
 The suite builds nothing itself. The WASM project needs the browser site in
 `out/workbench-wasm` and the simulator at `out/wasm-test/wasmsim`.
+Mock-transport UI checks also use the existing Vite dev server, started by
+Playwright, and run without WASM or a backend:
+
+    npm --prefix webui/packages/e2e run e2e -- --project=workbench optional-capabilities.spec.ts
 
 Frontend builds need the workspace dependencies installed once:
 

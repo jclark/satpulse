@@ -37,6 +37,9 @@ test.afterAll(async () => {
 });
 
 test('browser wasm runs the session, configuration, messages and serial lifecycle', async ({page}) => {
+    // Multiple real configuration rounds, serial faults and reconnects can
+    // exceed the suite's 60-second budget on a CI runner.
+    test.setTimeout(120_000);
     const errors: string[] = [];
     let sim: ChildProcessWithoutNullStreams | undefined;
     let pending: number[][] = [];
@@ -217,7 +220,7 @@ test('vendor URL enables Zhongke probes on every connection and rejects unknown 
         }});
         (window as any).testPort = port;
     });
-    for (const vendor of ['zHoNgKe', 'CASIC']) {
+    for (const vendor of ['zhongke', 'zHoNgKe', 'CASIC']) {
         await page.goto(`${baseURL}?vendor=${vendor}`);
         await expect(page.getByRole('banner')).toBeVisible();
         expect(await page.evaluate(async () => JSON.parse(await (window as any).satpulseWorkbench.call('msgfile/catalog', '{}')).preselect)).toBe('zhongke');
