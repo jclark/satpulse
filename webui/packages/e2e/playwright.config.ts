@@ -4,8 +4,8 @@ import * as path from 'node:path';
 // The suite launches real satpulsed/satpulsewb daemons and replays packet logs,
 // so a single worker runs the tests serially against its worker-scoped servers
 // (several fixtures' servers can be alive at once, each on its own free port).
-// Two projects mirror the two frontends and the
-// two testDirs; either runs alone with --project. Traces are kept only for a
+// Three projects cover the native frontends and browser WASM; each
+// runs alone with --project. Traces are kept only for a
 // failing test, where they are worth the disk. Assertions wait out the replay
 // pacing, so the expect timeout is well above Playwright's 5s default; the test
 // timeout also has to cover the ubxsim fixture, whose simulator emits nav in
@@ -35,5 +35,6 @@ export default defineConfig({
   projects: [
     { name: 'dashboard', testDir: './dashboard' },
     { name: 'workbench', testDir: './workbench' },
+    { name: 'workbench-wasm', testDir: './workbench-wasm' },
   ],
 });

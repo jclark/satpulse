@@ -23,7 +23,7 @@ import (
 	"github.com/jclark/satpulse/gps/msgfile"
 )
 
-// fakeConn implements gpsio.Conn. Reads block until data is sent with
+// fakeConn implements Conn. Reads block until data is sent with
 // send or the connection is killed, which makes Read return io.EOF as
 // an unplugged or reset device does.
 type fakeConn struct {
@@ -33,12 +33,14 @@ type fakeConn struct {
 	closed  chan struct{}
 	stopped bool
 	writes  [][]byte
+	speed   int
+	pLog    *gpsio.PacketLog
 }
 
-var _ gpsio.Conn = (*fakeConn)(nil)
+var _ Conn = (*fakeConn)(nil)
 
 func newFakeConn() *fakeConn {
-	return &fakeConn{dataCh: make(chan []byte), closed: make(chan struct{})}
+	return &fakeConn{dataCh: make(chan []byte), closed: make(chan struct{}), speed: 9600}
 }
 
 func (c *fakeConn) Read(p []byte) (int, error) {
@@ -63,10 +65,33 @@ func (c *fakeConn) Read(p []byte) (int, error) {
 }
 
 func (c *fakeConn) Write(b []byte) (int, error) {
+	return c.write(b, nil)
+}
+
+func (c *fakeConn) WritePacket(b []byte, pf gpsprot.PacketFormat) (int, error) {
+	return c.write(b, pf)
+}
+
+func (c *fakeConn) write(b []byte, pf gpsprot.PacketFormat) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.writes = append(c.writes, append([]byte(nil), b...))
+	if c.pLog != nil {
+		c.pLog.LogOutput(time.Now(), b, 0, pf)
+	}
 	return len(b), nil
+}
+
+func (c *fakeConn) Speed() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.speed
+}
+
+func (c *fakeConn) SetPacketLog(pl *gpsio.PacketLog) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pLog = pl
 }
 
 func (c *fakeConn) Buffered() (int, error) { return 0, nil }
@@ -85,6 +110,10 @@ func (c *fakeConn) kill() {
 	defer c.mu.Unlock()
 	if !c.stopped {
 		c.stopped = true
+		if c.pLog != nil {
+			c.pLog.SemiClose()
+			c.pLog = nil
+		}
 		close(c.closed)
 	}
 }
@@ -116,16 +145,16 @@ type fakeOpener struct {
 	opens  int
 }
 
-func (o *fakeOpener) Open(_ context.Context, _ *slog.Logger) (gpsio.Conn, int, error) {
+func (o *fakeOpener) Open(_ context.Context, _ *slog.Logger) (Conn, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.opens++
 	if len(o.conns) == 0 {
-		return nil, 0, errors.New("no more conns")
+		return nil, errors.New("no more conns")
 	}
 	c := o.conns[0]
 	o.conns = o.conns[1:]
-	return c, 9600, nil
+	return c, nil
 }
 
 func (o *fakeOpener) Socket() bool { return o.socket }
@@ -143,7 +172,7 @@ type blockingOpener struct {
 	gate chan struct{}
 }
 
-func (o *blockingOpener) Open(ctx context.Context, lg *slog.Logger) (gpsio.Conn, int, error) {
+func (o *blockingOpener) Open(ctx context.Context, lg *slog.Logger) (Conn, error) {
 	<-o.gate
 	return o.fakeOpener.Open(ctx, lg)
 }
@@ -290,6 +319,44 @@ func TestConnectDisconnect(t *testing.T) {
 		if got := fs.states(); !reflect.DeepEqual(got, expect) {
 			t.Errorf("state events = %v, want %v", got, expect)
 		}
+	})
+}
+
+func TestConnSpeedAndOutputLog(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &fakeSink{wantPacket: true}
+		s := testSession(t, fs)
+		c := newFakeConn()
+		c.speed = 38400
+		if err := s.Connect(&fakeOpener{conns: []*fakeConn{c}}, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		if got := s.Speed(); got != 38400 {
+			t.Errorf("Speed() = %d, want 38400", got)
+		}
+		fs.mu.Lock()
+		output := false
+		for _, ev := range fs.events {
+			if pkt, ok := ev.(PacketEvent); ok && pkt.Out {
+				output = true
+			}
+		}
+		fs.mu.Unlock()
+		if !output {
+			t.Error("no outgoing probe packet was logged")
+		}
+		c.mu.Lock()
+		c.speed = 115200
+		c.mu.Unlock()
+		if _, err := s.ReadConfig(context.Background()); !errors.Is(err, gpscfg.ErrNotDetected) {
+			t.Fatalf("ReadConfig: %v, want ErrNotDetected", err)
+		}
+		if got := s.Speed(); got != 115200 {
+			t.Errorf("Speed() after configuration = %d, want 115200", got)
+		}
+		s.Disconnect()
+		s.Disconnect()
 	})
 }
 
