@@ -34,7 +34,7 @@ restricts it to Linux needs `!baremetal` as well, and it is easy to miss:
 `gps/app/pps/sleep_linux.go` was exactly that, and nothing caught it until a
 reviewer read the rule and looked for files it had not been applied to.
 
-The same workflow then runs the tests under QEMU, split across two runners.
+The same workflow then runs the tests under QEMU, split across three runners.
 There is no list of packages to leave out: a package that cannot run on bare
 metal says so itself, either with a build tag on the test file or with a skip
 at the helper that needs the facility. TinyGo is pinned in the workflow, so a
@@ -46,10 +46,19 @@ builds each test binary whole-program, with no prebuilt standard library to
 link against, so a package costs 4 seconds warm and 10 cold before a single
 test runs -- `gps/ptime` has one test taking 0.05s and takes 4s to get there.
 Across 59 packages that is minutes: locally, at the parallelism a standard
-runner has, 2m02 warm and 2m54 cold, and on CI 5m22 in one job. Hence the two
-shards. Two further levers are untried: `tinygo test -p`, which defaults to
-the core count, and caching `~/.cache/tinygo` between runs, which is what the
-cold-to-warm difference above would buy.
+runner has, 2m02 warm and 2m54 cold, and on CI 5m22 in one job, 4m16 in two
+shards, 3m58 in three. Each runner also pays a fixed cost of its own, about a
+minute to install TinyGo and QEMU plus the cold compile of the standard
+library, so the sharding saturates rather than scaling, and the shards are
+uneven because they are split by position in the package list and not by cost:
+in the three-shard run they took 2m30, 3m55 and 2m41.
+
+Raising `tinygo test -p` above the core count makes it worse, not better: at
+`-p 8` the two shards went from 4m16 to 4m39, four cores losing more to
+contention than eight build jobs recovered. The remaining lever is caching
+`~/.cache/tinygo`, which is what the cold-to-warm difference above would buy,
+but it is 296 MB and a cache written by a pull request cannot be read by any
+other, so it would pay nothing until it reached `master`.
 
 It passes `-short`, for the reason given under the test volume below.
 
