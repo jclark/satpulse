@@ -82,4 +82,4 @@ jobs:
       run: |
         pkgs=$(go list -f '{{if and (ne .Name "main") (or .TestGoFiles .XTestGoFiles)}}{{.ImportPath}}{{end}}' ./gps/... |
           grep . | awk 'NR % 2 == ${{ matrix.shard }}')
-        tinygo test -target=riscv-qemu -short $pkgs
+        tinygo test -target=riscv-qemu -short -p 8 $pkgs
