@@ -52,10 +52,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [0, 1, 2, 3]
     steps:
     - uses: actions/checkout@v6
 
@@ -72,12 +68,9 @@ jobs:
         sudo apt-get update
         sudo apt-get install -y --no-install-recommends qemu-system-misc
 
-    # Sharded across runners and run several at a time within each, because
-    # every package starts its own QEMU and the sweep is minutes long.
+    # -short because every package runs under emulation: it cuts the one
+    # test that dominates the sweep. Packages that cannot run on bare
+    # metal exclude themselves, with a build tag or a skip, rather than
+    # being named here.
     - name: Test
-      run: |
-        skip=$(grep -vE '^#|^$' .github/tinygo-skip-tests | paste -sd'|')
-        go list -f '{{if and (ne .Name "main") (or .TestGoFiles .XTestGoFiles)}}{{.ImportPath}}{{end}}' ./gps/... |
-          grep . | grep -vE "$skip" |
-          awk 'NR % 4 == ${{ matrix.shard }}' |
-          xargs -P4 -I{} tinygo test -target=riscv-qemu {}
+      run: tinygo test -target=riscv-qemu -short ./gps/...

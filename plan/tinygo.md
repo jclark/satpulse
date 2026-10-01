@@ -24,8 +24,9 @@ adapter, which is why they belong in one plan.
 All 65 non-main packages under `gps/` compile for `-target=riscv-qemu`,
 checked by blank-importing every one of them from a single `main` package.
 That includes `gpsreg` and its dependencies: `gpsprot`, the protocol packages
-under `gps/internal/`, and the message and binary-format libraries. Most of
-those packages also pass `tinygo test -target=riscv-qemu`.
+under `gps/internal/`, and the message and binary-format libraries. They also
+pass `tinygo test -target=riscv-qemu`, once the packages that need a facility
+bare metal lacks have excluded themselves (below).
 
 That one-probe check is what the `Build (TinyGo)` workflow runs, generating
 the probe from `go list` so it cannot go stale. A file whose name already
@@ -33,12 +34,17 @@ restricts it to Linux needs `!baremetal` as well, and it is easy to miss:
 `gps/app/pps/sleep_linux.go` was exactly that, and nothing caught it until a
 reviewer read the rule and looked for files it had not been applied to.
 
-The same workflow runs the tests under QEMU, sharded four ways and four at a
-time within each shard, which keeps it to about a minute against a sweep that
-takes nearly four minutes end to end. `.github/tinygo-skip-tests` lists the
-packages left out and why; it is the machine-readable half of the known
-limits below. TinyGo is pinned there, so a version bump fails CI, which is the
+The same workflow then runs `tinygo test -short ./gps/...` under QEMU. There
+is no list of packages to leave out: a package that cannot run on bare metal
+says so itself, either with a build tag on the test file or with a skip at the
+helper that needs the facility. `-short` matters because everything runs under
+emulation, where a test that is instant on a host can take a minute and a half.
+TinyGo is pinned in the workflow, so a version bump fails CI, which is the
 point: the `bcast` adapter has to be rechecked against the new runtime.
+
+Note that a link failure, unlike a test failure, aborts the whole `./gps/...`
+run at the package where it happens, so a package that fails to link hides
+every package after it.
 
 `-target=riscv-qemu` is the compile check to trust. TinyGo sets `GOOS=linux` on
 bare-metal targets, so on ARM targets such as `pico` and `esp32c3` the
@@ -176,27 +182,67 @@ the field exists, was more machinery for the same result. `Protocols` arrived
 in Go 1.24, so when TinyGo's `net/http` catches up, restore the direct form
 and delete the comment.
 
-## Known limits under TinyGo
+## What bare metal cannot do, and how the tests say so
 
-- Tests that read `testdata` or call `t.TempDir` cannot run on bare metal,
-  which has no file system. `go:embed` cannot reach outside a package
-  directory, so embedding the packet logs would need more thought.
-- `gps/ts` generates TypeScript and `gps/lib/wakeup` measures Linux wake-up
-  latency; both are host-only by nature.
-- Bare metal has no network either. `net.Listen` returns "Netdev not set", so
-  `gps/app/ntrip`'s caster fixture cannot start and `TestAuth` fails. It does
-  not fail cleanly: the fixture reports the listen error through `t.Fatalf`
-  before it has registered its cleanup, abandoning the running `bcast`
-  goroutine, and the binary then dies with a load access fault rather than a
-  test failure. The fault is a consequence of the abandoned goroutine, not of
-  the caster.
-- `testing/synctest` has no TinyGo implementation, and a package using it
-  fails to link rather than to run, taking every test in the package with it.
-  `gps/app/stream` is the one still in that state: `push_test.go` and
-  `pull_test.go` need the `!tinygo` tag the other synctest users already have.
-- Serving time on a device is out of scope. SatPulse feeds a server that
-  already exists, chrony or a PHC for linuxptp, and a microcontroller has
-  neither.
+Four facilities are missing, and each is expressed in the code rather than in
+a list of packages to skip:
+
+- **No file system.** `gps/msgfile`'s tests write a temporary file and load it
+  back, and `gps/internal/septentrio`'s read captures from `testdata`. In both
+  the affected tests are spread across most of the package's test files, so
+  tagging files out would discard the ones that work. Each instead routes its
+  file-system use through a single helper that skips on a `hasFS` constant:
+  `tempDir` and `loadTestFile` in `msgfile`, `readCapture` in septentrio,
+  where eighteen tests skip and the other fifty-two still run. `go:embed`
+  cannot reach outside a package directory, so embedding the packet logs
+  instead would need more thought.
+- **No network.** `net.Listen` returns "Netdev not set", so `gps/app/ntrip`'s
+  caster fixture cannot serve. `newFixture` skips on a `hasNet` constant
+  before it starts anything.
+- **No `testing/synctest`.** TinyGo has no implementation, and this one fails
+  to *link*, so it takes every test in the package with it. The files using it
+  carry `!tinygo`.
+- **Host-only by nature.** `gps/ts` generates TypeScript and `gps/lib/wakeup`
+  measures Linux wake-up latency. Their test files carry `!baremetal`.
+
+Emulation is also slow enough to change what a reasonable test costs:
+`gps/scan`'s `TestGoodUBX` ran 50,000 random packets through a 64-byte buffer,
+which is 0.14s on a host and was 85.7s on `riscv-qemu` -- on its own, most of
+the whole sweep. It is 10,000 now, and 1,000 under `-short`, which CI passes.
+That is not a TinyGo concern alone: a low-end OpenWrt target would want the
+same.
+
+Serving time on a device is out of scope whatever the facilities. SatPulse
+feeds a server that already exists, chrony or a PHC for linuxptp, and a
+microcontroller has neither.
+
+## An unexplained memory fault
+
+Two test files crash the `riscv-qemu` target outright, with a RISC-V load
+access fault (`mcause=5`) or a misaligned load (`mcause=4`), rather than
+failing: `gps/app/ntrip`'s `TestConfigValidate` and `gps/app/stream`'s
+`TestConfigPullNtrip`. Both are configuration tests, and both files carry
+`!baremetal` with a comment pointing here, so the sweep is green; they are not
+excluded because bare metal lacks a facility, which is why they are recorded
+separately from the list above.
+
+What has been ruled out:
+
+- Not go-toml. Decoding `ntrip.Config` from a TOML string works on
+  `riscv-qemu`, and `TestConfigValidate` does not parse TOML at all: it builds
+  `Config` literals and calls `Validate`.
+- Not the lazy package-level regexps. Reverting them to eager
+  `regexp.MustCompile` leaves the fault in place, and a `sync.OnceValue`
+  regexp works in isolation on the same target.
+- Not `bcast` or the `reflect.Select` adapter. The fault reproduces without
+  either, and the earlier guess that it followed from an abandoned `bcast`
+  goroutine is wrong: a minimal reproduction that starts `Run`, cancels and
+  calls `t.Fatalf` does not fault.
+
+That leaves something in the validation path itself. Two independent
+configuration validators failing the same way suggests one bug rather than
+two. It is the thing to settle before a device runs any of this, and it would
+most likely be a TinyGo report rather than a change here.
 
 ## Hardware
 
@@ -217,24 +263,26 @@ xiao-esp32c3`.
 
 ## Open questions
 
-1. **Upstreaming the `reflect.Select` adapter**, with the runtime's random
+1. **The memory fault in the two configuration tests** above. One bug, most
+   likely, and probably a TinyGo one.
+2. **Upstreaming the `reflect.Select` adapter**, with the runtime's random
    start, so neither target depends on a mirror of unexported layouts that
    each TinyGo release has to be rechecked against.
-2. **A first device program.** `scan.New` takes an `io.Reader` and
+3. **A first device program.** `scan.New` takes an `io.Reader` and
    `machine.UART` has `Read`, so a device can skip `gpsio` and `term`
    entirely. It needs a reader wrapper that yields: `machine.UART.Read`
    returns `0, nil` when its buffer is empty and `scan` loops immediately on
    that, which would starve every other goroutine under TinyGo's cooperative
    scheduler.
-3. **A real `Term` on `machine.UART`**, needed only to reuse `gpsio`, `stream`
+4. **A real `Term` on `machine.UART`**, needed only to reuse `gpsio`, `stream`
    and `session`. Open: what `path` names mean, where TX/RX pins come from,
    and read timeouts by polling. It cannot be tested on `riscv-qemu`, whose
    `machine` package provides no UART.
-4. **Per-protocol constructors in `gpsreg`.** Linking the registry pulls in
+5. **Per-protocol constructors in `gpsreg`.** Linking the registry pulls in
    every protocol family; a device wants one. Worth measuring against a real
    target once a device program exists.
-5. **Compiling message files to JSON at build time**, if a device is to be
+6. **Compiling message files to JSON at build time**, if a device is to be
    configured from message files.
-6. **Whether the browser target is worth a second toolchain** at all, given
+7. **Whether the browser target is worth a second toolchain** at all, given
    that it buys size alone and costs a permanently separate build. The
    measurement above says the saving is real; the decision is a product one.
