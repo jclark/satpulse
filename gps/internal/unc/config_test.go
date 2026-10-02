@@ -24,6 +24,7 @@ type testResponse struct {
 func TestConfigSupport(t *testing.T) {
 	want := gpsprot.ConfigSupportSignal |
 		gpsprot.ConfigSupportSurvey |
+		gpsprot.ConfigSupportSurveyDur |
 		gpsprot.ConfigSupportFixedPos |
 		gpsprot.ConfigSupportRaw |
 		gpsprot.ConfigSupportRTCMMSM4 |
