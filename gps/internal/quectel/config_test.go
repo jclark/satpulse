@@ -296,7 +296,7 @@ func TestConfiguratorPVTMsgSets(t *testing.T) {
 
 // TestMsgRateSet checks that enabled periodic messages are configured
 // at 1 Hz relative to the receiver fix interval, while GSA and GSV use
-// their fixed 1 Hz native rate.
+// their fixed 1 Hz native rate and PQTMEOE marks every fix.
 func TestMsgRateSet(t *testing.T) {
 	c := Configurator{found: asFound{fixRate: &qtmmsg.CfgFixRate{FixInterval: 100}}}
 	tests := []struct {
@@ -307,6 +307,7 @@ func TestMsgRateSet(t *testing.T) {
 		{"RMC", "PQTMCFGMSGRATE,W,RMC,10"},
 		{"GSA", "PQTMCFGMSGRATE,W,GSA,1"},
 		{"GSV", "PQTMCFGMSGRATE,W,GSV,1"},
+		{"PQTMEOE", "PQTMCFGMSGRATE,W,PQTMEOE,1,1"},
 		{"RTCM3-107X", "PQTMCFGMSGRATE,W,RTCM3-107X,10,0"},
 	}
 	for _, test := range tests {

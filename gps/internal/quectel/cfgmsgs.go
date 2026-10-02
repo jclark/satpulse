@@ -230,7 +230,12 @@ func (c *Configurator) msgWant() map[string]bool {
 
 // msgRateSet builds one CFGMSGRATE set request at 1 Hz. Quectel rates
 // count position fixes, except GSA and GSV, which the receiver always
-// emits at 1 Hz. PQTM messages carry their version field. Message sets
+// emits at 1 Hz. PQTMEOE stays at every fix: at a 10 Hz fix rate the
+// LG290P (R02A01S) has been seen both rejecting rates 2, 5 and 10
+// (ERROR,1) and accepting 10 while still marking every fix, and an
+// end-of-epoch mark for an epoch with no other output closes nothing.
+// PQTM messages carry
+// their version field. Message sets
 // are NAK-tolerant: the receiver answers ERROR,1 for messages the
 // current mode or firmware lacks (e.g. PQTMSVINSTATUS outside effective
 // base mode), which is absence, not failure.
@@ -238,7 +243,7 @@ func (c *Configurator) msgRateSet(name string, on bool) *request {
 	rate := 0
 	if on {
 		rate = 1
-		if name != "GSA" && name != "GSV" && name != "RTCM3-1230" && c.found.fixRate != nil {
+		if name != "GSA" && name != "GSV" && name != "RTCM3-1230" && name != "PQTMEOE" && c.found.fixRate != nil {
 			ms := c.found.fixRate.FixInterval
 			if ms > 0 && ms < 1000 {
 				rate = int((1000 + ms/2) / ms)
