@@ -13,7 +13,6 @@ const (
 	CfgSpdHoldID  MsgID = clsCfg | (0x0F << 8)
 	CfgEphSaveID  MsgID = clsCfg | (0x10 << 8)
 	CfgNumSvID    MsgID = clsCfg | (0x11 << 8)
-	CfgFixedLlaID MsgID = clsCfg | (0x13 << 8)
 	CfgAntiJamID  MsgID = clsCfg | (0x15 << 8)
 	CfgBdGeoID    MsgID = clsCfg | (0x16 << 8)
 	CfgCarrSmthID MsgID = clsCfg | (0x17 << 8)
@@ -53,7 +52,6 @@ func init() {
 	idNameMap[CfgSpdHoldID] = "SPDHOLD"
 	idNameMap[CfgEphSaveID] = "EPHSAVE"
 	idNameMap[CfgNumSvID] = "NUMSV"
-	idNameMap[CfgFixedLlaID] = "FIXEDLLA"
 	idNameMap[CfgAntiJamID] = "ANTIJAM"
 	idNameMap[CfgGeoFenceID] = "GEOFENCE"
 	idNameMap[CfgCarrSmthID] = "CARRSMOOTH"
