@@ -1,7 +1,7 @@
 {
   "limitations": {
     "antennaCableDelay": {"unsupported": true},
-    "mode.fixedPosAcc": {"observed": [{"request": 0.12345, "result": 0}, {"request": 1.23456, "result": 0}]},
+    "mode.fixedPosAcc": {"unsupported": true},
     "mode.fixedPosECEF[0]": {
       "observed": [{"accepted": -1132881.12345, "request": -1132881.12345, "stored": -1132881.1235}],
       "quantum": 0.0001
@@ -21,7 +21,10 @@
     "rawOut": {
       "missing": [{"missing": ["obs"], "request": ["obs"]}, {"missing": ["nav"], "request": ["nav"]}]
     },
-    "rtcmOut": {"missing": [{"missing": ["1077", "1087", "1097", "1117", "1127"], "request": ["MSM7"]}]},
+    "rtcmOut": {
+      "extra": [{"extra": ["1074", "1084", "1094", "1114", "1124"], "request": ["MSM7"]}],
+      "missing": [{"missing": ["1077", "1087", "1097", "1117", "1127"], "request": ["MSM7"]}]
+    },
     "saveGranularity": {"groups": [["messageOutput", "minElevation", "timePulse.width"]], "unsaved": ["mode"]},
     "signals": {
       "signalSet": {
@@ -39,20 +42,14 @@
   "receiver": {
     "firmware": "LG290P03AANR02A01S 2025/12/12",
     "hardware": "LG290P03",
-    "supportedGNSS": [
-      "GPS",
-      "GAL",
-      "BDS",
-      "GLO",
-      "QZSS",
-      "NAVIC"
-    ],
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC"],
     "vendor": "Quectel"
   },
   "supports": [
     "fixedPos",
     "modeOnlyWithReset",
     "port",
+    "reload",
     "rtcmBaseID",
     "rtcmMSM4",
     "rtcmMSM7",
