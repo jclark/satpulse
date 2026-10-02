@@ -281,8 +281,7 @@ func (s *sim) InPulse() (bool, error) {
 	}
 	s.queries++
 	q := s.cfg.Host.Query
-	d := q.Duration + s.rng.NormFloat64()*q.Jitter
-	d = max(d, q.Duration/4)
+	d := q.Time(s.rng)
 	if s.cold {
 		d *= q.Idle.Factor
 	}
