@@ -175,6 +175,7 @@ System testing uses Ansible playbooks in `systest/`.
 - For prose the user is writing (docs, blog posts), fix typos, spelling, and grammar only; no rewrites or editorial improvements unless explicitly asked.
 - Give prose corrections as exact word-level replacements with line numbers, one at a time; do not emit rewritten paragraphs.
 - When editing an existing document, make minimal targeted edits that match the document's voice and style.
+- Link hypertext style, not print style: write a normal sentence and hyperlink the words it already contains that refer to the target. Never write cross-references such as "See [Section title](...)" or "see [here](...)".
 
 ## Release notes
 
