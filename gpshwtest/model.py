@@ -129,12 +129,14 @@ class EmissionObservation:
 
 
 def transient(err: str | None) -> bool:
-    """Whether an error is a communication flake (detection failure or a
-    request the receiver never answered) rather than a refusal of the
-    requested configuration. Transient errors are retried, and recorded as
-    failures rather than receiver limitations when they persist."""
+    """Whether an error is a communication flake (detection failure,
+    identification probes or a request the receiver never answered) rather
+    than a refusal of the requested configuration. Transient errors are
+    retried, and recorded as failures rather than receiver limitations when
+    they persist."""
     return err is not None and ("detection failed" in err or "no response" in err
-                                or "abandoned after timeout" in err)
+                                or "abandoned after timeout" in err
+                                or "could not identify GPS" in err)
 
 
 def normalize_signal_map(v: Any) -> SignalMap:
