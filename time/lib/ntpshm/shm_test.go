@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || freebsd
 
 package ntpshm
 
@@ -87,7 +87,7 @@ func TestAttachExisting(t *testing.T) {
 }
 
 func shmID(segment uint8) (int, error) {
-	return unix.SysvShmGet(int(shmKey(segment)), expectedSize, 0)
+	return sysvShmGet(int(shmKey(segment)), expectedSize, 0)
 }
 
 func removeSHM(segment uint8) error {
@@ -98,6 +98,5 @@ func removeSHM(segment uint8) error {
 	if err != nil {
 		return err
 	}
-	_, err = unix.SysvShmCtl(id, unix.IPC_RMID, nil)
-	return err
+	return sysvShmRemove(id)
 }
