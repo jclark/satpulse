@@ -24,7 +24,7 @@ which means they run at 12Mbps, which was the maximum speed supported by USB1.
 I have found that some Macs do not handle full-speed devices as efficiently as they might,
 and this significantly reduces the accuracy possible with a PPS signal.
 My MacBook Air M3 has this problem, but my Mac Mini M4 doesn't.
-The easiest workaround is to connect the USB serial adapter via a USB2 or USB3 hub;
+The easiest workaround is to connect the USB serial adapter via a suitable USB2 or USB3 hub;
 this works because the hub performs the translation between full-speed transactions and high-speed USB2 transactions.
 Alternatively you can use a high-speed USB serial adapter,
 i.e. one using the FTDI FT232H chip,
