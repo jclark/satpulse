@@ -122,6 +122,16 @@ func Median[T Value](seq iter.Seq[T]) T {
 	return average(values[mid-1], values[mid])
 }
 
+// ShiftAll adds delta to all values in the window, adjusting its baseline
+// while preserving relative positions. Shifting by a constant preserves the
+// relative order of values, so the sorted index array remains valid; unused
+// circular-buffer slots are shifted too, which is harmless.
+func (w *Window[T]) ShiftAll(delta T) {
+	for i := range w.values {
+		w.values[i] += delta
+	}
+}
+
 // Len returns the current number of values in the window.
 func (w *Window[T]) Len() int {
 	return len(w.indices)
