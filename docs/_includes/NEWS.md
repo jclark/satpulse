@@ -80,6 +80,7 @@ _Not yet released_
 - On exit, the serial port is no longer restored exactly to how it was before SatPulse started. If a GPS receiver has been successfully detected at some serial speed, the port is left at that speed; this avoids an unnecessary speed change when the port is next opened, minimizing the risk of serial corruption on Raspberry Pi UARTs. Echo is always left turned off, so that the receiver's output is not transmitted back to it while the port is being closed or next opened.
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
 - Building from source now uses `make` on macOS and FreeBSD as well as Linux, replacing the `unix-build.sh` script. `make install` works there too, installing under `/usr/local` by default, or under a prefix given by `prefix=`. (#420)
+- `satpulsed` can run as a FreeBSD service: `configs/satpulsed.rc.freebsd` is an rc.d script that runs it unprivileged under daemon(8) supervision, with one instance per serial port via symlinks. (#426)
 
 ## Changes in 0.2
 
