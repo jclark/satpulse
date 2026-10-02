@@ -50,9 +50,10 @@ RAISED_SPEED = 115200
 # (covers USB re-enumeration as well as the restart itself).
 RESET_SETTLE = 5.0
 
-# The fix interval (seconds) the preconditioned rate probe runs at: fast enough
-# that fix-coupled message output shows. The fix-rate-5 message-file tag carries
-# the value; the as-found rate is restored with the tag matching it.
+# The fix interval (seconds) the preconditioned rate probe runs at when the
+# receiver is found at 1 Hz or slower: fast enough that fix-coupled message
+# output shows. The fix-rate-5 message-file tag carries the value; the as-found
+# rate is restored with the tag matching it.
 FIXRATE_FAST = 0.2
 
 # A longer capture for the two rate observations: OBSERVE_SECONDS at 1 Hz is
@@ -871,8 +872,12 @@ class ProbeRun:
         used for restoration; the probe is skipped unless that exact restore
         is available. Running-state only - nothing saves it, so NVM is
         untouched and the observed rate is restored unconditionally.
-        Assumes the as-found mode is not base mode: on the LG290P base mode
-        forces 1 Hz and would mask the bug. A passing observation does not
+        A receiver found at a fast fix rate already meets the precondition and
+        is observed at that rate (its own tag is re-sent as the fast step), so
+        the probe changes nothing; this matters on the LG290P, whose fix-rate
+        writes read back but take effect only at the next reset. Assumes the
+        as-found mode is not base mode: on the LG290P base mode forces 1 Hz
+        and would mask the bug. A passing observation does not
         prove correct realization on a receiver already at 1 Hz; a fast
         observed rate, which only a fast fix rate can surface, is the finding."""
         mf = self.msg_file(receiver)
@@ -881,7 +886,7 @@ class ProbeRun:
                   "receiver", file=sys.stderr)
             return
         tags = self.msg_file_tags(mf)
-        if not {"get-fix-rate", "fix-rate-5"} <= tags:
+        if "get-fix-rate" not in tags:
             print(f"skipping the message-rate probe: {mf.name} has no fix-rate tags",
                   file=sys.stderr)
             return
@@ -900,17 +905,23 @@ class ProbeRun:
             print(f"skipping the message-rate probe: no tag restores the as-found "
                   f"fix interval of {interval}s", file=sys.stderr)
             return
+        fast_tag, fast_interval = ((restore_tag, interval) if interval < 1
+                                   else ("fix-rate-5", FIXRATE_FAST))
+        if fast_tag not in tags:
+            print(f"skipping the message-rate probe: {mf.name} has no {fast_tag} tag",
+                  file=sys.stderr)
+            return
         try:
-            fast = self.send_fixrate(mf, "fix-rate-5", "fast", FIXRATE_FAST)
+            fast = self.send_fixrate(mf, fast_tag, "fast", fast_interval)
             if fast.error is not None:
                 return
             self.set_and_observe("nmeaOut", ["RMC"], {"NMEAMsg": wire_flags(["RMC"])},
-                                 seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
+                                 seconds=RATE_OBSERVE_SECONDS, rate=fast_interval)
             self.set_and_observe("pvtOut", ["pos", "time", "off"],
                                  {"NMEAMsg": [],
                                   "PVTMsg": msg_flags(["pos", "time", "off"], PVT_MSG_JSON)},
                                  expect={"pos", "time"},
-                                 seconds=RATE_OBSERVE_SECONDS, rate=FIXRATE_FAST)
+                                 seconds=RATE_OBSERVE_SECONDS, rate=fast_interval)
         finally:
             self.send_fixrate(mf, restore_tag, "restore", interval)
 
