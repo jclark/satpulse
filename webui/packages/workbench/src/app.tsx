@@ -573,12 +573,12 @@ export function App() {
                 >
                     Packets
                 </button>
-                <button
+                {transport.corrections && <button
                     class={activeTab === 'corrections' ? tabBtnActive : tabBtnInactive}
                     onClick={() => handleTabChange('corrections')}
                 >
                     Corrections
-                </button>
+                </button>}
                 <button
                     class={configDisabled ? tabBtnDisabled : (activeTab === 'config' ? tabBtnActive : tabBtnInactive)}
                     onClick={() => { if (!configDisabled) handleTabChange('config'); }}
@@ -649,9 +649,9 @@ export function App() {
                 </div>
 
                 {/* Corrections tab */}
-                <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
-                    <CorrectionsPanel connState={connState} readOnly={readOnly} />
-                </div>
+                {transport.corrections && <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
+                    <CorrectionsPanel corrections={transport.corrections} connState={connState} readOnly={readOnly} />
+                </div>}
 
                 {/* Configuration tab */}
                 <div class={`h-full ${activeTab === 'config' ? '' : 'hidden'}`}>
