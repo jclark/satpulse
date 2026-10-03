@@ -347,6 +347,8 @@ func CreateConfigProtocol(vendor Vendor) gpsprot.ConfigProtocol {
 		return unc.NewConfigProtocol()
 	case VendorZhongke:
 		return casic.NewConfigProtocol()
+	case VendorQuectel:
+		return quectel.NewConfigProtocol()
 	default:
 		return nil
 	}
