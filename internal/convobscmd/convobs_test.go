@@ -207,18 +207,12 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--from", "raw", "--ubx-bds-geo-half-cycle", "input.raw"}); err != nil {
 		t.Fatalf("parseFlags raw UBX BDS GEO half cycle: %v", err)
 	}
-	v, _, err = parseFlags("", []string{"--from", "uncb", "--unc-omit-do-without-cp", "input.uncb"})
+	v, _, err = parseFlags("", []string{"--from", "rinex", "--omit-do-without-cp", "input.obs"})
 	if err != nil {
-		t.Fatalf("parseFlags uncb omit doppler without cp: %v", err)
+		t.Fatalf("parseFlags omit doppler without cp: %v", err)
 	}
-	if !v.format.unc.OmitDoWithoutCP {
-		t.Fatal("OmitDoWithoutCP = false, want true")
-	}
-	if _, _, err := parseFlags("", []string{"--from", "raw", "--unc-omit-do-without-cp", "input.raw"}); err != nil {
-		t.Fatalf("parseFlags raw UNC omit doppler without cp: %v", err)
-	}
-	if _, _, err := parseFlags("", []string{"--from", "unca", "--unc-omit-do-without-cp", "input.unca"}); err != nil {
-		t.Fatalf("parseFlags unca UNC omit doppler without cp: %v", err)
+	if !v.omitDo {
+		t.Fatal("omitDo = false, want true")
 	}
 	for _, tt := range []struct {
 		from string
@@ -269,17 +263,47 @@ func TestParseFlagsFormats(t *testing.T) {
 	if _, _, err := parseFlags("", []string{"--from", "unca", "--ubx-bds-geo-half-cycle", "input.unc"}); err == nil {
 		t.Fatal("parseFlags accepted UBX BDS GEO half cycle option with UNCA input")
 	}
-	if _, _, err := parseFlags("", []string{"--from", "ubx", "--unc-omit-do-without-cp", "input.ubx"}); err == nil {
-		t.Fatal("parseFlags accepted UNC omit doppler option with UBX input")
-	}
-	if _, _, err := parseFlags("", []string{"--from", "rtcm", "--unc-omit-do-without-cp", "input.rtcm"}); err == nil {
-		t.Fatal("parseFlags accepted UNC omit doppler option with RTCM input")
-	}
 	if _, _, err := parseFlags("", []string{"--packet-log", "--from", "rtcm", "--date", "20251218", "input.jsonl"}); err == nil {
 		t.Fatal("parseFlags accepted RTCM date option with packet log")
 	}
 	if _, _, err := parseFlags("", []string{"--from", "rtcm", "-f", "-"}); err == nil {
 		t.Fatal("parseFlags accepted date-from-filename with stdin")
+	}
+}
+
+func TestParseFlagsVendor(t *testing.T) {
+	tests := []struct {
+		name      string
+		env       string
+		args      []string
+		expect    bool
+		expectErr bool
+	}{
+		{name: "default", args: []string{"--from", "novb", "input.novb"}, expect: false},
+		{name: "sinognss", args: []string{"--from", "nova", "--vendor", "sinognss", "input.nova"}, expect: true},
+		{name: "raw", args: []string{"--vendor", "sinognss", "input.jsonl"}, expect: true},
+		{name: "other vendor", args: []string{"--from", "novb", "--vendor", "bynav", "input.novb"}, expect: false},
+		{name: "environment", env: "sinognss", args: []string{"--from", "novb", "input.novb"}, expect: true},
+		{name: "unknown vendor", args: []string{"--from", "novb", "--vendor", "nosuch", "input.novb"}, expectErr: true},
+		{name: "not NovAtel input", args: []string{"--from", "ubx", "--vendor", "sinognss", "input.ubx"}, expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("SATPULSE_VENDORS", tc.env)
+			v, _, err := parseFlags("", tc.args)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if v.format.novSino != tc.expect {
+				t.Errorf("novSino = %v, want %v", v.format.novSino, tc.expect)
+			}
+		})
 	}
 }
 
@@ -771,6 +795,7 @@ func TestMaybeSignificantPacketLogLine(t *testing.T) {
 	}{
 		{name: "ubx rawx", line: `{"tag":"UBX","msg":"RXM-RAWX"}`, want: true},
 		{name: "unc obsvm", line: `{"tag":"UNCB","msg":"OBSVM"}`, want: true},
+		{name: "nov range", line: `{"tag":"NOVB","msg":"RANGE"}`, want: true},
 		{name: "rtcm", line: `{"tag":"RTCM","msg":"1005"}`, want: true},
 		{name: "sbf measepoch", line: `{"tag":"SBF","msg":"MeasEpoch"}`, want: true},
 		{name: "sbf measextra", line: `{"tag":"SBF","msg":"MeasExtra"}`, want: true},
@@ -1076,6 +1101,65 @@ func TestRunRawIgnoresMixedObservationFamilies(t *testing.T) {
 	}
 }
 
+// TestRunRangePacketLog converts the K901 binary and ASCII RANGE pair, a
+// NOVB and a NOVA RANGE of the same epoch.
+func TestRunRangePacketLog(t *testing.T) {
+	path := filepath.Join("..", "..", "gps", "testdata", "packets", "sinognss", "K901", "raw-obs-ascii.jsonl")
+	sino := map[byte]int{'C': 40, 'E': 42, 'G': 24, 'I': 2, 'J': 12, 'R': 7, 'S': 5}
+	// Without the SinoGNSS mapping, BDS, QZSS, NavIC and GPS L5 are lost.
+	oem7 := map[byte]int{'E': 42, 'G': 19, 'R': 7, 'S': 5}
+	tests := []struct {
+		name       string
+		from       inputFormat
+		sino       bool
+		expect     map[byte]int
+		expectWarn string
+	}{
+		{name: "novb", from: inputNOVB, sino: true, expect: sino},
+		{name: "nova", from: inputNOVA, sino: true, expect: sino},
+		{name: "raw selects novb", from: inputRaw, sino: true, expect: sino, expectWarn: `got="NOVA RANGE" selected="NOVB RANGE"`},
+		{name: "novb without vendor", from: inputNOVB, expect: oem7, expectWarn: `hint="use --vendor sinognss for a SinoGNSS receiver"`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f, err := os.Open(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer f.Close()
+			var got bytes.Buffer
+			var log bytes.Buffer
+			cj := convJob{
+				inputs: testInputs(f),
+				out:    &got,
+				opts: convertOptions{
+					from:      tc.from,
+					to:        outputObsJSON,
+					packetLog: true,
+					format:    formatOptions{novSino: tc.sino},
+				},
+			}
+			if err := cj.run(testLogger(&log), time.Now().UTC()); err != nil {
+				t.Fatalf("run: %v", err)
+			}
+			_, obs, err := rinex.ReadObsJSON(&got)
+			if err != nil {
+				t.Fatalf("ReadObsJSON: %v", err)
+			}
+			counts := map[byte]int{}
+			for _, o := range obs {
+				counts[o.Sat[0]]++
+			}
+			if !reflect.DeepEqual(counts, tc.expect) {
+				t.Errorf("observations per system: got %v, want %v", counts, tc.expect)
+			}
+			if !strings.Contains(log.String(), tc.expectWarn) || tc.expectWarn == "" && log.Len() != 0 {
+				t.Errorf("log = %q, want %q", log.String(), tc.expectWarn)
+			}
+		})
+	}
+}
+
 func TestGoldenFiles(t *testing.T) {
 	// The golden files are RTKLIB Explorer convbin output; testdata/Makefile is
 	// the single source of truth for the convbin flags and regenerates them.
@@ -1090,14 +1174,31 @@ func TestGoldenFiles(t *testing.T) {
 	// this common receiver polarity; --rtcm-strict-prr selects the strict RTCM
 	// sign. RTKLIB Explorer omits numeric zero Doppler values; the RTCM cases
 	// use --rtcm-omit-zero-do to test that compatibility mode.
-	// RTKLIB Explorer zeroes Doppler when carrier-phase tracking is lost, so
-	// the UNCB case uses --unc-omit-do-without-cp to match. Three BDS signals
+	// RTKLIB Explorer's Unicore and NovAtel decoders zero Doppler when
+	// carrier-phase tracking is lost, so the UNCB and NOVB cases use
+	// --omit-do-without-cp to match. Three BDS signals
 	// are ignored because SatPulse and RTKLIB Explorer disagree on them in
 	// ways the protocol specs resolve in SatPulse's favour (see
 	// um980-cross-test-findings.md): B3I (6I), which RTKLIB Explorer's
 	// build-time frequency limit drops but SatPulse emits, and B2b, which
 	// SatPulse labels 7D (the BDS-3 data component) per RINEX 4.02 and RTKLIB
 	// Explorer's Unicore decoder mislabels 7P.
+	// For a record without phase lock, RTKLIB Explorer's NovAtel decoder
+	// still writes one with no values, carrying the half-cycle flag when the
+	// parity is unknown, which the comparison drops. It sets the half-cycle
+	// flag on other records without phase too, where SatPulse can mark an arc
+	// change; neither means anything without phase, so the comparison clears
+	// both on records without phase. Its build-time frequency
+	// limit drops Galileo E6C and E5AltBOC, which are ignored. It reads
+	// glofreq as the frequency channel + 8, where the OEM7 and SinoGNSS
+	// manuals, and the receiver's MSM7, give + 7, so its channels are one
+	// lower and channel -7 is unknown; the comparison applies the same
+	// reading to SatPulse's output. Without --vendor, SatPulse uses the
+	// OEM7 mapping, as RTKLIB Explorer does. With --vendor sinognss, the
+	// signals only the SinoGNSS mapping adds or recodes are ignored: QZSS,
+	// BDS and NavIC, whose SinoGNSS PRNs are outside the OEM7 ranges, GPS L5
+	// (5Q), GPS L2C, which SinoGNSS tracks as M+L (2X), and GPS L1C, whose
+	// SinoGNSS phase is shifted to align it with L1C/A.
 	now := time.Date(2026, time.May, 19, 0, 0, 0, 0, time.UTC)
 	cleanCommon := func(meta *rinex.Metadata) {
 		meta.Run = rinex.MetadataRun{}
@@ -1108,13 +1209,23 @@ func TestGoldenFiles(t *testing.T) {
 		meta.Marker.Name = ""
 		meta.Marker.Number = ""
 	}
+	t.Setenv("SATPULSE_VENDORS", "")
 	tol := goldenTolerances()
+	novbIgnore := []ignoredSignal{{sys: 'E', sig: "6C"}, {sys: 'E', sig: "8Q"}}
+	sinoIgnore := append([]ignoredSignal{
+		{sys: 'G', sig: "5Q"}, {sys: 'G', sig: "2S"}, {sys: 'G', sig: "2X"}, {sys: 'G', sig: "1L"},
+		{sys: 'J', sig: "1C"}, {sys: 'J', sig: "1L"}, {sys: 'J', sig: "2X"}, {sys: 'J', sig: "5Q"},
+		{sys: 'C', sig: "2I"}, {sys: 'C', sig: "1P"}, {sys: 'C', sig: "5P"}, {sys: 'C', sig: "6I"},
+		{sys: 'C', sig: "7I"}, {sys: 'C', sig: "7D"}, {sys: 'I', sig: "5A"},
+	}, novbIgnore...)
 	tests := []struct {
 		name          string
 		args          []string
 		obs           string
 		cleanMetadata func(*rinex.Metadata)
 		ignoreSignals []ignoredSignal
+		// fixGot and fixWant adjust an observation, returning false to drop it.
+		fixGot, fixWant func(*rinex.SignalObservation) bool
 	}{
 		{
 			name:          "m8t_20251217",
@@ -1142,7 +1253,7 @@ func TestGoldenFiles(t *testing.T) {
 		},
 		{
 			name:          "um980_uncb_20260527",
-			args:          []string{"--from", "uncb", "--run-by", "", "--unc-omit-do-without-cp", filepath.Join("testdata", "um980-uncb-20260527.uncb")},
+			args:          []string{"--from", "uncb", "--run-by", "", "--omit-do-without-cp", filepath.Join("testdata", "um980-uncb-20260527.uncb")},
 			obs:           filepath.Join("testdata", "um980-uncb-20260527.obs.gz"),
 			cleanMetadata: cleanCommon,
 			ignoreSignals: []ignoredSignal{
@@ -1150,6 +1261,30 @@ func TestGoldenFiles(t *testing.T) {
 				{sys: 'C', sig: "7D"},
 				{sys: 'C', sig: "7P"},
 			},
+		},
+		{
+			name:          "k901_rtcm_20260927",
+			args:          []string{"--from", "rtcm", "--run-by", "", "--date-from-filename", "--rtcm-omit-zero-do", filepath.Join("testdata", "k901-rtcm-20260927.rtcm")},
+			obs:           filepath.Join("testdata", "k901-rtcm-20260927.obs.gz"),
+			cleanMetadata: cleanRTCM,
+		},
+		{
+			name:          "k901_novb_20260927",
+			args:          []string{"--from", "novb", "--run-by", "", "--omit-do-without-cp", filepath.Join("testdata", "k901-novb-20260927.novb")},
+			obs:           filepath.Join("testdata", "k901-novb-20260927.obs.gz"),
+			cleanMetadata: cleanCommon,
+			ignoreSignals: novbIgnore,
+			fixGot:        fixAll(convbinGLONASSChannel, phaselessLLICleaner()),
+			fixWant:       fixAll(hasObservationValues, phaselessLLICleaner()),
+		},
+		{
+			name:          "k901_novb_sinognss_20260927",
+			args:          []string{"--from", "novb", "--vendor", "sinognss", "--run-by", "", "--omit-do-without-cp", filepath.Join("testdata", "k901-novb-20260927.novb")},
+			obs:           filepath.Join("testdata", "k901-novb-20260927.obs.gz"),
+			cleanMetadata: cleanCommon,
+			ignoreSignals: sinoIgnore,
+			fixGot:        fixAll(convbinGLONASSChannel, phaselessLLICleaner()),
+			fixWant:       fixAll(hasObservationValues, phaselessLLICleaner()),
 		},
 	}
 	for _, tt := range tests {
@@ -1177,7 +1312,7 @@ func TestGoldenFiles(t *testing.T) {
 			if err != nil {
 				t.Fatalf("readGzipFile %s: %v", tt.obs, err)
 			}
-			assertNoObservationFileDiff(t, tt.name, got.Bytes(), want, tt.cleanMetadata, tt.ignoreSignals, tol)
+			assertNoObservationFileDiff(t, tt.name, got.Bytes(), want, tt.cleanMetadata, tt.ignoreSignals, tt.fixGot, tt.fixWant, tol)
 		})
 	}
 }
@@ -1251,7 +1386,7 @@ type ignoredSignal struct {
 	sig rinex.SignalID
 }
 
-func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, clean func(*rinex.Metadata), ignore []ignoredSignal, tol rinex.Tolerances) {
+func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, clean func(*rinex.Metadata), ignore []ignoredSignal, fixGot, fixWant func(*rinex.SignalObservation) bool, tol rinex.Tolerances) {
 	t.Helper()
 	gotMeta, gotObs, err := rinex.ReadObservationFile(bytes.NewReader(got))
 	if err != nil {
@@ -1261,8 +1396,8 @@ func assertNoObservationFileDiff(t *testing.T, name string, got, want []byte, cl
 	if err != nil {
 		t.Fatalf("ReadObservationFile want: %v", err)
 	}
-	gotObs = filterIgnoredSignals(gotObs, ignore)
-	wantObs = filterIgnoredSignals(wantObs, ignore)
+	gotObs = fixObservations(filterIgnoredSignals(gotObs, ignore), fixGot)
+	wantObs = fixObservations(filterIgnoredSignals(wantObs, ignore), fixWant)
 	if clean != nil {
 		clean(&gotMeta)
 		clean(&wantMeta)
@@ -1304,6 +1439,73 @@ func filterIgnoredSignals(obs []rinex.SignalObservation, ignore []ignoredSignal)
 		}
 	}
 	return out
+}
+
+func fixObservations(obs []rinex.SignalObservation, fix func(*rinex.SignalObservation) bool) []rinex.SignalObservation {
+	if fix == nil {
+		return obs
+	}
+	out := make([]rinex.SignalObservation, 0, len(obs))
+	for _, o := range obs {
+		if fix(&o) {
+			out = append(out, o)
+		}
+	}
+	return out
+}
+
+func fixAll(fixes ...func(*rinex.SignalObservation) bool) func(*rinex.SignalObservation) bool {
+	return func(o *rinex.SignalObservation) bool {
+		for _, fix := range fixes {
+			if !fix(o) {
+				return false
+			}
+		}
+		return true
+	}
+}
+
+// convbinGLONASSChannel gives a GLONASS observation the frequency channel
+// RTKLIB Explorer's NovAtel decoder gives it, reading glofreq as the channel
+// + 8: one lower, with channel -7 read as unknown.
+func convbinGLONASSChannel(o *rinex.SignalObservation) bool {
+	if o.Sat[0] != 'R' || !o.Frq.IsSet() {
+		return true
+	}
+	if o.Frq.Get() == -7 {
+		o.Frq = opt.Val[int8]{}
+	} else {
+		o.Frq = opt.Make(o.Frq.Get() - 1)
+	}
+	return true
+}
+
+// phaselessLLICleaner returns a fix that clears the loss of lock indicators
+// of observations without carrier phase: it clears the half-cycle flag and
+// gives the observation the arc of the signal's previous observation, so
+// that it does not mark an arc change.
+func phaselessLLICleaner() func(*rinex.SignalObservation) bool {
+	type key struct {
+		sat rinex.SatelliteID
+		sig rinex.SignalID
+	}
+	arcs := make(map[key]uint32)
+	return func(o *rinex.SignalObservation) bool {
+		k := key{o.Sat, o.Sig}
+		if o.CP.IsSet() {
+			arcs[k] = o.Arc
+			return true
+		}
+		o.HC = false
+		o.Arc = arcs[k]
+		return true
+	}
+}
+
+// hasObservationValues reports whether o has any observation value, dropping
+// records that carry only a loss of lock indicator.
+func hasObservationValues(o *rinex.SignalObservation) bool {
+	return o.PR.IsSet() || o.CP.IsSet() || o.Do.IsSet() || o.CN0.IsSet()
 }
 
 func signalIgnored(sat rinex.SatelliteID, sig rinex.SignalID, ignore []ignoredSignal) bool {
