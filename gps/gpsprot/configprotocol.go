@@ -37,6 +37,7 @@ const (
 	ConfigSupportSpeed
 	ConfigSupportSurvey
 	ConfigSupportSurveyAcc
+	ConfigSupportSurveyDur
 	ConfigSupportSurveyMsg
 	ConfigSupportFixedPos
 	ConfigSupportFixedPosAcc
@@ -66,6 +67,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportSpeed, "speed"},
 	{ConfigSupportSurvey, "survey"},
 	{ConfigSupportSurveyAcc, "surveyAcc"},
+	{ConfigSupportSurveyDur, "surveyDur"},
 	{ConfigSupportSurveyMsg, "surveyMsg"},
 	{ConfigSupportFixedPos, "fixedPos"},
 	{ConfigSupportFixedPosAcc, "fixedPosAcc"},
