@@ -51,6 +51,7 @@ all:
         fontina.lan:
         montasio.lan:
         raschera.lan:
+        tomino.lan:
     virtual_hosts:
       hosts:
         abondance-ttySEP0.lan:
@@ -198,3 +199,10 @@ all:
 
     feta.lan:
       interface: ""
+
+    # Quectel LC29H(AA) on Waveshare HAT; Radxa ZERO 3E (PHC has no SDPs, PPS via GPIO)
+    tomino.lan:
+      interface: ""
+      instance: ttyS2
+      speed: 115200
+      vendor: '"Quectel"'
