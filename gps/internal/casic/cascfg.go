@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -219,7 +220,9 @@ func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 // an optional F for dual band, the generation digit, the class
 // letters (N navigation, P positioning/RTK, T timing, TS secure
 // timing, F frequency), then optional constellation digits.
-var classRe = regexp.MustCompile(`^F?[0-9](N|P|TS|T|F)[0-9]*$`)
+var classRe = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^F?[0-9](N|P|TS|T|F)[0-9]*$`)
+})
 
 // receiverClass extracts the product class letters from a CASIC
 // module name such as AT372-AT6668-6P-34 or ATGM332D-5N71: the first
@@ -229,7 +232,7 @@ var classRe = regexp.MustCompile(`^F?[0-9](N|P|TS|T|F)[0-9]*$`)
 func receiverClass(hw string) string {
 	fields := strings.FieldsFunc(hw, func(r rune) bool { return r == '-' || r == ',' })
 	for i := 1; i < len(fields); i++ {
-		if m := classRe.FindStringSubmatch(fields[i]); m != nil {
+		if m := classRe().FindStringSubmatch(fields[i]); m != nil {
 			return m[1]
 		}
 	}

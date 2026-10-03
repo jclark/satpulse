@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/ubxbin"
@@ -254,7 +255,7 @@ func monVer(parsed *ubxbin.MonVer) *Version {
 		Extensions: x,
 		FW:         findFWVer(x),
 		Prot:       findProtVer(x),
-		Mod:        findString(x, modRegexp),
+		Mod:        findString(x, modRegexp()),
 		GNSS:       findGNSS(x),
 	}
 	v.RunsFromFlash = findFlash(v.SW, x)
@@ -262,13 +263,15 @@ func monVer(parsed *ubxbin.MonVer) *Version {
 	return v
 }
 
-var swOldRegexp = regexp.MustCompile(`^([1-9][0-9]?)\.([0-9][0-9]) \([1-9][0-9]{3,5}\)$`)
+var swOldRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^([1-9][0-9]?)\.([0-9][0-9]) \([1-9][0-9]{3,5}\)$`)
+})
 
 func setLegacyProtVer(ver *Version) {
 	if ver.Prot != nil {
 		return
 	}
-	submatches := swOldRegexp.FindStringSubmatch(ver.SW)
+	submatches := swOldRegexp().FindStringSubmatch(ver.SW)
 	if submatches == nil {
 		return
 	}
@@ -295,27 +298,39 @@ func (fwv *FWVer) String() string {
 }
 
 // MAX-F10S has a product category of SPGL1L5, so let's accomodate at least SPGL1L2L5
-var fwVerRegexp = regexp.MustCompile(`^FWVER[= ]([A-Z][A-Z0-9]+) ([1-9][0-9]?)\.([0-9][0-9])$`)
+var fwVerRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^FWVER[= ]([A-Z][A-Z0-9]+) ([1-9][0-9]?)\.([0-9][0-9])$`)
+})
 
 // LEA-M8F with protocol version 16 has a line `FTS 1.01` without any preceding FWVER
-var fwVerOldRegexp = regexp.MustCompile(`^(FTS|TIM|HPG|SPG) ([1-9][0-9]?)\.([0-9][0-9])$`)
-var protVerRegexp = regexp.MustCompile(`^PROTVER[= ]([1-9][0-9]?)\.([0-9][0-9])$`)
-var modRegexp = regexp.MustCompile(`^MOD[= ]([A-Z][-A-Z0-9]+)$`)
-var fisRegexp = regexp.MustCompile(`^FIS[= ]0[xX]`)
-var gnssRegexps = []*regexp.Regexp{
-	// Major GNSS
-	regexp.MustCompile(`^GPS(;[A-Z][A-Za-z]{2,4})*$`),
-	// Augmentation system
-	regexp.MustCompile(`^(SBAS|QZSS)(;[A-Z][A-Za-z]{2,4})*$`),
-	// Non-major GNSS
-	// On the MAX-F10S, NAVIC shows up non its own line
-	regexp.MustCompile(`^NAVIC(;[A-Z][A-Za-z]{2,4})*$`),
-}
+var fwVerOldRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^(FTS|TIM|HPG|SPG) ([1-9][0-9]?)\.([0-9][0-9])$`)
+})
+var protVerRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^PROTVER[= ]([1-9][0-9]?)\.([0-9][0-9])$`)
+})
+var modRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^MOD[= ]([A-Z][-A-Z0-9]+)$`)
+})
+var fisRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^FIS[= ]0[xX]`)
+})
+var gnssRegexps = sync.OnceValue(func() []*regexp.Regexp {
+	return []*regexp.Regexp{
+		// Major GNSS
+		regexp.MustCompile(`^GPS(;[A-Z][A-Za-z]{2,4})*$`),
+		// Augmentation system
+		regexp.MustCompile(`^(SBAS|QZSS)(;[A-Z][A-Za-z]{2,4})*$`),
+		// Non-major GNSS
+		// On the MAX-F10S, NAVIC shows up non its own line
+		regexp.MustCompile(`^NAVIC(;[A-Z][A-Za-z]{2,4})*$`),
+	}
+})
 
 func findFWVer(extensions []string) *FWVer {
-	submatches := findSubmatch(extensions, fwVerRegexp)
+	submatches := findSubmatch(extensions, fwVerRegexp())
 	if submatches == nil {
-		submatches = findSubmatch(extensions, fwVerOldRegexp)
+		submatches = findSubmatch(extensions, fwVerOldRegexp())
 		if submatches == nil {
 			return nil
 		}
@@ -324,7 +339,7 @@ func findFWVer(extensions []string) *FWVer {
 }
 
 func findProtVer(extensions []string) *ProtVer {
-	submatches := findSubmatch(extensions, protVerRegexp)
+	submatches := findSubmatch(extensions, protVerRegexp())
 	if submatches == nil {
 		return nil
 	}
@@ -332,7 +347,7 @@ func findProtVer(extensions []string) *ProtVer {
 }
 
 func findGNSS(extensions []string) (gnss gpsprot.GNSSSet) {
-	for _, re := range gnssRegexps {
+	for _, re := range gnssRegexps() {
 		submatches := findSubmatch(extensions, re)
 		if submatches == nil {
 			continue
@@ -356,7 +371,7 @@ func findFlash(sw string, extensions []string) bool {
 	if strings.HasPrefix(sw, "ROM ") {
 		return false
 	}
-	return findSubmatch(extensions, fisRegexp) != nil
+	return findSubmatch(extensions, fisRegexp()) != nil
 }
 
 func findString(extensions []string, re *regexp.Regexp) string {

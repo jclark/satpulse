@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -468,7 +469,9 @@ func (req *ConfigRequest) GetDeadline() time.Time {
 	}
 }
 
-var responseFieldRegexp = regexp.MustCompile(`^response(?:: OK|[: ](.+))$`)
+var responseFieldRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^response(?:: OK|[: ](.+))$`)
+})
 
 // handle a command response of the form
 // `$command,CONFIG,response: OK*XX\r\f`
@@ -479,7 +482,7 @@ func (c *Configurator) commandResponse(fields []string, tRead time.Time) error {
 	}
 	cmd := fields[0]
 	response := fields[1]
-	matches := responseFieldRegexp.FindStringSubmatch(response)
+	matches := responseFieldRegexp().FindStringSubmatch(response)
 	if matches == nil {
 		return fmt.Errorf("invalid command response: %s", response)
 	}

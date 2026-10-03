@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+	"sync"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
@@ -77,12 +78,16 @@ const DefaultNetwork = "Misc"
 
 // mountpointNameRE validates a mountpoint name per the Ntrip v2 spec:
 // up to 100 characters of [A-Za-z0-9._-].
-var mountpointNameRE = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+var mountpointNameRE = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+})
 
 // formatDetailsRE validates an STR-record format-details string:
 // comma-separated alphanumeric/underscore tokens, each optionally
 // followed by (digits) for an update rate in seconds.
-var formatDetailsRE = regexp.MustCompile(`^[A-Za-z0-9_]+(\([0-9]+\))?(,[A-Za-z0-9_]+(\([0-9]+\))?)*$`)
+var formatDetailsRE = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^[A-Za-z0-9_]+(\([0-9]+\))?(,[A-Za-z0-9_]+(\([0-9]+\))?)*$`)
+})
 
 // Validate checks that the [ntrip] configuration is internally
 // consistent.  An empty [ntrip] section is valid (it supplies
@@ -94,7 +99,7 @@ var formatDetailsRE = regexp.MustCompile(`^[A-Za-z0-9_]+(\([0-9]+\))?(,[A-Za-z0-
 // Validate checks that every name in a mountpoint's auth.users
 // refers to a defined user.  Pass nil when no users are defined.
 func (cfg *Config) Validate(users map[string]struct{}) error {
-	if cfg.FormatDetails != "" && !formatDetailsRE.MatchString(cfg.FormatDetails) {
+	if cfg.FormatDetails != "" && !formatDetailsRE().MatchString(cfg.FormatDetails) {
 		return fmt.Errorf("ntrip: invalid formatDetails %q", cfg.FormatDetails)
 	}
 	if cfg.Bitrate < 0 {
@@ -159,7 +164,7 @@ func CheckSTRField(s string) error {
 // spec: up to 100 characters of [A-Za-z0-9._-].  Exported so the
 // stream.push validator can apply the same rule.
 func CheckMountpointName(name string) error {
-	if !mountpointNameRE.MatchString(name) {
+	if !mountpointNameRE().MatchString(name) {
 		return fmt.Errorf("invalid mountpoint name %q", name)
 	}
 	return nil
