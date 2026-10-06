@@ -46,6 +46,7 @@ all:
         testing:
       hosts:
         beaufort.lan:
+        chaource2.lan:
         edam.lan:
         feta.lan:
         fontina.lan:
@@ -136,6 +137,12 @@ all:
 
     # Allystar TAU1201 on UART
     chaource.lan:
+      speed: 115200
+      config: "false"
+      vendor: '"Allystar"'
+
+    # chaource's CM4 booting Raspberry Pi OS from SD; same Allystar TAU1201 on UART
+    chaource2.lan:
       speed: 115200
       config: "false"
       vendor: '"Allystar"'
