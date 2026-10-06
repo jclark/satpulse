@@ -1,0 +1,318 @@
+# Commission a freshly imaged Raspberry Pi (Raspberry Pi OS, i.e. Debian) as a
+# test host, then install and configure SatPulse on it.
+#
+# Starting point: an image written with Raspberry Pi Imager, with the user,
+# password, hostname and ssh set by the imager, the host up on DHCP, and your
+# ssh key on it (ssh-copy-id; the newhost script does this), but no
+# passwordless sudo yet. Add the host to the inventory first (install group,
+# plus any per-host settings), then run it with the newhost script
+# (newhost -h), or directly:
+#
+#   ansible-playbook -K -i inventory.yml newhost.yml -l HOST \
+#     -e @SITE-VARS.yml [-e ipv4_address=A.B.C.D/24]
+#
+# The site vars file supplies what is specific to a network and is not kept
+# here: ipv4_gateway, ipv4_dns, ipv4_search, authorized_keys (a list of public
+# key lines) and chrony_sources (a map of file name in /etc/chrony/sources.d
+# to its content; when given, the distribution's pool lines are removed).
+#
+# The playbook sets up passwordless sudo and the authorized keys, the UARTs
+# per docs/setup/rpi-uart.md, chrony with the SatPulse refclock, and linuxptp
+# with the replacement ptp4l.service (ptp4l is configured but not enabled).
+# If ipv4_address is given, it also sets a static address (a NetworkManager
+# profile replacing the imager's DHCP profile); otherwise DHCP is left alone,
+# and ipv4_gateway, ipv4_dns and ipv4_search are not needed. Then it reboots. It then runs install.yml and
+# config.yml for the host; after that start.yml and check.yml can be run.
+#
+# Optional per-host variables:
+#   rpi_disable_bt: true on a Pi 4/CM4 so that ttyAMA0 is on pins 8/10 (default)
+#   rpi_uart_overlays: extra UART overlays, e.g. [uart3] (CM4) or [uart3-pi5] (CM5)
+#   rpi_pps_gpio: GPIO number for a pps-gpio overlay (default none)
+
+- name: Require an explicit host limit
+  hosts: all
+  gather_facts: false
+  any_errors_fatal: true
+  tasks:
+    - name: Fail unless run with -l
+      run_once: true
+      assert:
+        that: ansible_limit is defined
+        fail_msg: "newhost.yml must be run with -l HOST"
+
+- name: Commission a new Raspberry Pi test host
+  hosts: all
+  become: yes
+  vars:
+    rpi_disable_bt: true
+    rpi_uart_overlays: []
+    rpi_pps_gpio: ""
+    ipv4_search: ""
+    authorized_keys: []
+    chrony_sources: {}
+    boot_dir: /boot/firmware
+
+  tasks:
+    - name: Check required variables
+      assert:
+        that:
+          - ansible_os_family == "Debian"
+          - ipv4_address is not defined or (ipv4_address is search('/') and ipv4_gateway is defined and ipv4_dns is defined)
+        fail_msg: "Needs Debian (Raspberry Pi OS); a static ipv4_address needs a /prefix, ipv4_gateway and ipv4_dns"
+
+    - name: Read the board model
+      slurp:
+        src: /proc/device-tree/model
+      register: dt_model
+
+    - name: Classify the board
+      set_fact:
+        rpi_model: "{{ dt_model.content | b64decode | replace('\u0000', '') }}"
+        rpi_bcm2712: "{{ (dt_model.content | b64decode) is search('Raspberry Pi (5|500|Compute Module 5)') }}"
+
+    - name: Fail if not a Raspberry Pi
+      fail:
+        msg: "Not a Raspberry Pi: {{ rpi_model }}"
+      when: rpi_model is not search('^Raspberry Pi')
+
+    # Access
+
+    - name: Passwordless sudo for {{ ansible_user }}
+      copy:
+        content: "{{ ansible_user }} ALL=(ALL) NOPASSWD: ALL\n"
+        dest: "/etc/sudoers.d/{{ ansible_user }}"
+        mode: '0440'
+        validate: "visudo -cf %s"
+
+    - name: Authorized keys
+      become: no
+      ansible.posix.authorized_key:
+        user: "{{ ansible_user }}"
+        key: "{{ item }}"
+      loop: "{{ authorized_keys }}"
+
+    - name: Hostname
+      hostname:
+        name: "{{ inventory_hostname_short }}"
+
+    # Packages: before the config files, since ptp4l.conf is a dpkg conffile
+
+    - name: Install chrony and linuxptp
+      apt:
+        name: [chrony, linuxptp]
+        update_cache: yes
+
+    # chrony
+
+    - name: chrony SatPulse refclock
+      copy:
+        content: "refclock SOCK {{ sock_path }} poll 2 filter 4 refid GNSS\n"
+        dest: /etc/chrony/conf.d/satpulse.conf
+        mode: '0644'
+      register: chrony_refclock
+
+    - name: chrony serves the network
+      copy:
+        content: "allow\n"
+        dest: /etc/chrony/conf.d/allow.conf
+        mode: '0644'
+      register: chrony_allow
+
+    - name: chrony sources
+      copy:
+        content: "{{ item.value }}"
+        dest: "/etc/chrony/sources.d/{{ item.key }}"
+        mode: '0644'
+      loop: "{{ chrony_sources | dict2items }}"
+      register: chrony_source_files
+
+    - name: Remove the distribution's pool lines
+      lineinfile:
+        path: /etc/chrony/chrony.conf
+        regexp: '^pool '
+        state: absent
+      when: chrony_sources | length > 0
+      register: chrony_pool
+
+    - name: Enable and restart chrony
+      systemd:
+        name: chrony
+        enabled: yes
+        state: "{{ 'restarted' if (chrony_refclock.changed or chrony_allow.changed or chrony_source_files.changed or chrony_pool.changed) else 'started' }}"
+
+    # linuxptp
+
+    - name: Get linuxptp version
+      command: ptp4l -v
+      register: ptp4l_version
+      changed_when: false
+
+    - name: ptp4l.conf
+      copy:
+        content: |
+          [global]
+          masterOnly 1
+          tx_timestamp_timeout 100
+          {% if ptp4l_version.stdout is version('4', '>=') %}
+          ptp_minor_version 0
+          {% endif %}
+          [{{ interface }}]
+        dest: /etc/linuxptp/ptp4l.conf
+        mode: '0644'
+      when: interface != ""
+
+    - name: Replacement ptp4l.service
+      copy:
+        src: ../configs/ptp4l.service
+        dest: /etc/systemd/system/ptp4l.service
+        mode: '0644'
+      register: ptp4l_service
+
+    - name: Reload systemd
+      systemd:
+        daemon_reload: yes
+      when: ptp4l_service.changed
+
+    # UARTs (docs/setup/rpi-uart.md)
+
+    - name: UART settings in config.txt
+      blockinfile:
+        path: "{{ boot_dir }}/config.txt"
+        marker: "# {mark} satpulse systest newhost.yml"
+        block: |
+          [all]
+          {% if rpi_bcm2712 %}
+          dtparam=uart0=on
+          {% else %}
+          enable_uart=1
+          {% if rpi_disable_bt %}
+          dtoverlay=disable-bt
+          {% endif %}
+          {% endif %}
+          {% for o in rpi_uart_overlays %}
+          dtoverlay={{ o }}
+          {% endfor %}
+          {% if rpi_pps_gpio | string | length > 0 %}
+          dtoverlay=pps-gpio,gpiopin={{ rpi_pps_gpio }}
+          {% endif %}
+      register: config_txt
+
+    - name: No serial console
+      replace:
+        path: "{{ boot_dir }}/cmdline.txt"
+        regexp: '\s*console=serial0,[0-9]+'
+        replace: ''
+      register: cmdline_txt
+
+    - name: Check for hciuart
+      stat:
+        path: /lib/systemd/system/hciuart.service
+      register: hciuart
+
+    - name: Disable hciuart
+      systemd:
+        name: hciuart
+        enabled: no
+      when: hciuart.stat.exists and rpi_disable_bt and not rpi_bcm2712
+
+    # Network: static address as a NetworkManager profile, replacing the imager's
+
+    - name: Static address
+      when: ipv4_address is defined
+      block:
+        - name: Static NetworkManager profile
+          copy:
+            content: |
+              [connection]
+              id={{ interface | default('eth0', true) }}
+              type=ethernet
+              autoconnect-priority=10
+              interface-name={{ interface | default('eth0', true) }}
+
+              [ethernet]
+
+              [ipv4]
+              address1={{ ipv4_address }}
+              dns={{ ipv4_dns }};
+              {% if ipv4_search %}
+              dns-search={{ ipv4_search }};
+              {% endif %}
+              gateway={{ ipv4_gateway }}
+              method=manual
+
+              [ipv6]
+              addr-gen-mode=default
+              method=auto
+            dest: "/etc/NetworkManager/system-connections/{{ interface | default('eth0', true) }}.nmconnection"
+            mode: '0600'
+          register: nm_profile
+
+        - name: Stop cloud-init from configuring the network again
+          copy:
+            content: "network: {config: disabled}\n"
+            dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+            mode: '0644'
+
+        - name: Find the imager's netplan files
+          find:
+            paths: /etc/netplan
+            patterns: "*.yaml"
+          register: netplan_files
+
+        - name: Remove the imager's netplan files
+          file:
+            path: "{{ item.path }}"
+            state: absent
+          loop: "{{ netplan_files.files }}"
+
+    # Reboot (onto the static address, if any)
+
+    - name: Reboot
+      shell: "sleep 2 && systemctl reboot"
+      async: 1
+      poll: 0
+      when: config_txt.changed or cmdline_txt.changed or (nm_profile.changed | default(false)) or (netplan_files.matched | default(0)) > 0
+
+    - name: Connect to the static address from now on
+      when: ipv4_address is defined
+      set_fact:
+        ansible_host: "{{ ipv4_address.split('/')[0] }}"
+        ansible_ssh_extra_args: "-o HostKeyAlias={{ inventory_hostname }}"
+
+    - name: Wait for the host to come back
+      wait_for_connection:
+        delay: 15
+        timeout: 300
+
+    # Verify
+
+    - name: Gather facts after reboot
+      setup:
+
+    - name: Check the address
+      when: ipv4_address is defined
+      assert:
+        that: ansible_host in ansible_all_ipv4_addresses
+        fail_msg: "{{ ansible_host }} not in {{ ansible_all_ipv4_addresses }}"
+
+    - name: Stat the serial device
+      stat:
+        path: "/dev/{{ instance }}"
+      register: serial_dev
+
+    - name: Check the serial device
+      assert:
+        that: serial_dev.stat.exists and serial_dev.stat.ischr
+        fail_msg: "/dev/{{ instance }} is not a character device"
+
+    - name: Check the PHC
+      command: "phc_ctl -q {{ interface }} get"
+      changed_when: false
+      when: interface != ""
+
+    - name: Check chrony
+      command: systemctl is-active chrony
+      changed_when: false
+
+- import_playbook: install.yml
+- import_playbook: config.yml

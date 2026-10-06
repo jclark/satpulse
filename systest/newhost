@@ -1,0 +1,111 @@
+#!/bin/sh
+# Commission a freshly imaged Raspberry Pi as a test host: runs newhost.yml.
+# Run "newhost -h" for usage.
+
+usage() {
+  cat <<EOF
+Usage: $0 [options] HOST [-- ANSIBLE-ARGS...]
+
+Commission HOST, a Raspberry Pi freshly imaged with Raspberry Pi Imager
+(Raspberry Pi OS, user and password set, ssh enabled, up on DHCP), as a
+SatPulse test host, using the newhost.yml playbook: passwordless sudo,
+authorized keys, optionally a static address, UARTs, chrony, linuxptp,
+reboot, then install.yml and config.yml. Afterwards start.yml and check.yml can be run.
+
+HOST must already be in inventory.yml (install group plus its receiver
+settings). A HOST without a domain name gets .lan appended. You are
+prompted for the sudo password (-K).
+
+If ssh key authentication to HOST fails, ssh-copy-id is run first and
+prompts for the login password.
+
+Options:
+  -a, --address ADDR[/PREFIX]  give HOST this static IPv4 address instead of
+                               leaving it on DHCP; PREFIX defaults to 24
+  -s, --site-vars FILE         site variables file: authorized_keys,
+                               chrony_sources, and for -a ipv4_gateway,
+                               ipv4_dns, ipv4_search (see newhost.yml);
+                               default \$SATPULSE_SITE_VARS
+  -n, --dry-run                print the ansible-playbook command, don't run it
+  -h, --help                   show this help
+
+Arguments after -- are passed to ansible-playbook, e.g.
+  -- -e '{"rpi_uart_overlays": ["uart3"]}'
+  -- -e rpi_pps_gpio=18
+
+Examples:
+  $0 -s ~/site-vars.yml chaource2               # stays on DHCP
+  $0 -s ~/site-vars.yml -a 10.56.65.28 chaource2
+EOF
+}
+
+die() {
+  echo "$0: $*" >&2
+  echo "Try '$0 -h' for help." >&2
+  exit 2
+}
+
+address=""
+site_vars="${SATPULSE_SITE_VARS:-}"
+dry_run=false
+host=""
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -h|--help) usage; exit 0 ;;
+    -a|--address) [ $# -ge 2 ] || die "$1 needs an argument"; address="$2"; shift 2 ;;
+    --address=*) address="${1#*=}"; shift ;;
+    -s|--site-vars) [ $# -ge 2 ] || die "$1 needs an argument"; site_vars="$2"; shift 2 ;;
+    --site-vars=*) site_vars="${1#*=}"; shift ;;
+    -n|--dry-run) dry_run=true; shift ;;
+    --) shift; break ;;
+    -*) die "unknown option: $1" ;;
+    *) [ -z "$host" ] || die "only one HOST allowed"; host="$1"; shift ;;
+  esac
+done
+
+[ -n "$host" ] || die "HOST is required"
+[ -n "$site_vars" ] || die "--site-vars is required (or set SATPULSE_SITE_VARS)"
+[ -f "$site_vars" ] || die "site variables file not found: $site_vars"
+
+case "$host" in
+  *.*) ;;
+  *) host="$host.lan" ;;
+esac
+
+if [ -n "$address" ]; then
+  case "$address" in
+    */*) ;;
+    *) address="$address/24" ;;
+  esac
+  echo "$address" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$' \
+    || die "not an IPv4 address with optional /PREFIX: $address"
+fi
+
+# Absolute, since we cd to the playbook directory
+case "$site_vars" in
+  /*) ;;
+  *) site_vars="$(pwd)/$site_vars" ;;
+esac
+
+cd "$(dirname "$0")" || exit 1
+
+hostvars="$(ansible-inventory -i inventory.yml --host "$host" 2>/dev/null)" \
+  || die "$host is not in inventory.yml"
+user="$(echo "$hostvars" | python3 -c 'import json, sys; print(json.load(sys.stdin).get("ansible_user", ""))')"
+target="${user:+$user@}$host"
+
+set -- ansible-playbook -K -i inventory.yml newhost.yml -l "$host" \
+  -e "@$site_vars" ${address:+-e "ipv4_address=$address"} "$@"
+
+if $dry_run; then
+  echo "$@"
+  exit 0
+fi
+
+if ! ssh -o BatchMode=yes -o ConnectTimeout=10 "$target" true 2>/dev/null; then
+  echo "Key authentication to $host failed; running ssh-copy-id (enter the login password)."
+  ssh-copy-id "$target" || exit 1
+fi
+
+exec "$@"

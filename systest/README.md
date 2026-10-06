@@ -30,3 +30,19 @@ ansible-playbook -K -i inventory.yml check.yml -l testing
 ```
 
 Then repeat this again after some number of hours.
+
+## Adding a new machine
+
+`newhost.yml` commissions a Raspberry Pi freshly imaged with Raspberry Pi Imager (Raspberry Pi OS Lite)
+as a test host: passwordless sudo, authorized keys, a static address, UARTs, chrony and linuxptp,
+then a reboot, `install.yml` and `config.yml`. Add the host to the inventory (`install` group and its
+receiver settings), then run it with the `newhost` script:
+
+```
+./newhost -s SITE-VARS.yml [-a A.B.C.D] HOST
+```
+
+Without `-a` the host stays on DHCP.
+
+The site variables file (gateway, DNS, authorized keys, NTP sources; described at the top of the
+playbook) can also be given by `SATPULSE_SITE_VARS`. `./newhost -h` shows all options.
