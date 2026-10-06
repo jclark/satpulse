@@ -47,6 +47,7 @@ all:
       hosts:
         beaufort.lan:
         chaource2.lan:
+        crottin.lan:
         edam.lan:
         feta.lan:
         fontina.lan:
@@ -213,3 +214,8 @@ all:
       instance: ttyS2
       speed: 115200
       vendor: '"Quectel"'
+
+    # Raspberry Pi 5, no receiver yet; PPS on GPIO 18 (header pin 12)
+    crottin.lan:
+      interface: ""
+      rpi_pps_gpio: 18
