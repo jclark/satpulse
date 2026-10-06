@@ -1,15 +1,34 @@
 # Commission a freshly imaged Raspberry Pi (Raspberry Pi OS, i.e. Debian) as a
 # test host, then install and configure SatPulse on it.
 #
-# Starting point: an image written with Raspberry Pi Imager, with the user,
-# password, hostname and ssh set by the imager, the host up on DHCP, and your
-# ssh key on it (ssh-copy-id; the newhost script does this), but no
-# passwordless sudo yet. Add the host to the inventory first (install group,
-# plus any per-host settings), then run it with the newhost script
-# (newhost -h), or directly:
+# Normally run with the newhost script (newhost -h), which does the steps
+# below that need care. The host has two names while it is commissioned:
 #
-#   ansible-playbook -K -i inventory.yml newhost.yml -l HOST \
-#     -e @SITE-VARS.yml [-e ipv4_address=A.B.C.D/24]
+#   HOST.local  mDNS, the imager's hostname at its temporary DHCP address.
+#               Right from the first boot, until the static address is set.
+#   HOST.lan    DNS (inventory_hostname), the static address it is to have.
+#               Added to DNS before commissioning, so wrong until the reboot.
+#
+# Before running it:
+#   1. Add HOST.lan to DNS with the host's static address.
+#   2. Image the host with Raspberry Pi Imager: hostname HOST (the short
+#      name), user and password, ssh enabled. Connect eth0 to the network:
+#      the static address goes on eth0, and the playbook refuses to change
+#      the network without a link there. Wi-Fi set by the imager is kept.
+#   3. Add HOST.lan to the inventory (install group, plus per-host settings
+#      below). No ansible_host: the inventory name is the permanent one.
+#
+# The newhost script then puts your ssh key on the host through HOST.local
+# (recording its host key under HOST.lan), looks up the static address of
+# HOST.lan, and runs:
+#
+#   ansible-playbook -K -i inventory.yml newhost.yml -l HOST.lan \
+#     -e @SITE-VARS.yml -e ipv4_address=A.B.C.D/24 -e newhost_via=HOST.local
+#
+# newhost_via is the address to reach the host at until the reboot (connecting
+# with HostKeyAlias=HOST.lan); without it the host is reached by its inventory
+# name. Without ipv4_address the host stays on DHCP and ipv4_gateway,
+# ipv4_dns and ipv4_search are not needed.
 #
 # The site vars file supplies what is specific to a network and is not kept
 # here: ipv4_gateway, ipv4_dns, ipv4_search, authorized_keys (a list of public
@@ -19,12 +38,13 @@
 # The playbook sets up passwordless sudo and the authorized keys, the UARTs
 # per docs/setup/rpi-uart.md, chrony with the SatPulse refclock, and linuxptp
 # with the replacement ptp4l.service (ptp4l is configured but not enabled).
-# If ipv4_address is given, it also sets a static address (a NetworkManager
-# profile replacing the imager's DHCP profile); otherwise DHCP is left alone,
-# and ipv4_gateway, ipv4_dns and ipv4_search are not needed. Then it reboots. It then runs install.yml and
-# config.yml for the host; after that start.yml and check.yml can be run.
+# With ipv4_address it sets a static address on eth0 (a NetworkManager profile
+# replacing the imager's wired DHCP profile). Then it reboots, reconnects at
+# the static address, and runs install.yml and config.yml for the host; after
+# that start.yml and check.yml can be run. It can be run again on a
+# commissioned host.
 #
-# Optional per-host variables:
+# Optional per-host variables (in the inventory):
 #   rpi_disable_bt: true on a Pi 4/CM4 so that ttyAMA0 is on pins 8/10 (default)
 #   rpi_uart_overlays: extra UART overlays, e.g. [uart3] (CM4) or [uart3-pi5] (CM5)
 #   rpi_pps_gpio: GPIO number for a pps-gpio overlay (default none)
@@ -40,17 +60,23 @@
         that: ansible_limit is defined
         fail_msg: "newhost.yml must be run with -l HOST"
 
+    - name: Connect through the temporary address until the reboot
+      when: newhost_via is defined
+      set_fact:
+        ansible_host: "{{ newhost_via }}"
+        ansible_ssh_extra_args: "-o HostKeyAlias={{ inventory_hostname }}"
+
 - name: Commission a new Raspberry Pi test host
   hosts: all
   become: yes
+  # Defaults for the per-host rpi_* variables are given where they are used:
+  # play vars would override the inventory.
   vars:
-    rpi_disable_bt: true
-    rpi_uart_overlays: []
-    rpi_pps_gpio: ""
     ipv4_search: ""
     authorized_keys: []
     chrony_sources: {}
     boot_dir: /boot/firmware
+    net_interface: "{{ interface | default('eth0', true) }}"
 
   tasks:
     - name: Check required variables
@@ -59,6 +85,20 @@
           - ansible_os_family == "Debian"
           - ipv4_address is not defined or (ipv4_address is search('/') and ipv4_gateway is defined and ipv4_dns is defined)
         fail_msg: "Needs Debian (Raspberry Pi OS); a static ipv4_address needs a /prefix, ipv4_gateway and ipv4_dns"
+
+    - name: Read the link state of {{ net_interface }}
+      when: ipv4_address is defined
+      command: "cat /sys/class/net/{{ net_interface }}/carrier"
+      register: carrier
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Require a link on {{ net_interface }} for the static address
+      when: ipv4_address is defined
+      assert:
+        that: carrier.stdout == "1"
+        fail_msg: "{{ net_interface }} has no link: connect it to the network, then run this again"
 
     - name: Read the board model
       slurp:
@@ -185,14 +225,14 @@
           dtparam=uart0=on
           {% else %}
           enable_uart=1
-          {% if rpi_disable_bt %}
+          {% if rpi_disable_bt | default(true) %}
           dtoverlay=disable-bt
           {% endif %}
           {% endif %}
-          {% for o in rpi_uart_overlays %}
+          {% for o in rpi_uart_overlays | default([]) %}
           dtoverlay={{ o }}
           {% endfor %}
-          {% if rpi_pps_gpio | string | length > 0 %}
+          {% if rpi_pps_gpio | default('') | string | length > 0 %}
           dtoverlay=pps-gpio,gpiopin={{ rpi_pps_gpio }}
           {% endif %}
       register: config_txt
@@ -213,9 +253,10 @@
       systemd:
         name: hciuart
         enabled: no
-      when: hciuart.stat.exists and rpi_disable_bt and not rpi_bcm2712
+      when: hciuart.stat.exists and (rpi_disable_bt | default(true)) and not rpi_bcm2712
 
     # Network: static address as a NetworkManager profile, replacing the imager's
+    # wired DHCP profile (its Wi-Fi profile, if any, is kept)
 
     - name: Static address
       when: ipv4_address is defined
@@ -224,10 +265,10 @@
           copy:
             content: |
               [connection]
-              id={{ interface | default('eth0', true) }}
+              id={{ net_interface }}
               type=ethernet
               autoconnect-priority=10
-              interface-name={{ interface | default('eth0', true) }}
+              interface-name={{ net_interface }}
 
               [ethernet]
 
@@ -243,7 +284,7 @@
               [ipv6]
               addr-gen-mode=default
               method=auto
-            dest: "/etc/NetworkManager/system-connections/{{ interface | default('eth0', true) }}.nmconnection"
+            dest: "/etc/NetworkManager/system-connections/{{ net_interface }}.nmconnection"
             mode: '0600'
           register: nm_profile
 
@@ -253,13 +294,14 @@
             dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
             mode: '0644'
 
-        - name: Find the imager's netplan files
+        - name: Find the imager's wired netplan files
           find:
             paths: /etc/netplan
             patterns: "*.yaml"
+            contains: '^\s*ethernets:'
           register: netplan_files
 
-        - name: Remove the imager's netplan files
+        - name: Remove the imager's wired netplan files
           file:
             path: "{{ item.path }}"
             state: absent

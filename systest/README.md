@@ -35,14 +35,29 @@ Then repeat this again after some number of hours.
 
 `newhost.yml` commissions a Raspberry Pi freshly imaged with Raspberry Pi Imager (Raspberry Pi OS Lite)
 as a test host: passwordless sudo, authorized keys, a static address, UARTs, chrony and linuxptp,
-then a reboot, `install.yml` and `config.yml`. Add the host to the inventory (`install` group and its
-receiver settings), then run it with the `newhost` script:
+then a reboot, `install.yml` and `config.yml`.
+
+While it is commissioned the host has two names: `HOST.lan`, its permanent name, which DNS gives
+the static address it is to have, and `HOST.local`, the mDNS name it announces at its temporary DHCP
+address. So, first:
+
+1. Add `HOST.lan` to DNS with the static address.
+2. Image the Pi with Raspberry Pi Imager: hostname `HOST`, user and password, ssh enabled. Connect
+   eth0 to the network (the static address goes on eth0) and boot it.
+3. Add `HOST.lan` to the inventory: the `install` group, its receiver settings, and any `rpi_*`
+   settings (UART overlays, PPS GPIO; listed at the top of the playbook). No `ansible_host`.
+
+Then run:
 
 ```
-./newhost -s SITE-VARS.yml [-a A.B.C.D] HOST
+./newhost -s SITE-VARS.yml HOST
 ```
 
-Without `-a` the host stays on DHCP.
+It looks up the static address, connects as `HOST.local` (putting your ssh key on the host first if
+needed), runs the playbook, which reconnects at the static address after the reboot, and asks for
+the login and sudo passwords as it needs them. `--via ADDR` reaches the host at ADDR instead of
+`HOST.local`; `--dhcp` leaves it on DHCP; `--address` overrides the DNS address. It can be run again
+on a commissioned host.
 
 The site variables file (gateway, DNS, authorized keys, NTP sources; described at the top of the
 playbook) can also be given by `SATPULSE_SITE_VARS`. `./newhost -h` shows all options.
