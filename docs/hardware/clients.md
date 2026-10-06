@@ -33,8 +33,17 @@ The Raspberry Pi 5 and the CM5 have the same Ethernet MAC, provided by the RP1 c
 The CM5 and CM4 both have the same Ethernet PHY, which provides PHY-level hardware timestamping using the `bcm-phy-ptp` driver.
 (This means that on a CM5 eth0 has two PHCs, one MAC-level and one PHY-level.)
 
-The PHY-level hardware timestamping is necessary to support the PPS input pin needed to work as a PTP server,
-but the MAC-level hardware timestamping is sufficient to work as a PTP client.
+Only the PHY-level hardware timestamping has support for a PPS input pin,
+which is needed to work as a PTP server.
+The MAC PHC works better for a PTP client,
+because the time of the system clock can be more accurately compared with the time of the MAC PHC than with the time of the PHY PHC,
+which allows the system clock to be more accurately synchronized with the MAC PHC than the PHY PHC.
+On a CM5, Raspberry Pi OS will by default use the PHY PHC for timestamping network packets.
+Since kernel 6.18, it is possible to make it use the MAC PHC:
+
+```sh
+sudo ethtool --set-hwtimestamp-cfg eth0 index 1 qualifier precise
+```
 
 Note that the Raspberry Pi 4 has a slightly different PHY from the CM4 and does not support hardware timestamping at either the PHY or MAC level.
 
