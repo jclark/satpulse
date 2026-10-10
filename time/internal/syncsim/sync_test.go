@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"math"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 
@@ -25,6 +26,14 @@ func (r *sampleRecorder) Sample(s phcsync.Sample) {
 }
 
 func TestPHCSync(t *testing.T) {
+	// gapSimConfig applies realistic production-like noise parameters used by
+	// the gap mode test cases (see plan/gap-mode.md).
+	gapSimConfig := func(cfg *Config) {
+		cfg.PHC = PHCConfig{WhiteNoise: 2.5, RandomWalk: 2.9}
+		cfg.GPS.Jitter = 0.2
+		cfg.GPS.Sawtooth.Amp = 7.86
+		cfg.GPS.AR1 = []AR1Config{{Tau: 3400, Sigma: 3}}
+	}
 	tests := []struct {
 		name                     string
 		duration                 float64       // simulation duration in seconds
@@ -43,12 +52,15 @@ func TestPHCSync(t *testing.T) {
 		expectNMissing           *int          // expected in-sync missing-sample count (nil = don't check)
 		expectOutlierSeconds     []int         // expected sim seconds of in-sync outlier samples (nil = don't check)
 		expectIncreasingRefs     bool          // assert non-missing sample refs strictly increase (no stale/duplicate delivery)
+		expectGapSamples         int           // expected exact number of samples in gap mode (0 = don't check)
+		expectModeSequence       []phcsync.Mode // expected sequence of modes entered (nil = don't check)
 		modifyConfig             func(*Config) // optional function to modify config (nil = use defaults)
 	}{
 		{
-			name:              "single-edge mode",
-			duration:          300.0, // 5 minutes
-			maxTrackingStdDev: 20,
+			name:               "single-edge mode",
+			duration:           300.0, // 5 minutes
+			maxTrackingStdDev:  20,
+			expectModeSequence: []phcsync.Mode{phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking},
 		},
 		{
 			name:              "dual-edge 100ms pulse",
@@ -102,9 +114,91 @@ func TestPHCSync(t *testing.T) {
 			expectMinTrackingSamples: 35,     // At least 35 before outage (plus time after recovery)
 			expectResetEntered:       ptr(2), // entered reset twice (initial + after outage)
 			expectTrackingEntered:    ptr(2), // entered tracking twice (initial + after recovery)
+			expectModeSequence: []phcsync.Mode{phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking,
+				phcsync.ModeGap, phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking},
 			// After recovery: reset→converging→tracking for remaining ~50 seconds
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 10.0}} // 10s outage starting at t=60s
+			},
+		},
+		{
+			name:                     "gap mode accepts post-gap drift",
+			duration:                 120.0,
+			maxTrackingStdDev:        15,
+			maxTrackingAbsMax:        60 * time.Nanosecond,
+			expectMinTrackingSamples: 90,
+			expectGapSamples:         8, // 3 missing after the gap-triggering one + 5 recovery samples
+			expectModeSequence: []phcsync.Mode{phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking,
+				phcsync.ModeGap, phcsync.ModeTracking},
+			modifyConfig: func(cfg *Config) {
+				gapSimConfig(cfg)
+				// 4s outage: enough missing samples (>= recoveryThreshold) to
+				// trigger MAD recovery; post-gap samples reflecting drift are
+				// accepted and tracking resumes without a reset.
+				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 4.0}}
+			},
+		},
+		{
+			name:                     "gap mode still rejects outliers",
+			duration:                 120.0,
+			maxTrackingStdDev:        15,
+			maxTrackingAbsMax:        60 * time.Nanosecond,
+			expectMinTrackingSamples: 90,
+			expectGapSamples:         9, // as above plus the rejected outlier
+			expectModeSequence: []phcsync.Mode{phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking,
+				phcsync.ModeGap, phcsync.ModeTracking},
+			modifyConfig: func(cfg *Config) {
+				gapSimConfig(cfg)
+				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 4.0}}
+				// 2µs outlier during recovery: still rejected by the
+				// unconditional outlier gate despite the relaxed MAD threshold
+				cfg.Fault.Outlier = []OutlierConfig{{Time: 65, Offset: 2000}}
+			},
+		},
+		{
+			name:                     "short gap skips MAD recovery",
+			duration:                 120.0,
+			maxTrackingStdDev:        15,
+			expectMinTrackingSamples: 95,
+			expectGapSamples:         2, // one further missing sample + the present sample that ends the gap
+			expectModeSequence: []phcsync.Mode{phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking,
+				phcsync.ModeGap, phcsync.ModeTracking},
+			modifyConfig: func(cfg *Config) {
+				gapSimConfig(cfg)
+				// 2s outage < recoveryThreshold (3) missing samples: returns to
+				// tracking on the first present sample with no MAD recovery
+				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 2.0}}
+			},
+		},
+		{
+			name:               "excessive drift during gap mode triggers reset",
+			duration:           120.0,
+			expectResetEntered: ptr(2), // initial + drift check failure after recovery
+			expectModeSequence: []phcsync.Mode{phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking,
+				phcsync.ModeGap, phcsync.ModeReset, phcsync.ModeConverging, phcsync.ModeTracking},
+			modifyConfig: func(cfg *Config) {
+				gapSimConfig(cfg)
+				cfg.Sync.Track.BadSampleRunLimit = 15 // allow the 8s outage without a bad-sample reset
+				// Soft servo gains so the step is not corrected away while
+				// recovery samples are collected: the median of the collected
+				// offsets must stay above driftLimit for the drift check to see it
+				cfg.Sync.Track.Kp = 0.1
+				cfg.Sync.Track.Ki = 0.02
+				cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 8.0}}
+				// 260ns step from the end of the outage, emulated by an
+				// excursion lasting past the end of the simulation. The PHC
+				// drifts about -110ns during this gap, so post-gap offsets are
+				// ~150ns: they pass the relaxed MAD check (MAD multiple +
+				// driftLimit) so recovery samples are collected, but the median
+				// shift exceeds driftLimit (100ns) and the window shift bails
+				// out to reset
+				cfg.Fault.Excursion = []ExcursionConfig{{
+					StartTime: 67.5,
+					Duration:  60.0, // past end of simulation: a permanent step
+					Amplitude: 260,
+					Rise:      RampConfig{Duration: 0.01},
+					Fall:      RampConfig{Duration: 0.01},
+				}}
 			},
 		},
 		{
@@ -158,7 +252,7 @@ func TestPHCSync(t *testing.T) {
 			duration:                 180.0,
 			maxTrackingStdDev:        12,
 			maxTrackingAbsMax:        35 * time.Nanosecond, // With EMA, absmax ~23ns even with 9s outage
-			expectMinTrackingSamples: 150,                  // At least 150 tracking samples despite longer outage
+			expectMinTrackingSamples: 145,                  // missing and recovery samples are attributed to gap mode
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 90.0, Duration: 9.0}} // 9s outage starting at t=90s
 				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
@@ -172,7 +266,7 @@ func TestPHCSync(t *testing.T) {
 			duration:                 180.0,
 			maxTrackingStdDev:        30,
 			maxTrackingAbsMax:        180 * time.Nanosecond, // Without EMA, absmax ~139ns (5-6x worse than with EMA)
-			expectMinTrackingSamples: 150,                   // At least 150 tracking samples despite longer outage
+			expectMinTrackingSamples: 145,                   // missing and recovery samples are attributed to gap mode
 			modifyConfig: func(cfg *Config) {
 				cfg.Fault.Outage = []OutageConfig{{StartTime: 90.0, Duration: 9.0}} // 9s outage starting at t=90s
 				cfg.Sync.Track.Kp = 0.5                                             // Explicit Kp/Ki for high-jitter test config
@@ -747,8 +841,19 @@ func TestPHCSync(t *testing.T) {
 				}
 			}
 
-			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d), entered (reset=%d, converging=%d, tracking=%d), tracking stddev = %v, tracking absmax = %v",
-				stats.SampleCount, resetSamples, convergingSamples, trackingSamples, resetEntered, convergingEntered, trackingEntered, stats.TrackingStdDev, stats.TrackingAbsMax)
+			// Check gap mode sample count
+			gapSamples := stats.ModeSamples[phcsync.ModeGap]
+			if tt.expectGapSamples > 0 && gapSamples != tt.expectGapSamples {
+				t.Errorf("GapSamples = %d, want %d", gapSamples, tt.expectGapSamples)
+			}
+
+			// Check mode sequence
+			if tt.expectModeSequence != nil && !slices.Equal(stats.ModeSequence, tt.expectModeSequence) {
+				t.Errorf("ModeSequence = %v, want %v", stats.ModeSequence, tt.expectModeSequence)
+			}
+
+			t.Logf("Simulation completed: %d samples (reset=%d, converging=%d, tracking=%d, gap=%d), entered (reset=%d, converging=%d, tracking=%d), modes %v, tracking stddev = %v, tracking absmax = %v",
+				stats.SampleCount, resetSamples, convergingSamples, trackingSamples, gapSamples, resetEntered, convergingEntered, trackingEntered, stats.ModeSequence, stats.TrackingStdDev, stats.TrackingAbsMax)
 		})
 	}
 }
