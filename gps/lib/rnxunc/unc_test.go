@@ -27,7 +27,7 @@ func (s *testSink) Flush() error {
 
 func TestConvertObsVMObservation(t *testing.T) {
 	s := &testSink{}
-	c := New(s, Options{})
+	c := New(s)
 	ok, err := c.ConvertObsVM(hdr(1, 1000), obsvm(uncmsg.ObsVMObs{
 		PRN:        7,
 		PSR:        23956830.530,
@@ -69,7 +69,7 @@ func TestConvertObsVMObservation(t *testing.T) {
 
 func TestConvertObsVMGLONASSFrequency(t *testing.T) {
 	s := &testSink{}
-	c := New(s, Options{})
+	c := New(s)
 	_, err := c.ConvertObsVM(hdr(1, 1000), obsvm(
 		uncmsg.ObsVMObs{
 			SystemFreq: 0,
@@ -102,45 +102,9 @@ func TestConvertObsVMGLONASSFrequency(t *testing.T) {
 	}
 }
 
-func TestConvertObsVMOmitDoWithoutCP(t *testing.T) {
-	s := &testSink{}
-	c := New(s, Options{OmitDoWithoutCP: true})
-	_, err := c.ConvertObsVM(hdr(1, 1000), obsvm(
-		uncmsg.ObsVMObs{
-			PRN:        7,
-			PSR:        1,
-			Dopp:       3,
-			CN0:        4000,
-			LockTime:   100,
-			ChTrStatus: tracking(uncmsg.SysGPS, uncmsg.FreqGPSL1CA, false, true, false),
-		},
-		uncmsg.ObsVMObs{
-			PRN:        8,
-			PSR:        1,
-			ADR:        -2,
-			Dopp:       3,
-			CN0:        4000,
-			LockTime:   100,
-			ChTrStatus: tracking(uncmsg.SysGPS, uncmsg.FreqGPSL1CA, false, true, true),
-		},
-	))
-	if err != nil {
-		t.Fatalf("ConvertObsVM: %v", err)
-	}
-	if len(s.obs) != 2 {
-		t.Fatalf("observation count = %d, want 2", len(s.obs))
-	}
-	if s.obs[0].CP.IsSet() || s.obs[0].Do.IsSet() {
-		t.Errorf("first observation = %#v, want neither CP nor Do", s.obs[0])
-	}
-	if !s.obs[1].CP.IsSet() || !s.obs[1].Do.IsSet() {
-		t.Errorf("second observation = %#v, want both CP and Do", s.obs[1])
-	}
-}
-
 func TestConvertObsVMQZSSL2CM(t *testing.T) {
 	s := &testSink{}
-	c := New(s, Options{})
+	c := New(s)
 	_, err := c.ConvertObsVM(hdr(1, 1000), obsvm(uncmsg.ObsVMObs{
 		PRN:        193,
 		PSR:        23000000,
@@ -161,7 +125,7 @@ func TestConvertObsVMQZSSL2CM(t *testing.T) {
 
 func TestConvertObsVMSkipsUnmappedAndEmpty(t *testing.T) {
 	s := &testSink{}
-	c := New(s, Options{})
+	c := New(s)
 	ok, err := c.ConvertObsVM(hdr(1, 1000), obsvm(
 		uncmsg.ObsVMObs{
 			PRN:        7,
@@ -190,7 +154,7 @@ func TestConvertObsVMSkipsUnmappedAndEmpty(t *testing.T) {
 
 func TestConvertObsVMCarriesLostLockUntilPhase(t *testing.T) {
 	s := &testSink{}
-	c := New(s, Options{})
+	c := New(s)
 	if _, err := c.ConvertObsVM(hdr(1, 1000), obsvm(uncmsg.ObsVMObs{
 		PRN:        7,
 		PSR:        1,
