@@ -92,7 +92,7 @@ func TestMsgIDString(t *testing.T) {
 		{CfgSpdHoldID, "CFG-SPDHOLD"},
 		{CfgEphSaveID, "CFG-EPHSAVE"},
 		{CfgNumSvID, "CFG-NUMSV"},
-		{CfgFixedLlaID, "CFG-FIXEDLLA"},
+		{CfgFixedLLAID, "CFG-FIXEDLLA"},
 		{CfgAntiJamID, "CFG-ANTIJAM"},
 		{CfgGeoFenceID, "CFG-GEOFENCE"},
 		{CfgCarrSmthID, "CFG-CARRSMOOTH"},
