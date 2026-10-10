@@ -18,6 +18,7 @@ type ResponseClass struct {
 	Kind     ResponseKind
 	Sentence string // sentence name (e.g. "PQTMCFGPPS")
 	Error    string // non-empty for ResponseError
+	ErrCode  string // raw error code for ResponseError ("1", "2", "3")
 }
 
 // ClassifyResponse classifies a received NMEA payload (between $ and *).
@@ -46,7 +47,10 @@ func ClassifyResponse(recv string) ResponseClass {
 		}
 		return ResponseClass{Kind: ResponseOK, Sentence: name}
 	case "ERROR":
-		return ResponseClass{Kind: ResponseError, Sentence: name, Error: errorMessage(errCode)}
+		if hasMore {
+			errCode, _, _ = strings.Cut(errCode, ",")
+		}
+		return ResponseClass{Kind: ResponseError, Sentence: name, Error: errorMessage(errCode), ErrCode: errCode}
 	}
 	return ResponseClass{Kind: ResponseData, Sentence: name}
 }
