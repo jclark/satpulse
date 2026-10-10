@@ -5,6 +5,7 @@ import (
 	"math"
 	"regexp"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -269,15 +270,17 @@ func (np *nativeConfigProps) updateFromProps(props *gpsprot.ConfigProps, survey 
 	return nil
 }
 
-var ppsRegexp = regexp.MustCompile(
-	`^CONFIG PPS (?:DISABLE|(ENABLE[23]?) (GPS|BDS|GAL|GLO) (POSITIVE|NEGATIVE) ([1-9]\d{0,5}) ([1-9]\d{0,8}) (-?\d{0,6}) (-?\d{0,6}))$`)
+var ppsRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(
+		`^CONFIG PPS (?:DISABLE|(ENABLE[23]?) (GPS|BDS|GAL|GLO) (POSITIVE|NEGATIVE) ([1-9]\d{0,5}) ([1-9]\d{0,8}) (-?\d{0,6}) (-?\d{0,6}))$`)
+})
 
 type ppsProp struct {
 	command string
 }
 
 func (p *ppsProp) updateFromCommand(cmd string) error {
-	if !ppsRegexp.MatchString(cmd) {
+	if !ppsRegexp().MatchString(cmd) {
 		return fmt.Errorf("invalid PPS command format: %s", cmd)
 	}
 	p.command = cmd
@@ -296,7 +299,7 @@ func (p *ppsProp) convertToProps(props *gpsprot.ConfigProps) {
 		return // No command to parse
 	}
 
-	matches := ppsRegexp.FindStringSubmatch(p.command)
+	matches := ppsRegexp().FindStringSubmatch(p.command)
 	if matches == nil {
 		panic("invalid PPS command format: " + p.command)
 	}
@@ -414,7 +417,7 @@ func (p *ppsProp) updateFromProps(props *gpsprot.ConfigProps) error {
 	// userDelay preserved from existing command (native-only field)
 	userDelay := "0" // default value
 	if p.command != "" {
-		matches := ppsRegexp.FindStringSubmatch(p.command)
+		matches := ppsRegexp().FindStringSubmatch(p.command)
 		if matches[7] != "" {
 			userDelay = matches[7]
 		}
@@ -446,10 +449,12 @@ type signalGroupProp struct {
 	slave  opt.Val[uint8]
 }
 
-var signalGroupRegexp = regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(?: (\d\d?))?$`)
+var signalGroupRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^CONFIG SIGNALGROUP ([1-9]\d?)(?: (\d\d?))?$`)
+})
 
 func (p *signalGroupProp) updateFromCommand(cmd string) error {
-	matches := signalGroupRegexp.FindStringSubmatch(cmd)
+	matches := signalGroupRegexp().FindStringSubmatch(cmd)
 	if matches == nil {
 		return fmt.Errorf("invalid CONFIG SIGNALGROUP format: %s", cmd)
 	}
@@ -493,7 +498,9 @@ func (p *signalGroupProp) signalSet() gpsprot.SignalSet {
 	return signalGroups[p.master]
 }
 
-var sbasRegexp = regexp.MustCompile(`^CONFIG SBAS (?:(DISABLE|ENABLE(?:| [A-Z][A-Z0-9_]*))|(TIMEOUT \d+))$`)
+var sbasRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^CONFIG SBAS (?:(DISABLE|ENABLE(?:| [A-Z][A-Z0-9_]*))|(TIMEOUT \d+))$`)
+})
 
 type sbasProp struct {
 	enable  string // e.g. "DISABLE" or "ENABLE AUTO"
@@ -510,7 +517,7 @@ func (p *sbasProp) enabled() bool {
 }
 
 func (p *sbasProp) updateFromCommand(cmd string) error {
-	matches := sbasRegexp.FindStringSubmatch(cmd)
+	matches := sbasRegexp().FindStringSubmatch(cmd)
 	if matches == nil {
 		return fmt.Errorf("invalid SBAS command format: %s", cmd)
 	}
@@ -588,7 +595,9 @@ func (p *sbasProp) updateFromProps(props *gpsprot.ConfigProps) error {
 // - MASK/UNMASK <signal>: system or frequency (group 4), or PRN (no capture, ignored)
 // - MASK <subtype> <value>: unknown subtypes like CN0, RTK (no capture, ignored)
 // - <System>MaskPrn:<prn>,<prn>,...: PRN mask query response format (no capture, ignored)
-var maskRegexp = regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Za-z0-9]*)|[A-Z]+ PRN \d+))|MASK [A-Z][A-Z0-9]* [A-Z0-9.]+|[A-Z]+MaskPrn:[1-9]\d*(?:,[1-9]\d*)*,?)$`)
+var maskRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^(?:MASK (-?\d+(?:\.\d+)?)|((MASK|UNMASK) (?:([A-Z][A-Za-z0-9]*)|[A-Z]+ PRN \d+))|MASK [A-Z][A-Z0-9]* [A-Z0-9.]+|[A-Z]+MaskPrn:[1-9]\d*(?:,[1-9]\d*)*,?)$`)
+})
 
 type maskProp struct {
 	elevationMask opt.Val[float64] // elevation angle in degrees
@@ -596,7 +605,7 @@ type maskProp struct {
 }
 
 func (p *maskProp) updateFromCommand(cmd string) error {
-	matches := maskRegexp.FindStringSubmatch(cmd)
+	matches := maskRegexp().FindStringSubmatch(cmd)
 	if matches == nil {
 		return fmt.Errorf("invalid mask command format: %s", cmd)
 	}
@@ -702,15 +711,17 @@ func generateMaskCommands(signals gpsprot.SignalSet, sigGroupSignals gpsprot.Sig
 
 // It accepts three numbers after "MODE BASE TIME", rather than two as documented.
 // Don't know what the third one means.
-var modeRegexp = regexp.MustCompile(
-	`^MODE (?:(ROVER(?: [A-Z]+)?(?: [A-Z]+)?)|(HEADING2(?: [A-Z]+)?)|(BASE)(?: (\d+))?(?: TIME (\d+)(?: (\d+(?: \d+)?))?| (-?\d+\.?\d*) (-?\d+\.?\d*) (-?\d+\.?\d*))?)$`)
+var modeRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(
+		`^MODE (?:(ROVER(?: [A-Z]+)?(?: [A-Z]+)?)|(HEADING2(?: [A-Z]+)?)|(BASE)(?: (\d+))?(?: TIME (\d+)(?: (\d+(?: \d+)?))?| (-?\d+\.?\d*) (-?\d+\.?\d*) (-?\d+\.?\d*))?)$`)
+})
 
 type modeProp struct {
 	command string
 }
 
 func (p *modeProp) updateFromCommand(cmd string) error {
-	if !modeRegexp.MatchString(cmd) {
+	if !modeRegexp().MatchString(cmd) {
 		return fmt.Errorf("invalid MODE command format: %s", cmd)
 	}
 	p.command = cmd
@@ -722,7 +733,7 @@ func (p *modeProp) convertToProps(props *gpsprot.ConfigProps) {
 		return
 	}
 
-	matches := modeRegexp.FindStringSubmatch(p.command)
+	matches := modeRegexp().FindStringSubmatch(p.command)
 	if matches == nil {
 		// command was validated in updateFromCommand, so this shouldn't happen
 		panic("invalid MODE command format: " + p.command)
@@ -820,7 +831,7 @@ func (p *modeProp) updateFromProps(props *gpsprot.ConfigProps, survey gpsprot.Su
 	}
 	var matches []string
 	if p.command != "" {
-		matches = modeRegexp.FindStringSubmatch(p.command)
+		matches = modeRegexp().FindStringSubmatch(p.command)
 		if matches == nil {
 			panic("invalid MODE command format: " + p.command)
 		}
@@ -880,7 +891,9 @@ func (p *portProp) updateFromCommand(cmd string) error {
 
 // comRegexp matches CONFIG COMx responses such as "CONFIG COM1 115200"
 // or "CONFIG COM1 115200 8 n 1".
-var comRegexp = regexp.MustCompile(`^CONFIG (COM[1-9]) ([1-9]\d{2,6})(?: .*)?$`)
+var comRegexp = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^CONFIG (COM[1-9]) ([1-9]\d{2,6})(?: .*)?$`)
+})
 
 // comProp records the configured baud rate of each COM port from the
 // $CONFIG,COMx,... query responses.
@@ -901,7 +914,7 @@ func comIndex(port string) int {
 }
 
 func (p *comProp) updateFromCommand(cmd string) error {
-	m := comRegexp.FindStringSubmatch(cmd)
+	m := comRegexp().FindStringSubmatch(cmd)
 	if m == nil {
 		return fmt.Errorf("could not parse COM port config: %s", cmd)
 	}

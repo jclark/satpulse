@@ -11,7 +11,7 @@ import (
 // loadFromStringErr is like loadFromString but returns nil on error.
 func loadFromStringErr(t *testing.T, content string) *Parsed {
 	t.Helper()
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := dir + "/test.toml"
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
