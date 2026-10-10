@@ -71,27 +71,27 @@ var _ SerialOutPort = (*SerialConn)(nil)
 
 // OpenSerial opens a serial port at the given path and speed.
 // speed can be 0 meaning to use the current speed.
-// It returns the actual speed configured on the device; for devices
-// that are not TTYs the returned speed is 0.
-func OpenSerial(lg *slog.Logger, path string, speed int) (*SerialConn, int, error) {
+// The connection's Speed reports the actual speed configured on the device,
+// or 0 for devices that are not TTYs.
+func OpenSerial(lg *slog.Logger, path string, speed int) (*SerialConn, error) {
 	t, safe, err := openTerm(path, speed)
 	if err == nil {
 		c := newSerialConn(lg, t, t.DevKind())
 		c.setSafeWriteTime(safe, "open")
-		return c, t.Speed(), nil
+		return c, nil
 	}
 	if !errors.Is(err, term.ErrNotATTY) {
-		return nil, 0, err
+		return nil, err
 	}
 	pf, wf, kind, perr := term.OpenFallback(path, readTimeout)
 	if perr != nil {
-		return nil, 0, fmt.Errorf("%s and %w", perr, term.ErrNotATTY)
+		return nil, fmt.Errorf("%s and %w", perr, term.ErrNotATTY)
 	}
 	var f ioFile = wf
 	if pf != nil {
 		f = newPollingFile(pf, readTimeout)
 	}
-	return newSerialConn(lg, f, kind), 0, nil
+	return newSerialConn(lg, f, kind), nil
 }
 
 func newSerialConn(lg *slog.Logger, f ioFile, kind term.DevKind) *SerialConn {

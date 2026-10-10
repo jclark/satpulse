@@ -248,7 +248,7 @@ type Session struct {
 	runCtx       context.Context
 	runCancel    context.CancelFunc
 	connWg       sync.WaitGroup
-	conn         gpsio.Conn
+	conn         Conn
 	portLock     gpsio.OutPortLock
 	pb           *bcast.Bcast[scan.Packet]
 	configCh     chan configRequest
@@ -486,11 +486,26 @@ func (s *Session) enterReconnect() bool {
 	return true
 }
 
+// Conn is a receiver connection with the capabilities a Session needs.
+type Conn interface {
+	gpsio.Conn
+	stream.PacketWriter
+	// Speed returns the current host serial port speed, or 0 if there is none.
+	Speed() int
+	// SetPacketLog takes ownership of the log's output half. The connection
+	// must call SemiClose exactly once after its last LogOutput, normally
+	// when stopped. A connection with no output logging must complete that
+	// half immediately. Attach the log before starting the packet pipeline.
+	SetPacketLog(*gpsio.PacketLog)
+}
+
+var _ Conn = (*gpsio.SerialConn)(nil)
+var _ Conn = (*gpsio.NetConn)(nil)
+
 // Opener opens (and re-opens) the connection to the receiver.
 type Opener interface {
-	// Open connects to the receiver. It returns the host serial port
-	// speed, or 0 if the transport has none.
-	Open(ctx context.Context, lg *slog.Logger) (conn gpsio.Conn, speed int, err error)
+	// Open connects to the receiver.
+	Open(ctx context.Context, lg *slog.Logger) (Conn, error)
 	// Socket reports a proxy connection: sets ConfigOptions.Socket
 	// for gpscfg.Configure.
 	Socket() bool
@@ -512,18 +527,18 @@ const deviceWaitInterval = 200 * time.Millisecond
 // last open error is returned. The device is assumed to come back
 // under the same node: a receiver that re-enumerates under a
 // different name is not found (known limitation).
-func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (gpsio.Conn, int, error) {
+func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (Conn, error) {
 	for {
-		conn, speed, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
+		conn, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
 		if err == nil {
-			return conn, speed, nil
+			return conn, nil
 		}
 		if !errors.Is(err, fs.ErrNotExist) {
-			return nil, 0, err
+			return nil, err
 		}
 		select {
 		case <-ctx.Done():
-			return nil, 0, err
+			return nil, err
 		case <-time.After(deviceWaitInterval):
 		}
 	}
@@ -531,24 +546,6 @@ func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (gpsio.Conn, in
 
 // Socket reports that a serial device is not a proxy connection.
 func (o SerialOpener) Socket() bool { return false }
-
-// SocketOpener connects to a unix socket, typically the proxy.socket
-// of a running satpulsed.
-type SocketOpener struct {
-	Path string
-}
-
-// Open connects to the unix socket.
-func (o SocketOpener) Open(_ context.Context, _ *slog.Logger) (gpsio.Conn, int, error) {
-	conn, err := gpsio.OpenSocket(o.Path)
-	if err != nil {
-		return nil, 0, err
-	}
-	return conn, 0, nil
-}
-
-// Socket reports that this is a proxy connection.
-func (o SocketOpener) Socket() bool { return true }
 
 // Connect opens a connection to a GPS receiver via op. It is
 // asynchronous: it returns once the transport is open, and probe
@@ -588,7 +585,7 @@ func (s *Session) connect(gen int, op Opener, vendors []gpsreg.Vendor) error {
 	s.lifecycleMu.Unlock()
 	s.emitStateChange()
 	ctx, cancel := context.WithTimeout(context.Background(), connectOpenTimeout)
-	conn, speed, err := op.Open(ctx, s.lg)
+	conn, err := op.Open(ctx, s.lg)
 	cancel()
 	s.lifecycleMu.Lock()
 	s.mu.Lock()
@@ -614,7 +611,7 @@ func (s *Session) connect(gen int, op Opener, vendors []gpsreg.Vendor) error {
 	s.vendors = slices.Clone(vendors)
 	s.connCtx = connCtx
 	s.connCancel = connCancel
-	s.connWg.Go(func() { s.connManager(connCtx, conn, speed) })
+	s.connWg.Go(func() { s.connManager(connCtx, conn) })
 	s.mu.Unlock()
 	s.lifecycleMu.Unlock()
 	return nil
@@ -634,9 +631,9 @@ const (
 // pipeline at a time, reconnecting after a reset-bearing operation
 // kills the transport (a reset over USB re-enumerates the device), and
 // exits when the connection ends.
-func (s *Session) connManager(connCtx context.Context, conn gpsio.Conn, speed int) {
+func (s *Session) connManager(connCtx context.Context, conn Conn) {
 	for {
-		switch s.runConn(connCtx, conn, speed) {
+		switch s.runConn(connCtx, conn) {
 		case verdictDisconnect:
 			return
 		case verdictReconnect:
@@ -644,7 +641,7 @@ func (s *Session) connManager(connCtx context.Context, conn gpsio.Conn, speed in
 				return
 			}
 			var err error
-			conn, speed, err = s.reopen(connCtx)
+			conn, err = s.reopen(connCtx)
 			if err != nil {
 				if connCtx.Err() == nil {
 					s.lg.Warn("could not reconnect to the GPS", "err", err)
@@ -661,44 +658,39 @@ func (s *Session) connManager(connCtx context.Context, conn gpsio.Conn, speed in
 
 // reopen re-opens the transport after a reset-bearing operation killed
 // it. Each attempt gets reopenTimeout for the device node to come back.
-func (s *Session) reopen(connCtx context.Context) (gpsio.Conn, int, error) {
+func (s *Session) reopen(connCtx context.Context) (Conn, error) {
 	var lastErr error
 	for i := range maxReopenAttempts {
 		if i > 0 {
 			select {
 			case <-connCtx.Done():
-				return nil, 0, connCtx.Err()
+				return nil, connCtx.Err()
 			case <-time.After(reopenDelay):
 			}
 		}
 		ctx, cancel := context.WithTimeout(connCtx, reopenTimeout)
-		conn, speed, err := s.op.Open(ctx, s.lg)
+		conn, err := s.op.Open(ctx, s.lg)
 		cancel()
 		if err == nil {
-			return conn, speed, nil
+			return conn, nil
 		}
 		lastErr = err
 		if connCtx.Err() != nil {
-			return nil, 0, connCtx.Err()
+			return nil, connCtx.Err()
 		}
 	}
-	return nil, 0, lastErr
+	return nil, lastErr
 }
 
 // runConn wires the packet pipeline for an open transport, runs the
 // packetWorker until the run ends, and tears the pipeline down.
-func (s *Session) runConn(connCtx context.Context, conn gpsio.Conn, speed int) connVerdict {
+func (s *Session) runConn(connCtx context.Context, conn Conn) connVerdict {
 	runCtx, runCancel := context.WithCancel(connCtx)
 	portLock := gpsio.NewOutPortLock(conn)
 	pCh := make(chan scan.Packet, 1)
 	pktFormats := gpsreg.CreatePacketFormats(s.vendors)
 	pLog, plCh := gpsio.NewPacketLog(pktFormats, packetLogChannelSize)
-	if sc, ok := conn.(*gpsio.SerialConn); ok {
-		sc.SetPacketLog(pLog)
-	} else {
-		// No output-side packet logging on this transport.
-		pLog.SemiClose()
-	}
+	conn.SetPacketLog(pLog)
 	s.connWg.Go(func() { gpsio.Scan(runCtx, s.lg, conn, pCh, pLog, pktFormats) })
 	pb := bcast.New(pCh)
 	s.connWg.Go(func() { pb.Run(runCtx, s.lg) })
@@ -708,6 +700,7 @@ func (s *Session) runConn(connCtx context.Context, conn gpsio.Conn, speed int) c
 	// reconnect must not resume from the dead connection's state.
 	procs := gpsreg.CreatePacketProcessors(s.vendors)
 	configCh := make(chan configRequest)
+	speed := conn.Speed()
 	s.mu.Lock()
 	s.conn = conn
 	s.runCtx = runCtx
@@ -750,7 +743,7 @@ func (ReceiverEvent) EventName() EventName { return EventReceiver }
 // packetWorker is the single goroutine that owns packet processing.
 // It runs an initial probe, then loops processing packets for message decoding.
 // Configuration requests arrive via configCh and are executed inline.
-func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-chan scan.Packet, configCh <-chan configRequest, portLock gpsio.OutPortLock) connVerdict {
+func (s *Session) packetWorker(runCtx context.Context, conn Conn, procs map[gpsprot.Tag]gpsprot.PacketProcessor, sub <-chan scan.Packet, configCh <-chan configRequest, portLock gpsio.OutPortLock) connVerdict {
 	te := &timeEmitter{sink: s.sink}
 	tt := gpsprot.NewTimeTicker(te, ptime.LeapSecond2016())
 	mh := &msgHandler{sink: s.sink, tt: tt}
@@ -1067,7 +1060,7 @@ func (s *Session) StartCorrections(cfg CorrectionSource) error {
 	s.corrCancel = corrCancel
 	wg := &sync.WaitGroup{}
 	s.corrWg = wg
-	sink := stream.NewPull(source, s.lg, packetWriter(conn), portLock, gpsreg.CreateCorrectionFormats(), nmeaInterval)
+	sink := stream.NewPull(source, s.lg, conn, portLock, gpsreg.CreateCorrectionFormats(), nmeaInterval)
 	s.setCorrStateLocked(CorrEvent{
 		State:      "connecting",
 		Mode:       cfg.Mode,
@@ -1159,22 +1152,6 @@ func (s *Session) stopCorrLocked() {
 	wg.Wait()
 	s.mu.Lock()
 	s.corrStopping = false
-}
-
-// packetWriter adapts conn for stream.NewPull. SerialConn implements
-// WritePacket itself, logging the write with its known format; other
-// transports have no output packet log, so a plain Write suffices.
-func packetWriter(conn gpsio.Conn) stream.PacketWriter {
-	if pw, ok := conn.(stream.PacketWriter); ok {
-		return pw
-	}
-	return plainWriter{conn}
-}
-
-type plainWriter struct{ gpsio.Conn }
-
-func (w plainWriter) WritePacket(p []byte, _ gpsprot.PacketFormat) (int, error) {
-	return w.Write(p)
 }
 
 // State returns the current connection state.
@@ -1514,7 +1491,7 @@ type workerLine struct {
 // sendWorker owns conn.Write, Correlator, line buffer, and the broadcast
 // subscriber. It runs until stepCh is closed and all expected responses
 // have arrived (or a deadline expires), or workerCtx is cancelled.
-func (s *Session) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn gpsio.Conn, portLock gpsio.OutPortLock, stepCh <-chan sendStepReq, session int) {
+func (s *Session) sendWorker(workerCtx context.Context, pb *bcast.Bcast[scan.Packet], conn Conn, portLock gpsio.OutPortLock, stepCh <-chan sendStepReq, session int) {
 	sub := pb.Subscribe()
 	defer pb.Unsubscribe(sub)
 	var port gpsio.OutPort
@@ -1778,13 +1755,11 @@ func (s *Session) sendConfigRequest(ctx context.Context, target *gpsprot.ConfigT
 
 // emitSpeed reads the current host serial port speed and emits gps:speed.
 // Called after any gpscfg.Configure since that is the only path that can
-// change the host speed (via SerialConn.WriteThenChangeSpeed).
-func (s *Session) emitSpeed(conn gpsio.Conn) {
+// change the host speed (via SerialOutPort.WriteThenChangeSpeed).
+func (s *Session) emitSpeed(conn Conn) {
+	speed := conn.Speed()
 	s.mu.Lock()
-	if sc, ok := conn.(*gpsio.SerialConn); ok {
-		s.speed = sc.Speed()
-	}
-	speed := s.speed
+	s.speed = speed
 	s.mu.Unlock()
 	s.emit(SpeedEvent(speed))
 }
