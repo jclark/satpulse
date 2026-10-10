@@ -15,6 +15,10 @@ const (
 	CaptureAssert Mode = 0x01
 	// CaptureClear is the mode bit for clear-edge capture.
 	CaptureClear Mode = 0x02
+	// EchoAssert is the mode bit for feeding assert edges back to an output.
+	EchoAssert Mode = 0x40
+	// EchoClear is the mode bit for feeding clear edges back to an output.
+	EchoClear Mode = 0x80
 )
 
 // Edge describes the most recently captured edge of one polarity.
