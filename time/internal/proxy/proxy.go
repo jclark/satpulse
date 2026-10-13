@@ -209,6 +209,17 @@ func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg sv
 func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet]) {
 	defer lg.Debug("about to exit proxy connection writing worker goroutine")
 	defer conn.Close()
+	// Close conn on ctx cancellation to unblock a Write to a client that has
+	// stopped reading. Closing conn also unblocks connReadWorker.
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
+		}
+	}()
+	defer close(done)
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
 	for {
