@@ -46,11 +46,14 @@ all:
         testing:
       hosts:
         beaufort.lan:
+        chaource2.lan:
+        crottin.lan:
         edam.lan:
         feta.lan:
         fontina.lan:
         montasio.lan:
         raschera.lan:
+        tomino.lan:
     virtual_hosts:
       hosts:
         abondance-ttySEP0.lan:
@@ -139,6 +142,12 @@ all:
       config: "false"
       vendor: '"Allystar"'
 
+    # chaource's CM4 booting Raspberry Pi OS from SD; same Allystar TAU1201 on UART
+    chaource2.lan:
+      speed: 115200
+      config: "false"
+      vendor: '"Allystar"'
+
     # UM960 on UART
     wensleydale.lan:
       speed: 115200
@@ -198,3 +207,15 @@ all:
 
     feta.lan:
       interface: ""
+
+    # Quectel LC29H(AA) on Waveshare HAT; Radxa ZERO 3E (PHC has no SDPs, PPS via GPIO)
+    tomino.lan:
+      interface: ""
+      instance: ttyS2
+      speed: 115200
+      vendor: '"Quectel"'
+
+    # Raspberry Pi 5, no receiver yet; PPS on GPIO 18 (header pin 12)
+    crottin.lan:
+      interface: ""
+      rpi_pps_gpio: 18
