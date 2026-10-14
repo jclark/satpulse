@@ -1,0 +1,85 @@
+# Compile the GPS tree with TinyGo for a bare-metal target, and run its
+# tests there under QEMU.
+#
+# riscv-qemu is the target to trust. TinyGo reports GOOS=linux on every
+# bare-metal target, so on an ARM one the _linux.go files and
+# golang.org/x/sys/unix compile against stub syscalls and a clean build
+# proves nothing; on riscv-qemu the GOARCH mismatch makes them fail.
+#
+# The TinyGo version is pinned because gps/app/bcast mirrors unexported
+# runtime layouts and checks the version it was written against. A failure
+# here after a bump is the signal to recheck that code, not to widen the pin.
+
+name: Build (TinyGo)
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+
+env:
+  TINYGO_VERSION: '0.42.0'
+  GOFLAGS: '-buildvcs=false'
+
+jobs:
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.26.x'
+
+    - name: Install TinyGo
+      run: .github/scripts/install-tinygo.sh
+
+    # Blank-import every non-main package from one main package, so that a
+    # file selected by its name alone (a _linux.go with no !baremetal tag,
+    # say) cannot slip through unbuilt.
+    - name: Compile every GPS package
+      run: |
+        mkdir -p gps/allprobe
+        go list -f '{{if ne .Name "main"}}{{.ImportPath}}{{end}}' ./gps/... | grep . |
+          awk 'BEGIN { print "package main"; print "" ; print "import (" }
+               { printf "\t_ \"%s\"\n", $0 }
+               END { print ")"; print ""; print "func main() {}" }' > gps/allprobe/main.go
+        tinygo build -target=riscv-qemu -o /dev/null ./gps/allprobe
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2]
+    steps:
+    - uses: actions/checkout@v6
+
+    - name: Set up Go
+      uses: actions/setup-go@v6
+      with:
+        go-version: '1.26.x'
+
+    - name: Install TinyGo
+      run: .github/scripts/install-tinygo.sh
+
+    - name: Install QEMU
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends qemu-system-misc
+
+    # Split across three runners because the cost here is the compiler, not
+    # the tests: TinyGo builds each test binary whole-program, with no
+    # prebuilt standard library to link against, so a package costs several
+    # seconds before a test runs. -short cuts the one test that is slow
+    # under emulation. Packages that cannot run on bare metal exclude
+    # themselves, with a build tag or a skip, rather than being named here.
+    - name: Test
+      run: |
+        pkgs=$(go list -f '{{if and (ne .Name "main") (or .TestGoFiles .XTestGoFiles)}}{{.ImportPath}}{{end}}' ./gps/... |
+          grep . | awk 'NR % 3 == ${{ matrix.shard }}')
+        tinygo test -target=riscv-qemu -short $pkgs

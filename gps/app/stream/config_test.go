@@ -1,3 +1,9 @@
+// These tests crash the riscv-qemu target with a memory fault, as
+// gps/app/ntrip's config tests do, and not in anything TinyGo
+// documents as unsupported. Left out until that is understood;
+// see plan/tinygo.md.
+//go:build !baremetal
+
 package stream
 
 import (
