@@ -60,6 +60,8 @@ The enabled-signals property looks like it has two dimensions - constellations a
 
 The achieved set is reported and reads back, so every silent intersection, every fixup, and every refusal is visible to the requester. A receiver's signal limitations need no documentation to be discovered: request and observe.
 
+**Some receivers apply signal changes only at a restart.** A receiver whose `supports` list carries `signalOnlyWithReset` stores signal changes but applies them only when the configuration is saved to non-volatile memory and the receiver reset. On such a receiver a signal request is performed only when the target also saves and resets (`--save` with `--reload` or `--reset`); otherwise it is skipped entirely - nothing is stored, the configuration is unchanged, and satpulsetool warns. The skip is deliberate: performing the stored set without the reset would leave readback reporting stored intent that is not in effect. `modeOnlyWithReset` is the same qualifier for the positioning mode (survey and fixed position).
+
 **PPP is never enabled implicitly.** Enabling a signal that carries PPP corrections - Galileo E6 for HAS - does not enable PPP itself; an explicit PPP property is planned. This is a rule about PPP, not about corrections generally: SBAS is deliberately the opposite, and enabling an SBAS signal enables SBAS.
 
 ## Message output

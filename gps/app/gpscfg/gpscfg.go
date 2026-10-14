@@ -32,7 +32,7 @@ type msgHandler struct {
 	packetCh    <-chan scan.Packet
 	msgCount    map[gpsprot.Tag]int
 	bad         badCount
-	msgIDs      map[gpsprot.Tag]map[string]bool
+	msgIDs      map[gpsprot.Tag]map[string]struct{}
 }
 
 type badCount struct {
@@ -111,10 +111,10 @@ func (mh *msgHandler) init(lg *slog.Logger, packetProcs map[gpsprot.Tag]gpsprot.
 	mh.packetCh = packetCh
 	mh.configProts = configProts
 	mh.msgCount = map[gpsprot.Tag]int{}
-	mh.msgIDs = map[gpsprot.Tag]map[string]bool{}
+	mh.msgIDs = map[gpsprot.Tag]map[string]struct{}{}
 	for tag := range packetProcs {
 		mh.msgCount[tag] = 0
-		mh.msgIDs[tag] = map[string]bool{}
+		mh.msgIDs[tag] = map[string]struct{}{}
 	}
 }
 
@@ -128,8 +128,16 @@ func (mh *msgHandler) finish(cfgProps *gpsprot.ConfigProps, rcvrInfo *gpsprot.Re
 			"firmware", rcvrInfo.Firmware, "gnss", rcvrInfo.SupportedGNSS, "configSupport", support)
 	}
 	for tag, msgIDs := range mh.msgIDs {
-		if len(msgIDs) > 0 {
-			lg.Info("message types received during configuration", "protocol", tag, "msgIDs", slices.Sorted(maps.Keys(msgIDs)))
+		if len(msgIDs) == 0 {
+			continue
+		}
+		ids := slices.Sorted(maps.Keys(msgIDs))
+		lg.Info("message types received during configuration", "protocol", tag, "msgIDs", ids)
+		if rcvrInfo != nil {
+			if rcvrInfo.MsgTypes == nil {
+				rcvrInfo.MsgTypes = map[gpsprot.Tag][]string{}
+			}
+			rcvrInfo.MsgTypes[tag] = ids
 		}
 	}
 	return &Result{
@@ -625,7 +633,7 @@ func (mh *msgHandler) packet(pkt scan.Packet) {
 		return
 	}
 
-	mh.msgIDs[tag][msgID] = true
+	mh.msgIDs[tag][msgID] = struct{}{}
 }
 
 func (mh *msgHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {

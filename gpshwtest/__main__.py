@@ -260,8 +260,17 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, serial_device: str | Non
         for p in PROPS:
             print(f"probing {p.name}", file=sys.stderr)
             pr.probe_scalar(p, initial)
-        print("probing positioning mode", file=sys.stderr)
-        pr.probe_modes(initial)
+        if "modeOnlyWithReset" not in supports:
+            print("probing positioning mode", file=sys.stderr)
+            pr.probe_modes(initial)
+        elif disruptive:
+            print("probing positioning mode (save+reset per case)", file=sys.stderr)
+            pr.mode_save_reset = True
+            pr.probe_modes(initial)
+        else:
+            print("skipping positioning mode: mode changes apply only with "
+                  "save+reset on this receiver (run with --disruptive)",
+                  file=sys.stderr)
         supported = receiver.get("supportedGNSS")
         if not supported:
             # The backend deduced no supported set (empty on the UM980); the
@@ -269,8 +278,21 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, serial_device: str | Non
             # discovered lower bound to probe instead.
             supported = sorted(initial.get("signalsEnabled") or {})
         if isinstance(supported, list) and supported:
-            print("probing signal combinations", file=sys.stderr)
-            pr.probe_signals(initial, supported)
+            if "signalOnlyWithReset" not in supports:
+                print("probing signal combinations", file=sys.stderr)
+                pr.probe_signals(initial, supported)
+            elif disruptive:
+                # Signal changes take effect only with --save --reload on
+                # this receiver: every case writes NVM and reboots, so the
+                # probes are disruptive by nature.
+                print("probing signal combinations (save+reset per case)",
+                      file=sys.stderr)
+                pr.signal_save_reset = True
+                pr.probe_signals(initial, supported)
+            else:
+                print("skipping signal combinations: signals apply only with "
+                      "save+reset on this receiver (run with --disruptive)",
+                      file=sys.stderr)
         # Message output last: raw output can saturate the link beyond
         # in-band recovery on some receivers (HW/um980.md), so the probes
         # that can wedge the session come after everything else.
