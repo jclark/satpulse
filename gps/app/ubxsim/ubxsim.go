@@ -2,12 +2,13 @@
 // speaks UBX over a byte stream, answers CFG-VALGET/VALSET/VALDEL and
 // MON-VER polls with the ACK/NAK semantics of the interface description,
 // and emits periodic nav messages by replaying a recorded packet log
-// gated by its own MSGOUT configuration. It exists to smoke-test
-// configuration wiring end to end without GPS hardware (#362); it is
+// or generating live timing messages, gated by its own MSGOUT configuration.
+// It exists to smoke-test configuration wiring end to end without GPS hardware (#362); it is
 // explicitly not a model of the config engine's semantics.
 //
 // Two independent engines feed one output stream: the NAV engine
-// (nav.go) replays the personality's message bank, and the config engine
+// (nav.go) replays the personality's message bank or (timing.go) generates
+// timing messages and nominal pulse deadlines, and the config engine
 // (cfgdb.go) answers configuration messages. Both enqueue whole packets
 // to a single writer goroutine that owns the stream; on a UART port it
 // drips the queued bytes out at the configured baud rate, so a large
@@ -19,6 +20,7 @@ package ubxsim
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"sync"
@@ -45,6 +47,7 @@ type Options struct {
 	// port is not supported.
 	Port   ucv.Port
 	Logger *slog.Logger // nil discards logs
+	Timing *Timing      // nil replays the personality's message bank
 }
 
 // Sim is a simulator instance for one personality.
@@ -71,18 +74,38 @@ func New(p *Personality, opts Options) *Sim {
 // simulator the caller closes rw (or its peer) in both directions. A pty
 // master does that with one Close; separate pipes need both ends closed.
 func (s *Sim) Run(ctx context.Context, rw io.ReadWriter) error {
+	if s.opts.Timing != nil {
+		if len(s.p.Epochs) != 0 {
+			return fmt.Errorf("timing and replay cannot be combined")
+		}
+		if _, ok := rw.(io.Closer); !ok {
+			return fmt.Errorf("timing requires a closable stream")
+		}
+	}
 	db := newCfgDB(s.p.Defaults)
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 	w := newWriter(rw, db, s.opts.Port)
 	nav := &navEngine{db: db, port: s.opts.Port, epochs: s.p.Epochs, w: w, lg: s.opts.Logger, reboot: make(chan struct{}, 1)}
 	var wg sync.WaitGroup
-	wg.Go(func() { nav.run(ctx) })
+	var timingErr error
+	wg.Go(func() {
+		if s.opts.Timing == nil {
+			nav.run(ctx)
+			return
+		}
+		timingErr = nav.runTiming(ctx, s.opts.Timing)
+		cancel()
+		rw.(io.Closer).Close()
+	})
 	// The writer cancels on a fatal write error so blocked senders unwind.
 	wg.Go(func() { defer cancel(); w.run(ctx) })
 	err := s.readLoop(ctx, db, w, nav, rw)
 	cancel()
 	wg.Wait()
+	if timingErr != nil && timingErr != context.Canceled {
+		return timingErr
+	}
 	return err
 }
 

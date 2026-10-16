@@ -385,6 +385,46 @@ a live stream mid-flight, it relays a contiguous window of the RTCM rather than
 the whole log, so these checks match a non-empty contiguous run of the source
 rather than the exact stream the fake peers guarantee.
 
+## Virtual PHC guest integration
+
+`virt_phc_guest.py` is a separate runner for the Linux `virt-phc-extts` module and
+the timing mode of `satpulsetool ubxsim`.
+It runs only inside a disposable KVM guest: it loads and unloads the module,
+disables guest network time synchronization, and changes guest realtime for the
+wrong-clock scenario.
+The normal smoke suite does not load kernel modules or change the system clock.
+
+The guest needs a `ptp_kvm` reference clock, a module built for its running kernel,
+Python 3.11 or later, and the repo-built amd64 `satpulsed` and `satpulsetool` binaries.
+The runner checks for hostname `vphc-test` and the provisioning marker
+`/root/guest-ready` before changing guest state.
+The generic local VM harness in the module repository can provision this guest
+and upload an arbitrary payload directory.
+The payload preserves these SatPulse-relative paths:
+
+- `out/amd64/satpulsed`
+- `out/amd64/satpulsetool`
+- `gps/app/ubxsim/testdata/f9p/f9p-personality.ubx`
+- `smoketest/virt_phc_guest.py`
+
+With that payload uploaded to `/root/payload`, run in the guest:
+
+```sh
+python3 /root/payload/smoketest/virt_phc_guest.py \
+    --module /root/virt-phc-extts/module/virt_phc_extts.ko \
+    --results /root/satpulse-results
+```
+
+The default `all` selection checks SDP discovery and pulse intervals, then PHC
+synchronization with the normal guest clock, an intentionally wrong guest clock,
+and `no_crosststamp=1`.
+The individual selections are `sdp`, `normal`, `wrong-clock` and `extended`.
+Synchronization must sustain ten tracking samples with offsets within 100 ns,
+recover the known frequency error relative to the reference/raw clock rate,
+and disable external timestamps on shutdown.
+The SDP check writes both rising edges in one `extts_schedule` replacement.
+Logs remain under the results directory for collection by the host harness.
+
 ## Installed systemd environment
 
 The plan also describes an installed/systemd environment that runs the

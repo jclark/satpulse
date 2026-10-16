@@ -1,4 +1,4 @@
-PY_FILES = run.py system.py ntpsock.py ntpshm.py common.py \
+PY_FILES = run.py system.py virt_phc_guest.py ntpsock.py ntpshm.py common.py \
 	program_api.py program_satpulsed.py program_satpulsewb.py \
 	provider_api.py provider_replay.py provider_ubxsim.py scenarios
 

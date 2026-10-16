@@ -27,6 +27,10 @@ type flagVars struct {
 	replayPath      string
 	portName        string
 	linkPath        string
+	timing          bool
+	phcPath         string
+	edgePath        string
+	leapSeconds     int
 }
 
 // Cmd implements the ubxsim subcommand.
@@ -42,14 +46,18 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	return "", run(lg, v)
 }
 
-const summary = `[-h|--help] [--port name] [--link path] [-r|--replay file] personality.ubx`
+const summary = `[-h|--help] [--port name] [--link path] [-r|--replay file | --timing] personality.ubx`
 
 func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, error) {
 	help := false
 	v := &flagVars{}
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
-	flags.StringVarP(&v.replayPath, "replay", "r", "", "nav replay packet log `file`; without it the simulator is silent, like a receiver with no antenna")
+	flags.StringVarP(&v.replayPath, "replay", "r", "", "nav replay packet log `file`; without replay or timing the simulator is silent")
+	flags.BoolVar(&v.timing, "timing", false, "generate live 1 Hz timing messages and virtual PHC edges (Linux)")
+	flags.StringVar(&v.phcPath, "phc", "", "use PHC `path` as timing reference instead of the system clock")
+	flags.StringVar(&v.edgePath, "edge", "/sys/devices/platform/virt-phc-extts/extts_schedule", "virtual PHC EXTTS schedule sysfs `path`")
+	flags.IntVar(&v.leapSeconds, "leap-seconds", 18, "fixed GPS-UTC offset in seconds")
 	flags.StringVar(&v.portName, "port", "uart1", "receiver port to simulate: uart1, uart2, usb or spi")
 	flags.StringVar(&v.linkPath, "link", "", "create a symlink at `path` to the pty slave")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
@@ -58,6 +66,15 @@ func parseFlags(cmdName string, args []string) (*flagVars, func(string) string, 
 	}
 	if help {
 		return nil, usageFunc, nil
+	}
+	if v.timing && v.replayPath != "" {
+		return nil, usageFunc, fmt.Errorf("--timing and --replay cannot be combined")
+	}
+	if !v.timing && (flags.Changed("phc") || flags.Changed("edge") || flags.Changed("leap-seconds")) {
+		return nil, usageFunc, fmt.Errorf("--phc, --edge and --leap-seconds require --timing")
+	}
+	if v.leapSeconds < 0 || v.leapSeconds > 127 {
+		return nil, usageFunc, fmt.Errorf("--leap-seconds must be between 0 and 127")
 	}
 	if flags.NArg() != 1 {
 		return nil, usageFunc, fmt.Errorf("expected one personality file argument")
@@ -87,6 +104,15 @@ func run(lg *slog.Logger, v *flagVars) error {
 	if p.Skipped > 0 {
 		lg.Info("replay packets with no MSGOUT key skipped", "count", p.Skipped)
 	}
+	var timing *ubxsim.Timing
+	if v.timing {
+		var closeTiming func()
+		timing, closeTiming, err = openTiming(v)
+		if err != nil {
+			return err
+		}
+		defer closeTiming()
+	}
 	master, slavePath, slave, err := openPty()
 	if err != nil {
 		return err
@@ -106,7 +132,7 @@ func run(lg *slog.Logger, v *flagVars) error {
 		<-ctx.Done()
 		master.Close()
 	}()
-	sim := ubxsim.New(p, ubxsim.Options{Port: port, Logger: lg})
+	sim := ubxsim.New(p, ubxsim.Options{Port: port, Logger: lg, Timing: timing})
 	err = sim.Run(ctx, master)
 	if ctx.Err() != nil {
 		return nil

@@ -76,7 +76,7 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/serialpps` detects PPS edges on serial modem-control input lines, by polling through `gps/app/pps` or by waiting for line changes, and reports them as `gps/app/pps` candidate edges.
 
-`gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
+`gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration. Its live timing mode fits a reference-clock mapping, schedules nominal raw-clock pulse edges, and generates UBX timing messages.
 
 ### gps/internal/
 
@@ -274,7 +274,7 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/scancmd` implements `scan` subcommand of satpulsetool. It reads a raw packet byte stream, splits it using the GPS packet scanner, and writes a JSONL packet log.
 
-`internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware.
+`internal/ubxsimcmd` implements the `ubxsim` subcommand of satpulsetool (Linux and macOS). It hosts the u-blox receiver simulator (`gps/app/ubxsim`) behind a pty for black-box testing without GPS hardware. On Linux it supplies the live timing mode with paired reference/raw samples from `ptp_kvm` or the system clock and writes nominal edge deadlines to the virtual PHC's sysfs attribute.
 
 `internal/pmccmd` implements `pmc` subcommand of satpulsetool.
 
