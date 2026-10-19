@@ -32,7 +32,7 @@ In the `[phc]` table:
 - `channel` is unchanged: selects the EXTTS channel, default 0.
 - `pin` is unchanged on a PHC with pins: default 0.
 - On a PHC with no pins, `pin` must not be given. Giving it is a
-  configuration error, "interface X has no programmable pins". With `pin`
+  configuration error, "the PHC of interface X has no pins". With `pin`
   omitted, the daemon enables EXTTS on `channel` directly.
 
 So a configuration naming only the interface works on either kind of PHC.
@@ -46,7 +46,7 @@ omits the `pin` attribute when there is no pin.
 
 - `--chan` is unchanged: default 0.
 - `--pin` is unchanged on a PHC with pins: default 0. On a PHC with no
-  pins, giving `--pin` is an error, "interface X has no programmable pins".
+  pins, giving `--pin` is an error, "the PHC of interface X has no pins".
 
 ### Modes
 
@@ -57,7 +57,7 @@ omits the `pin` attribute when there is no pin.
 - `-o`/`--perout`: likewise; on a pinless PHC it enables the channel.
   `--period 0` still disables the output.
 - `--disable`: unassigns a pin, as now. On a pinless PHC it is an error,
-  "interface X has no programmable pins": there is no assignment to undo.
+  "the PHC of interface X has no pins": there is no assignment to undo.
 - `--show` is removed and replaced by two explicit show modes,
   `--show-ifaces` and `--show-pins`. The three show forms count as modes
   in the one-mode-only check, like `-i`, `-o` and `--disable`.

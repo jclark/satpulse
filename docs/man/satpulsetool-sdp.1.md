@@ -6,7 +6,7 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 
 **satpulsetool** [*global options*] **sdp** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-extts**] [**\-o**\|**\-\-perout**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-disable**] [**\-\-show**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-disable**] [**\-\-show\-ifaces**] [**\-\-show\-pins**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-w**\|**\-\-width** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*]\
@@ -24,12 +24,14 @@ A pin can alternatively be configured for output, allowing periodic pulses align
 to be generated, for example when the pin is connected to an oscilloscope.
 This is called periodic output (perout).
 
-The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable** and **\-\-show** options.
-At most one of these options can be specified;
-if none of them are specified, the command behaves as if **\-\-show** was specified.
-In **\-\-show** mode, the **interface** is optional.
+The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable**,
+**\-\-show\-ifaces** and **\-\-show\-pins** options.
+At most one of these options can be specified.
+If none of them are specified, the command behaves as if **\-\-show\-pins** was specified
+when the *interface* argument is specified and its PHC has pins, and otherwise as if **\-\-show\-ifaces** was specified.
+In **\-\-show\-ifaces** mode, the *interface* is optional.
 In other modes, it is required.
-If the **interface** is specified, then root privileges are required.
+If the *interface* is specified, then root privileges are required.
 
 # OPTIONS
 
@@ -61,10 +63,14 @@ The **\-\-chan** option can also be used to specify the periodic output channel 
 This sets the specified pin's function to none, effectively disabling any input or output operations on that pin.
 The pin to disable is specified with the **\-\-pin** option; the default is pin 0.
 
-**\-\-show**  
-: Show information about SDPs.
-If the *interface* argument is specified, shows information about the SDPs of that interface.
-Otherwise, shows information about all interfaces with a PHC that has SDPs.
+**\-\-show\-ifaces**  
+: Show information about interfaces with a PHC.
+If the *interface* argument is specified, shows information about that interface.
+Otherwise, shows information about all interfaces with a PHC that has pins or channels.
+
+**\-\-show\-pins**  
+: Show the pins of the PHC of the *interface*.
+If **\-\-pin** is specified, shows information about that pin only.
 
 **\-t**, **\-\-timeout** *seconds*  
 : Length of time in seconds for which to read timestamp events. 
@@ -87,7 +93,8 @@ Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
 Applies only when **\-\-perout** option is specified.
 
 **\-p**, **\-\-pin** *index*\|*name*
-: Select the pin to be used by **\-\-extts**, **\-\-perout**, or **\-\-disable**. The default is 0.
+: Select the pin to be used by **\-\-extts**, **\-\-perout**, or **\-\-disable**, or shown by **\-\-show\-pins**.
+The default is 0.
 
 **\-\-chan** *index*  
 : Select the channel to be used by **\-\-extts** or **\-\-perout**. The default is 0.
@@ -100,17 +107,21 @@ Applies only when **\-\-perout** option is specified.
 
 # EXAMPLES
 
-List all interfaces with PTP hardware clock that has SDPs:
+List all interfaces with PTP hardware clock that has pins or channels:
 
     satpulsetool sdp
 
-Show SDP configuration for interface enp4s0:
+Show the pins of the PHC of interface enp4s0:
 
     satpulsetool sdp enp4s0
 
 Check input on eth0, showing timestamp events received for 2 seconds, with pin defaulting to pin 0:
 
     satpulsetool sdp -i eth0
+
+Check input on channel 1 of eth0:
+
+    satpulsetool sdp -i --chan 1 eth0
 
 Output a PPS signal on eth0, with pin defaulting to pin 0:
 

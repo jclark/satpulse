@@ -21,10 +21,15 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		return nil, err
 	}
 
-	err = clk.PinSetFunc(pinIndex, phc.PinFuncPerout, chanIndex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", pinIndex, err)
+	attrs := []any{"interface", cfg.Interface}
+	if pinIndex != nil {
+		err = clk.PinSetFunc(*pinIndex, phc.PinFuncPerout, chanIndex)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", *pinIndex, err)
+		}
+		attrs = append(attrs, "pin", *pinIndex)
 	}
+	attrs = append(attrs, "channel", cfg.Chan)
 
 	driver, err := phc.IfDriverName(cfg.Interface)
 	if err != nil {
@@ -44,26 +49,15 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	}
 
 	if cfg.Perout.Period == 0 {
-		lg.Info("periodic output disabled",
-			"interface", cfg.Interface,
-			"pin", pinIndex,
-			"channel", cfg.Chan)
+		lg.Info("periodic output disabled", attrs...)
 	} else {
+		attrs = append(attrs, "period", cfg.Perout.Period)
 		if cfg.Perout.Width > 0 {
-			lg.Info("periodic output enabled",
-				"interface", cfg.Interface,
-				"pin", pinIndex,
-				"channel", cfg.Chan,
-				"period", cfg.Perout.Period,
-				"width", cfg.Perout.Width)
+			attrs = append(attrs, "width", cfg.Perout.Width)
 		} else {
-			lg.Info("periodic output enabled",
-				"interface", cfg.Interface,
-				"pin", pinIndex,
-				"channel", cfg.Chan,
-				"period", cfg.Perout.Period,
-				"width", "default")
+			attrs = append(attrs, "width", "default")
 		}
+		lg.Info("periodic output enabled", attrs...)
 	}
 
 	return nil, nil

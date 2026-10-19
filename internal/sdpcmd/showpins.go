@@ -30,7 +30,8 @@ func (p *PinDesc) Print(f *os.File) {
 	}
 }
 
-// showPins implements --show mode when an an interface is specified
+// showPins implements --show-pins mode, and the default mode when an interface
+// is specified, which falls back to the interface record if the PHC has no pins
 func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	var result []Printer
 
@@ -47,7 +48,10 @@ func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 
 	nPins := clk.PinCount()
 	if nPins <= 0 {
-		return nil, fmt.Errorf("interface %s has no software-defined pins", cfg.Interface)
+		if cfg.Mode == ModeShow && cfg.Pin == "" {
+			return showIfaces(lg, cfg)
+		}
+		return nil, noPinsError(cfg.Interface)
 	}
 
 	for i := range uint32(nPins) {

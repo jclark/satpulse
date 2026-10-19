@@ -55,10 +55,14 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 			return
 		}
 
-		err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
-		if err != nil {
-			*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
-			return
+		attrs := []any{"interface", cfg.Interface}
+		if pinIndex != nil {
+			err = clk.PinSetFunc(*pinIndex, phc.PinFuncExtts, chanIndex)
+			if err != nil {
+				*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", *pinIndex, err)
+				return
+			}
+			attrs = append(attrs, "pin", *pinIndex)
 		}
 
 		_, err = clk.ExttsEnable(chanIndex, true)
@@ -76,12 +80,10 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 
 		// Log configuration
-		lg.Info("checking input", 
-			"interface", cfg.Interface,
-			"pin", pinIndex,
+		lg.Info("checking input", append(attrs,
 			"channel", cfg.Chan,
 			"timeout", cfg.Timeout,
-			"showStale", cfg.ShowStale)
+			"showStale", cfg.ShowStale)...)
 
 		// Start worker goroutine
 		eventCh := make(chan ExttsEvent, 10)

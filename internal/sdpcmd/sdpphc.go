@@ -7,21 +7,23 @@ import (
 	"github.com/jclark/satpulse/time/phc"
 )
 
-// phcOpen opens a PHC device for the given interface and resolves the pin
-func phcOpen(ifname, pin string) (*phc.Clock, uint32, error) {
+// phcOpen opens the PHC device for the given interface and resolves the pin.
+// The pin is nil when the PHC has no pins: the channel is then
+// used directly, and specifying a pin is an error.
+func phcOpen(ifname, pin string) (*phc.Clock, *uint32, error) {
 	// Get PHC index from interface name
 	phcIndex, err := phc.IfPhcIndex(ifname)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
 	if phcIndex < 0 {
-		return nil, 0, fmt.Errorf("interface %s does not have a PTP hardware clock", ifname)
+		return nil, nil, fmt.Errorf("interface %s does not have a PTP hardware clock", ifname)
 	}
 
 	// Open PHC device
 	clk, err := phc.Open(phc.ClockPath(phcIndex))
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to open PHC device: %w", err)
+		return nil, nil, fmt.Errorf("failed to open PHC device: %w", err)
 	}
 	defer func() {
 		if err != nil {
@@ -29,19 +31,28 @@ func phcOpen(ifname, pin string) (*phc.Clock, uint32, error) {
 		}
 	}()
 
-	// Check if interface has pins
 	if clk.PinCount() == 0 {
-		err = fmt.Errorf("interface %s has no software-defined pins", ifname)
-		return nil, 0, err
+		if pin != "" {
+			err = noPinsError(ifname)
+			return nil, nil, err
+		}
+		return clk, nil, nil
+	}
+	if pin == "" {
+		pin = "0"
 	}
 
 	// Resolve pin name/index
 	pinIndex, err := resolvePin(clk, ifname, pin)
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, err
 	}
+	p := uint32(pinIndex)
+	return clk, &p, nil
+}
 
-	return clk, uint32(pinIndex), nil
+func noPinsError(ifname string) error {
+	return fmt.Errorf("the PHC of interface %s has no pins", ifname)
 }
 
 // resolvePin converts a pin name or index string to a pin index

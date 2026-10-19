@@ -26,7 +26,7 @@ func TestParseFlags(t *testing.T) {
 			name: "interface only - show mode",
 			args: []string{"eth0"},
 			expected: &FlagConfig{
-				Mode:      ModeShowPins,
+				Mode:      ModeShow,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
 				Pin:       "",
@@ -40,7 +40,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeExtts,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -51,7 +51,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeExtts,
 				Interface: "eth0",
 				Timeout:   5500 * time.Millisecond,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -62,7 +62,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeExtts,
 				Interface: "eth0",
 				Timeout:   30 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -73,7 +73,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeExtts,
 				Interface: "eth0",
 				Timeout:   0,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -85,7 +85,7 @@ func TestParseFlags(t *testing.T) {
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
 				ShowStale: true,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -118,7 +118,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeExtts,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      1,
 			},
 		},
@@ -161,7 +161,7 @@ func TestParseFlags(t *testing.T) {
 			name: "jsonl flag",
 			args: []string{"-j", "eth0"},
 			expected: &FlagConfig{
-				Mode:      ModeShowPins,
+				Mode:      ModeShow,
 				Interface: "eth0",
 				JSONL:     true,
 				Timeout:   2 * time.Second,
@@ -177,7 +177,7 @@ func TestParseFlags(t *testing.T) {
 				Interface: "eth0",
 				JSONL:     true,
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -188,7 +188,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  0, // no width specified
@@ -203,7 +203,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  100 * time.Millisecond,
@@ -218,7 +218,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  100 * time.Millisecond,
@@ -233,7 +233,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  10 * time.Millisecond,
@@ -248,7 +248,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  1 * time.Microsecond,
@@ -263,7 +263,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  1 * time.Nanosecond,
@@ -278,7 +278,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  1 * time.Millisecond,
@@ -308,7 +308,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModePerout,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 				Perout: PeroutParams{
 					Width:  0,
@@ -323,7 +323,7 @@ func TestParseFlags(t *testing.T) {
 				Mode:      ModeDisable,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
-				Pin:       "0",
+				Pin:       "",
 				Chan:      0,
 			},
 		},
@@ -339,8 +339,8 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
-			name: "explicit show mode",
-			args: []string{"--show", "eth0"},
+			name: "show-pins mode",
+			args: []string{"--show-pins", "eth0"},
 			expected: &FlagConfig{
 				Mode:      ModeShowPins,
 				Interface: "eth0",
@@ -350,8 +350,8 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
-			name: "show mode without interface",
-			args: []string{"--show"},
+			name: "show-ifaces mode without interface",
+			args: []string{"--show-ifaces"},
 			expected: &FlagConfig{
 				Mode:    ModeShowIfaces,
 				Timeout: 2 * time.Second,
@@ -360,6 +360,53 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		// Error cases
+		{
+			name: "show-ifaces mode with interface",
+			args: []string{"--show-ifaces", "eth0"},
+			expected: &FlagConfig{
+				Mode:      ModeShowIfaces,
+				Interface: "eth0",
+				Timeout:   2 * time.Second,
+				Pin:       "",
+				Chan:      0,
+			},
+		},
+		{
+			name: "show mode with pin filter",
+			args: []string{"eth0", "--pin", "1"},
+			expected: &FlagConfig{
+				Mode:      ModeShow,
+				Interface: "eth0",
+				Timeout:   2 * time.Second,
+				Pin:       "1",
+				Chan:      0,
+			},
+		},
+		{
+			name:        "show-pins without interface",
+			args:        []string{"--show-pins"},
+			expectError: true,
+		},
+		{
+			name:        "show-ifaces with pin",
+			args:        []string{"--show-ifaces", "--pin", "1", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "pin without interface",
+			args:        []string{"--pin", "1"},
+			expectError: true,
+		},
+		{
+			name:        "conflicting modes - show-ifaces and show-pins",
+			args:        []string{"--show-ifaces", "--show-pins", "eth0"},
+			expectError: true,
+		},
+		{
+			name:        "show removed",
+			args:        []string{"--show", "eth0"},
+			expectError: true,
+		},
 		{
 			name:        "extts without interface",
 			args:        []string{"-i"},
@@ -422,7 +469,7 @@ func TestParseFlags(t *testing.T) {
 		},
 		{
 			name:        "width flag with show mode",
-			args:        []string{"--show", "--width", "0.1", "eth0"},
+			args:        []string{"--show-pins", "--width", "0.1", "eth0"},
 			expectError: true,
 		},
 		{
@@ -503,7 +550,7 @@ func TestParseFlags(t *testing.T) {
 		},
 		{
 			name:        "timeout flag with show mode",
-			args:        []string{"--show", "--timeout", "10", "eth0"},
+			args:        []string{"--show-pins", "--timeout", "10", "eth0"},
 			expectError: true,
 		},
 		{
