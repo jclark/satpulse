@@ -15,6 +15,11 @@ import (
 const cm4Flags DriverFlags = DriverKnown | DriverOneEdge | DriverPoll4Hz | DriverCarrier
 const intelFlags DriverFlags = DriverKnown | DriverBothEdges
 
+// The TI am65-cpts PHC timestamps only the rising edge, but the driver does not set
+// supported_extts_flags, so PTP_EXTTS_REQUEST2 rejects any edge flags and ExttsEnable
+// cannot discover the edge count; it has to come from here.
+const am65Flags DriverFlags = DriverKnown | DriverOneEdge
+
 func IfDriverFlags(ifname string) (DriverFlags, error) {
 	name, err := IfDriverName(ifname)
 	if err != nil {
@@ -37,6 +42,8 @@ func IfDriverNameFlags(driverName string) (DriverFlags, bool) {
 	switch driverName {
 	case "igb", "igc":
 		return intelFlags, false
+	case "am65-cpsw-nuss":
+		return am65Flags, false
 	case "bcmgenet", "macb":
 		return 0, true
 	default:
