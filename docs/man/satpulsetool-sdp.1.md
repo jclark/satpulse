@@ -31,7 +31,7 @@ If none of them are specified, the command behaves as if **\-\-show\-pins** was 
 when the *interface* argument is specified and its PHC has pins, and otherwise as if **\-\-show\-ifaces** was specified.
 In **\-\-show\-ifaces** mode, the *interface* is optional.
 In other modes, it is required.
-If the *interface* is specified, then root privileges are required.
+Root privileges are required except in **\-\-show\-ifaces** mode.
 
 # OPTIONS
 
@@ -39,24 +39,26 @@ If the *interface* is specified, then root privileges are required.
 : Show usage help for the **sdp** command.
 
 **\-i**, **\-\-extts**  
-: Check input on a pin.
-This configures a pin of the interface as an input pin and reads timestamp events from the PHC device.
+: Check input on a timestamp channel.
+This reads timestamp events from the channel.
+If the PHC has pins, it first sets the function of the pin to external timestamping on the channel.
 It will show each timestamp as it is received.
 It will read timestamp events for the length of time specified by the **\-\-t** option; default is 2 seconds.
 if this is 0, it will read until interrupted.
+The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
-The **\-\-chan** option can also be used to specify the timestamping channel to be used; the default is channel 0.
 
 **\-o**, **\-\-perout**  
-: Enable periodic output on a pin.
-This configures a pin of the interface as an output pin generating periodic pulses.
+: Enable output on a periodic output channel.
+This generates pulses on the channel.
+If the PHC has pins, it first sets the function of the pin to periodic output on the channel.
 The period can be specified with **\-\-period**; it defaults to 1 second, resulting in a PPS signal.
 Some Ethernet drivers allow the width of the pulses to be specified using the **\-\-width** option.
 If **\-\-width** is not specified, the pulse width is chosen by the ethernet driver.
 For Intel igb and igc drivers, the width cannnot be specified, and is always half the period,
 i.e. a duty cycle of 50%.
+The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
-The **\-\-chan** option can also be used to specify the periodic output channel to be used; the default is channel 0.
 
 **\-\-disable**  
 : Disable the pin function.
@@ -94,7 +96,7 @@ Applies only when **\-\-perout** option is specified.
 
 **\-p**, **\-\-pin** *index*\|*name*
 : Select the pin to be used by **\-\-extts**, **\-\-perout**, or **\-\-disable**, or shown by **\-\-show\-pins**.
-The default is 0.
+The default is 0 when a pin is required.
 
 **\-\-chan** *index*  
 : Select the channel to be used by **\-\-extts** or **\-\-perout**. The default is 0.
