@@ -113,7 +113,7 @@ List all interfaces with PTP hardware clock that has pins or channels:
 
     satpulsetool sdp
 
-Show the pins of the PHC of interface enp4s0:
+Show information about the PHC of interface enp4s0:
 
     satpulsetool sdp enp4s0
 

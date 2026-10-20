@@ -45,7 +45,7 @@ operations related to PPS input apply to the PHC rather than directly to the net
 satpulsetool provides a subcommand [sdp]({%link man/satpulsetool-sdp.1.md%}) which is useful for identifying the interface.
 
 * `satpulsetool sdp` with no arguments shows information about each interface whose PHC has one or more pins or timestamping channels;
-* `satpulsetool sdp -i --pin 0 eth0` checks for input on the specified interface and pin for 2 seconds by default; it prints out the timestamps it received as a number of seconds since the beginning of 1970; `--pin 0` is the default; on a PHC with no pins, omit `--pin` and select the channel with `--chan` if it is not 0.
+* `satpulsetool sdp -i --pin 0 eth0` checks for input on the specified interface and pin for 2 seconds by default; it prints out the timestamps it received as a number of seconds since the beginning of 1970; `--pin 0` is the default.
 
 Make sure the interface is in an UP state;
 `satpulsetool sdp` shows the status of each interface.
