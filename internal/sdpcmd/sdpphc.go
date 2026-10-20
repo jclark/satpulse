@@ -12,7 +12,7 @@ import (
 // channel is used directly, and specifying a pin is an error.
 func phcOpen(ifname, pin string) (*phc.Clock, uint32, error) {
 	// Get PHC index from interface name
-	phcIndex, err := ifPhcIndex(ifname)
+	phcIndex, err := ifPHCIndex(ifname)
 	if err != nil {
 		return nil, 0, err
 	}
@@ -44,8 +44,8 @@ func phcOpen(ifname, pin string) (*phc.Clock, uint32, error) {
 	return clk, uint32(pinIndex), nil
 }
 
-// ifPhcIndex resolves an interface's PHC index, requiring a PHC.
-func ifPhcIndex(ifname string) (int, error) {
+// ifPHCIndex resolves an interface's PHC index, requiring a PHC.
+func ifPHCIndex(ifname string) (int, error) {
 	index, err := phc.IfPhcIndex(ifname)
 	if err != nil {
 		return 0, err

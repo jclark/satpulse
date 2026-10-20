@@ -30,15 +30,32 @@ func (p *PinDesc) Print(f *os.File) {
 	}
 }
 
-// showPins implements --show-pins mode, and the default mode when an interface
-// is specified, which falls back to the interface record if the PHC has no pins
-func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
-	var result []Printer
-
-	phcIndex, err := ifPhcIndex(cfg.Interface)
+// showAuto implements the default mode with an interface: the pins of its
+// PHC, or the interface record if the PHC has none
+func showAuto(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
+	phcIndex, err := ifPHCIndex(cfg.Interface)
 	if err != nil {
 		return nil, err
 	}
+	if sysfsPinCount(os.DirFS("/sys"), phcIndex) > 0 {
+		return showPinsByPHCIndex(cfg, phcIndex)
+	}
+	return showIface(lg, cfg.Interface, phcIndex)
+}
+
+// showPins implements --show-pins mode
+func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
+	phcIndex, err := ifPHCIndex(cfg.Interface)
+	if err != nil {
+		return nil, err
+	}
+	return showPinsByPHCIndex(cfg, phcIndex)
+}
+
+// showPinsByPHCIndex shows the pins of the interface's PHC, whose index has
+// already been looked up
+func showPinsByPHCIndex(cfg *FlagConfig, phcIndex int) ([]Printer, error) {
+	var result []Printer
 
 	clk, err := phc.Open(fmt.Sprintf("/dev/ptp%d", phcIndex))
 	if err != nil {
@@ -47,9 +64,6 @@ func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	defer clk.Close()
 
 	if !clk.HasPins() {
-		if cfg.Mode == ModeShowAuto {
-			return showIface(lg, cfg.Interface, phcIndex)
-		}
 		return nil, noPinsError(cfg.Interface)
 	}
 

@@ -62,7 +62,7 @@ func (info *InterfaceInfo) Print(f *os.File) {
 // pins or channels, or just the specified interface
 func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	if cfg.Interface != "" {
-		phcIndex, err := ifPhcIndex(cfg.Interface)
+		phcIndex, err := ifPHCIndex(cfg.Interface)
 		if err != nil {
 			return nil, err
 		}
