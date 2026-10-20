@@ -46,15 +46,14 @@ func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	}
 	defer clk.Close()
 
-	nPins := clk.PinCount()
-	if nPins <= 0 {
+	if !clk.HasPins() {
 		if cfg.Mode == ModeShowAuto {
 			return showIface(lg, cfg.Interface, phcIndex)
 		}
 		return nil, noPinsError(cfg.Interface)
 	}
 
-	for i := range uint32(nPins) {
+	for i := range uint32(clk.PinCount()) {
 		pinDesc, err := clk.PinGetFunc(i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get pin %d description: %w", i, err)

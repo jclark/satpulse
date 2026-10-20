@@ -113,6 +113,11 @@ func (clk *Clock) PinCount() int {
 	return int(clk.caps.N_pins)
 }
 
+// HasPins reports whether the clock has programmable pins.
+func (clk *Clock) HasPins() bool {
+	return clk.caps.N_pins > 0
+}
+
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
 	rq := unix.PtpExttsRequest{Index: chanIndex}
 	if !enabled {

@@ -61,6 +61,10 @@ func (clk *Clock) PinCount() int {
 	panic(ErrNotSupported)
 }
 
+func (clk *Clock) HasPins() bool {
+	panic(ErrNotSupported)
+}
+
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
 	panic(ErrNotSupported)
 }

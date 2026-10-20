@@ -22,12 +22,12 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	}
 
 	attrs := []any{"interface", cfg.Interface}
-	if pinIndex != nil {
-		err = clk.PinSetFunc(*pinIndex, phc.PinFuncPerout, chanIndex)
+	if clk.HasPins() {
+		err = clk.PinSetFunc(pinIndex, phc.PinFuncPerout, chanIndex)
 		if err != nil {
-			return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", *pinIndex, err)
+			return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", pinIndex, err)
 		}
-		attrs = append(attrs, "pin", *pinIndex)
+		attrs = append(attrs, "pin", pinIndex)
 	}
 	attrs = append(attrs, "channel", cfg.Chan)
 

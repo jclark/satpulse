@@ -56,13 +56,13 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 
 		attrs := []any{"interface", cfg.Interface}
-		if pinIndex != nil {
-			err = clk.PinSetFunc(*pinIndex, phc.PinFuncExtts, chanIndex)
+		if clk.HasPins() {
+			err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
 			if err != nil {
-				*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", *pinIndex, err)
+				*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
 				return
 			}
-			attrs = append(attrs, "pin", *pinIndex)
+			attrs = append(attrs, "pin", pinIndex)
 		}
 
 		_, err = clk.ExttsEnable(chanIndex, true)
