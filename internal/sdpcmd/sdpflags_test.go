@@ -400,6 +400,12 @@ func TestParseFlags(t *testing.T) {
 			errorMessage: "interface name required for this mode",
 		},
 		{
+			name:         "empty pin",
+			args:         []string{"-i", "--pin", "", "eth0"},
+			expectError:  true,
+			errorMessage: "--pin requires a pin index or name",
+		},
+		{
 			name:        "conflicting modes - show-ifaces and show-pins",
 			args:        []string{"--show-ifaces", "--show-pins", "eth0"},
 			expectError: true,

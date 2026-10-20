@@ -103,6 +103,12 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	// Check if --width was specified
 	widthSpecified = flags.Lookup("width").Changed
 
+	// An empty Pin means not specified, so an empty --pin must be rejected here
+	if flags.Lookup("pin").Changed && cfg.Pin == "" {
+		err = fmt.Errorf("--pin requires a pin index or name")
+		return
+	}
+
 	// Validate positional arguments
 	if flags.NArg() > 1 {
 		err = fmt.Errorf("too many arguments: expected at most 1 interface name, got %d arguments", flags.NArg())
