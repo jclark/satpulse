@@ -151,10 +151,7 @@ func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInf
 		NumPeroutChannels: readSysfsInt(fsys, path.Join(ptpPath, "n_periodic_outputs")),
 	}
 
-	nPins := readSysfsInt(fsys, path.Join(ptpPath, "n_programmable_pins"))
-	if nPins <= 0 {
-		nPins = readSysfsInt(fsys, path.Join(ptpPath, "n_pins"))
-	}
+	nPins := sysfsPinCount(fsys, phcIndex)
 	if nPins <= 0 {
 		return info, nil
 	}
@@ -175,6 +172,15 @@ func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInf
 	return info, nil
 }
 
+// sysfsPinCount returns the number of programmable pins of PHC phcIndex
+func sysfsPinCount(fsys fs.FS, phcIndex int) int {
+	ptpPath := fmt.Sprintf("class/ptp/ptp%d", phcIndex)
+	n := readSysfsInt(fsys, path.Join(ptpPath, "n_programmable_pins"))
+	if n <= 0 {
+		n = readSysfsInt(fsys, path.Join(ptpPath, "n_pins"))
+	}
+	return n
+}
 
 func readSysfsInt(fsys fs.FS, name string) int {
 	data, err := fs.ReadFile(fsys, name)
