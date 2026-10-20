@@ -12,12 +12,9 @@ import (
 // used directly, and specifying a pin is an error.
 func phcOpen(ifname, pin string) (*phc.Clock, *uint32, error) {
 	// Get PHC index from interface name
-	phcIndex, err := phc.IfPhcIndex(ifname)
+	phcIndex, err := ifPhcIndex(ifname)
 	if err != nil {
 		return nil, nil, err
-	}
-	if phcIndex < 0 {
-		return nil, nil, fmt.Errorf("interface %s does not have a PTP hardware clock", ifname)
 	}
 
 	// Open PHC device
@@ -49,6 +46,18 @@ func phcOpen(ifname, pin string) (*phc.Clock, *uint32, error) {
 	}
 	p := uint32(pinIndex)
 	return clk, &p, nil
+}
+
+// ifPhcIndex resolves an interface's PHC index, requiring a PHC.
+func ifPhcIndex(ifname string) (int, error) {
+	index, err := phc.IfPhcIndex(ifname)
+	if err != nil {
+		return 0, err
+	}
+	if index < 0 {
+		return 0, fmt.Errorf("interface %s does not have a PTP hardware clock", ifname)
+	}
+	return index, nil
 }
 
 func noPinsError(ifname string) error {

@@ -61,23 +61,19 @@ func (info *InterfaceInfo) Print(f *os.File) {
 // showIfaces implements --show-ifaces mode: all interfaces whose PHC has
 // pins or channels, or just the specified interface
 func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
-	fsys := os.DirFS("/sys")
 	if cfg.Interface != "" {
-		iface, err := net.InterfaceByName(cfg.Interface)
+		phcIndex, err := ifPhcIndex(cfg.Interface)
 		if err != nil {
 			return nil, err
 		}
-		phcIndex, err := phc.IfPhcIndex(iface.Name)
-		if err != nil || phcIndex < 0 {
-			return nil, fmt.Errorf("interface %s does not have a PTP hardware clock", iface.Name)
-		}
-		return []Printer{interfaceInfo(lg, fsys, *iface, phcIndex)}, nil
+		return showIface(lg, cfg.Interface, phcIndex)
 	}
 
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list network interfaces: %w", err)
 	}
+	fsys := os.DirFS("/sys")
 	var result []Printer
 	for _, iface := range interfaces {
 		phcIndex, err := phc.IfPhcIndex(iface.Name)
@@ -96,6 +92,15 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		return nil, NoDataError{msg: "no interfaces with PTP hardware clock pins or channels found"}
 	}
 	return result, nil
+}
+
+// showIface shows one interface using its already resolved PHC index.
+func showIface(lg *slog.Logger, ifname string, phcIndex int) ([]Printer, error) {
+	iface, err := net.InterfaceByName(ifname)
+	if err != nil {
+		return nil, err
+	}
+	return []Printer{interfaceInfo(lg, os.DirFS("/sys"), *iface, phcIndex)}, nil
 }
 
 // interfaceInfo gathers the full interface record, logging any sysfs inconsistency
@@ -260,4 +265,3 @@ func getPCIInfo(ifname string) (slot string, vendor string, device string, revis
 
 	return
 }
-

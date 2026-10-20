@@ -7,10 +7,11 @@ import (
 
 func TestParseFlags(t *testing.T) {
 	tests := []struct {
-		name        string
-		args        []string
-		expected    *FlagConfig
-		expectError bool
+		name         string
+		args         []string
+		expected     *FlagConfig
+		expectError  bool
+		errorMessage string
 	}{
 		{
 			name: "no args - show all mode",
@@ -26,7 +27,7 @@ func TestParseFlags(t *testing.T) {
 			name: "interface only - show mode",
 			args: []string{"eth0"},
 			expected: &FlagConfig{
-				Mode:      ModeShow,
+				Mode:      ModeShowAuto,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
 				Pin:       "",
@@ -161,7 +162,7 @@ func TestParseFlags(t *testing.T) {
 			name: "jsonl flag",
 			args: []string{"-j", "eth0"},
 			expected: &FlagConfig{
-				Mode:      ModeShow,
+				Mode:      ModeShowAuto,
 				Interface: "eth0",
 				JSONL:     true,
 				Timeout:   2 * time.Second,
@@ -375,7 +376,7 @@ func TestParseFlags(t *testing.T) {
 			name: "show mode with pin filter",
 			args: []string{"eth0", "--pin", "1"},
 			expected: &FlagConfig{
-				Mode:      ModeShow,
+				Mode:      ModeShowPins,
 				Interface: "eth0",
 				Timeout:   2 * time.Second,
 				Pin:       "1",
@@ -393,9 +394,10 @@ func TestParseFlags(t *testing.T) {
 			expectError: true,
 		},
 		{
-			name:        "pin without interface",
-			args:        []string{"--pin", "1"},
-			expectError: true,
+			name:         "pin without interface",
+			args:         []string{"--pin", "1"},
+			expectError:  true,
+			errorMessage: "interface name required for this mode",
 		},
 		{
 			name:        "conflicting modes - show-ifaces and show-pins",
@@ -572,6 +574,8 @@ func TestParseFlags(t *testing.T) {
 			if tt.expectError {
 				if err == nil {
 					t.Errorf("expected error but got none")
+				} else if tt.errorMessage != "" && err.Error() != tt.errorMessage {
+					t.Errorf("error: got %q, want %q", err.Error(), tt.errorMessage)
 				}
 				return
 			}

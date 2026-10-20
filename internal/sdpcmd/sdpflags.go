@@ -12,7 +12,7 @@ import (
 type Mode int
 
 const (
-	ModeShow       Mode = iota // Show the pins of the interface's PHC, or the interface record if it has none
+	ModeShowAuto   Mode = iota // Show pins if available, otherwise show interface information
 	ModeShowIfaces             // List interfaces with a PHC (--show-ifaces)
 	ModeShowPins               // Show the pins of a specific interface's PHC (--show-pins)
 	ModeExtts                  // External timestamp input (-i)
@@ -54,7 +54,7 @@ const defaultTimeout = 2 * time.Second
 
 func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usageFunc func(string) string, err error) {
 	cfg = &FlagConfig{
-		Mode:    ModeShow,       // Default mode
+		Mode:    ModeShowAuto,   // Default mode
 		Timeout: defaultTimeout, // Default timeout
 		Chan:    0,              // Default channel
 		Pin:     "",             // Empty means not specified
@@ -148,9 +148,13 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 		return
 	}
 
-	// Without an interface, there are no pins to show
-	if cfg.Mode == ModeShow && cfg.Interface == "" {
-		cfg.Mode = ModeShowIfaces
+	// Resolve the default mode where no PHC inspection is needed.
+	if cfg.Mode == ModeShowAuto {
+		if cfg.Pin != "" {
+			cfg.Mode = ModeShowPins
+		} else if cfg.Interface == "" {
+			cfg.Mode = ModeShowIfaces
+		}
 	}
 
 	// Validate mode-specific requirements

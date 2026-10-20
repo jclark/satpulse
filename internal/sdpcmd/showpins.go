@@ -35,9 +35,9 @@ func (p *PinDesc) Print(f *os.File) {
 func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	var result []Printer
 
-	phcIndex, err := phc.IfPhcIndex(cfg.Interface)
-	if err != nil || phcIndex < 0 {
-		return nil, fmt.Errorf("interface %s does not have a PTP hardware clock", cfg.Interface)
+	phcIndex, err := ifPhcIndex(cfg.Interface)
+	if err != nil {
+		return nil, err
 	}
 
 	clk, err := phc.Open(fmt.Sprintf("/dev/ptp%d", phcIndex))
@@ -48,8 +48,8 @@ func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 
 	nPins := clk.PinCount()
 	if nPins <= 0 {
-		if cfg.Mode == ModeShow && cfg.Pin == "" {
-			return showIfaces(lg, cfg)
+		if cfg.Mode == ModeShowAuto {
+			return showIface(lg, cfg.Interface, phcIndex)
 		}
 		return nil, noPinsError(cfg.Interface)
 	}
