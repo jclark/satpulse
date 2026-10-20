@@ -366,7 +366,7 @@ func ClockPath(phcIndex int) string {
 	return pathPrefix + strconv.Itoa(phcIndex)
 }
 
-func IfPhcIndex(ifname string) (phcIndex int, err error) {
+func IfPHCIndex(ifname string) (phcIndex int, err error) {
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM, 0)
 	if err != nil {
 		return 0, fmt.Errorf("could not create a socket: %w", err)

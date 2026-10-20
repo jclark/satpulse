@@ -46,7 +46,7 @@ func phcOpen(ifname, pin string) (*phc.Clock, uint32, error) {
 
 // ifPHCIndex resolves an interface's PHC index, requiring a PHC.
 func ifPHCIndex(ifname string) (int, error) {
-	index, err := phc.IfPhcIndex(ifname)
+	index, err := phc.IfPHCIndex(ifname)
 	if err != nil {
 		return 0, err
 	}

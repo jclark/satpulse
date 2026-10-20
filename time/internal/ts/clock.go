@@ -77,7 +77,7 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 			return nil, err
 		}
 	}
-	phcIndex, err := phc.IfPhcIndex(ifName)
+	phcIndex, err := phc.IfPHCIndex(ifName)
 	if err != nil {
 		return nil, err
 	}

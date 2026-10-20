@@ -28,8 +28,8 @@ func ClockPath(phcIndex int) string {
 	return ""
 }
 
-// IfPhcIndex returns the PHC index for an interface.
-func IfPhcIndex(ifname string) (phcIndex int, err error) {
+// IfPHCIndex returns the PHC index for an interface.
+func IfPHCIndex(ifname string) (phcIndex int, err error) {
 	return 0, ErrNotSupported
 }
 

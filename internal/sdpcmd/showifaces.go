@@ -76,7 +76,7 @@ func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	fsys := os.DirFS("/sys")
 	var result []Printer
 	for _, iface := range interfaces {
-		phcIndex, err := phc.IfPhcIndex(iface.Name)
+		phcIndex, err := phc.IfPHCIndex(iface.Name)
 		if err != nil || phcIndex < 0 {
 			// No PHC on this interface
 			continue
