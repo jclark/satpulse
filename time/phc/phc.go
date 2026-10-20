@@ -113,6 +113,11 @@ func (clk *Clock) PinCount() int {
 	return int(clk.caps.N_pins)
 }
 
+// HasPins reports whether the clock has programmable pins.
+func (clk *Clock) HasPins() bool {
+	return clk.caps.N_pins > 0
+}
+
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
 	rq := unix.PtpExttsRequest{Index: chanIndex}
 	if !enabled {
@@ -361,7 +366,7 @@ func ClockPath(phcIndex int) string {
 	return pathPrefix + strconv.Itoa(phcIndex)
 }
 
-func IfPhcIndex(ifname string) (phcIndex int, err error) {
+func IfPHCIndex(ifname string) (phcIndex int, err error) {
 	fd, err := unix.Socket(unix.AF_INET, unix.SOCK_DGRAM, 0)
 	if err != nil {
 		return 0, fmt.Errorf("could not create a socket: %w", err)

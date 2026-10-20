@@ -80,6 +80,7 @@ _Not yet released_
 - On exit, the serial port is no longer restored exactly to how it was before SatPulse started. If a GPS receiver has been successfully detected at some serial speed, the port is left at that speed; this avoids an unnecessary speed change when the port is next opened, minimizing the risk of serial corruption on Raspberry Pi UARTs. Echo is always left turned off, so that the receiver's output is not transmitted back to it while the port is being closed or next opened.
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
 - Building from source now uses `make` on macOS and FreeBSD as well as Linux, replacing the `unix-build.sh` script. `make install` works there too, installing under `/usr/local` by default, or under a prefix given by `prefix=`. (#420)
+- `satpulsed` and `satpulsetool sdp` now work with PTP hardware clocks that have external timestamp channels but no pins, such as the TI am65-cpts on the BeagleY-AI, where the routing of signals to channels is fixed by the device tree. The channel is used directly, and `pin` must not be specified. `satpulsetool sdp --show` is replaced by `--show-ifaces` and `--show-pins`; with no mode option, `sdp` shows the pins of the interface's PHC, or the interface record if the PHC has none. (#504)
 
 ## Changes in 0.2
 

@@ -14,6 +14,37 @@ import (
 
 const configsDir = "../../../configs"
 
+func TestPHCPinOmittedVersusZero(t *testing.T) {
+	// Pinless PHCs accept an omitted pin but reject an explicitly selected
+	// pin, including zero. Preserve that distinction through loading.
+	for _, explicit := range []bool{false, true} {
+		name := "omitted"
+		config := "[phc]\ninterface = \"eth0\"\n"
+		if explicit {
+			name = "explicit zero"
+			config += "pin = 0\n"
+		}
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "satpulse.toml")
+			if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, _, err := LoadConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pin := cfg.PHC.PinDesc().PinIndex
+			if !explicit {
+				if pin != nil {
+					t.Fatalf("omitted pin resolved to %d, want nil", *pin)
+				}
+			} else if pin == nil || *pin != 0 {
+				t.Fatalf("explicit pin 0 must remain a non-nil pointer to zero, got %v", pin)
+			}
+		})
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	cfgFiles, err := os.ReadDir(configsDir)
 	if err != nil {

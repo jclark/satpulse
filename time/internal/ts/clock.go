@@ -45,8 +45,11 @@ const exttsTimeout = 100 * time.Millisecond // if we hit this timeout, then the 
 const existTimeout = 30 * time.Second
 const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
+// PinDesc selects the external timestamp channel and, on a PHC with
+// pins, the pin to route to it. A nil PinIndex means pin 0 on a
+// PHC with pins and no pin on a PHC without; a non-nil one is an error there.
 type PinDesc struct {
-	PinIndex  uint32
+	PinIndex  *uint32
 	ChanIndex uint32
 }
 
@@ -74,7 +77,7 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 			return nil, err
 		}
 	}
-	phcIndex, err := phc.IfPhcIndex(ifName)
+	phcIndex, err := phc.IfPHCIndex(ifName)
 	if err != nil {
 		return nil, err
 	}
@@ -113,14 +116,16 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 	clk := Clock{
 		Clock:       *pc,
 		ifName:      ifName,
-		pinIndex:    pinDesc.PinIndex,
 		chanIndex:   pinDesc.ChanIndex,
 		DriverFlags: flags,
+	}
+	if pinDesc.PinIndex != nil {
+		clk.pinIndex = *pinDesc.PinIndex
 	}
 	// We start off with an era that is certain.
 	// Zero era represent stale PHC clock readings.
 	clk.eraCounter.inc()
-	err = clk.validatePinDesc()
+	err = clk.validatePinDesc(pinDesc.PinIndex != nil)
 	if err != nil {
 		clk.Close()
 		return nil, err
@@ -182,14 +187,19 @@ type ConfigError struct {
 
 func (e *ConfigError) Error() string { return e.msg }
 
-func (clk *Clock) validatePinDesc() error {
+func (clk *Clock) validatePinDesc(pinGiven bool) error {
 	var msg string
-	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
+	if clk.ExttsChanCount() == 0 {
 		msg = fmt.Sprintf("PTP clock %s does not support external timestamping", clk.Path())
-	} else if clk.pinIndex >= uint32(clk.PinCount()) {
-		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", clk.pinIndex, clk.Path(), clk.PinCount()-1)
 	} else if clk.chanIndex >= uint32(clk.ExttsChanCount()) {
 		msg = fmt.Sprintf("channel index %d is out of range for PTP clock %s: maximum index is %d", clk.chanIndex, clk.Path(), clk.ExttsChanCount()-1)
+	} else if !clk.HasPins() {
+		if !pinGiven {
+			return nil
+		}
+		msg = fmt.Sprintf("the PTP hardware clock of interface %s has no pins; pin must not be specified", clk.ifName)
+	} else if clk.pinIndex >= uint32(clk.PinCount()) {
+		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", clk.pinIndex, clk.Path(), clk.PinCount()-1)
 	} else {
 		return nil
 	}
@@ -197,15 +207,19 @@ func (clk *Clock) validatePinDesc() error {
 }
 
 func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, error) {
-	err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
-	if err != nil {
-		return nil, err
+	attrs := []any{"device", clk.Path()}
+	if clk.HasPins() {
+		err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
+		if err != nil {
+			return nil, err
+		}
+		attrs = append(attrs, "pin", clk.pinIndex)
 	}
 	edges, err := clk.ExttsEnable(clk.chanIndex, true)
 	if err != nil {
 		return nil, err
 	}
-	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", clk.pinIndex, "channel", clk.chanIndex, "edgesPerPulse", edges)
+	lg.Info("enabled external timestamping on the PTP hardware clock", append(attrs, "channel", clk.chanIndex, "edgesPerPulse", edges)...)
 	clk.DriverFlags = clk.DriverFlags.SetEdges(edges)
 	ch := make(chan Event, 1)
 	go clk.readWorker(ctx, lg, ch)
