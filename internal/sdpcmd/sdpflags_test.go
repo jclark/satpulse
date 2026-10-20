@@ -360,7 +360,6 @@ func TestParseFlags(t *testing.T) {
 				Chan:    0,
 			},
 		},
-		// Error cases
 		{
 			name: "show-ifaces mode with interface",
 			args: []string{"--show-ifaces", "eth0"},
@@ -383,6 +382,7 @@ func TestParseFlags(t *testing.T) {
 				Chan:      0,
 			},
 		},
+		// Error cases
 		{
 			name:        "show-pins without interface",
 			args:        []string{"--show-pins"},
