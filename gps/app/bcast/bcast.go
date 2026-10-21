@@ -98,7 +98,7 @@ func (b *Bcast[T]) Run(ctx context.Context, lg *slog.Logger) {
 				cases = append(cases, sc)
 			}
 		}
-		chosen, recv, ok := reflect.Select(cases)
+		chosen, recv, ok := selectCases(cases)
 		switch chosen {
 		case 0: // subscribe
 			if !ok {
