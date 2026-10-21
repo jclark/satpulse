@@ -230,9 +230,12 @@ func NewOutPortLock(port OutPort) OutPortLock {
 	return ch
 }
 
+// SerialOutPort is the serial output contract used by receiver configuration.
 type SerialOutPort interface {
 	OutPort
 	WriteThenChangeSpeed(p []byte, speed int) (int, error)
+	// SetDetected confirms receipt of a valid packet at the current settings.
+	SetDetected()
 }
 
 type Conn interface {

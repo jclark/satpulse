@@ -5,6 +5,8 @@ import (
 	"net"
 	"sync"
 	"time"
+
+	"github.com/jclark/satpulse/gps/gpsprot"
 )
 
 type NetConn struct {
@@ -45,6 +47,20 @@ func (c *NetConn) Read(p []byte) (int, error) {
 
 func (c *NetConn) Write(p []byte) (int, error) {
 	return c.conn.Write(p)
+}
+
+// WritePacket writes bytes to the socket without output packet logging.
+func (c *NetConn) WritePacket(p []byte, _ gpsprot.PacketFormat) (int, error) {
+	return c.Write(p)
+}
+
+// Speed returns 0 because a socket has no host serial port speed.
+func (c *NetConn) Speed() int { return 0 }
+
+// SetPacketLog completes the log's output half immediately because socket
+// connections do not support output packet logging.
+func (c *NetConn) SetPacketLog(pl *PacketLog) {
+	pl.SemiClose()
 }
 
 func (c *NetConn) Buffered() (int, error) {

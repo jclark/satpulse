@@ -131,7 +131,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	if cfg.Serial.Speed != nil {
 		cfgSpeed = *cfg.Serial.Speed
 	}
-	conn, speed, err := gpsio.OpenSerial(lg, cfg.Serial.Device, cfgSpeed)
+	conn, err := gpsio.OpenSerial(lg, cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
 	}
@@ -141,6 +141,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return fmt.Errorf("serial PPS requires a TTY with modem-control pins: %w", err)
 		}
 	}
+	speed := conn.Speed()
 	if speed == 0 {
 		speed = cfgSpeed
 	}
