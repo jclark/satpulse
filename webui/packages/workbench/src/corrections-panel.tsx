@@ -1,6 +1,7 @@
 import {h} from 'preact';
 import {useState, useEffect, useCallback, useRef} from 'preact/hooks';
 import {transport} from './transport';
+import type {CorrectionsTransport} from './transport';
 import type {ConnState} from './app';
 import {Button, Input, Select, cx, fieldLabelText, labeledControlText} from './ui';
 import {CorMsgPanel} from './cor-msg-panel';
@@ -28,6 +29,7 @@ interface NMEAPositionEvent {
 }
 
 interface Props {
+    corrections: CorrectionsTransport;
     connState: ConnState;
     readOnly: boolean;
 }
@@ -57,7 +59,7 @@ function readPort(mode: CorrMode): string {
     return mode === 'ntrip' ? NTRIP_DEFAULT_PORT : '';
 }
 
-export function CorrectionsPanel({connState, readOnly}: Props) {
+export function CorrectionsPanel({corrections, connState, readOnly}: Props) {
     const [mode, setMode] = useState<CorrMode>(readMode);
     const [host, setHost] = useState(() => localStorage.getItem(LS_HOST_KEY) || '');
     const [port, setPort] = useState(() => readPort(readMode()));
@@ -108,7 +110,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
         if (!connected) return;
         const seq = corrEventSeqRef.current;
         let cancelled = false;
-        transport.getCorrectionsState().then(evt => {
+        corrections.getCorrectionsState().then(evt => {
             if (cancelled) return;
             if (corrEventSeqRef.current !== seq) return;
             applyCorrEvent(evt as CorrEvent);
@@ -116,7 +118,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
         return () => {
             cancelled = true;
         };
-    }, [connected, applyCorrEvent]);
+    }, [corrections, connected, applyCorrEvent]);
 
     useEffect(() => {
         return transport.eventsOn('gps:nmeaPosition', (e: NMEAPositionEvent) =>
@@ -151,7 +153,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
         if (running) {
             setPendingSync('stop');
             try {
-                await transport.stopCorrections();
+                await corrections.stopCorrections();
             } catch (e) {
                 setPendingSync(null);
                 if (e instanceof Error && e.message) setCorrError(e.message);
@@ -163,7 +165,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
             setCorrError('');
             setSessionSeq(s => s + 1);
             try {
-                await transport.startCorrections({
+                await corrections.startCorrections({
                     mode,
                     host,
                     port: portNum,
@@ -178,7 +180,7 @@ export function CorrectionsPanel({connState, readOnly}: Props) {
                 if (e instanceof Error && e.message) setCorrError(e.message);
             }
         }
-    }, [running, canStart, mode, host, portNum, mountpoint, username, password, nmeaSendActive, setPendingSync]);
+    }, [corrections, running, canStart, mode, host, portNum, mountpoint, username, password, nmeaSendActive, setPendingSync]);
 
     const locked = running || pending !== null;
     // readOnly disables the inputs and the start/stop button only; the state
