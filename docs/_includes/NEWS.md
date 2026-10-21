@@ -61,6 +61,7 @@ _Not yet released_
 
 - `satpulsetool` has a new `serial` command, which examines serial ports: it can discover the available serial ports, show information about a port, detect the speed of a connected GPS receiver, detect PPS edges on a modem-control input and log received packets. (#326, #394, #408)
 - Passive serial packet logging has moved from `satpulsetool gps` to `satpulsetool serial`. The `gps` command now always probes or configures the receiver; `--show-receiver` is always implied when no operation is specified, even if `--capture` is specified. (#408)
+- `satpulsetool` has a new `pps` command, which lists the kernel PPS devices and prints the timestamps of one as they arrive, so checking a PPS signal no longer needs `ppstest`.
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
 - Message files have a new `novatel` response pattern, which allows responses from Bynav receivers to be correlated with the commands sent.
