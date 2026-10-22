@@ -43,6 +43,9 @@ type fixture struct {
 // top-level user registry; pass nil when no users are defined.
 func newFixture(t *testing.T, cfg Config, users map[string]string) *fixture {
 	t.Helper()
+	if !hasNet {
+		t.Skip("no network stack to serve the caster on")
+	}
 	userSet := make(map[string]struct{}, len(users))
 	for name := range users {
 		userSet[name] = struct{}{}

@@ -1,3 +1,5 @@
+//go:build !baremetal
+
 package term
 
 //go:generate sh -c "go tool cgo -godefs types_linux.go | gofmt > ztypes_linux.go && rm -rf _obj"

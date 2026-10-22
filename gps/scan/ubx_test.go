@@ -58,7 +58,10 @@ func randomUBXPacket() string {
 }
 
 func TestGoodUBX(t *testing.T) {
-	const numPackets = 50000
+	numPackets := 10000
+	if testing.Short() {
+		numPackets = 1000
+	}
 	const bufferSize = 64
 
 	var packets []string
@@ -155,7 +158,10 @@ func TestUBXRescan(t *testing.T) {
 }
 
 func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
-	const numPackets = 10000
+	numPackets := 10000
+	if testing.Short() {
+		numPackets = 1000
+	}
 	const bufferSize = 64
 
 	// Generate packets, alternating between UBX and invalid

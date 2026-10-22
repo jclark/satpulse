@@ -513,10 +513,10 @@ func TestModeRegexp(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			matches := modeRegexp.FindStringSubmatch(tt.command)
+			matches := modeRegexp().FindStringSubmatch(tt.command)
 			got := matches != nil
 			if got != tt.expectMatch {
-				t.Errorf("modeRegexp.MatchString(%q) = %v, expect %v", tt.command, got, tt.expectMatch)
+				t.Errorf("modeRegexp().MatchString(%q) = %v, expect %v", tt.command, got, tt.expectMatch)
 			}
 
 			if tt.expectMatch && matches != nil {

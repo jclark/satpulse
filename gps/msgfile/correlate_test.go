@@ -125,6 +125,9 @@ type correlatorTest struct {
 
 func loadTestFile(t *testing.T, file string) *Parsed {
 	t.Helper()
+	if !hasFS {
+		t.Skip("no file system to read testdata from")
+	}
 	path := filepath.Join("testdata", file)
 	mf, err := Load(path)
 	if err != nil {
