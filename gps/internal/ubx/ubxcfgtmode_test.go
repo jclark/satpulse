@@ -417,6 +417,31 @@ func TestCreateTmodeConfigs(t *testing.T) {
 			},
 		},
 
+		{
+			name: "SurveyAgain by change tightens an unchanged limit",
+			mode: &gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone},
+			survey: gpsprot.Survey{
+				MinDur:   240 * time.Second,
+				AccLimit: gpsprot.Meter + 500*gpsprot.Millimeter, // 1.5m
+				Flags:    gpsprot.SurveyAgain,
+			},
+			cur:            &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 1.5e4},
+			resurveyMethod: resurveyChange,
+			expectFirst:    &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 1.5e4 - 1},
+		},
+		{
+			name: "SurveyAgain by change loosens the strictest limit",
+			mode: &gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone},
+			survey: gpsprot.Survey{
+				MinDur:   240 * time.Second,
+				AccLimit: gpsprot.MinAccuracy,
+				Flags:    gpsprot.SurveyAgain,
+			},
+			cur:            &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 1},
+			resurveyMethod: resurveyChange,
+			expectFirst:    &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 2},
+		},
+
 		// Edge case: Mode.Static=false but SetStatic=true
 		{
 			name:      "Mode mobile but SetStatic true",

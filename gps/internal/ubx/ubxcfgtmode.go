@@ -117,7 +117,13 @@ func createTmodeConfigs(target *gpsprot.ConfigTarget, cur *tmodeConfig, method r
 			}
 		case resurveyChange:
 			if tmc.svinAccLimit == cur.svinAccLimit {
-				tmc.svinAccLimit++ // increment by 1 (0.1mm)
+				// Change by 1 (0.1mm), tightening the limit rather than
+				// loosening it, unless it is already the strictest.
+				if tmc.svinAccLimit > 1 {
+					tmc.svinAccLimit--
+				} else {
+					tmc.svinAccLimit++
+				}
 			}
 		}
 	}
