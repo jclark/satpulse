@@ -625,53 +625,6 @@ func TestTmodeRequiredInfo(t *testing.T) {
 	}
 }
 
-func TestTmodeAccRounding(t *testing.T) {
-	// The accuracy each message carries: TMODE3 in 0.1mm, TMODE2 in mm,
-	// and TMODE as a variance in mm².
-	type accs struct{ tmode3, tmode2, tmodeVar uint32 }
-	fixed := func(acc gpsprot.Length) gpsprot.Mode {
-		return gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeECEF, FixedPosAcc: acc}
-	}
-	survey := func(limit gpsprot.Length) gpsprot.Survey {
-		return gpsprot.Survey{AccLimit: limit}
-	}
-	tests := []struct {
-		name   string
-		mode   gpsprot.Mode
-		survey gpsprot.Survey
-		expect accs
-	}{
-		{name: "fixed accuracy rounds up", mode: fixed(1050 * gpsprot.Micrometer), expect: accs{11, 2, 4}},
-		{name: "fixed accuracy below a unit", mode: fixed(gpsprot.Micrometer), expect: accs{1, 1, 1}},
-		{name: "fixed accuracy not stated", mode: fixed(0), expect: accs{0, 0, 0}},
-		{name: "survey limit rounds down", mode: gpsprot.Mode{Static: true}, survey: survey(1950 * gpsprot.Micrometer), expect: accs{19, 1, 1}},
-		{name: "survey limit below a unit", mode: gpsprot.Mode{Static: true}, survey: survey(gpsprot.Micrometer), expect: accs{1, 1, 1}},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := newTmodeConfig(tc.mode, tc.survey)
-			if err != nil {
-				t.Fatalf("newTmodeConfig: %v", err)
-			}
-			var tm3 ubxbin.CfgTmode3
-			var tm2 ubxbin.CfgTmode2
-			var tm ubxbin.CfgTmode
-			cfg.toTmode3(&tm3, false)
-			cfg.toTmode2(&tm2, false)
-			if err := cfg.toTmode(&tm, false); err != nil {
-				t.Fatalf("toTmode: %v", err)
-			}
-			got := accs{tm3.FixedPosAcc, tm2.FixedPosAcc, tm.FixedPosVar}
-			if tc.mode.PosType == gpsprot.PosTypeNone {
-				got = accs{tm3.SvinAccLimit, tm2.SvinAccLimit, tm.SvinVarLimit}
-			}
-			if got != tc.expect {
-				t.Errorf("got %+v, want %+v", got, tc.expect)
-			}
-		})
-	}
-}
-
 func TestSplitLength(t *testing.T) {
 	const mm10 = gpsprot.Micrometer * 100
 

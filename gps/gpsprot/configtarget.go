@@ -1,7 +1,6 @@
 package gpsprot
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -952,11 +951,11 @@ func (cp *ConfigProps) unmarshalMode(raw map[string]json.RawMessage) error {
 			}
 			m.Height = Meters(meters)
 		case "fixedPosAcc":
-			acc, err := ParseAccuracy(string(val))
-			if err != nil {
+			var meters float64
+			if err := json.Unmarshal(val, &meters); err != nil {
 				return fmt.Errorf("fixedPosAcc: %w", err)
 			}
-			m.FixedPosAcc = acc
+			m.FixedPosAcc = Meters(meters)
 		default:
 			return fmt.Errorf("unknown field %q", key)
 		}
@@ -1214,30 +1213,6 @@ type Survey struct {
 	Flags    SurveyFlags   // control survey behavior
 	MinDur   time.Duration // survey should run at least this long
 	AccLimit Length        // survey should run until this accuracy is achieved
-}
-
-// UnmarshalJSON implements json.Unmarshaler. It parses AccLimit with
-// ParseAccuracy, so a tiny positive limit does not become 0.
-func (s *Survey) UnmarshalJSON(data []byte) error {
-	type plain Survey
-	var v struct {
-		plain
-		AccLimit json.RawMessage
-	}
-	dec := json.NewDecoder(bytes.NewReader(data))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&v); err != nil {
-		return err
-	}
-	*s = Survey(v.plain)
-	if v.AccLimit != nil {
-		acc, err := ParseAccuracy(string(v.AccLimit))
-		if err != nil {
-			return fmt.Errorf("AccLimit: %w", err)
-		}
-		s.AccLimit = acc
-	}
-	return nil
 }
 
 type TimeMode byte

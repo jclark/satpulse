@@ -205,33 +205,20 @@ fixedPosLLH = [51.5007, -0.1246, 11]`,
 			expectedError: "error",
 		},
 		{
-			name: "survey accuracy not positive",
+			name: "survey accuracy too small",
 			config: `[gps]
 config = true
-surveyAcc = 0`,
+surveyAcc = 0.0001`,
 			speed:         9600,
 			cf:            cfgTimePulse | cfgTimePulseMsg,
 			expectedError: "error", // any error
 		},
 		{
-			name: "sub-millimeter survey accuracy",
-			config: `[gps]
-config = true
-surveyAcc = 0.0001`,
-			speed: 9600,
-			cf:    cfgTimePulse | cfgTimePulseMsg,
-			modifyTarget: func(target *gpsprot.ConfigTarget) {
-				target.Opts.Survey.MinDur = 2000 * time.Second
-				target.Opts.Survey.AccLimit = gpsprot.Millimeter / 10
-				target.Opts.SetStatic = true
-			},
-		},
-		{
-			name: "fixed position accuracy not positive",
+			name: "fixed position accuracy too small",
 			config: `[gps]
 config = true
 fixedPosECEF = [3978578.17, -8652.15, 4968410.94]
-fixedPosAcc = 0`,
+fixedPosAcc = 0.0001`,
 			speed:         9600,
 			cf:            cfgTimePulse | cfgTimePulseMsg,
 			expectedError: "error", // any error

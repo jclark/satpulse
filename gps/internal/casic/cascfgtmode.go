@@ -22,10 +22,10 @@ import (
 // tmodeTarget is the family-independent time mode to realize.
 type tmodeTarget struct {
 	mode    tmodeTargetMode
-	ecef    [3]float64     // m, fixed position
-	posAcc  gpsprot.Length // fixed position accuracy
-	svinDur uint32         // s, min survey duration
-	svinAcc gpsprot.Length // survey accuracy limit
+	ecef    [3]float64 // m, fixed position
+	posAcc  float64    // m, fixed position accuracy
+	svinDur uint32     // s, min survey duration
+	svinAcc float64    // m, survey accuracy limit
 }
 
 // tmodeTargetMode is the family-independent timing-mode intent.
@@ -143,20 +143,17 @@ func newTModeTarget(mode gpsprot.Mode, survey gpsprot.Survey) *tmodeTarget {
 	if mode.PosType == gpsprot.PosTypeNone {
 		tt.mode = tmodeTargetSurvey
 		tt.svinDur = uint32(survey.MinDur.Round(time.Second) / time.Second)
-		tt.svinAcc = survey.AccLimit
+		tt.svinAcc = survey.AccLimit.Meters()
 		return tt
 	}
 	tt.mode = tmodeTargetFixed
-	tt.posAcc = mode.FixedPosAcc
+	tt.posAcc = mode.FixedPosAcc.Meters()
 	ecef, _ := mode.FixedPosToECEF()
 	for i := range 3 {
 		tt.ecef[i] = ecef[i].Meters()
 	}
 	return tt
 }
-
-// tmode2AccUnit is the unit of the CFG-TMODE2 accuracies.
-const tmode2AccUnit = gpsprot.Meter / gpsprot.Length(casbin.CfgTMode2PositionAccuracyScale)
 
 // addTModeSet encodes and sends the time mode for this family. V6
 // fields not covered by the model (band, antenna detection, time
@@ -176,9 +173,9 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		m.XFixed = int32(math.Round(tt.ecef[0] * casbin.CfgTMode2FixedPositionScale))
 		m.YFixed = int32(math.Round(tt.ecef[1] * casbin.CfgTMode2FixedPositionScale))
 		m.ZFixed = int32(math.Round(tt.ecef[2] * casbin.CfgTMode2FixedPositionScale))
-		m.FixedPacc = uint32(fixedPosAccUnits(tt.posAcc, tmode2AccUnit))
+		m.FixedPacc = uint32(math.Round(tt.posAcc * casbin.CfgTMode2PositionAccuracyScale))
 		m.SvinMinDur = tt.svinDur
-		m.SvinPaccLim = uint32(surveyAccLimitUnits(tt.svinAcc, tmode2AccUnit))
+		m.SvinPaccLim = uint32(math.Round(tt.svinAcc * casbin.CfgTMode2PositionAccuracyScale))
 		if !force && m == *c.tm6 {
 			c.touchNoOp(casbin.CfgCfgSectionNav)
 			return
@@ -190,9 +187,9 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		EcefX:        tt.ecef[0],
 		EcefY:        tt.ecef[1],
 		EcefZ:        tt.ecef[2],
-		PosVar:       casbin.CfgTModeVarianceFromAccuracy(tt.posAcc.Meters()),
+		PosVar:       casbin.CfgTModeVarianceFromAccuracy(tt.posAcc),
 		SvinMinDur:   tt.svinDur,
-		SvinVarLimit: casbin.CfgTModeVarianceFromAccuracy(tt.svinAcc.Meters()),
+		SvinVarLimit: casbin.CfgTModeVarianceFromAccuracy(tt.svinAcc),
 	}
 	switch tt.mode {
 	case tmodeTargetMobile:
@@ -209,28 +206,6 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		return
 	}
 	c.addSetReq(m, func() { c.tm5 = m })
-}
-
-// surveyAccLimitUnits returns the survey accuracy limit as a whole number
-// of units of size unit. It rounds down, so the survey is never satisfied
-// by a worse accuracy than limit, except that a positive limit smaller
-// than one unit becomes one unit, the strictest limit the receiver can
-// express.
-func surveyAccLimitUnits(limit, unit gpsprot.Length) int64 {
-	if limit <= 0 {
-		return 0
-	}
-	return max(int64(limit/unit), 1)
-}
-
-// fixedPosAccUnits returns the fixed position accuracy as a whole number
-// of units of size unit. It rounds up, so the receiver never states a
-// better accuracy than acc; 0 (no accuracy stated) stays 0.
-func fixedPosAccUnits(acc, unit gpsprot.Length) int64 {
-	if acc <= 0 {
-		return 0
-	}
-	return int64((acc + unit - 1) / unit)
 }
 
 // tmodeConfigProps reports the positioning mode from the readback.

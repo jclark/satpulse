@@ -167,12 +167,12 @@ type flagParser struct {
 	binary         bool
 	survey         bool
 	surveyTime     uint32
-	surveyAcc      accuracy
+	surveyAcc      length
 	sysTimeTrusted bool
 	osnma          bool
 	fixedPosECEF   ecef
 	fixedPosLLH    llh
-	fixedPosAcc    accuracy
+	fixedPosAcc    length
 	pps            float64
 	antCableDelay  int64
 	mobile         bool
@@ -212,8 +212,8 @@ func newFlagParser(cmdName string) *flagParser {
 	p := &flagParser{}
 	p.bands = bands(gpsprot.BandAll)
 	p.surveyTime = uint32(defaultSurveyTime)
-	p.surveyAcc = accuracy(defaultSurveyAcc)
-	p.fixedPosAcc = accuracy(defaultFixedPosAcc)
+	p.surveyAcc = length(defaultSurveyAcc)
+	p.fixedPosAcc = length(defaultFixedPosAcc)
 	p.flags = pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags := p.flags
 	vars := &p.vars
@@ -538,8 +538,8 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 	if p.survey || vars.configOpts.SetStatic {
 		configChanged = true
 		vars.configOpts.Survey.MinDur = time.Duration(p.surveyTime) * time.Second
-		if gpsprot.Length(p.surveyAcc) <= 0 {
-			return false, fmt.Errorf("--survey-acc must be positive")
+		if gpsprot.Length(p.surveyAcc) < gpsprot.Millimeter {
+			return false, fmt.Errorf("--survey-acc must be at least 0.001 (1 mm)")
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Length(p.surveyAcc)
 		if p.survey {
@@ -584,8 +584,8 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 
 func (p *flagParser) resolveFixedPos(cmdName, flagName string, mode gpsprot.Mode) error {
 	vars := &p.vars
-	if gpsprot.Length(p.fixedPosAcc) <= 0 {
-		return fmt.Errorf("--fixed-pos-acc must be positive")
+	if gpsprot.Length(p.fixedPosAcc) < gpsprot.Millimeter {
+		return fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
 	}
 	vars.configSupport.require(gpsprot.ConfigSupportFixedPos, flagName)
 	if p.flags.Lookup("fixed-pos-acc").Changed {
@@ -804,14 +804,15 @@ func validateTarget(target *gpsprot.ConfigTarget) error {
 		if s.MinDur < 0 {
 			return fmt.Errorf("survey minimum duration must not be negative")
 		}
-		if s.AccLimit <= 0 {
-			return fmt.Errorf("survey accuracy limit must be positive")
+		if s.AccLimit < gpsprot.Millimeter {
+			return fmt.Errorf("survey accuracy limit must be at least 1 mm")
 		}
 	}
 	// FixedPosAcc 0 means no accuracy stated - the value a readback
 	// reports on receivers that store no accuracy - and must round-trip.
-	if m, ok := props.GetMode(); ok && m.PosType != gpsprot.PosTypeNone && m.FixedPosAcc < 0 {
-		return fmt.Errorf("fixed position accuracy must not be negative")
+	if m, ok := props.GetMode(); ok && m.PosType != gpsprot.PosTypeNone &&
+		m.FixedPosAcc != 0 && m.FixedPosAcc < gpsprot.Millimeter {
+		return fmt.Errorf("fixed position accuracy must be at least 1 mm")
 	}
 	return nil
 }
@@ -1441,24 +1442,24 @@ func (l *llh) Set(s string) error {
 	return nil
 }
 
-type accuracy gpsprot.Length
+type length gpsprot.Length
 
-var _ pflag.Value = (*accuracy)(nil)
+var _ pflag.Value = (*length)(nil)
 
-func (a *accuracy) String() string {
-	return gpsprot.Length(*a).String()
+func (l *length) String() string {
+	return gpsprot.Length(*l).String()
 }
 
-func (a *accuracy) Type() string {
+func (l *length) Type() string {
 	return "meters"
 }
 
-func (a *accuracy) Set(s string) error {
-	v, err := gpsprot.ParseAccuracy(s)
+func (l *length) Set(s string) error {
+	v, err := gpsprot.ParseLength(s)
 	if err != nil {
 		return err
 	}
-	*a = accuracy(v)
+	*l = length(v)
 	return nil
 }
 
