@@ -86,8 +86,8 @@ type RequestClass struct {
 // pairParityExceptions lists command IDs where even/odd parity gives
 // the wrong answer. Sorted for binary search.
 var pairParityExceptions = []int{
-	3, 5, 7, 8, 11, 20, 23, 24, 30, 412, 507, 508, 511, 513,
-	596, 753, 755, 756, 757, 758, 906, 907, 908,
+	3, 5, 7, 8, 11, 20, 23, 24, 30, 391, 412, 507, 508, 511, 513,
+	596, 751, 753, 754, 755, 756, 757, 758, 762, 906, 907, 908,
 }
 
 // ClassifyRequest classifies a sent NMEA payload (between $ and *).
