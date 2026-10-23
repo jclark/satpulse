@@ -74,6 +74,36 @@ func ParseLength(s string) (Length, error) {
 	return Length(n), nil
 }
 
+// ParseAccuracy is like ParseLength, but a nonzero value too small to
+// represent becomes the smallest Length of the same sign rather than 0,
+// because an accuracy of 0 means no accuracy at all.
+func ParseAccuracy(s string) (Length, error) {
+	l, err := ParseLength(s)
+	if err == nil && l == 0 {
+		// s is a valid JSON number, so it is nonzero if it has a nonzero
+		// digit before any exponent.
+		s = strings.TrimSpace(s)
+		mant, _, _ := strings.Cut(strings.ToLower(s), "e")
+		if strings.ContainsAny(mant, "123456789") {
+			l = 1
+			if strings.HasPrefix(s, "-") {
+				l = -1
+			}
+		}
+	}
+	return l, err
+}
+
+// AccuracyMeters is like Meters, but a nonzero value too small to
+// represent becomes the smallest Length of the same sign rather than 0.
+func AccuracyMeters(f float64) Length {
+	l := Meters(f)
+	if l == 0 && f != 0 && !math.IsNaN(f) {
+		l = Length(math.Copysign(1, f))
+	}
+	return l
+}
+
 // Angle represents an angle in nanodegrees.
 type Angle int64
 

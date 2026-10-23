@@ -631,6 +631,8 @@ func TestConfigTargetJSONRoundTrip(t *testing.T) {
 	target.Opts.SatsMsg.Set(SatsMsgAny)
 	target.Opts.RawMsg.Set(RawMsgObs)
 	target.Opts.Survey.Flags = SurveyAgain
+	target.Opts.Survey.MinDur = 5 * time.Second
+	target.Opts.Survey.AccLimit = Millimeter / 10
 	data, err := json.Marshal(target)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
@@ -647,6 +649,95 @@ func TestConfigTargetJSONRoundTrip(t *testing.T) {
 	}
 	if got.Opts.TimeAssist != (TimeEstimate{}) {
 		t.Errorf("unset option changed: %+v", got.Opts.TimeAssist)
+	}
+}
+
+func TestSurveyUnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		expect    Survey
+		expectErr bool
+	}{
+		{
+			name:   "all fields",
+			json:   `{"Flags": ["again"], "MinDur": 5000000000, "AccLimit": 0.0001}`,
+			expect: Survey{Flags: SurveyAgain, MinDur: 5 * time.Second, AccLimit: Millimeter / 10},
+		},
+		{name: "limit too small to represent", json: `{"AccLimit": 1e-9}`, expect: Survey{AccLimit: Micrometer}},
+		{name: "zero limit", json: `{"AccLimit": 0}`, expect: Survey{}},
+		{name: "no limit", json: `{"MinDur": 1}`, expect: Survey{MinDur: 1}},
+		{name: "unknown field", json: `{"Bogus": 1}`, expectErr: true},
+		{name: "bad limit", json: `{"AccLimit": "x"}`, expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var got Survey
+			err := json.Unmarshal([]byte(tc.json), &got)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.expect {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestModeFixedPosAccUnmarshalJSON(t *testing.T) {
+	tests := []struct {
+		name   string
+		json   string
+		expect Length
+	}{
+		{name: "sub-millimeter", json: "0.0001", expect: Millimeter / 10},
+		{name: "too small to represent", json: "1e-9", expect: Micrometer},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var cp ConfigProps
+			data := `{"mode": {"static": true, "fixedPosECEF": [1, 2, 3], "fixedPosAcc": ` + tc.json + `}}`
+			if err := json.Unmarshal([]byte(data), &cp); err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			m, _ := cp.GetMode()
+			if m.FixedPosAcc != tc.expect {
+				t.Errorf("got %v, want %v", m.FixedPosAcc, tc.expect)
+			}
+		})
+	}
+}
+
+func TestAccUnits(t *testing.T) {
+	const unit = Millimeter / 10
+	tests := []struct {
+		name              string
+		acc               Length
+		expectFixedPosAcc int64
+		expectSurveyLimit int64
+	}{
+		{name: "zero", acc: 0, expectFixedPosAcc: 0, expectSurveyLimit: 0},
+		{name: "negative", acc: -unit, expectFixedPosAcc: 0, expectSurveyLimit: 0},
+		{name: "below one unit", acc: Micrometer, expectFixedPosAcc: 1, expectSurveyLimit: 1},
+		{name: "exact", acc: 3 * unit, expectFixedPosAcc: 3, expectSurveyLimit: 3},
+		{name: "between units", acc: 3*unit + Micrometer, expectFixedPosAcc: 4, expectSurveyLimit: 3},
+		{name: "just below a unit", acc: 4*unit - Micrometer, expectFixedPosAcc: 4, expectSurveyLimit: 3},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := FixedPosAccUnits(tc.acc, unit); got != tc.expectFixedPosAcc {
+				t.Errorf("FixedPosAccUnits = %d, want %d", got, tc.expectFixedPosAcc)
+			}
+			if got := SurveyAccLimitUnits(tc.acc, unit); got != tc.expectSurveyLimit {
+				t.Errorf("SurveyAccLimitUnits = %d, want %d", got, tc.expectSurveyLimit)
+			}
+		})
 	}
 }
 
