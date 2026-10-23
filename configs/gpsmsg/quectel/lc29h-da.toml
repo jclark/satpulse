@@ -1,0 +1,35 @@
+#:schema ../gpsmsg-schema.json
+# Quectel LC29H(DA) configuration messages
+# Default baud rate: 115200
+# The PAIR messages common to the AG3335 and the PQTM messages common to the
+# LC29H variants come from lc29h-pqtm.toml; this file adds the PQTM
+# messages that the LC29H(DA) supports but the LC29H(AA) does not.
+#
+# Tested board:
+#   LC29H(DA): firmware LC29HDANR11A03S_RSA (2024/03/19), AG3335A V2.6.0
+# The LC29H(DA) cannot output ZDA, does not support NMEA V3.01 (nmea-ver-3
+# is accepted but has no effect), has a fixed 1 Hz fix rate, and applies
+# constellation (gnss-*) changes only after a save and restart.
+
+[[include]]
+src = "lc29h-pqtm.toml"
+
+# Receiver mode (PQTMCFGRCVRMODE,W,<Mode>): 1=rover, 2=base station.
+# Takes effect after PQTMSAVEPAR and a restart. In base station mode the
+# module disables NMEA output and enables RTCM MSM4 and 1005 output.
+# Verified OK and get-mode returns the new mode on LC29H(DA)
+# (not saved, so the effect of base station mode was not seen)
+# Rejected as unsupported on LC29H(AA) A05S; no response on LC29H(AA) A03S
+
+[[nmea]]
+text = "PQTMCFGRCVRMODE,R"
+tag = "get-mode"
+description = "Get receiver mode (rover/base)"
+[[nmea]]
+text = "PQTMCFGRCVRMODE,W,2"
+tag = "mode-base"
+description = "Set base station mode"
+[[nmea]]
+text = "PQTMCFGRCVRMODE,W,1"
+tag = "mode-rover"
+description = "Set rover mode"

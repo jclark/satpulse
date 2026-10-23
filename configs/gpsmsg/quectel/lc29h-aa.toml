@@ -1,0 +1,103 @@
+#:schema ../gpsmsg-schema.json
+# Quectel LC29H(AA) configuration messages
+# Default baud rate: 115200
+# The PAIR messages common to the AG3335 and the PQTM messages common to the
+# LC29H variants come from lc29h-pqtm.toml; this file adds the PQTM
+# messages that only the LC29H(AA) supports.
+#
+# Tested boards:
+#   LC29H(AA) A03S: firmware LC29HAANR11A03S (2023/12/14), AG3335M V3.0.4
+#   LC29H(AA) A05S: firmware LC29HAANR11A05S (2025/09/12), AG3335M V3.2.2
+# A03S silently ignores many PQTM commands that A05S supports.
+
+[[include]]
+src = "lc29h-pqtm.toml"
+
+# Verified PQTMUNIQID response on LC29H(AA) A05S
+# No response on LC29H(AA) A03S; rejected as unsupported on LC29H(DA)
+[[nmea]]
+text = "PQTMUNIQID"
+tag = "get-uniqid"
+description = "Get chip unique ID"
+
+# PQTM output messages only on LC29H(AA)
+# Each is rejected with "invalid parameters" on LC29H(DA)
+
+# Verified PQTMLS appears after enable and stops after disable on LC29H(AA) A05S
+# Rejected with "invalid parameters" on LC29H(AA) A03S
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMLS,1,1"
+tag = "pqtm-ls"
+description = "Enable PQTMLS message (leap second forecast)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMLS,0,1"
+tag = "pqtm-ls-off"
+description = "Disable PQTMLS message"
+
+# Verified PQTMJAMMINGSTATUS appears after enable and stops after disable
+# on LC29H(AA) A03S and LC29H(AA) A05S
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,1,1"
+tag = "pqtm-jammingstatus"
+description = "Enable PQTMJAMMINGSTATUS message (jamming detection)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,0,1"
+tag = "pqtm-jammingstatus-off"
+description = "Disable PQTMJAMMINGSTATUS message"
+
+# Verified PQTMSTD appears after enable and stops after disable on LC29H(AA) A05S
+# Rejected with "invalid parameters" on LC29H(AA) A03S
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSTD,1,1"
+tag = "pqtm-std"
+description = "Enable PQTMSTD message (position standard deviation)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSTD,0,1"
+tag = "pqtm-std-off"
+description = "Disable PQTMSTD message"
+
+# Fix rate (PQTMCFGFIXRATE,W,<Interval ms>)
+# Verified OK, get-fix-rate returns 500 and GGA comes at 2 Hz after
+# fix-rate-2 on LC29H(AA) A05S; fix-rate-1 restores 1 Hz
+# No response on LC29H(AA) A03S
+
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,1000"
+tag = "fix-rate-1"
+description = "Set fix rate to 1 Hz"
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,500"
+tag = "fix-rate-2"
+description = "Set fix rate to 2 Hz"
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,200"
+tag = "fix-rate-5"
+description = "Set fix rate to 5 Hz"
+[[nmea]]
+text = "PQTMCFGFIXRATE,W,100"
+tag = "fix-rate-10"
+description = "Set fix rate to 10 Hz"
+
+# UART baud rate (PQTMCFGUART,W,<Baudrate>)
+# Not tested. PQTMCFGUART,R answers on LC29H(AA) A05S but not on LC29H(AA) A03S.
+
+[[nmea]]
+text = "PQTMCFGUART,W,9600"
+tag = "speed-9600"
+description = "Set baud rate to 9600"
+[[nmea]]
+text = "PQTMCFGUART,W,115200"
+tag = "speed-115200"
+description = "Set baud rate to 115200"
+[[nmea]]
+text = "PQTMCFGUART,W,230400"
+tag = "speed-230400"
+description = "Set baud rate to 230400"
+[[nmea]]
+text = "PQTMCFGUART,W,460800"
+tag = "speed-460800"
+description = "Set baud rate to 460800"
+[[nmea]]
+text = "PQTMCFGUART,W,921600"
+tag = "speed-921600"
+description = "Set baud rate to 921600"
