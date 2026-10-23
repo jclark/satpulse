@@ -172,7 +172,7 @@ func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, err
 	if mode.PosType == gpsprot.PosTypeNone {
 		tc.mode = tmodeSurveyIn
 		tc.svinMinDur = uint32(survey.MinDur.Round(time.Second) / time.Second)
-		tc.svinAccLimit = tmodeAcc(survey.AccLimit)
+		tc.svinAccLimit = tmodeAccLimit(survey.AccLimit)
 		return tc, nil
 	}
 	tc.mode = tmodeFixed
@@ -409,7 +409,7 @@ func (tc *tmodeConfig) toTmode2(tm *ubxbin.CfgTmode2, all bool) {
 	// Survey-in parameters for survey mode
 	if tc.mode == tmodeSurveyIn || all {
 		tm.SvinMinDur = tc.svinMinDur // seconds
-		svinAccLimitMm := tmodeAccMm(tc.svinAccLimit)
+		svinAccLimitMm := tmodeAccLimitMm(tc.svinAccLimit)
 		tm.SvinAccLimit = uint32(svinAccLimitMm) // mm (convert from 0.1mm)
 	}
 }
@@ -486,7 +486,7 @@ func (tc *tmodeConfig) toTmode(tm *ubxbin.CfgTmode, all bool) error {
 
 		// Fixed position variance (convert from 0.1mm accuracy to mm² variance)
 		var err error
-		tm.FixedPosVar, err = tmodeAccToVar(tc.fixedPosAcc, "fixed position accuracy")
+		tm.FixedPosVar, err = tmodeAccToVar(tmodeAccMm(tc.fixedPosAcc), "fixed position accuracy")
 		if err != nil {
 			return err
 		}
@@ -496,7 +496,7 @@ func (tc *tmodeConfig) toTmode(tm *ubxbin.CfgTmode, all bool) error {
 	if tc.mode == tmodeSurveyIn || all {
 		tm.SvinMinDur = tc.svinMinDur // seconds
 		var err error
-		tm.SvinVarLimit, err = tmodeAccToVar(tc.svinAccLimit, "survey accuracy limit")
+		tm.SvinVarLimit, err = tmodeAccToVar(tmodeAccLimitMm(tc.svinAccLimit), "survey accuracy limit")
 		if err != nil {
 			return err
 		}
@@ -542,23 +542,28 @@ func (tc *tmodeConfig) fromTmode(tm *ubxbin.CfgTmode) {
 	tc.svinAccLimit = tmodeVarToAcc(tm.SvinVarLimit)
 }
 
-// tmodeAccToVar converts accuracy in 0.1mm to variance in mm² with overflow check.
-func tmodeAccToVar(acc01mm uint32, name string) (uint32, error) {
-	accMm := tmodeAccMm(acc01mm)
+// tmodeAccToVar converts accuracy in mm to variance in mm² with overflow check.
+func tmodeAccToVar(accMm int64, name string) (uint32, error) {
 	if accMm > 65535 {
 		return 0, fmt.Errorf("%s %d mm too large for TMODE (max 65535 mm)", name, accMm)
 	}
 	return uint32(accMm * accMm), nil
 }
 
-// tmodeAccMm converts accuracy in 0.1mm to mm, rounding to nearest but not
-// to 0, which would turn a stated accuracy into none.
+// tmodeAccMm converts a fixed position accuracy in 0.1mm to mm, rounding up
+// as tmodeAcc does.
 func tmodeAccMm(acc01mm uint32) int64 {
-	accMm, _ := divModRound(int64(acc01mm), 10)
-	if acc01mm > 0 {
-		accMm = max(accMm, 1)
+	return (int64(acc01mm) + 9) / 10
+}
+
+// tmodeAccLimitMm converts a survey accuracy limit in 0.1mm to mm, rounding
+// down but not to 0 as tmodeAccLimit does. Rounding the 0.1mm value again
+// gives the same result as rounding the original Length to mm.
+func tmodeAccLimitMm(acc01mm uint32) int64 {
+	if acc01mm == 0 {
+		return 0
 	}
-	return accMm
+	return max(int64(acc01mm)/10, 1)
 }
 
 // tmodeVarToAcc converts variance in mm² to accuracy in 0.1mm.
@@ -738,10 +743,27 @@ func cfgValGetInt8(vals *CfgVals, key ucv.KeyI, ptr *int8) bool {
 	return ok
 }
 
-// tmodeAcc converts a Length to the units used by tmodeConfig for accuracy i.e. 0.1mm.
+// tmodeAcc converts a fixed position accuracy to the units used by tmodeConfig
+// for accuracy i.e. 0.1mm. It rounds up, so the receiver never states a better
+// accuracy than requested.
 func tmodeAcc(meters gpsprot.Length) uint32 {
-	acc, _ := divModRound(int64(meters), int64(gpsprot.Millimeter/10))
-	return uint32(acc)
+	const unit = int64(gpsprot.Millimeter / 10)
+	if meters <= 0 {
+		return 0
+	}
+	return uint32((int64(meters) + unit - 1) / unit)
+}
+
+// tmodeAccLimit converts a survey accuracy limit to the units used by tmodeConfig
+// for accuracy i.e. 0.1mm. It rounds down, so the survey is never satisfied by a
+// worse accuracy than requested, but a positive limit becomes at least one unit,
+// the strictest the receiver can express.
+func tmodeAccLimit(meters gpsprot.Length) uint32 {
+	const unit = int64(gpsprot.Millimeter / 10)
+	if meters <= 0 {
+		return 0
+	}
+	return uint32(max(int64(meters)/unit, 1))
 }
 
 // splitLength splits a Length into a int32 and int8.

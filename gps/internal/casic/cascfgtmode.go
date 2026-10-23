@@ -175,7 +175,7 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		m.ZFixed = int32(math.Round(tt.ecef[2] * casbin.CfgTMode2FixedPositionScale))
 		m.FixedPacc = tmode2Acc(tt.posAcc)
 		m.SvinMinDur = tt.svinDur
-		m.SvinPaccLim = tmode2Acc(tt.svinAcc)
+		m.SvinPaccLim = tmode2AccLimit(tt.svinAcc)
 		if !force && m == *c.tm6 {
 			c.touchNoOp(casbin.CfgCfgSectionNav)
 			return
@@ -211,15 +211,24 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 // tmode2AccUnit is the unit of the CFG-TMODE2 accuracies.
 const tmode2AccUnit = gpsprot.Meter / gpsprot.Length(casbin.CfgTMode2PositionAccuracyScale)
 
-// tmode2Acc converts an accuracy to CFG-TMODE2 units, rounding to nearest
-// but not to 0, which would turn a stated accuracy into none. It works on
-// the Length rather than on float meters, so that the result is exact.
+// tmode2Acc converts a fixed position accuracy to CFG-TMODE2 units. It
+// rounds up, so the receiver never states a better accuracy than requested.
 func tmode2Acc(acc gpsprot.Length) uint32 {
-	n := (acc + tmode2AccUnit/2) / tmode2AccUnit
-	if acc > 0 {
-		n = max(n, 1)
+	if acc <= 0 {
+		return 0
 	}
-	return uint32(n)
+	return uint32((acc + tmode2AccUnit - 1) / tmode2AccUnit)
+}
+
+// tmode2AccLimit converts a survey accuracy limit to CFG-TMODE2 units. It
+// rounds down, so the survey is never satisfied by a worse accuracy than
+// requested, but a positive limit becomes at least one unit, the strictest
+// the receiver can express.
+func tmode2AccLimit(limit gpsprot.Length) uint32 {
+	if limit <= 0 {
+		return 0
+	}
+	return uint32(max(limit/tmode2AccUnit, 1))
 }
 
 // tmodeConfigProps reports the positioning mode from the readback.
