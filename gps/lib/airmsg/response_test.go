@@ -154,6 +154,12 @@ func TestClassifyRequest(t *testing.T) {
 			wantID:   "020",
 		},
 		{
+			name:     "exception: 024 is query despite even",
+			sent:     "PAIR024",
+			wantKind: RequestQuery,
+			wantID:   "024",
+		},
+		{
 			name:     "exception: 412 is query despite even",
 			sent:     "PAIR412",
 			wantKind: RequestQuery,
