@@ -175,11 +175,11 @@ func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, err
 	if mode.PosType == gpsprot.PosTypeNone {
 		tc.mode = tmodeSurveyIn
 		tc.svinMinDur = uint32(survey.MinDur.Round(time.Second) / time.Second)
-		tc.svinAccLimit = uint32(gpsprot.SurveyAccLimitUnits(survey.AccLimit, tmodeAccUnit))
+		tc.svinAccLimit = uint32(surveyAccLimitUnits(survey.AccLimit, tmodeAccUnit))
 		return tc, nil
 	}
 	tc.mode = tmodeFixed
-	tc.fixedPosAcc = uint32(gpsprot.FixedPosAccUnits(mode.FixedPosAcc, tmodeAccUnit))
+	tc.fixedPosAcc = uint32(fixedPosAccUnits(mode.FixedPosAcc, tmodeAccUnit))
 	tc.useLLH = mode.PosType == gpsprot.PosTypeLLH
 	if tc.useLLH {
 		for i := range 2 {
@@ -546,14 +546,14 @@ func (tc *tmodeConfig) fromTmode(tm *ubxbin.CfgTmode) {
 // messages that use mm. Rounding the 0.1mm value up again gives the same
 // result as rounding the original Length up to mm.
 func (tc *tmodeConfig) fixedPosAccMm() int64 {
-	return gpsprot.FixedPosAccUnits(gpsprot.Length(tc.fixedPosAcc)*tmodeAccUnit, gpsprot.Millimeter)
+	return fixedPosAccUnits(gpsprot.Length(tc.fixedPosAcc)*tmodeAccUnit, gpsprot.Millimeter)
 }
 
 // svinAccLimitMm returns the survey accuracy limit in mm for the
 // messages that use mm. Rounding the 0.1mm value down again gives the same
 // result as rounding the original Length down to mm.
 func (tc *tmodeConfig) svinAccLimitMm() int64 {
-	return gpsprot.SurveyAccLimitUnits(gpsprot.Length(tc.svinAccLimit)*tmodeAccUnit, gpsprot.Millimeter)
+	return surveyAccLimitUnits(gpsprot.Length(tc.svinAccLimit)*tmodeAccUnit, gpsprot.Millimeter)
 }
 
 // tmodeAccToVar converts accuracy in mm to variance in mm² with overflow check.
@@ -739,6 +739,28 @@ func cfgValGetInt8(vals *CfgVals, key ucv.KeyI, ptr *int8) bool {
 		*ptr = int8(v)
 	}
 	return ok
+}
+
+// surveyAccLimitUnits returns the survey accuracy limit as a whole number
+// of units of size unit. It rounds down, so the survey is never satisfied
+// by a worse accuracy than limit, except that a positive limit smaller
+// than one unit becomes one unit, the strictest limit the receiver can
+// express.
+func surveyAccLimitUnits(limit, unit gpsprot.Length) int64 {
+	if limit <= 0 {
+		return 0
+	}
+	return max(int64(limit/unit), 1)
+}
+
+// fixedPosAccUnits returns the fixed position accuracy as a whole number
+// of units of size unit. It rounds up, so the receiver never states a
+// better accuracy than acc; 0 (no accuracy stated) stays 0.
+func fixedPosAccUnits(acc, unit gpsprot.Length) int64 {
+	if acc <= 0 {
+		return 0
+	}
+	return int64((acc + unit - 1) / unit)
 }
 
 // splitLength splits a Length into a int32 and int8.

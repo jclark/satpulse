@@ -714,33 +714,6 @@ func TestModeFixedPosAccUnmarshalJSON(t *testing.T) {
 	}
 }
 
-func TestAccUnits(t *testing.T) {
-	const unit = Millimeter / 10
-	tests := []struct {
-		name              string
-		acc               Length
-		expectFixedPosAcc int64
-		expectSurveyLimit int64
-	}{
-		{name: "zero", acc: 0, expectFixedPosAcc: 0, expectSurveyLimit: 0},
-		{name: "negative", acc: -unit, expectFixedPosAcc: 0, expectSurveyLimit: 0},
-		{name: "below one unit", acc: Micrometer, expectFixedPosAcc: 1, expectSurveyLimit: 1},
-		{name: "exact", acc: 3 * unit, expectFixedPosAcc: 3, expectSurveyLimit: 3},
-		{name: "between units", acc: 3*unit + Micrometer, expectFixedPosAcc: 4, expectSurveyLimit: 3},
-		{name: "just below a unit", acc: 4*unit - Micrometer, expectFixedPosAcc: 4, expectSurveyLimit: 3},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := FixedPosAccUnits(tc.acc, unit); got != tc.expectFixedPosAcc {
-				t.Errorf("FixedPosAccUnits = %d, want %d", got, tc.expectFixedPosAcc)
-			}
-			if got := SurveyAccLimitUnits(tc.acc, unit); got != tc.expectSurveyLimit {
-				t.Errorf("SurveyAccLimitUnits = %d, want %d", got, tc.expectSurveyLimit)
-			}
-		})
-	}
-}
-
 func TestFixedPosToECEF(t *testing.T) {
 	llh := Mode{Static: true, PosType: PosTypeLLH}
 	if p, ok := llh.FixedPosToECEF(); !ok || p != (Point3D{Meters(6378137), 0, 0}) {

@@ -1240,18 +1240,6 @@ func (s *Survey) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// SurveyAccLimitUnits returns the survey accuracy limit as a whole number
-// of a receiver's units of size unit. It rounds down, so the survey is
-// never satisfied by a worse accuracy than limit, except that a positive
-// limit smaller than one unit becomes one unit, the strictest limit the
-// receiver can express.
-func SurveyAccLimitUnits(limit, unit Length) int64 {
-	if limit <= 0 {
-		return 0
-	}
-	return max(int64(limit/unit), 1)
-}
-
 type TimeMode byte
 
 const (
@@ -1294,17 +1282,6 @@ type Mode struct {
 	FixedPosLLH  [2]Angle // Latitude and Longitude (when PosType == PosTypeLLH)
 	Height       Length   // Height (when PosType == PosTypeLLH)
 	FixedPosAcc  Length   // accuracy of fixed position; 0 = no accuracy stated (a receiver that stores none reads back 0; the JSON form omits the key instead)
-}
-
-// FixedPosAccUnits returns the fixed position accuracy acc as a whole
-// number of a receiver's units of size unit. It rounds up, so the
-// receiver never states a better accuracy than acc; 0 (no accuracy
-// stated) stays 0.
-func FixedPosAccUnits(acc, unit Length) int64 {
-	if acc <= 0 {
-		return 0
-	}
-	return int64((acc + unit - 1) / unit)
 }
 
 func (m Mode) IsZero() bool {
