@@ -173,9 +173,9 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		m.XFixed = int32(math.Round(tt.ecef[0] * casbin.CfgTMode2FixedPositionScale))
 		m.YFixed = int32(math.Round(tt.ecef[1] * casbin.CfgTMode2FixedPositionScale))
 		m.ZFixed = int32(math.Round(tt.ecef[2] * casbin.CfgTMode2FixedPositionScale))
-		m.FixedPacc = uint32(tmode2Acc(tt.posAcc))
+		m.FixedPacc = uint32(fixedPosAccUnits(tt.posAcc, tmode2AccUnit))
 		m.SvinMinDur = tt.svinDur
-		m.SvinPaccLim = uint32(tmode2Acc(tt.svinAcc))
+		m.SvinPaccLim = uint32(surveyAccLimitUnits(tt.svinAcc, tmode2AccUnit))
 		if !force && m == *c.tm6 {
 			c.touchNoOp(casbin.CfgCfgSectionNav)
 			return
@@ -211,11 +211,26 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 // tmode2AccUnit is the unit of the CFG-TMODE2 accuracies.
 const tmode2AccUnit = gpsprot.Meter / gpsprot.Length(casbin.CfgTMode2PositionAccuracyScale)
 
-// tmode2Acc converts an accuracy to CFG-TMODE2 units, rounding to nearest.
-// It works on the Length rather than on float meters, so that the result
-// is exact.
-func tmode2Acc(acc gpsprot.Length) int64 {
-	return int64((acc + tmode2AccUnit/2) / tmode2AccUnit)
+// surveyAccLimitUnits returns the survey accuracy limit as a whole number
+// of units of size unit. It rounds down, so the survey is never satisfied
+// by a worse accuracy than limit, except that a positive limit smaller
+// than one unit becomes one unit, the strictest limit the receiver can
+// express.
+func surveyAccLimitUnits(limit, unit gpsprot.Length) int64 {
+	if limit <= 0 {
+		return 0
+	}
+	return max(int64(limit/unit), 1)
+}
+
+// fixedPosAccUnits returns the fixed position accuracy as a whole number
+// of units of size unit. It rounds up, so the receiver never states a
+// better accuracy than acc; 0 (no accuracy stated) stays 0.
+func fixedPosAccUnits(acc, unit gpsprot.Length) int64 {
+	if acc <= 0 {
+		return 0
+	}
+	return int64((acc + unit - 1) / unit)
 }
 
 // tmodeConfigProps reports the positioning mode from the readback.
@@ -241,6 +256,12 @@ func (c *Configurator) tmodeConfigProps(props *gpsprot.ConfigProps) {
 				gpsprot.Meters(c.tm5.EcefZ),
 			}
 			m.FixedPosAcc = gpsprot.Meters(casbin.CfgTModeAccuracyFromVariance(c.tm5.PosVar))
+			if c.tm5.PosVar > 0 {
+				// The float variance can hold an accuracy finer than any
+				// that can be requested, or too fine for a Length, which
+				// would read back as 0, meaning none stated.
+				m.FixedPosAcc = max(m.FixedPosAcc, gpsprot.MinAccuracy)
+			}
 		}
 	}
 	props.SetMode(m)
