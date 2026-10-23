@@ -1887,6 +1887,34 @@ func TestTimeMode(t *testing.T) {
 			hasMode: true,
 		},
 		{
+			name:   "V6 survey limit below a millimeter",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: gpsprot.MinAccuracy}
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, SvinMinDur: 300, SvinPaccLim: 1},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			name:   "V6 fixed position accuracy below a millimeter",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:       true,
+					PosType:      gpsprot.PosTypeECEF,
+					FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(6378137), 0, 0},
+					FixedPosAcc:  gpsprot.MinAccuracy,
+				})
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Fixed, XFixed: 637813700, FixedPacc: 1},
+			static:  true,
+			hasMode: true,
+		},
+		{
 			name: "V5 survey uses variances",
 			tm5:  &casbin.CfgTMode{Mode: casbin.CfgTModeAuto},
 			setup: func(target *gpsprot.ConfigTarget) {
@@ -1928,6 +1956,30 @@ func TestTimeMode(t *testing.T) {
 			m, ok := cfg.ConfigProps().GetMode()
 			if ok != tc.hasMode || m.Static != tc.static {
 				t.Errorf("Mode = %+v,%v, want static=%v,%v", m, ok, tc.static, tc.hasMode)
+			}
+		})
+	}
+}
+
+func TestTimeModeV5FixedPosAccReadback(t *testing.T) {
+	tests := []struct {
+		name   string
+		posVar float32
+		expect gpsprot.Length
+	}{
+		{name: "normal", posVar: 0.0004, expect: 20 * gpsprot.Millimeter},
+		{name: "below the minimum", posVar: 1e-9, expect: gpsprot.MinAccuracy},
+		{name: "too small to represent", posVar: 1e-14, expect: gpsprot.MinAccuracy},
+		{name: "not stated", posVar: 0, expect: 0},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &Configurator{tm5: &casbin.CfgTMode{Mode: casbin.CfgTModeFixed, EcefX: 6378137, PosVar: tc.posVar}}
+			var props gpsprot.ConfigProps
+			c.tmodeConfigProps(&props)
+			m, _ := props.GetMode()
+			if m.FixedPosAcc != tc.expect {
+				t.Errorf("FixedPosAcc = %v, want %v", m.FixedPosAcc, tc.expect)
 			}
 		})
 	}

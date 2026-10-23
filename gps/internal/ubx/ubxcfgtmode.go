@@ -402,14 +402,14 @@ func (tc *tmodeConfig) toTmode2(tm *ubxbin.CfgTmode2, all bool) {
 			tm.EcefZOrAlt = tc.ecef[2] // cm
 		}
 		// Fixed position accuracy (convert from 0.1mm to mm with rounding)
-		fixedPosAccMm, _ := divModRound(int64(tc.fixedPosAcc), 10)
+		fixedPosAccMm := tmodeAccMm(tc.fixedPosAcc)
 		tm.FixedPosAcc = uint32(fixedPosAccMm)
 	}
 
 	// Survey-in parameters for survey mode
 	if tc.mode == tmodeSurveyIn || all {
 		tm.SvinMinDur = tc.svinMinDur // seconds
-		svinAccLimitMm, _ := divModRound(int64(tc.svinAccLimit), 10)
+		svinAccLimitMm := tmodeAccMm(tc.svinAccLimit)
 		tm.SvinAccLimit = uint32(svinAccLimitMm) // mm (convert from 0.1mm)
 	}
 }
@@ -544,11 +544,21 @@ func (tc *tmodeConfig) fromTmode(tm *ubxbin.CfgTmode) {
 
 // tmodeAccToVar converts accuracy in 0.1mm to variance in mm² with overflow check.
 func tmodeAccToVar(acc01mm uint32, name string) (uint32, error) {
-	accMm, _ := divModRound(int64(acc01mm), 10)
+	accMm := tmodeAccMm(acc01mm)
 	if accMm > 65535 {
 		return 0, fmt.Errorf("%s %d mm too large for TMODE (max 65535 mm)", name, accMm)
 	}
 	return uint32(accMm * accMm), nil
+}
+
+// tmodeAccMm converts accuracy in 0.1mm to mm, rounding to nearest but not
+// to 0, which would turn a stated accuracy into none.
+func tmodeAccMm(acc01mm uint32) int64 {
+	accMm, _ := divModRound(int64(acc01mm), 10)
+	if acc01mm > 0 {
+		accMm = max(accMm, 1)
+	}
+	return accMm
 }
 
 // tmodeVarToAcc converts variance in mm² to accuracy in 0.1mm.
