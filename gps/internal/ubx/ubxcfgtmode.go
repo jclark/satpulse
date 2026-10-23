@@ -408,15 +408,14 @@ func (tc *tmodeConfig) toTmode2(tm *ubxbin.CfgTmode2, all bool) {
 			tm.EcefZOrAlt = tc.ecef[2] // cm
 		}
 		// Fixed position accuracy (convert from 0.1mm to mm with rounding)
-		fixedPosAccMm := tmodeAccMm(tc.fixedPosAcc)
-		tm.FixedPosAcc = uint32(fixedPosAccMm)
+		tm.FixedPosAcc = uint32(tmodeAccMm(tc.fixedPosAcc))
 	}
 
 	// Survey-in parameters for survey mode
 	if tc.mode == tmodeSurveyIn || all {
 		tm.SvinMinDur = tc.svinMinDur // seconds
-		svinAccLimitMm := tmodeAccLimitMm(tc.svinAccLimit)
-		tm.SvinAccLimit = uint32(svinAccLimitMm) // mm (convert from 0.1mm)
+		// Survey accuracy limit (convert from 0.1mm to mm with rounding)
+		tm.SvinAccLimit = uint32(tmodeAccLimitMm(tc.svinAccLimit))
 	}
 }
 
