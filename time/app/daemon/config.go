@@ -75,7 +75,7 @@ type SerialSampleConfig struct {
 
 type PHCConfig struct {
 	Interface string `toml:"interface"`
-	Pin       uint8  `toml:"pin"`
+	Pin       *uint8 `toml:"pin"` // nil means no pin: 0 on a PHC with pins, none on a PHC without
 	Channel   uint8  `toml:"channel"`
 	Wait      bool   `toml:"wait"`
 }
@@ -293,10 +293,12 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 }
 
 func (cff PHCConfig) PinDesc() ts.PinDesc {
-	return ts.PinDesc{
-		PinIndex:  uint32(cff.Pin),
-		ChanIndex: uint32(cff.Channel),
+	pd := ts.PinDesc{ChanIndex: uint32(cff.Channel)}
+	if cff.Pin != nil {
+		pin := uint32(*cff.Pin)
+		pd.PinIndex = &pin
 	}
+	return pd
 }
 
 func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {

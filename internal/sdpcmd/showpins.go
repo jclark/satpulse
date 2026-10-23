@@ -30,14 +30,32 @@ func (p *PinDesc) Print(f *os.File) {
 	}
 }
 
-// showPins implements --show mode when an an interface is specified
-func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
-	var result []Printer
-
-	phcIndex, err := phc.IfPhcIndex(cfg.Interface)
-	if err != nil || phcIndex < 0 {
-		return nil, fmt.Errorf("interface %s does not have a PTP hardware clock", cfg.Interface)
+// showAuto implements the default mode with an interface: the pins of its
+// PHC, or the interface record if the PHC has none
+func showAuto(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
+	phcIndex, err := ifPHCIndex(cfg.Interface)
+	if err != nil {
+		return nil, err
 	}
+	if sysfsPinCount(os.DirFS("/sys"), phcIndex) > 0 {
+		return showPinsByPHCIndex(cfg, phcIndex)
+	}
+	return showIface(lg, cfg.Interface, phcIndex)
+}
+
+// showPins implements --show-pins mode
+func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
+	phcIndex, err := ifPHCIndex(cfg.Interface)
+	if err != nil {
+		return nil, err
+	}
+	return showPinsByPHCIndex(cfg, phcIndex)
+}
+
+// showPinsByPHCIndex shows the pins of the interface's PHC, whose index has
+// already been looked up
+func showPinsByPHCIndex(cfg *FlagConfig, phcIndex int) ([]Printer, error) {
+	var result []Printer
 
 	clk, err := phc.Open(fmt.Sprintf("/dev/ptp%d", phcIndex))
 	if err != nil {
@@ -45,12 +63,11 @@ func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	}
 	defer clk.Close()
 
-	nPins := clk.PinCount()
-	if nPins <= 0 {
-		return nil, fmt.Errorf("interface %s has no software-defined pins", cfg.Interface)
+	if !clk.HasPins() {
+		return nil, noPinsError(cfg.Interface)
 	}
 
-	for i := range uint32(nPins) {
+	for i := range uint32(clk.PinCount()) {
 		pinDesc, err := clk.PinGetFunc(i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get pin %d description: %w", i, err)

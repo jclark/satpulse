@@ -68,6 +68,7 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName string, cmdName stri
 	} else {
 		// Static modes - look up in map and convert slice to iterator
 		modeHandlers := map[Mode]func(*slog.Logger, *FlagConfig) ([]Printer, error){
+			ModeShowAuto:   showAuto,
 			ModeShowIfaces: showIfaces,
 			ModeShowPins:   showPins,
 			ModePerout:     perout,

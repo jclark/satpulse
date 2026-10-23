@@ -55,9 +55,11 @@ to tell the extension which schema to use.
 The `phc` table is about the PTP hardware clock. It can have following keys:
 
 * `interface` - a string giving the name of an ethernet interface with the pin that the GPS's PPS output is attached to
-* `pin` - an integer giving the index of the pin; the default is 0 (which is the only pin on the Raspberry Pi CM4)
-* `channel` - an integer giving the timestamping channel to use; the default is 0; the only case in which you need
-  to change the default is if you have multiple pins in use; in this case, each pin must specify a distinct channel
+* `pin` - an integer giving the index of the pin; when the PHC has pins, the default is 0 (which is the only pin on the Raspberry Pi CM4);
+  must not be specified if the PHC has no pins
+* `channel` - an integer giving the timestamping channel to use; the default is 0; this needs changing only if
+  multiple pins are in use, in which case each pin must specify a distinct channel, or if the PHC has no
+  pins and the PPS is on another channel
 
 Example
 

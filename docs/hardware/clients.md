@@ -62,12 +62,15 @@ The following Rockchip SoCs include a MAC that supports PTP hardware timestampin
 - RK3588 / RK3588S
 
 The stmmac Linux driver supports this.
-I have personally verified this on the Radxa Zero 3E, which uses the RK3566,
-and the ODROID-M1, which uses the RK3568.
+I have personally verified this on:
+
+- RK3566 (Radxa Zero 3E)
+- RK3568 (ODROID-M1)
+- RK3588S (Orange Pi 5)
+
 There are boot logs on the Internet confirming it for the
-[RK3576](https://blog.csdn.net/wb4916/article/details/160342865),
-[RK3588](https://www.spinics.net/lists/linux-watchdog/msg30663.html) and
-[RK3588S](https://github.com/ryan4yin/nixos-rk3588/blob/main/Debug.md).
+[RK3576](https://blog.csdn.net/wb4916/article/details/160342865) and
+[RK3588](https://www.spinics.net/lists/linux-watchdog/msg30663.html).
 
 A board using one of these SoCs should work provided it has an RJ45 port that uses the SoC's MAC.
 This will usually be the case for any Gigabit port, but 2.5G ports typically use the RTL8125,
@@ -81,4 +84,9 @@ As of the time of writing (Q4 2026), the best choices seem to me to be:
 - RK3576: [Radxa ROCK 4D](https://radxa.com/products/rock4/4d/)
 - RK3588S: [Orange Pi 5](https://www.orangepi.org/html/hardWare/computerAndMicrocontrollers/details/Orange-Pi-5.html)
 
-(I have not yet tested ROCK 3C, ROCK 4D or Orange Pi 5, but I have ordered them and so should be able to confirm in a few weeks.)
+(I have not yet tested ROCK 3C or ROCK 4D, but I have ordered them and so should be able to confirm in a few weeks.)
+
+### Texas Instruments
+
+The [AM67](https://www.ti.com/product/AM67)/[AM67A](https://www.ti.com/product/AM67A) SoC has a MAC that supports PTP hardware timestamping.
+I have verified this on the [BeagleY-AI](https://www.beagleboard.org/boards/beagley-ai), which uses the AM67A.

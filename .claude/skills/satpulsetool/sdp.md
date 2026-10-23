@@ -6,11 +6,11 @@ output of a GNSS receiver, or generate periodic output pulses (`perout`).
 Linux only: the subcommand does not exist in builds for other systems. Full
 reference: satpulsetool-sdp(1).
 
-One of four modes, at most one per invocation, chosen by `--show` (the
-default), `-i`/`--extts`, `-o`/`--perout`, or `--disable`. The positional
-argument is the network interface. It is optional with `--show` and required
-otherwise. Without an interface, discovery reads sysfs and needs no
-privileges; with one, the command opens the PHC device and needs root.
+At most one mode may be specified: `--show-ifaces`, `--show-pins`,
+`-i`/`--extts`, `-o`/`--perout`, or `--disable`. The positional
+argument is the network interface. It is optional with `--show-ifaces` and required
+otherwise. In `--show-ifaces` mode, discovery needs no privileges; other
+modes open the PHC device and need root.
 
 `--extts`, `--perout`, and `--disable` all change the pin's function: confirm
 with the user before running them (see SKILL.md).
@@ -22,14 +22,15 @@ satpulsetool sdp
 satpulsetool sdp enp4s0
 ```
 
-Without an interface, lists every interface whose PHC has SDPs; with one,
-shows that interface's pins.
+Without an interface, lists every interface whose PHC has pins or channels; with one,
+shows that interface's pins, or its interface record if the PHC has no pins.
 
 ## Is PPS arriving on a pin?
 
 `-i` configures the pin as an input and prints each timestamp as it arrives,
-for `-t` seconds (default 2; 0 runs until interrupted). Pin and channel
-default to 0; choose with `-p INDEX|NAME` and `--chan INDEX`. `-j` gives JSON
+for `-t` seconds (default 2; 0 runs until interrupted). The channel defaults
+to 0, and the pin defaults to 0 when required; choose with `-p INDEX|NAME`
+and `--chan INDEX`. `-j` gives JSON
 Lines. Timestamps buffered before the read started are dropped unless
 `--show-stale` is given.
 
