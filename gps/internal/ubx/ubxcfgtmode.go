@@ -162,9 +162,6 @@ func tmodeRequiredInfo(target *gpsprot.ConfigTarget, method resurveyMethod) tmod
 	return tmodeInfoNone
 }
 
-// tmodeAccUnit is the unit of the accuracies in tmodeConfig.
-const tmodeAccUnit = gpsprot.Millimeter / 10
-
 // newTmodeConfig creates tmodeConfig from gpsprot.Mode and gpsprot.Survey values.
 func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, error) {
 	tc := &tmodeConfig{}
@@ -175,11 +172,11 @@ func newTmodeConfig(mode gpsprot.Mode, survey gpsprot.Survey) (*tmodeConfig, err
 	if mode.PosType == gpsprot.PosTypeNone {
 		tc.mode = tmodeSurveyIn
 		tc.svinMinDur = uint32(survey.MinDur.Round(time.Second) / time.Second)
-		tc.svinAccLimit = uint32(surveyAccLimitUnits(survey.AccLimit, tmodeAccUnit))
+		tc.svinAccLimit = tmodeAcc(survey.AccLimit, true)
 		return tc, nil
 	}
 	tc.mode = tmodeFixed
-	tc.fixedPosAcc = uint32(fixedPosAccUnits(mode.FixedPosAcc, tmodeAccUnit))
+	tc.fixedPosAcc = tmodeAcc(mode.FixedPosAcc, false)
 	tc.useLLH = mode.PosType == gpsprot.PosTypeLLH
 	if tc.useLLH {
 		for i := range 2 {
@@ -225,7 +222,7 @@ func (tc *tmodeConfig) getMode() gpsprot.Mode {
 
 	case tmodeFixed:
 		mode.Static = true
-		mode.FixedPosAcc = gpsprot.Length(tc.fixedPosAcc) * tmodeAccUnit
+		mode.FixedPosAcc = gpsprot.Length(tc.fixedPosAcc) * (gpsprot.Millimeter / 10)
 
 		if tc.useLLH {
 			mode.PosType = gpsprot.PosTypeLLH
@@ -404,13 +401,16 @@ func (tc *tmodeConfig) toTmode2(tm *ubxbin.CfgTmode2, all bool) {
 			tm.EcefYOrLon = tc.ecef[1] // cm
 			tm.EcefZOrAlt = tc.ecef[2] // cm
 		}
-		tm.FixedPosAcc = uint32(tc.fixedPosAccMm())
+		// Fixed position accuracy (convert from 0.1mm to mm)
+		fixedPosAccMm := divAcc(int64(tc.fixedPosAcc), 10, false)
+		tm.FixedPosAcc = uint32(fixedPosAccMm)
 	}
 
 	// Survey-in parameters for survey mode
 	if tc.mode == tmodeSurveyIn || all {
 		tm.SvinMinDur = tc.svinMinDur // seconds
-		tm.SvinAccLimit = uint32(tc.svinAccLimitMm())
+		svinAccLimitMm := divAcc(int64(tc.svinAccLimit), 10, true)
+		tm.SvinAccLimit = uint32(svinAccLimitMm) // mm (convert from 0.1mm)
 	}
 }
 
@@ -486,7 +486,7 @@ func (tc *tmodeConfig) toTmode(tm *ubxbin.CfgTmode, all bool) error {
 
 		// Fixed position variance (convert from 0.1mm accuracy to mm² variance)
 		var err error
-		tm.FixedPosVar, err = tmodeAccToVar(tc.fixedPosAccMm(), "fixed position accuracy")
+		tm.FixedPosVar, err = tmodeAccToVar(tc.fixedPosAcc, false, "fixed position accuracy")
 		if err != nil {
 			return err
 		}
@@ -496,7 +496,7 @@ func (tc *tmodeConfig) toTmode(tm *ubxbin.CfgTmode, all bool) error {
 	if tc.mode == tmodeSurveyIn || all {
 		tm.SvinMinDur = tc.svinMinDur // seconds
 		var err error
-		tm.SvinVarLimit, err = tmodeAccToVar(tc.svinAccLimitMm(), "survey accuracy limit")
+		tm.SvinVarLimit, err = tmodeAccToVar(tc.svinAccLimit, true, "survey accuracy limit")
 		if err != nil {
 			return err
 		}
@@ -542,22 +542,10 @@ func (tc *tmodeConfig) fromTmode(tm *ubxbin.CfgTmode) {
 	tc.svinAccLimit = tmodeVarToAcc(tm.SvinVarLimit)
 }
 
-// fixedPosAccMm returns the fixed position accuracy in mm for the
-// messages that use mm. Rounding the 0.1mm value up again gives the same
-// result as rounding the original Length up to mm.
-func (tc *tmodeConfig) fixedPosAccMm() int64 {
-	return fixedPosAccUnits(gpsprot.Length(tc.fixedPosAcc)*tmodeAccUnit, gpsprot.Millimeter)
-}
-
-// svinAccLimitMm returns the survey accuracy limit in mm for the
-// messages that use mm. Rounding the 0.1mm value down again gives the same
-// result as rounding the original Length down to mm.
-func (tc *tmodeConfig) svinAccLimitMm() int64 {
-	return surveyAccLimitUnits(gpsprot.Length(tc.svinAccLimit)*tmodeAccUnit, gpsprot.Millimeter)
-}
-
-// tmodeAccToVar converts accuracy in mm to variance in mm² with overflow check.
-func tmodeAccToVar(accMm int64, name string) (uint32, error) {
+// tmodeAccToVar converts accuracy in 0.1mm to variance in mm² with overflow check.
+// limit is as for divAcc.
+func tmodeAccToVar(acc01mm uint32, limit bool, name string) (uint32, error) {
+	accMm := divAcc(int64(acc01mm), 10, limit)
 	if accMm > 65535 {
 		return 0, fmt.Errorf("%s %d mm too large for TMODE (max 65535 mm)", name, accMm)
 	}
@@ -741,26 +729,26 @@ func cfgValGetInt8(vals *CfgVals, key ucv.KeyI, ptr *int8) bool {
 	return ok
 }
 
-// surveyAccLimitUnits returns the survey accuracy limit as a whole number
-// of units of size unit. It rounds down, so the survey is never satisfied
-// by a worse accuracy than limit, except that a positive limit smaller
-// than one unit becomes one unit, the strictest limit the receiver can
-// express.
-func surveyAccLimitUnits(limit, unit gpsprot.Length) int64 {
-	if limit <= 0 {
-		return 0
-	}
-	return max(int64(limit/unit), 1)
+// tmodeAcc converts a Length to the units used by tmodeConfig for accuracy i.e. 0.1mm.
+// limit is as for divAcc.
+func tmodeAcc(meters gpsprot.Length, limit bool) uint32 {
+	return uint32(divAcc(int64(meters), int64(gpsprot.Millimeter/10), limit))
 }
 
-// fixedPosAccUnits returns the fixed position accuracy as a whole number
-// of units of size unit. It rounds up, so the receiver never states a
-// better accuracy than acc; 0 (no accuracy stated) stays 0.
-func fixedPosAccUnits(acc, unit gpsprot.Length) int64 {
-	if acc <= 0 {
+// divAcc divides an accuracy x by y. If limit is true, x is a survey
+// accuracy limit: it rounds down, so the survey is never satisfied by a
+// worse accuracy than requested, but a positive x gives at least 1, the
+// strictest limit that can be expressed. Otherwise x is a fixed position
+// accuracy: it rounds up, so the receiver never states a better accuracy
+// than requested. Rounding twice gives the same result as rounding once.
+func divAcc(x, y int64, limit bool) int64 {
+	if x <= 0 {
 		return 0
 	}
-	return int64((acc + unit - 1) / unit)
+	if limit {
+		return max(x/y, 1)
+	}
+	return (x + y - 1) / y
 }
 
 // splitLength splits a Length into a int32 and int8.
