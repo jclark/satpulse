@@ -137,6 +137,9 @@ const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20 * gpsprot.Meter
 const defaultFixedPosAcc = 20 * gpsprot.Meter
 
+// minAccuracyMm is gpsprot.MinAccuracy in mm, for error messages.
+const minAccuracyMm = float64(gpsprot.MinAccuracy) / float64(gpsprot.Millimeter)
+
 // TODO: add PropIDBaudRate to showProps so --show-config reports the current configured speed.
 // Would need regeneration of the *-noop replay-test traces.
 const showProps = gpsprot.PropIDSignalsEnabled |
@@ -539,7 +542,7 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 		configChanged = true
 		vars.configOpts.Survey.MinDur = time.Duration(p.surveyTime) * time.Second
 		if gpsprot.Length(p.surveyAcc) < gpsprot.MinAccuracy {
-			return false, fmt.Errorf("--survey-acc must be at least %v", gpsprot.MinAccuracy)
+			return false, fmt.Errorf("--survey-acc must be at least %v (%v mm)", gpsprot.MinAccuracy, minAccuracyMm)
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Length(p.surveyAcc)
 		if p.survey {
@@ -585,7 +588,7 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 func (p *flagParser) resolveFixedPos(cmdName, flagName string, mode gpsprot.Mode) error {
 	vars := &p.vars
 	if gpsprot.Length(p.fixedPosAcc) < gpsprot.MinAccuracy {
-		return fmt.Errorf("--fixed-pos-acc must be at least %v", gpsprot.MinAccuracy)
+		return fmt.Errorf("--fixed-pos-acc must be at least %v (%v mm)", gpsprot.MinAccuracy, minAccuracyMm)
 	}
 	vars.configSupport.require(gpsprot.ConfigSupportFixedPos, flagName)
 	if p.flags.Lookup("fixed-pos-acc").Changed {
@@ -805,14 +808,14 @@ func validateTarget(target *gpsprot.ConfigTarget) error {
 			return fmt.Errorf("survey minimum duration must not be negative")
 		}
 		if s.AccLimit < gpsprot.MinAccuracy {
-			return fmt.Errorf("survey accuracy limit must be at least %v m", gpsprot.MinAccuracy)
+			return fmt.Errorf("survey accuracy limit must be at least %v mm", minAccuracyMm)
 		}
 	}
 	// FixedPosAcc 0 means no accuracy stated - the value a readback
 	// reports on receivers that store no accuracy - and must round-trip.
 	if m, ok := props.GetMode(); ok && m.PosType != gpsprot.PosTypeNone &&
 		m.FixedPosAcc != 0 && m.FixedPosAcc < gpsprot.MinAccuracy {
-		return fmt.Errorf("fixed position accuracy must be at least %v m", gpsprot.MinAccuracy)
+		return fmt.Errorf("fixed position accuracy must be at least %v mm", minAccuracyMm)
 	}
 	return nil
 }
