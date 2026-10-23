@@ -22,10 +22,10 @@ import (
 // tmodeTarget is the family-independent time mode to realize.
 type tmodeTarget struct {
 	mode    tmodeTargetMode
-	ecef    [3]float64 // m, fixed position
-	posAcc  float64    // m, fixed position accuracy
-	svinDur uint32     // s, min survey duration
-	svinAcc float64    // m, survey accuracy limit
+	ecef    [3]float64     // m, fixed position
+	posAcc  gpsprot.Length // fixed position accuracy
+	svinDur uint32         // s, min survey duration
+	svinAcc gpsprot.Length // survey accuracy limit
 }
 
 // tmodeTargetMode is the family-independent timing-mode intent.
@@ -143,11 +143,11 @@ func newTModeTarget(mode gpsprot.Mode, survey gpsprot.Survey) *tmodeTarget {
 	if mode.PosType == gpsprot.PosTypeNone {
 		tt.mode = tmodeTargetSurvey
 		tt.svinDur = uint32(survey.MinDur.Round(time.Second) / time.Second)
-		tt.svinAcc = survey.AccLimit.Meters()
+		tt.svinAcc = survey.AccLimit
 		return tt
 	}
 	tt.mode = tmodeTargetFixed
-	tt.posAcc = mode.FixedPosAcc.Meters()
+	tt.posAcc = mode.FixedPosAcc
 	ecef, _ := mode.FixedPosToECEF()
 	for i := range 3 {
 		tt.ecef[i] = ecef[i].Meters()
@@ -187,9 +187,9 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		EcefX:        tt.ecef[0],
 		EcefY:        tt.ecef[1],
 		EcefZ:        tt.ecef[2],
-		PosVar:       casbin.CfgTModeVarianceFromAccuracy(tt.posAcc),
+		PosVar:       casbin.CfgTModeVarianceFromAccuracy(tt.posAcc.Meters()),
 		SvinMinDur:   tt.svinDur,
-		SvinVarLimit: casbin.CfgTModeVarianceFromAccuracy(tt.svinAcc),
+		SvinVarLimit: casbin.CfgTModeVarianceFromAccuracy(tt.svinAcc.Meters()),
 	}
 	switch tt.mode {
 	case tmodeTargetMobile:
@@ -208,14 +208,18 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 	c.addSetReq(m, func() { c.tm5 = m })
 }
 
-// tmode2Acc converts an accuracy in meters to CFG-TMODE2 units, rounding
-// to nearest but not to 0, which would turn a stated accuracy into none.
-func tmode2Acc(meters float64) uint32 {
-	acc := uint32(math.Round(meters * casbin.CfgTMode2PositionAccuracyScale))
-	if meters > 0 {
-		acc = max(acc, 1)
+// tmode2AccUnit is the unit of the CFG-TMODE2 accuracies.
+const tmode2AccUnit = gpsprot.Meter / gpsprot.Length(casbin.CfgTMode2PositionAccuracyScale)
+
+// tmode2Acc converts an accuracy to CFG-TMODE2 units, rounding to nearest
+// but not to 0, which would turn a stated accuracy into none. It works on
+// the Length rather than on float meters, so that the result is exact.
+func tmode2Acc(acc gpsprot.Length) uint32 {
+	n := (acc + tmode2AccUnit/2) / tmode2AccUnit
+	if acc > 0 {
+		n = max(n, 1)
 	}
-	return acc
+	return uint32(n)
 }
 
 // tmodeConfigProps reports the positioning mode from the readback.
