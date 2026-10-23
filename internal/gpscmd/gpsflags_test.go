@@ -639,8 +639,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "0,0,0"},                   // center of Earth (invalid)
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "8000000,8000000,8000000"}, // far outside valid range
 	// Test invalid --fixed-pos-acc values
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"},      // accuracy too small
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"},       // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.00005"}, // accuracy below minimum
 	// Test mutual exclusion with --mobile and --survey
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--mobile"}, // can't use with mobile
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"}, // can't use with survey
@@ -659,8 +659,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,-501"},        // height below -500m
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,10001"},       // height above 10000m
 	// Test invalid --fixed-pos-acc with --fixed-pos-llh
-	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0"},      // accuracy too small
-	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0"},       // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.00005"}, // accuracy below minimum
 	// Test mutual exclusion of --fixed-pos-llh with --fixed-pos-ecef, --mobile, --survey
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-llh", "51.5007,-0.1246,11"},
@@ -892,8 +892,8 @@ func TestResolveTargetJSONValidates(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name:      "survey accuracy under a millimeter",
-			json:      `{"Opts":{"Survey":{"MinDur":60000000000,"AccLimit":0.0005}}}`,
+			name:      "survey accuracy under the minimum",
+			json:      `{"Opts":{"Survey":{"MinDur":60000000000,"AccLimit":0.00005}}}`,
 			expectErr: true,
 		},
 		{
@@ -901,9 +901,13 @@ func TestResolveTargetJSONValidates(t *testing.T) {
 			json: `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000]}}}`,
 		},
 		{
-			name:      "fixed position accuracy under a millimeter",
-			json:      `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.0005}}}`,
+			name:      "fixed position accuracy under the minimum",
+			json:      `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.00005}}}`,
 			expectErr: true,
+		},
+		{
+			name: "fixed position accuracy at the minimum",
+			json: `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.0001}}}`,
 		},
 	}
 	for _, tc := range tests {
