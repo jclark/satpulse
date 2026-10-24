@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
@@ -402,7 +403,7 @@ func TestStreamFiltersNonRTCM(t *testing.T) {
 		t.Fatalf("status %q", line)
 	}
 	// Bad checksum: must be dropped.
-	f.send(scan.Packet{Format: rtcm.PacketFormat, Data: testRTCMData, ChecksumValid: false, TRead: time.Now()})
+	f.send(scan.Packet{Format: rtcm.PacketFormat, Data: testRTCMData, ChecksumValid: false})
 	// Good packet: must arrive.
 	stop := f.streamPackets(rtcmPacket(testRTCMData))
 	defer stop()
@@ -598,55 +599,25 @@ func TestClientDisconnectCleansUp(t *testing.T) {
 	}
 }
 
-// TestStreamDisconnectsLaggingClient checks that a client is disconnected
-// once it falls more than maxStreamLag behind, and that this is logged at
-// Info, naming the client and mountpoint. A client that reads too slowly
-// is handed packets that are already too old, so the write fails at once;
-// a client that stops reading leaves a write blocked until its deadline.
+// TestStreamDisconnectsLaggingClient checks that a client that reads too
+// slowly is disconnected, and that this is logged at Info, naming the
+// client and mountpoint. Such a client is handed packets that are already
+// more than maxStreamLag old, so the write fails at once.
 func TestStreamDisconnectsLaggingClient(t *testing.T) {
-	const (
-		v1Request = "GET /BKK HTTP/1.0\r\n\r\n"
-		v2Request = "GET /BKK HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n"
-	)
 	tests := []struct {
 		name         string
 		request      string
 		expectStatus string
-		age          time.Duration // how old each packet is when it is sent
-		size         int           // packet size
-		wait         time.Duration // how long the client waits before reading
 	}{
 		{
-			name:         "v1 packets too old",
-			request:      v1Request,
+			name:         "v1",
+			request:      "GET /BKK HTTP/1.0\r\n\r\n",
 			expectStatus: "ICY 200 OK",
-			age:          2 * maxStreamLag,
-			size:         len(testRTCMData),
 		},
 		{
-			name:         "v2 packets too old",
-			request:      v2Request,
+			name:         "v2",
+			request:      "GET /BKK HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n",
 			expectStatus: "HTTP/1.1 200",
-			age:          2 * maxStreamLag,
-			size:         len(testRTCMData),
-		},
-		{
-			// Large packets fill the socket buffers quickly, so a write
-			// blocks, and its deadline is half a second away.
-			name:         "v1 client stops reading",
-			request:      v1Request,
-			expectStatus: "ICY 200 OK",
-			age:          maxStreamLag - 500*time.Millisecond,
-			size:         32 << 10,
-			wait:         time.Second,
-		},
-		{
-			name:         "v2 client stops reading",
-			request:      v2Request,
-			expectStatus: "HTTP/1.1 200",
-			age:          maxStreamLag - 500*time.Millisecond,
-			size:         32 << 10,
-			wait:         time.Second,
 		},
 	}
 	for _, tc := range tests {
@@ -661,43 +632,60 @@ func TestStreamDisconnectsLaggingClient(t *testing.T) {
 			if status := readLine(t, r); !strings.HasPrefix(status, tc.expectStatus) {
 				t.Fatalf("status %q", status)
 			}
-			data := strings.Repeat("x", tc.size)
-			stop := make(chan struct{})
-			var wg sync.WaitGroup
-			wg.Go(func() {
-				for {
-					pkt := scan.Packet{Format: rtcm.PacketFormat, Data: data, ChecksumValid: true, TRead: time.Now().Add(-tc.age)}
-					select {
-					case f.pktCh <- pkt:
-					case <-stop:
-						return
-					}
-					select {
-					case <-stop:
-						return
-					case <-time.After(time.Millisecond):
-					}
-				}
-			})
-			defer func() {
-				close(stop)
-				wg.Wait()
-			}()
-			want := `level=INFO msg="ntrip client is not keeping up, disconnecting" remoteAddr=` + conn.LocalAddr().String() + " mountpoint=BKK"
-			time.Sleep(tc.wait)
-			// A blocked write must time out while the client is still not reading.
-			if tc.wait > 0 && !strings.Contains(f.logs.String(), want) {
-				t.Errorf("client not disconnected while it was not reading")
-			}
+			pkt := rtcmPacket(testRTCMData)
+			pkt.TRead = pkt.TRead.Add(-2 * maxStreamLag)
+			defer f.streamPackets(pkt)()
 			setReadDeadline(t, conn)
 			// io.Copy returns nil at EOF, when the caster closes the connection.
 			if _, err := io.Copy(io.Discard, r); err != nil {
 				t.Fatalf("caster did not close the connection: %v", err)
 			}
+			want := `level=INFO msg="ntrip client is not keeping up, disconnecting" remoteAddr=` + conn.LocalAddr().String() + " mountpoint=BKK"
 			logs := f.logs.String()
 			if !strings.Contains(logs, want) || strings.Contains(logs, "level=ERROR") {
 				t.Errorf("logs:\n%s\nwant a line starting %s and no errors", logs, want)
 			}
 		})
 	}
+}
+
+// TestStreamLoopClientStops checks that a write to a client that has
+// stopped reading fails once the packet is maxStreamLag old, so that
+// streamLoop returns.  net.Pipe is unbuffered, so it models a socket
+// whose buffers are already full.
+func TestStreamLoopClientStops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var logs bytes.Buffer
+		lg := slog.New(slog.NewTextHandler(&logs, nil))
+		ctx := t.Context()
+		pktCh := make(chan scan.Packet)
+		b := bcast.New((<-chan scan.Packet)(pktCh))
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		defer close(pktCh)
+		defer b.Close()
+		wg.Go(func() { b.Run(ctx, lg) })
+		server, client := net.Pipe()
+		defer client.Close()
+		c := &caster{lg: lg, bcast: b}
+		done := make(chan struct{})
+		wg.Go(func() {
+			defer close(done)
+			c.streamLoop(ctx, lg, &mount{name: "BKK"}, bufWriter{bufio.NewWriter(server), server})
+		})
+		synctest.Wait()
+		start := time.Now()
+		pktCh <- rtcmPacket(testRTCMData)
+		select {
+		case <-done:
+		case <-time.After(2 * maxStreamLag):
+			t.Fatal("streamLoop did not return")
+		}
+		if elapsed := time.Since(start); elapsed != maxStreamLag {
+			t.Errorf("streamLoop returned after %v, want %v", elapsed, maxStreamLag)
+		}
+		if want := `level=INFO msg="ntrip client is not keeping up, disconnecting"`; !strings.Contains(logs.String(), want) {
+			t.Errorf("logs:\n%s\nwant a line starting %s", logs.String(), want)
+		}
+	})
 }
