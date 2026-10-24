@@ -236,10 +236,6 @@ func forceConverging(t *testing.T, c *Controller, rsgDetectLeap func(time.Durati
 	c.changeMode(ModeConverging, time.Time{})
 }
 
-// TestTimeMessageDetectsLeap exercises the Controller.TimeMessage
-// gating around the captured detectLeap closure. Kill-switch and
-// capture-vs-not-capture wiring is covered separately by
-// TestChangeModeWiringDetectLeap.
 // modeProc is a sampleProcessor that always asks for mode.
 type modeProc struct{ mode Mode }
 
@@ -260,6 +256,10 @@ func TestSampleModeChangeTime(t *testing.T) {
 	}
 }
 
+// TestTimeMessageDetectsLeap exercises the Controller.TimeMessage
+// gating around the captured detectLeap closure. Kill-switch and
+// capture-vs-not-capture wiring is covered separately by
+// TestChangeModeWiringDetectLeap.
 func TestTimeMessageDetectsLeap(t *testing.T) {
 	tests := []struct {
 		name              string
