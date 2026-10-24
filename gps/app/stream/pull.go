@@ -16,6 +16,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/bcast"
 	"github.com/jclark/satpulse/gps/app/gpsio"
+	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/opt"
@@ -610,7 +611,7 @@ func (s *Pull) readLoop(ctx context.Context, lg *slog.Logger,
 func (s *Pull) queue(lg *slog.Logger, subCh <-chan scan.Packet, writerCh chan<- scan.Packet) {
 	defer close(writerCh)
 	defer s.Packets.Unsubscribe(subCh)
-	var q pruningQueue
+	var q ntrip.PruningQueue
 	// If sendCh is non-nil, it is writerCh and next is ready to send.
 	var sendCh chan<- scan.Packet
 	var next scan.Packet
@@ -622,11 +623,11 @@ func (s *Pull) queue(lg *slog.Logger, subCh <-chan scan.Packet, writerCh chan<- 
 			}
 			if pkt.Format == nil {
 				if errors.Is(pkt.ReadError, errReconnect) {
-					q.reconnect()
+					q.Reconnect()
 				}
 				break
 			}
-			if dropped, ok := q.enqueue(pkt); ok {
+			if dropped, ok := q.Enqueue(pkt); ok {
 				msgID := ""
 				if dropped.Format != nil {
 					msgID = dropped.Format.MsgID([]byte(dropped.Data))
@@ -635,12 +636,12 @@ func (s *Pull) queue(lg *slog.Logger, subCh <-chan scan.Packet, writerCh chan<- 
 					"tag", dropped.Tag(), "msgid", msgID, "len", len(dropped.Data))
 			}
 			if sendCh == nil {
-				next = q.dequeue()
+				next = q.Dequeue()
 				sendCh = writerCh
 			}
 		case sendCh <- next:
-			if q.len() > 0 {
-				next = q.dequeue()
+			if q.Len() > 0 {
+				next = q.Dequeue()
 			} else {
 				sendCh = nil
 			}

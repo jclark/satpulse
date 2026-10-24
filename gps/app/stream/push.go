@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
+	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/scan"
@@ -224,7 +225,7 @@ func (s *UDPSink) queue(ctx context.Context, cancel context.CancelFunc,
 	if ready != nil {
 		close(ready)
 	}
-	var q pruningQueue
+	var q ntrip.PruningQueue
 	// If sendCh is non-nil, it is writerCh and next is ready to send.
 	var sendCh chan<- scan.Packet
 	var next scan.Packet
@@ -243,7 +244,7 @@ func (s *UDPSink) queue(ctx context.Context, cancel context.CancelFunc,
 			if !s.pktTag.IsZero() && !(pkt.HasTag(s.pktTag) && pkt.ChecksumValid) {
 				continue
 			}
-			if dropped, ok := q.enqueue(pkt); ok {
+			if dropped, ok := q.Enqueue(pkt); ok {
 				msgID := ""
 				if dropped.Format != nil {
 					msgID = dropped.Format.MsgID([]byte(dropped.Data))
@@ -253,12 +254,12 @@ func (s *UDPSink) queue(ctx context.Context, cancel context.CancelFunc,
 					"tag", dropped.Tag(), "msgid", msgID, "len", len(dropped.Data))
 			}
 			if sendCh == nil {
-				next = q.dequeue()
+				next = q.Dequeue()
 				sendCh = writerCh
 			}
 		case sendCh <- next:
-			if q.len() > 0 {
-				next = q.dequeue()
+			if q.Len() > 0 {
+				next = q.Dequeue()
 			} else {
 				sendCh = nil
 			}
@@ -372,7 +373,7 @@ func (s *Push) queue(ctx context.Context, cancel context.CancelFunc,
 	if ready != nil {
 		close(ready)
 	}
-	var q pruningQueue
+	var q ntrip.PruningQueue
 	// If sendCh is non-nil, it is writerCh and next is ready to send.
 	var sendCh chan<- scan.Packet
 	var next scan.Packet
@@ -395,9 +396,9 @@ func (s *Push) queue(ctx context.Context, cancel context.CancelFunc,
 			default:
 			}
 			sendCh = nil
-			q.reconnect()
-			if q.len() > 0 {
-				next = q.dequeue()
+			q.Reconnect()
+			if q.Len() > 0 {
+				next = q.Dequeue()
 				sendCh = writerCh
 			}
 		case pkt, ok := <-subCh:
@@ -408,7 +409,7 @@ func (s *Push) queue(ctx context.Context, cancel context.CancelFunc,
 			if pkt.Tag() != s.pktTag || !pkt.ChecksumValid {
 				break
 			}
-			if dropped, ok := q.enqueue(pkt); ok {
+			if dropped, ok := q.Enqueue(pkt); ok {
 				msgID := ""
 				if dropped.Format != nil {
 					msgID = dropped.Format.MsgID([]byte(dropped.Data))
@@ -418,12 +419,12 @@ func (s *Push) queue(ctx context.Context, cancel context.CancelFunc,
 					"tag", dropped.Tag(), "msgid", msgID, "len", len(dropped.Data))
 			}
 			if sendCh == nil {
-				next = q.dequeue()
+				next = q.Dequeue()
 				sendCh = writerCh
 			}
 		case sendCh <- next:
-			if q.len() > 0 {
-				next = q.dequeue()
+			if q.Len() > 0 {
+				next = q.Dequeue()
 			} else {
 				sendCh = nil
 			}

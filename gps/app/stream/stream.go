@@ -8,12 +8,7 @@ package stream
 
 import (
 	"math/rand/v2"
-	"slices"
 	"time"
-
-	"github.com/jclark/satpulse/gps/gpsreg"
-	"github.com/jclark/satpulse/gps/lib/rtcmbin"
-	"github.com/jclark/satpulse/gps/scan"
 )
 
 // State represents the connection state of a Pull or Push.
@@ -42,70 +37,6 @@ func (s State) String() string {
 	default:
 		return "unknown"
 	}
-}
-
-const pruningQueueMaxLen = 64
-
-// pruningQueue is a bounded FIFO that eagerly prunes RTCM packets by
-// message type.  Non-RTCM and unformatted packets are kept FIFO until
-// the queue hits its size bound, where oldest packets are dropped.
-// For RTCM MSM packets, entries in the same epoch are not pruned from
-// each other because a single epoch can legitimately contain multiple
-// packets with the same message type.
-type pruningQueue struct {
-	entries  []pqEntry
-	msmEpoch uint64
-}
-
-type pqEntry struct {
-	pkt      scan.Packet
-	msgID    string
-	msmEpoch *uint64
-}
-
-func (q *pruningQueue) len() int {
-	return len(q.entries)
-}
-
-func (q *pruningQueue) reconnect() {
-	q.msmEpoch++
-}
-
-func (q *pruningQueue) enqueue(pkt scan.Packet) (scan.Packet, bool) {
-	if pkt.Format == nil || pkt.Format.Tag() != gpsreg.TagRTCM {
-		q.entries = append(q.entries, pqEntry{pkt: pkt})
-		return q.dropOldest()
-	}
-	msgID := pkt.Format.MsgID([]byte(pkt.Data))
-	var epoch *uint64
-	if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
-		ep := q.msmEpoch
-		epoch = &ep
-		if !mmb {
-			q.msmEpoch++
-		}
-	}
-	q.entries = slices.DeleteFunc(q.entries, func(e pqEntry) bool {
-		return e.pkt.Format != nil && e.pkt.Format.Tag() == gpsreg.TagRTCM &&
-			e.msgID == msgID && (epoch == nil || e.msmEpoch == nil || *epoch != *e.msmEpoch)
-	})
-	q.entries = append(q.entries, pqEntry{pkt: pkt, msgID: msgID, msmEpoch: epoch})
-	return q.dropOldest()
-}
-
-func (q *pruningQueue) dequeue() scan.Packet {
-	e := q.entries[0]
-	q.entries = q.entries[1:]
-	return e.pkt
-}
-
-func (q *pruningQueue) dropOldest() (scan.Packet, bool) {
-	if len(q.entries) <= pruningQueueMaxLen {
-		return scan.Packet{}, false
-	}
-	e := q.entries[0]
-	q.entries = q.entries[1:]
-	return e.pkt, true
 }
 
 const (

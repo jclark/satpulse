@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
+	"github.com/jclark/satpulse/gps/app/ntrip"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/rtcm"
 	"github.com/jclark/satpulse/gps/scan"
@@ -395,7 +396,7 @@ func TestUDPQueueDropsOldestAtMaxLenAndLogs(t *testing.T) {
 			writerCh := make(chan scan.Packet)
 			pktCh := startUDPQueueForTest(t, sink, writerCh)
 			pktCh <- scan.Packet{Data: "block"}
-			const n = pruningQueueMaxLen + 4
+			const n = ntrip.PruningQueueMaxLen + 4
 			for range n {
 				pktCh <- tt.pkt
 			}
@@ -440,9 +441,9 @@ func TestUDPQueuePrunesRTCMUnderBackpressure(t *testing.T) {
 	const (
 		guard = 8
 		burst = 20
-		// Below pruningQueueMaxLen so the surviving RTCM packet stays
+		// Below ntrip.PruningQueueMaxLen so the surviving RTCM packet stays
 		// inside the retained window after the guards are dropped.
-		overflow = pruningQueueMaxLen - 4
+		overflow = ntrip.PruningQueueMaxLen - 4
 	)
 	filler := scan.Packet{Data: "filler"}
 	for range guard {
