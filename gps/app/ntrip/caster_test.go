@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
@@ -29,6 +30,7 @@ const testRTCMData = "\xD3\x00\x13\x3E\xD7\xD3\x02\x02\x98\x0E\xDE\xEF\x34\xB4\x
 // It exposes a packet input channel and a TCP listener address.
 type fixture struct {
 	t        *testing.T
+	logs     *syncBuffer
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	pktCh    chan scan.Packet
@@ -51,8 +53,8 @@ func newFixture(t *testing.T, cfg Config, users map[string]string) *fixture {
 		t.Fatalf("invalid test config: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	f := &fixture{t: t, cancel: cancel, pktCh: make(chan scan.Packet)}
-	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	f := &fixture{t: t, logs: &syncBuffer{}, cancel: cancel, pktCh: make(chan scan.Packet)}
+	lg := slog.New(slog.NewTextHandler(f.logs, nil))
 	b := bcast.New((<-chan scan.Packet)(f.pktCh))
 	f.wg.Go(func() { b.Run(ctx, lg) })
 	build := StreamRecordBuilder(&cfg.SharedStreamConfig, nil, nil, "", 0, nil)
@@ -76,6 +78,24 @@ func newFixture(t *testing.T, cfg Config, users map[string]string) *fixture {
 		f.wg.Wait()
 	})
 	return f
+}
+
+// syncBuffer collects log output written by the caster's goroutines.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // dial opens a TCP connection to the caster.
@@ -136,6 +156,7 @@ func rtcmPacket(data string) scan.Packet {
 		Format:        rtcm.PacketFormat,
 		Data:          data,
 		ChecksumValid: true,
+		TRead:         time.Now(),
 	}
 }
 
@@ -576,4 +597,95 @@ func TestClientDisconnectCleansUp(t *testing.T) {
 			t.Fatal("packet send blocked after client disconnect")
 		}
 	}
+}
+
+// TestStreamDisconnectsLaggingClient checks that a client that reads too
+// slowly is disconnected, and that this is logged at Info, naming the
+// client and mountpoint. Such a client is handed packets that are already
+// more than maxStreamLag old, so the write fails at once.
+func TestStreamDisconnectsLaggingClient(t *testing.T) {
+	tests := []struct {
+		name         string
+		request      string
+		expectStatus string
+	}{
+		{
+			name:         "v1",
+			request:      "GET /BKK HTTP/1.0\r\n\r\n",
+			expectStatus: "ICY 200 OK",
+		},
+		{
+			name:         "v2",
+			request:      "GET /BKK HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n",
+			expectStatus: "HTTP/1.1 200",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, Config{
+				Mountpoint: []MountConfig{{Name: "BKK"}},
+			}, nil)
+			conn := f.dial()
+			defer conn.Close()
+			fmt.Fprint(conn, tc.request)
+			r := bufio.NewReader(conn)
+			if status := readLine(t, r); !strings.HasPrefix(status, tc.expectStatus) {
+				t.Fatalf("status %q", status)
+			}
+			pkt := rtcmPacket(testRTCMData)
+			pkt.TRead = pkt.TRead.Add(-2 * maxStreamLag)
+			defer f.streamPackets(pkt)()
+			setReadDeadline(t, conn)
+			// io.Copy returns nil at EOF, when the caster closes the connection.
+			if _, err := io.Copy(io.Discard, r); err != nil {
+				t.Fatalf("caster did not close the connection: %v", err)
+			}
+			want := `level=INFO msg="ntrip client is not keeping up, disconnecting" remoteAddr=` + conn.LocalAddr().String() + " mountpoint=BKK"
+			logs := f.logs.String()
+			if !strings.Contains(logs, want) || strings.Contains(logs, "level=ERROR") {
+				t.Errorf("logs:\n%s\nwant a line starting %s and no errors", logs, want)
+			}
+		})
+	}
+}
+
+// TestStreamLoopClientStops checks that a write to a client that has
+// stopped reading fails once the packet is maxStreamLag old, so that
+// streamLoop returns.  net.Pipe is unbuffered, so it models a socket
+// whose buffers are already full.
+func TestStreamLoopClientStops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var logs bytes.Buffer
+		lg := slog.New(slog.NewTextHandler(&logs, nil))
+		ctx := t.Context()
+		pktCh := make(chan scan.Packet)
+		b := bcast.New((<-chan scan.Packet)(pktCh))
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		defer close(pktCh)
+		defer b.Close()
+		wg.Go(func() { b.Run(ctx, lg) })
+		server, client := net.Pipe()
+		defer client.Close()
+		c := &caster{lg: lg, bcast: b}
+		done := make(chan struct{})
+		wg.Go(func() {
+			defer close(done)
+			c.streamLoop(ctx, lg, &mount{name: "BKK"}, bufWriter{bufio.NewWriter(server), server})
+		})
+		synctest.Wait()
+		start := time.Now()
+		pktCh <- rtcmPacket(testRTCMData)
+		select {
+		case <-done:
+		case <-time.After(2 * maxStreamLag):
+			t.Fatal("streamLoop did not return")
+		}
+		if elapsed := time.Since(start); elapsed != maxStreamLag {
+			t.Errorf("streamLoop returned after %v, want %v", elapsed, maxStreamLag)
+		}
+		if want := `level=INFO msg="ntrip client is not keeping up, disconnecting"`; !strings.Contains(logs.String(), want) {
+			t.Errorf("logs:\n%s\nwant a line starting %s", logs.String(), want)
+		}
+	})
 }
