@@ -353,14 +353,53 @@ func (r respWriter) flush() error                { return r.rc.Flush() }
 
 // streamLoop subscribes to the packet bcast and writes RTCM packets
 // to w until ctx is cancelled, the bcast closes, or a write fails.
-// Mirrors proxy.connWriteWorker in time/internal/proxy.  When the
-// mountpoint requests MSM7->MSM4 conversion, each MSM7 packet is
-// rewritten before being forwarded; non-MSM7 packets pass through
-// unchanged.
+// When the mountpoint requests MSM7->MSM4 conversion, each MSM7
+// packet is rewritten before being forwarded; non-MSM7 packets pass
+// through unchanged.
 func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 	defer c.lg.Debug("about to exit ntrip stream worker")
 	ch := c.bcast.Subscribe()
+	qCtx, qCancel := context.WithCancel(ctx)
+	qCh := make(chan scan.Packet, 1)
+	var wg sync.WaitGroup
+	wg.Go(func() { c.queue(qCtx, m, ch, qCh) })
+	defer wg.Wait()
+	defer qCancel()
+	for pkt := range qCh {
+		data := pkt.Data
+		if m.msm7to4 {
+			out, err := rtcmbin.MSM7ConvertPacket(data, 4)
+			if err != nil {
+				c.lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
+					"msgType", rtcmbin.ExtractMsgType(data), "err", err)
+			} else {
+				data = out
+			}
+		}
+		if _, err := w.Write([]byte(data)); err != nil {
+			logConnErr(c.lg, "error writing to ntrip stream", err)
+			return
+		}
+		if err := w.flush(); err != nil {
+			logConnErr(c.lg, "error flushing ntrip stream", err)
+			return
+		}
+	}
+}
+
+// queue mediates between the packet bcast subscription ch and the
+// stream writer using a pruning queue, so that a client that stops
+// reading, or reads too slowly, makes the queue prune stale packets
+// instead of making the bcast queue grow.  It forwards only RTCM
+// packets with a valid checksum.  When ctx is cancelled or ch closes,
+// it unsubscribes ch, closes writerCh, and returns.
+func (c *caster) queue(ctx context.Context, m *mount, ch <-chan scan.Packet, writerCh chan<- scan.Packet) {
+	defer close(writerCh)
 	defer c.bcast.Unsubscribe(ch)
+	var q PruningQueue
+	// If sendCh is non-nil, it is writerCh and next is ready to send.
+	var sendCh chan<- scan.Packet
+	var next scan.Packet
 	for {
 		select {
 		case <-ctx.Done():
@@ -370,25 +409,21 @@ func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 				return
 			}
 			if !pkt.HasTag(gpsreg.TagRTCM) || !pkt.ChecksumValid {
-				continue
+				break
 			}
-			data := pkt.Data
-			if m.msm7to4 {
-				out, err := rtcmbin.MSM7ConvertPacket(data, 4)
-				if err != nil {
-					c.lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
-						"msgType", rtcmbin.ExtractMsgType(data), "err", err)
-				} else {
-					data = out
-				}
+			if dropped, ok := q.Enqueue(pkt); ok {
+				c.lg.Warn("ntrip caster queue full, dropped oldest packet",
+					"mountpoint", m.name, "msgid", dropped.Format.MsgID([]byte(dropped.Data)), "len", len(dropped.Data))
 			}
-			if _, err := w.Write([]byte(data)); err != nil {
-				logConnErr(c.lg, "error writing to ntrip stream", err)
-				return
+			if sendCh == nil {
+				next = q.Dequeue()
+				sendCh = writerCh
 			}
-			if err := w.flush(); err != nil {
-				logConnErr(c.lg, "error flushing ntrip stream", err)
-				return
+		case sendCh <- next:
+			if q.Len() > 0 {
+				next = q.Dequeue()
+			} else {
+				sendCh = nil
 			}
 		}
 	}

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
@@ -576,4 +577,93 @@ func TestClientDisconnectCleansUp(t *testing.T) {
 			t.Fatal("packet send blocked after client disconnect")
 		}
 	}
+}
+
+// stallWriter is a streamWriter whose first Write blocks until release
+// is closed, like a client that stops reading and later resumes.
+type stallWriter struct {
+	release chan struct{}
+	writes  []string
+}
+
+func (w *stallWriter) Write(p []byte) (int, error) {
+	if len(w.writes) == 0 {
+		<-w.release
+	}
+	w.writes = append(w.writes, string(p))
+	return len(p), nil
+}
+
+func (w *stallWriter) flush() error { return nil }
+
+// TestStreamLoopClientStalled checks that while a client is not reading,
+// streamLoop keeps receiving from the packet bcast, prunes stale
+// corrections, and forwards only valid RTCM packets. The test runs in a
+// synctest bubble, so synctest.Wait shows when the bcast has delivered
+// the burst.
+func TestStreamLoopClientStalled(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		lg := slog.New(slog.DiscardHandler)
+		pktCh := make(chan scan.Packet)
+		b := bcast.New((<-chan scan.Packet)(pktCh))
+		go b.Run(ctx, lg)
+		c := &caster{lg: lg, bcast: b}
+		w := &stallWriter{release: make(chan struct{})}
+		done := make(chan struct{})
+		go func() {
+			c.streamLoop(ctx, &mount{name: "BKK"}, w)
+			close(done)
+		}()
+		// The bcast drops packets until it has handled the subscription.
+		synctest.Wait()
+		// A burst of distinct 1005 corrections (non-MSM, so pruned by message
+		// type) while the first Write is blocked.
+		const n = 12
+		var first, newest string
+		for i := range n {
+			newest = string(makeRTCM(1005, 10+i))
+			if i == 0 {
+				first = newest
+			}
+			pktCh <- rtcmPacket(newest)
+		}
+		// Neither of these may reach the client.
+		pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(makeRTCM(1033, 10))}
+		pktCh <- scan.Packet{Data: "not RTCM"}
+		// A different-type sentinel marks the end of the burst.
+		sentinel := string(makeRTCM(1006, 10))
+		pktCh <- rtcmPacket(sentinel)
+		synctest.Wait()
+		close(w.release)
+		synctest.Wait()
+		cancel()
+		<-done
+		b.Close()
+		close(pktCh)
+		got := w.writes
+		// Beyond the queue, at most one packet is in Write, one in the
+		// hand-off channel and one held by queue.
+		const maxStale = 3
+		if len(got) < 2 || len(got) > maxStale+2 {
+			t.Fatalf("got %d writes, want 2 to %d", len(got), maxStale+2)
+		}
+		if got[0] != first || got[len(got)-2] != newest || got[len(got)-1] != sentinel {
+			t.Errorf("got writes of types %v, want the first 1005, then the newest 1005 and the sentinel last", msgTypes(got))
+		}
+		for _, data := range got[:len(got)-1] {
+			if rtcmbin.ExtractMsgType(data) != 1005 {
+				t.Errorf("got writes of types %v, want only 1005 before the sentinel", msgTypes(got))
+				break
+			}
+		}
+	})
+}
+
+func msgTypes(data []string) []int {
+	var types []int
+	for _, d := range data {
+		types = append(types, int(rtcmbin.ExtractMsgType(d)))
+	}
+	return types
 }
