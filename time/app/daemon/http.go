@@ -166,7 +166,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 	// The init events describe the current state, so they are due now.
 	// They are flushed even if there are none, so the client gets the
 	// response headers at once.
-	if !writeSSE(lg, w, rc, time.Now(), sseObs.InitEvents()...) {
+	if !writeSSE(lg, w, rc, time.Time{}, sseObs.InitEvents()...) {
 		return
 	}
 	for {
@@ -179,11 +179,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 				return
 			}
 			lg.Debug("received a broadcast SSE event", "event", event.Event)
-			t := event.T
-			if t.IsZero() {
-				t = time.Now()
-			}
-			if !writeSSE(lg, w, rc, t, event.Event) {
+			if !writeSSE(lg, w, rc, event.T, event.Event) {
 				return
 			}
 		case <-r.Context().Done():
@@ -195,8 +191,12 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 
 // writeSSE writes evs to the client, skipping zero events, and flushes,
 // giving up if the client has not accepted them by maxSSELag after t,
-// the time of the data they carry. It reports whether they were written.
+// the time of the data they carry; a zero t means now. It reports whether
+// they were written.
 func writeSSE(lg *slog.Logger, w http.ResponseWriter, rc *http.ResponseController, t time.Time, evs ...sse.Event) bool {
+	if t.IsZero() {
+		t = time.Now()
+	}
 	err := rc.SetWriteDeadline(t.Add(maxSSELag))
 	for _, ev := range evs {
 		if err != nil {
