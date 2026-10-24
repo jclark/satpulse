@@ -126,7 +126,7 @@ Testing:
 - Before committing a fix that changes Go code, always run the full test suite with `make test`
 - Test files follow `*_test.go` convention
 - Tests for `X.go` go in `X_test.go` by default; put them elsewhere only when that file would become very unwieldy
-- Unit tests must not wait in real time: slow tests are unacceptable. A test that depends on timeouts, deadlines, tickers or sleeps must run in a `testing/synctest` bubble, so the fake clock advances at once. Inside the bubble use in-memory connections such as `net.Pipe`, not loopback sockets: a goroutine blocked on real network I/O does not count as durably blocked, so the bubble's clock cannot advance
+- Unit tests must not wait in real time: slow tests are unacceptable. A test that depends on timeouts, deadlines, tickers or sleeps must run in a `testing/synctest` bubble, so the fake clock advances at once. Inside the bubble use in-memory connections such as `net.Pipe`, not loopback sockets: a goroutine blocked on real network I/O does not count as durably blocked, so the bubble's clock cannot advance. The exception is a test of real OS I/O, such as a PTY or a kernel file descriptor, which cannot run in a bubble; keep its waits short
 
 Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
 (daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
