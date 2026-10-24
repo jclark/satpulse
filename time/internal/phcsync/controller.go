@@ -217,7 +217,7 @@ func (c *Controller) SetTimeMsgBuffer(buf TimeMsgBuffer) {
 	}
 	c.timeMsgBuffer = buf
 	// Initialize to Reset mode now that we have the timeMsgBuffer
-	c.changeMode(ModeReset)
+	c.changeMode(ModeReset, time.Time{})
 }
 
 // PulseEdge handles edge timestamp events from the PHC.
@@ -228,14 +228,15 @@ func (c *Controller) PulseEdge(edge PulseEdge) {
 }
 
 // TimeMessage handles notification that a time message occurred.
-func (c *Controller) TimeMessage() {
+// tRead is when the message was read.
+func (c *Controller) TimeMessage(tRead time.Time) {
 	// The reset triggered here would be rejected by the drift-rate check against
 	// the tracking-mode persisted sample (see TrackingConfig.PersistThreshold),
 	// since a stale-firmware leap correction looks like ~1s of drift. The default
 	// PersistThreshold (900s) exceeds the 12.5-minute GPS leap-subframe worst case,
 	// so the correction is detected before any sample is persisted.
 	if c.detectLeap != nil && c.detectLeap() {
-		c.changeMode(ModeReset)
+		c.changeMode(ModeReset, tRead)
 		return
 	}
 	sample := c.sampleGen.timeMessageSample()
@@ -271,7 +272,7 @@ func (c *Controller) processSample(sample *Sample) {
 	sample.Mode = c.mode
 	c.observer.Sample(*sample)
 	if mode != c.mode {
-		c.changeMode(mode)
+		c.changeMode(mode, sample.Sys)
 	}
 }
 
@@ -308,9 +309,10 @@ func (c *Controller) LeapSecond(ls ptime.LeapSecond) {
 // Pause handles pause events from the timestamp worker.
 // This is called when the network interface loses carrier.
 // It resets sync state and transitions back to reset mode.
-func (c *Controller) Pause() {
+// t is when the carrier loss was seen.
+func (c *Controller) Pause(t time.Time) {
 	c.lg.Info("controller paused (carrier lost), transitioning to reset mode")
-	c.changeMode(ModeReset)
+	c.changeMode(ModeReset, t)
 }
 
 // Tick handles regular tick events (0.25s intervals).
@@ -369,7 +371,9 @@ func (c *Controller) Close() {
 	}
 }
 
-func (c *Controller) changeMode(mode Mode) {
+// changeMode switches to mode; t is the system time of the input that
+// caused the change, as for Observer.ModeChanged.
+func (c *Controller) changeMode(mode Mode, t time.Time) {
 	if c.mode == mode {
 		return
 	}
@@ -418,7 +422,7 @@ func (c *Controller) changeMode(mode Mode) {
 	c.mode = mode
 
 	c.gmUpdate()
-	c.observer.ModeChanged(old, mode)
+	c.observer.ModeChanged(old, mode, t)
 }
 
 // getDetectLeap builds the parameter-less leap-detection closure to

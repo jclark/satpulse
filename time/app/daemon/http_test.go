@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"testing"
 
-	"github.com/jclark/satpulse/time/lib/sse"
+	"github.com/jclark/satpulse/time/internal/sseobs"
 )
 
 func TestConfigHTTPFeatureChecks(t *testing.T) {
@@ -103,7 +103,7 @@ func TestHTTPObserverFactoriesUseFeatureChecks(t *testing.T) {
 		Metrics:  httpBool(false),
 		Position: httpBool(false),
 	}}}
-	sseCh := make(chan sse.Event, 1)
+	sseCh := make(chan sseobs.TimedEvent, 1)
 	obs := newSSEObserver(cfg, sseCh, lg, nil)
 	if obs == nil {
 		t.Fatalf("newSSEObserver() = nil")

@@ -32,7 +32,6 @@ import (
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
-	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/phc"
 )
 
@@ -175,10 +174,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
-	var sseCh chan sse.Event
-	var eb *bcast.Bcast[sse.Event]
+	var sseCh chan sseobs.TimedEvent
+	var eb *bcast.Bcast[sseobs.TimedEvent]
 	if cfg.anyHTTP(HTTPConfig.gui) {
-		sseCh = make(chan sse.Event, 1)
+		sseCh = make(chan sseobs.TimedEvent, 1)
 		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
 	// Shut down the broadcast goroutines when the context is cancelled.
@@ -430,7 +429,7 @@ func NewDispatcher(
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
-func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
+func newSSEObserver(cfg *Config, sseCh chan<- sseobs.TimedEvent, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
 	if cfg.anyHTTP(HTTPConfig.gui) {
 		return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
 	}

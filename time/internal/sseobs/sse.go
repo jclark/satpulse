@@ -139,10 +139,20 @@ type CorReportSSE struct {
 // config changes recover within a sensible window.
 const corReportSourceTimeout = 30 * time.Second
 
+// TimedEvent is an SSE event together with the system time of what it
+// reports: when the GPS message was read, the estimated time of the
+// pulse for a PHC sample, or the time ModeChanged gives for a mode
+// change. T is zero when there is no such time, and the event should
+// then be treated as made when it is received.
+type TimedEvent struct {
+	sse.Event
+	T time.Time
+}
+
 // SSEObserver implements obs.Observer for Server-Sent Events
 type SSEObserver struct {
 	obs.DefaultObserver
-	sseCh     chan<- sse.Event
+	sseCh     chan<- TimedEvent
 	lg        *slog.Logger
 	ls        ptime.LeapSecond
 	initEvent sse.Event
@@ -160,7 +170,7 @@ type SSEObserver struct {
 
 // New creates a new SSE observer with the provided channel and leap second.
 // The sseCh parameter must be non-nil.
-func New(sseCh chan<- sse.Event, ls ptime.LeapSecond, lg *slog.Logger, cfgResult *gpscfg.Result) *SSEObserver {
+func New(sseCh chan<- TimedEvent, ls ptime.LeapSecond, lg *slog.Logger, cfgResult *gpscfg.Result) *SSEObserver {
 	if sseCh == nil {
 		panic("sseCh must be non-nil")
 	}
@@ -197,14 +207,14 @@ func (o *SSEObserver) InitEvents() []sse.Event {
 
 // ModeChanged implements phcsync.Observer. Stores the latest mode event
 // for delivery to new clients and broadcasts it to current subscribers.
-func (o *SSEObserver) ModeChanged(_, newMode phcsync.Mode) {
+func (o *SSEObserver) ModeChanged(_, newMode phcsync.Mode, t time.Time) {
 	ev, err := sse.Make("mode", ModeSSE{Mode: newMode.String()})
 	if err != nil {
 		o.lg.Error("failed to create SSE event", "name", "mode", "err", err)
 		return
 	}
 	o.modeEvent.Store(&ev)
-	o.sseCh <- ev
+	o.sseCh <- TimedEvent{ev, t}
 }
 
 // Release implements Observer - closes the SSE channel
@@ -223,12 +233,12 @@ func (o *SSEObserver) Sample(data phcsync.Sample) {
 		Outlier:           data.Kind == phcsync.SampleOutlier,
 		Mode:              data.Mode.String(),
 	}
-	o.sendSSE("phc", event)
+	o.sendSSE("phc", event, data.Sys)
 }
 
 // Tick receives a filled TimeMsg from the Dispatcher's TimeTicker.
 // Only emits an SSE event when the time is an integral second.
-func (o *SSEObserver) Tick(mt *gpsprot.TimeMsg, _ time.Time) {
+func (o *SSEObserver) Tick(mt *gpsprot.TimeMsg, tRead time.Time) {
 	tai := mt.TAITime
 	if tai.IsZero() {
 		return
@@ -239,7 +249,7 @@ func (o *SSEObserver) Tick(mt *gpsprot.TimeMsg, _ time.Time) {
 	o.sendSSE("time", TimeSSE{
 		UTC: o.ls.FormatTime(tai),
 		TAI: int64(tai) / 1e9,
-	})
+	}, tRead)
 }
 
 // Survey implements gpsprot.MsgHandler - generates survey SSE events (copied exactly from dispatcher.go)
@@ -269,12 +279,12 @@ func (o *SSEObserver) Survey(m *gpsprot.SurveyMsg, tRead time.Time) {
 			event.Alt.Set(gpsprot.Meters(llh.Height))
 		}
 	}
-	o.sendSSE("survey", event)
+	o.sendSSE("survey", event, tRead)
 }
 
 // Satellites implements gpsprot.MsgHandler - generates satellites SSE events
 func (o *SSEObserver) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
-	o.sendSSE("satellites", SatellitesSSE{SVs: msg.SVs})
+	o.sendSSE("satellites", SatellitesSSE{SVs: msg.SVs}, tRead)
 }
 
 // LeapSecond updates the local leap second used for time formatting.
@@ -310,26 +320,27 @@ func (o *SSEObserver) CorReport(msg *gpsprot.CorReportMsg, tRead time.Time) {
 		ChecksumOK:    msg.ChecksumOK,
 		Used:          msg.Used,
 		RTCMRefBaseID: msg.RTCMRefBaseID,
-	})
+	}, tRead)
 }
 
 // NavEpochPV emits posvel and quality SSE events from the accumulated bundle.
 func (o *SSEObserver) NavEpochPV(msg *gpsprot.NavEpochMsg, pv *gpsprot.PVMsgBundle, tRead time.Time) {
 	if pv := buildPosVelSSE(pv); pv != nil {
-		o.sendSSE("posvel", pv)
+		o.sendSSE("posvel", pv, tRead)
 	}
 	if q := buildQualitySSE(msg); q != nil {
-		o.sendSSE("quality", q)
+		o.sendSSE("quality", q, tRead)
 	}
 }
 
-// sendSSE is a helper method to send SSE events
-func (o *SSEObserver) sendSSE(name string, data any) {
+// sendSSE is a helper method to send SSE events; t is the system time of
+// the input the event reports.
+func (o *SSEObserver) sendSSE(name string, data any, t time.Time) {
 	event, err := sse.Make(name, data)
 	if err != nil {
 		o.lg.Error("failed to create SSE event", "name", name, "err", err)
 	} else {
-		o.sseCh <- event
+		o.sseCh <- TimedEvent{event, t}
 	}
 }
 
