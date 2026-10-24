@@ -227,7 +227,7 @@ func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn n
 	qCtx, qCancel := context.WithCancel(ctx)
 	qCh := make(chan scan.Packet)
 	var wg sync.WaitGroup
-	wg.Go(func() { connQueue(qCtx, lg.With("remoteAddr", conn.RemoteAddr()), cfg, ch, qCh) })
+	wg.Go(func() { connQueue(qCtx, lg, cfg, ch, qCh) })
 	defer wg.Wait()
 	defer qCancel()
 	for msg := range qCh {
