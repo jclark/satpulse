@@ -283,7 +283,7 @@ func connQueue(ctx context.Context, lg *slog.Logger, cfg svcConfig, ch <-chan sc
 			// never dropping the newest packet means it is still sent.
 			for len(q) > 1 && time.Since(q[0].TRead) > maxPacketAge {
 				if nDropped == 0 {
-					lg.Warn("proxy client is not keeping up, dropping oldest packets")
+					lg.Info("proxy client is not keeping up, dropping oldest packets")
 				}
 				nDropped++
 				q[0] = scan.Packet{}
