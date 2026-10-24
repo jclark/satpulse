@@ -612,7 +612,7 @@ func TestStreamLoopClientStalled(t *testing.T) {
 		w := &stallWriter{release: make(chan struct{})}
 		done := make(chan struct{})
 		go func() {
-			c.streamLoop(ctx, &mount{name: "BKK"}, w)
+			c.streamLoop(ctx, lg, &mount{name: "BKK"}, w)
 			close(done)
 		}()
 		// The bcast drops packets until it has handled the subscription.

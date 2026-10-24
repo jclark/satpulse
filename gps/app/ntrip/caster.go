@@ -281,17 +281,19 @@ func (c *caster) serveSourceTable(w http.ResponseWriter, v2 bool) {
 }
 
 // serveStream handles a successful GET /<mountpoint> request.
+// Its log messages say which client and mountpoint they are about.
 func (c *caster) serveStream(w http.ResponseWriter, r *http.Request, m *mount, v2 bool) {
+	lg := c.lg.With("remoteAddr", r.RemoteAddr, "mountpoint", m.name)
 	if v2 {
-		c.serveStreamV2(w, r, m)
+		c.serveStreamV2(w, r, lg, m)
 	} else {
-		c.serveStreamV1(w, r, m)
+		c.serveStreamV1(w, r, lg, m)
 	}
 }
 
 // serveStreamV1 hijacks the connection and writes the 12-byte
 // "ICY 200 OK\r\n" status line followed by the raw RTCM byte stream.
-func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, m *mount) {
+func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, lg *slog.Logger, m *mount) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijack not supported", http.StatusInternalServerError)
@@ -299,7 +301,7 @@ func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, m *mount)
 	}
 	conn, brw, err := hj.Hijack()
 	if err != nil {
-		c.lg.Error("hijack failed", "err", err)
+		lg.Error("hijack failed", "err", err)
 		return
 	}
 	defer conn.Close()
@@ -310,12 +312,12 @@ func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, m *mount)
 	if err := bw.Flush(); err != nil {
 		return
 	}
-	c.streamLoop(r.Context(), m, bufWriter{bw})
+	c.streamLoop(r.Context(), lg, m, bufWriter{bw})
 }
 
 // serveStreamV2 streams via the http.ResponseWriter using chunked
 // encoding (Go's default since Content-Length is unknown).
-func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, m *mount) {
+func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, lg *slog.Logger, m *mount) {
 	h := w.Header()
 	h.Set("Content-Type", "gnss/data")
 	h.Set("Cache-Control", "no-store, no-cache, max-age=0")
@@ -328,7 +330,7 @@ func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, m *mount)
 	if err := rc.Flush(); err != nil {
 		return
 	}
-	c.streamLoop(r.Context(), m, respWriter{w, rc})
+	c.streamLoop(r.Context(), lg, m, respWriter{w, rc})
 }
 
 // streamWriter is the writer abstraction used by streamLoop so the
@@ -356,13 +358,13 @@ func (r respWriter) flush() error                { return r.rc.Flush() }
 // When the mountpoint requests MSM7->MSM4 conversion, each MSM7
 // packet is rewritten before being forwarded; non-MSM7 packets pass
 // through unchanged.
-func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
-	defer c.lg.Debug("about to exit ntrip stream worker")
+func (c *caster) streamLoop(ctx context.Context, lg *slog.Logger, m *mount, w streamWriter) {
+	defer lg.Debug("about to exit ntrip stream worker")
 	ch := c.bcast.Subscribe()
 	qCtx, qCancel := context.WithCancel(ctx)
 	qCh := make(chan scan.Packet, 1)
 	var wg sync.WaitGroup
-	wg.Go(func() { c.queue(qCtx, m, ch, qCh) })
+	wg.Go(func() { c.queue(qCtx, lg, ch, qCh) })
 	defer wg.Wait()
 	defer qCancel()
 	for pkt := range qCh {
@@ -373,18 +375,18 @@ func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 		if m.msm7to4 {
 			out, err := rtcmbin.MSM7ConvertPacket(data, 4)
 			if err != nil {
-				c.lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
+				lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
 					"msgType", rtcmbin.ExtractMsgType(data), "err", err)
 			} else {
 				data = out
 			}
 		}
 		if _, err := w.Write([]byte(data)); err != nil {
-			logConnErr(c.lg, "error writing to ntrip stream", err)
+			logConnErr(lg, "error writing to ntrip stream", err)
 			return
 		}
 		if err := w.flush(); err != nil {
-			logConnErr(c.lg, "error flushing ntrip stream", err)
+			logConnErr(lg, "error flushing ntrip stream", err)
 			return
 		}
 	}
@@ -396,7 +398,7 @@ func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 // instead of making the bcast queue grow.  It forwards only RTCM
 // packets with a valid checksum.  When ctx is cancelled or ch closes,
 // it unsubscribes ch, closes writerCh, and returns.
-func (c *caster) queue(ctx context.Context, m *mount, ch <-chan scan.Packet, writerCh chan<- scan.Packet) {
+func (c *caster) queue(ctx context.Context, lg *slog.Logger, ch <-chan scan.Packet, writerCh chan<- scan.Packet) {
 	defer close(writerCh)
 	defer c.bcast.Unsubscribe(ch)
 	var q PruningQueue
@@ -415,8 +417,8 @@ func (c *caster) queue(ctx context.Context, m *mount, ch <-chan scan.Packet, wri
 				break
 			}
 			if dropped, ok := q.Enqueue(pkt); ok {
-				c.lg.Warn("ntrip caster queue full, dropped oldest packet",
-					"mountpoint", m.name, "msgid", dropped.Format.MsgID([]byte(dropped.Data)), "len", len(dropped.Data))
+				lg.Warn("ntrip caster queue full, dropped oldest packet",
+					"msgid", dropped.Format.MsgID([]byte(dropped.Data)), "len", len(dropped.Data))
 			}
 			if sendCh == nil {
 				next = q.Dequeue()
