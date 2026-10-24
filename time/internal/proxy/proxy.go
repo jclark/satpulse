@@ -194,7 +194,8 @@ func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg 
 }
 
 func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock gpsio.OutPortLock) {
-	lg.Info("accepted proxy connection", "remoteAddr", conn.RemoteAddr())
+	lg = lg.With("remoteAddr", conn.RemoteAddr())
+	lg.Info("accepted proxy connection")
 	// Both workers close conn when they exit, so that when one worker exits,
 	// the other returns too, even if it is blocked in a Read or Write on conn.
 	wg.Go(func() { connWriteWorker(ctx, lg, cfg, conn, b) })
