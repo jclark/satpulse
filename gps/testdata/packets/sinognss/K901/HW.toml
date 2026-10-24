@@ -13,6 +13,9 @@ default-baud = 115200
 # abbrev.jsonl is 60 s with abbreviated RANGE ONTIME 10 and RANGECMP ONTIME
 # 30: at 1 Hz, abbreviated RANGE and RANGECMP exceed 115200 baud and epochs
 # are lost.
+# raw-obs-ascii.jsonl has RANGEB and RANGEA requested with LOG ONCE back to
+# back, which gives both the same epoch (a LOG ONCE RANGE is not on a whole
+# second); an ASCII RANGE of about 130 records is about 10 kB.
 # NMEA style depends on SET NMEAV41: nmea.jsonl and the other NMEA captures
 # are NMEA 4.11 (NMEAV41 ON: GB and GQ talkers, GSA system ID, GSV signal ID,
 # RMC navigational status); nmea-400.jsonl is the factory default NMEAV41 OFF

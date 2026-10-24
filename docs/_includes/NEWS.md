@@ -52,6 +52,7 @@ _Not yet released_
 ### RINEX observation conversion
 
 - `satpulsetool` has a new `convobs` command, which converts raw GNSS observation data from u-blox UBX-RXM-RAWX, Unicore OBSVM, or RTCM MSM7 into RINEX observation files for PPP post-processing. It can decimate observations and set RINEX header metadata from command-line options or a TOML header file. `convobs` also supports a new JSON Lines observation format that follows RINEX semantics to enable convenient processing with modern tooling such as `jq`; it reads and writes this format, and can also read existing RINEX files, so it can convert freely between raw packets, RINEX, and the JSON Lines format. (#296)
+- `satpulsetool convobs` converts NovAtel-format RANGE raw observations to RINEX, with new `novb` and `nova` input formats and a `--vendor` option selecting the SinoGNSS variant; it has been tested with SinoGNSS receivers only. (#476)
 
 ### SatPulse Workbench
 

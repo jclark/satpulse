@@ -39,3 +39,41 @@ func TestRequireCPFilterDropsObservationsWithoutPhase(t *testing.T) {
 		t.Error("Flush did not reach wrapped sink")
 	}
 }
+
+func TestOmitDoWithoutCPFilter(t *testing.T) {
+	in := []SignalObservation{
+		{Sat: "E11", Sig: "1C", SignalValues: SignalValues{PR: opt.Make(1.0), CP: opt.Make(10.0), Do: opt.Make(3.0)}},
+		{Sat: "E11", Sig: "5Q", SignalValues: SignalValues{PR: opt.Make(2.0), Do: opt.Make(4.0), CN0: opt.Make[float32](40)}},
+		{Sat: "G03", Sig: "1C", SignalValues: SignalValues{Do: opt.Make(5.0), Arc: 1}},
+		{Sat: "G03", Sig: "2X", SignalValues: SignalValues{CN0: opt.Make[float32](30)}},
+	}
+	dst := &recordSink{}
+	sink := NewOmitDoWithoutCPFilter(dst)
+	meta := Metadata{}
+	meta.Marker.Name = "MARK"
+	if err := sink.Metadata(meta); err != nil {
+		t.Fatalf("Metadata: %v", err)
+	}
+	for _, o := range in {
+		if err := sink.Observation(o); err != nil {
+			t.Fatalf("Observation: %v", err)
+		}
+	}
+	if err := sink.Flush(); err != nil {
+		t.Fatalf("Flush: %v", err)
+	}
+	expect := []SignalObservation{
+		in[0],
+		{Sat: "E11", Sig: "5Q", SignalValues: SignalValues{PR: opt.Make(2.0), CN0: opt.Make[float32](40)}},
+		in[3],
+	}
+	if !reflect.DeepEqual(dst.obs, expect) {
+		t.Errorf("got  %+v\nwant %+v", dst.obs, expect)
+	}
+	if len(dst.meta) != 1 || dst.meta[0].Marker.Name != "MARK" {
+		t.Errorf("metadata = %#v", dst.meta)
+	}
+	if !dst.flushed {
+		t.Error("Flush did not reach wrapped sink")
+	}
+}
