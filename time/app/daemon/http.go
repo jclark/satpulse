@@ -3,10 +3,12 @@ package daemon
 import (
 	"context"
 	_ "embed"
+	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/pprof"
+	"os"
 	"sync"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/web"
+	"github.com/jclark/satpulse/time/lib/sse"
 )
 
 type HTTPConfig struct {
@@ -138,32 +141,34 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	return nil
 }
 
+// maxSSELag is how long after the data in an SSE event was produced the
+// client's connection must have accepted the event. A client that stops
+// reading, or reads more slowly than events are produced, is
+// disconnected once it falls this far behind, so that it cannot make the
+// event bcast queue grow without limit; its EventSource then reconnects
+// and is primed again.
+const maxSSELag = 10 * time.Second
+
 func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sseobs.TimedEvent], sseObs *sseobs.SSEObserver) {
+	lg = lg.With("remoteAddr", r.RemoteAddr)
 	defer lg.Debug("about to exit HTTP SSE request handler")
 	lg.Debug("starting to handle HTTP SSE request")
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
 	w.Header().Set("Connection", "keep-alive")
-	flusher := w.(http.Flusher)
+	rc := http.NewResponseController(w)
 	// Subscribe before snapshotting the init events: any broadcast event
 	// that fires after Subscribe will be queued for us, so a mode change
 	// racing with our connect cannot be lost between snapshot and live
 	// delivery.
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
-	for _, ev := range sseObs.InitEvents() {
-		if ev.IsZero() {
-			continue
-		}
-		if _, err := w.Write(([]byte)(ev.Format())); err != nil {
-			if !proxy.IsNormalConnClose(err) {
-				lg.Error("error writing HTTP response", "err", err)
-			}
-			return
-		}
+	// The init events describe the current state, so they are due now.
+	// They are flushed even if there are none, so the client gets the
+	// response headers at once.
+	if !writeSSE(lg, w, rc, time.Now(), sseObs.InitEvents()...) {
+		return
 	}
-	flusher.Flush()
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -174,19 +179,43 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 				return
 			}
 			lg.Debug("received a broadcast SSE event", "event", event.Event)
-			// XXX: handle error
-			_, err := w.Write(([]byte)(event.Format()))
-			if err != nil {
-				if !proxy.IsNormalConnClose(err) {
-					lg.Error("error writing HTTP response", "err", err)
-				}
+			t := event.T
+			if t.IsZero() {
+				t = time.Now()
+			}
+			if !writeSSE(lg, w, rc, t, event.Event) {
 				return
 			}
-			flusher.Flush()
 		case <-r.Context().Done():
 			lg.Debug("client closed HTTP connection")
 			return
 		}
 	}
+}
 
+// writeSSE writes evs to the client, skipping zero events, and flushes,
+// giving up if the client has not accepted them by maxSSELag after t,
+// the time of the data they carry. It reports whether they were written.
+func writeSSE(lg *slog.Logger, w http.ResponseWriter, rc *http.ResponseController, t time.Time, evs ...sse.Event) bool {
+	err := rc.SetWriteDeadline(t.Add(maxSSELag))
+	for _, ev := range evs {
+		if err != nil {
+			break
+		}
+		if !ev.IsZero() {
+			_, err = w.Write([]byte(ev.Format()))
+		}
+	}
+	if err == nil {
+		err = rc.Flush()
+	}
+	if err == nil {
+		return true
+	}
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		lg.Info("SSE client is not keeping up, disconnecting", "maxLag", maxSSELag)
+	} else if !proxy.IsNormalConnClose(err) {
+		lg.Error("error writing HTTP response", "err", err)
+	}
+	return false
 }
