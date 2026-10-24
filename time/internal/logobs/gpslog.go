@@ -58,13 +58,12 @@ func (o *GPSLogObserver) logStatus(msg string, s gpsStatus) {
 // NavEpoch implements gpsprot.MsgHandler.
 func (o *GPSLogObserver) NavEpoch(msg *gpsprot.NavEpochMsg, _ time.Time) {
 	cur := statusFromMsg(msg)
-	// note that if fixLevel is 0, then we do not have the messages enabled that give fix quality info, so do not log at all
-	if cur == o.cur {
+	// A zero fixLevel means the messages that give fix quality are not enabled,
+	// so do not log at all.
+	if cur.fixLevel == 0 || cur == o.cur {
 		return
 	}
-	if cur.fixLevel == 0 {
-		o.lg.Info("unknown GPS fix status")
-	} else if o.cur.fixLevel == 0 {
+	if o.cur.fixLevel == 0 {
 		o.logStatus("initial GPS fix status", cur)
 	} else {
 		o.logStatus("new GPS fix status", cur)
