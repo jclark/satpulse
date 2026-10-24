@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
@@ -151,38 +152,24 @@ func (b *syncBuffer) String() string {
 	return b.buf.String()
 }
 
-// TestSSEDisconnectsLaggingClient checks that an SSE client is
-// disconnected, with a message at Info naming it, once it falls more
-// than maxSSELag behind, and that an event with no time is delivered.
-// A client that reads too slowly is handed events whose data is already
-// too old, so the write fails at once; a client that stops reading
-// leaves a write blocked until its deadline.
+// TestSSEDisconnectsLaggingClient checks that an SSE client that reads
+// too slowly is disconnected, with a message at Info naming it, and that
+// an event with no time is delivered. Such a client is handed events
+// whose data is already more than maxSSELag old, so the write fails at
+// once.
 func TestSSEDisconnectsLaggingClient(t *testing.T) {
 	tests := []struct {
 		name             string
 		age              time.Duration // how old each event's data is; 0 means it has no time
-		size             int           // size of each event's data
-		stall            bool          // the client does not read until it has been disconnected
 		expectDisconnect bool
 	}{
 		{
 			name:             "events too old",
 			age:              2 * maxSSELag,
-			size:             10,
-			expectDisconnect: true,
-		},
-		{
-			// Large events fill the socket buffers quickly, so a write
-			// blocks, and its deadline is half a second away.
-			name:             "client stops reading",
-			age:              maxSSELag - 500*time.Millisecond,
-			size:             32 << 10,
-			stall:            true,
 			expectDisconnect: true,
 		},
 		{
 			name: "events without a time",
-			size: 10,
 		},
 	}
 	for _, tc := range tests {
@@ -199,7 +186,7 @@ func TestSSEDisconnectsLaggingClient(t *testing.T) {
 				sseHandleRequest(ctx, lg, w, r, b, obs)
 			}))
 			defer srv.Close()
-			ev, err := sse.Make("test", strings.Repeat("x", tc.size))
+			ev, err := sse.Make("test", "x")
 			if err != nil {
 				t.Fatalf("sse.Make: %v", err)
 			}
@@ -239,17 +226,6 @@ func TestSSEDisconnectsLaggingClient(t *testing.T) {
 			defer conn.Close()
 			fmt.Fprint(conn, "GET /sse HTTP/1.1\r\nHost: x\r\n\r\n")
 			want := `level=INFO msg="SSE client is not keeping up, disconnecting" remoteAddr=` + conn.LocalAddr().String()
-			// A blocked write must time out while the client is still not
-			// reading, well before a deadline counted from now would expire.
-			if tc.stall {
-				waitFor := time.Now().Add(maxSSELag / 2)
-				for !strings.Contains(logs.String(), want) {
-					if time.Now().After(waitFor) {
-						t.Fatalf("client not disconnected while it was not reading")
-					}
-					time.Sleep(10 * time.Millisecond)
-				}
-			}
 			if err := conn.SetReadDeadline(time.Now().Add(2 * time.Second)); err != nil {
 				t.Fatalf("SetReadDeadline: %v", err)
 			}
@@ -315,3 +291,91 @@ func TestSSESendsHeadersWithoutInitEvents(t *testing.T) {
 		t.Errorf("status %q", status)
 	}
 }
+
+// pipeListener is a net.Listener that hands out the connections sent
+// on conns, so that an http.Server can serve a net.Pipe.
+type pipeListener struct {
+	conns chan net.Conn
+	done  chan struct{}
+	once  sync.Once
+}
+
+// TestSSEClientStops checks that a write to an SSE client that has
+// stopped reading fails once the event's data is maxSSELag old, so the
+// client is disconnected. net.Pipe is unbuffered, so it models a socket
+// whose buffers are already full.
+func TestSSEClientStops(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logs := &syncBuffer{}
+		lg := slog.New(slog.NewTextHandler(logs, nil))
+		ctx := t.Context()
+		evCh := make(chan sseobs.TimedEvent)
+		b := bcast.New((<-chan sseobs.TimedEvent)(evCh))
+		obs := sseobs.New(make(chan sseobs.TimedEvent, 1), ptime.LeapSecond{}, lg, nil)
+		server, client := net.Pipe()
+		l := &pipeListener{conns: make(chan net.Conn, 1), done: make(chan struct{})}
+		l.conns <- server
+		srv := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			sseHandleRequest(ctx, lg, w, r, b, obs)
+		})}
+		var wg sync.WaitGroup
+		defer wg.Wait()
+		defer close(evCh)
+		defer b.Close()
+		defer srv.Close()
+		defer client.Close()
+		wg.Go(func() { b.Run(ctx, lg) })
+		wg.Go(func() { srv.Serve(l) })
+		fmt.Fprint(client, "GET /sse HTTP/1.1\r\nHost: x\r\n\r\n")
+		r := bufio.NewReader(client)
+		for {
+			line, err := r.ReadString('\n')
+			if err != nil {
+				t.Fatalf("reading response headers: %v", err)
+			}
+			if line == "\r\n" {
+				break
+			}
+		}
+		synctest.Wait()
+		ev, err := sse.Make("test", "x")
+		if err != nil {
+			t.Fatalf("sse.Make: %v", err)
+		}
+		// The event's data is already half maxSSELag old, so the deadline
+		// is half maxSSELag away.
+		evCh <- sseobs.TimedEvent{Event: ev, T: time.Now().Add(-maxSSELag / 2)}
+		const want = `level=INFO msg="SSE client is not keeping up, disconnecting"`
+		time.Sleep(maxSSELag/2 - time.Millisecond)
+		synctest.Wait()
+		if strings.Contains(logs.String(), want) {
+			t.Fatalf("client disconnected before the deadline")
+		}
+		time.Sleep(time.Millisecond)
+		synctest.Wait()
+		if out := logs.String(); !strings.Contains(out, want) || strings.Contains(out, "level=ERROR") {
+			t.Errorf("logs:\n%s\nwant a line starting %s and no errors", out, want)
+		}
+	})
+}
+
+func (l *pipeListener) Accept() (net.Conn, error) {
+	select {
+	case c := <-l.conns:
+		return c, nil
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+}
+
+func (l *pipeListener) Close() error {
+	l.once.Do(func() { close(l.done) })
+	return nil
+}
+
+func (l *pipeListener) Addr() net.Addr { return pipeAddr{} }
+
+type pipeAddr struct{}
+
+func (pipeAddr) Network() string { return "pipe" }
+func (pipeAddr) String() string  { return "pipe" }
