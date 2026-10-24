@@ -285,7 +285,7 @@ func makeBuckets(clockAccuracyNanos float64) []float64 {
 // ModeChanged drives sync_mode and sync_status from the new controller
 // mode. Both gauges therefore reflect current state — including transitions
 // that aren't sample-driven, such as a Pause() on carrier loss.
-func (p *PrometheusObserver) ModeChanged(_, newMode phcsync.Mode) {
+func (p *PrometheusObserver) ModeChanged(_, newMode phcsync.Mode, _ time.Time) {
 	p.syncModeGauge.Set(float64(newMode))
 	if newMode.InSync() {
 		p.inSyncGauge.Set(1)
