@@ -366,6 +366,9 @@ func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 	defer wg.Wait()
 	defer qCancel()
 	for pkt := range qCh {
+		if ctx.Err() != nil {
+			return
+		}
 		data := pkt.Data
 		if m.msm7to4 {
 			out, err := rtcmbin.MSM7ConvertPacket(data, 4)
