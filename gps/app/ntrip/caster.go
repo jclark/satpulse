@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"syscall"
@@ -281,17 +282,19 @@ func (c *caster) serveSourceTable(w http.ResponseWriter, v2 bool) {
 }
 
 // serveStream handles a successful GET /<mountpoint> request.
+// Its log messages say which client and mountpoint they are about.
 func (c *caster) serveStream(w http.ResponseWriter, r *http.Request, m *mount, v2 bool) {
+	lg := c.lg.With("remoteAddr", r.RemoteAddr, "mountpoint", m.name)
 	if v2 {
-		c.serveStreamV2(w, r, m)
+		c.serveStreamV2(w, r, lg, m)
 	} else {
-		c.serveStreamV1(w, r, m)
+		c.serveStreamV1(w, r, lg, m)
 	}
 }
 
 // serveStreamV1 hijacks the connection and writes the 12-byte
 // "ICY 200 OK\r\n" status line followed by the raw RTCM byte stream.
-func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, m *mount) {
+func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, lg *slog.Logger, m *mount) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		http.Error(w, "hijack not supported", http.StatusInternalServerError)
@@ -299,7 +302,7 @@ func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, m *mount)
 	}
 	conn, brw, err := hj.Hijack()
 	if err != nil {
-		c.lg.Error("hijack failed", "err", err)
+		lg.Error("hijack failed", "err", err)
 		return
 	}
 	defer conn.Close()
@@ -310,12 +313,12 @@ func (c *caster) serveStreamV1(w http.ResponseWriter, r *http.Request, m *mount)
 	if err := bw.Flush(); err != nil {
 		return
 	}
-	c.streamLoop(r.Context(), m, bufWriter{bw})
+	c.streamLoop(r.Context(), lg, m, bufWriter{bw, conn})
 }
 
 // serveStreamV2 streams via the http.ResponseWriter using chunked
 // encoding (Go's default since Content-Length is unknown).
-func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, m *mount) {
+func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, lg *slog.Logger, m *mount) {
 	h := w.Header()
 	h.Set("Content-Type", "gnss/data")
 	h.Set("Cache-Control", "no-store, no-cache, max-age=0")
@@ -328,7 +331,7 @@ func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, m *mount)
 	if err := rc.Flush(); err != nil {
 		return
 	}
-	c.streamLoop(r.Context(), m, respWriter{w, rc})
+	c.streamLoop(r.Context(), lg, m, respWriter{w, rc})
 }
 
 // streamWriter is the writer abstraction used by streamLoop so the
@@ -336,29 +339,41 @@ func (c *caster) serveStreamV2(w http.ResponseWriter, r *http.Request, m *mount)
 type streamWriter interface {
 	io.Writer
 	flush() error
+	setWriteDeadline(t time.Time) error
 }
 
-type bufWriter struct{ w *bufio.Writer }
+type bufWriter struct {
+	w    *bufio.Writer
+	conn net.Conn
+}
 
-func (b bufWriter) Write(p []byte) (int, error) { return b.w.Write(p) }
-func (b bufWriter) flush() error                { return b.w.Flush() }
+func (b bufWriter) Write(p []byte) (int, error)        { return b.w.Write(p) }
+func (b bufWriter) flush() error                       { return b.w.Flush() }
+func (b bufWriter) setWriteDeadline(t time.Time) error { return b.conn.SetWriteDeadline(t) }
 
 type respWriter struct {
 	w  http.ResponseWriter
 	rc *http.ResponseController
 }
 
-func (r respWriter) Write(p []byte) (int, error) { return r.w.Write(p) }
-func (r respWriter) flush() error                { return r.rc.Flush() }
+func (r respWriter) Write(p []byte) (int, error)        { return r.w.Write(p) }
+func (r respWriter) flush() error                       { return r.rc.Flush() }
+func (r respWriter) setWriteDeadline(t time.Time) error { return r.rc.SetWriteDeadline(t) }
+
+// maxStreamLag is how long after a packet was read from the receiver
+// the client's connection must have accepted it.  A client that stops
+// reading, or reads more slowly than the receiver sends, is
+// disconnected once it falls this far behind, so that it cannot make
+// the packet bcast queue grow without limit.  Ntrip clients reconnect.
+const maxStreamLag = 10 * time.Second
 
 // streamLoop subscribes to the packet bcast and writes RTCM packets
 // to w until ctx is cancelled, the bcast closes, or a write fails.
-// Mirrors proxy.connWriteWorker in time/internal/proxy.  When the
-// mountpoint requests MSM7->MSM4 conversion, each MSM7 packet is
-// rewritten before being forwarded; non-MSM7 packets pass through
-// unchanged.
-func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
-	defer c.lg.Debug("about to exit ntrip stream worker")
+// When the mountpoint requests MSM7->MSM4 conversion, each MSM7
+// packet is rewritten before being forwarded; non-MSM7 packets pass
+// through unchanged.
+func (c *caster) streamLoop(ctx context.Context, lg *slog.Logger, m *mount, w streamWriter) {
+	defer lg.Debug("about to exit ntrip stream worker")
 	ch := c.bcast.Subscribe()
 	defer c.bcast.Unsubscribe(ch)
 	for {
@@ -376,22 +391,36 @@ func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 			if m.msm7to4 {
 				out, err := rtcmbin.MSM7ConvertPacket(data, 4)
 				if err != nil {
-					c.lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
+					lg.Debug("MSM7->MSM4 conversion failed, forwarding unchanged",
 						"msgType", rtcmbin.ExtractMsgType(data), "err", err)
 				} else {
 					data = out
 				}
 			}
+			if err := w.setWriteDeadline(pkt.TRead.Add(maxStreamLag)); err != nil {
+				logConnErr(lg, "error setting ntrip stream write deadline", err)
+				return
+			}
 			if _, err := w.Write([]byte(data)); err != nil {
-				logConnErr(c.lg, "error writing to ntrip stream", err)
+				logStreamErr(lg, "error writing to ntrip stream", err)
 				return
 			}
 			if err := w.flush(); err != nil {
-				logConnErr(c.lg, "error flushing ntrip stream", err)
+				logStreamErr(lg, "error flushing ntrip stream", err)
 				return
 			}
 		}
 	}
+}
+
+// logStreamErr logs an error writing to a stream.  An expired write
+// deadline means that the client fell more than maxStreamLag behind.
+func logStreamErr(lg *slog.Logger, msg string, err error) {
+	if errors.Is(err, os.ErrDeadlineExceeded) {
+		lg.Info("ntrip client is not keeping up, disconnecting", "maxLag", maxStreamLag)
+		return
+	}
+	logConnErr(lg, msg, err)
 }
 
 // logConnErr logs a connection error unless it's a normal close.

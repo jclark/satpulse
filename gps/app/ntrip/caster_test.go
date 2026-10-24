@@ -29,6 +29,7 @@ const testRTCMData = "\xD3\x00\x13\x3E\xD7\xD3\x02\x02\x98\x0E\xDE\xEF\x34\xB4\x
 // It exposes a packet input channel and a TCP listener address.
 type fixture struct {
 	t        *testing.T
+	logs     *syncBuffer
 	cancel   context.CancelFunc
 	wg       sync.WaitGroup
 	pktCh    chan scan.Packet
@@ -51,8 +52,8 @@ func newFixture(t *testing.T, cfg Config, users map[string]string) *fixture {
 		t.Fatalf("invalid test config: %v", err)
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	f := &fixture{t: t, cancel: cancel, pktCh: make(chan scan.Packet)}
-	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
+	f := &fixture{t: t, logs: &syncBuffer{}, cancel: cancel, pktCh: make(chan scan.Packet)}
+	lg := slog.New(slog.NewTextHandler(f.logs, nil))
 	b := bcast.New((<-chan scan.Packet)(f.pktCh))
 	f.wg.Go(func() { b.Run(ctx, lg) })
 	build := StreamRecordBuilder(&cfg.SharedStreamConfig, nil, nil, "", 0, nil)
@@ -76,6 +77,24 @@ func newFixture(t *testing.T, cfg Config, users map[string]string) *fixture {
 		f.wg.Wait()
 	})
 	return f
+}
+
+// syncBuffer collects log output written by the caster's goroutines.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
 }
 
 // dial opens a TCP connection to the caster.
@@ -136,6 +155,7 @@ func rtcmPacket(data string) scan.Packet {
 		Format:        rtcm.PacketFormat,
 		Data:          data,
 		ChecksumValid: true,
+		TRead:         time.Now(),
 	}
 }
 
@@ -382,7 +402,7 @@ func TestStreamFiltersNonRTCM(t *testing.T) {
 		t.Fatalf("status %q", line)
 	}
 	// Bad checksum: must be dropped.
-	f.send(scan.Packet{Format: rtcm.PacketFormat, Data: testRTCMData, ChecksumValid: false})
+	f.send(scan.Packet{Format: rtcm.PacketFormat, Data: testRTCMData, ChecksumValid: false, TRead: time.Now()})
 	// Good packet: must arrive.
 	stop := f.streamPackets(rtcmPacket(testRTCMData))
 	defer stop()
@@ -575,5 +595,109 @@ func TestClientDisconnectCleansUp(t *testing.T) {
 		case <-time.After(2 * time.Second):
 			t.Fatal("packet send blocked after client disconnect")
 		}
+	}
+}
+
+// TestStreamDisconnectsLaggingClient checks that a client is disconnected
+// once it falls more than maxStreamLag behind, and that this is logged at
+// Info, naming the client and mountpoint. A client that reads too slowly
+// is handed packets that are already too old, so the write fails at once;
+// a client that stops reading leaves a write blocked until its deadline.
+func TestStreamDisconnectsLaggingClient(t *testing.T) {
+	const (
+		v1Request = "GET /BKK HTTP/1.0\r\n\r\n"
+		v2Request = "GET /BKK HTTP/1.1\r\nHost: x\r\nNtrip-Version: Ntrip/2.0\r\nConnection: close\r\n\r\n"
+	)
+	tests := []struct {
+		name         string
+		request      string
+		expectStatus string
+		age          time.Duration // how old each packet is when it is sent
+		size         int           // packet size
+		wait         time.Duration // how long the client waits before reading
+	}{
+		{
+			name:         "v1 packets too old",
+			request:      v1Request,
+			expectStatus: "ICY 200 OK",
+			age:          2 * maxStreamLag,
+			size:         len(testRTCMData),
+		},
+		{
+			name:         "v2 packets too old",
+			request:      v2Request,
+			expectStatus: "HTTP/1.1 200",
+			age:          2 * maxStreamLag,
+			size:         len(testRTCMData),
+		},
+		{
+			// Large packets fill the socket buffers quickly, so a write
+			// blocks, and its deadline is half a second away.
+			name:         "v1 client stops reading",
+			request:      v1Request,
+			expectStatus: "ICY 200 OK",
+			age:          maxStreamLag - 500*time.Millisecond,
+			size:         32 << 10,
+			wait:         time.Second,
+		},
+		{
+			name:         "v2 client stops reading",
+			request:      v2Request,
+			expectStatus: "HTTP/1.1 200",
+			age:          maxStreamLag - 500*time.Millisecond,
+			size:         32 << 10,
+			wait:         time.Second,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFixture(t, Config{
+				Mountpoint: []MountConfig{{Name: "BKK"}},
+			}, nil)
+			conn := f.dial()
+			defer conn.Close()
+			fmt.Fprint(conn, tc.request)
+			r := bufio.NewReader(conn)
+			if status := readLine(t, r); !strings.HasPrefix(status, tc.expectStatus) {
+				t.Fatalf("status %q", status)
+			}
+			data := strings.Repeat("x", tc.size)
+			stop := make(chan struct{})
+			var wg sync.WaitGroup
+			wg.Go(func() {
+				for {
+					pkt := scan.Packet{Format: rtcm.PacketFormat, Data: data, ChecksumValid: true, TRead: time.Now().Add(-tc.age)}
+					select {
+					case f.pktCh <- pkt:
+					case <-stop:
+						return
+					}
+					select {
+					case <-stop:
+						return
+					case <-time.After(time.Millisecond):
+					}
+				}
+			})
+			defer func() {
+				close(stop)
+				wg.Wait()
+			}()
+			want := `level=INFO msg="ntrip client is not keeping up, disconnecting" remoteAddr=` + conn.LocalAddr().String() + " mountpoint=BKK"
+			time.Sleep(tc.wait)
+			// A blocked write must time out while the client is still not reading.
+			if tc.wait > 0 && !strings.Contains(f.logs.String(), want) {
+				t.Errorf("client not disconnected while it was not reading")
+			}
+			setReadDeadline(t, conn)
+			// io.Copy returns nil at EOF, when the caster closes the connection.
+			if _, err := io.Copy(io.Discard, r); err != nil {
+				t.Fatalf("caster did not close the connection: %v", err)
+			}
+			logs := f.logs.String()
+			if !strings.Contains(logs, want) || strings.Contains(logs, "level=ERROR") {
+				t.Errorf("logs:\n%s\nwant a line starting %s and no errors", logs, want)
+			}
+		})
 	}
 }
