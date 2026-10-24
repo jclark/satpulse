@@ -622,7 +622,7 @@ func TestTimeModeBuild_GenerateItems(t *testing.T) {
 			wantItems: []ucv.Item{
 				ucv.MakeItem(ucv.KTmodeMode, ucv.ETmodeModeSurveyIn),
 				ucv.MakeItem(ucv.KTmodeSvinMinDur, 300),
-				ucv.MakeItem(ucv.KTmodeSvinAccLimit, 5*1000*10+1),
+				ucv.MakeItem(ucv.KTmodeSvinAccLimit, 5*1000*10-1),
 			},
 			wantSurvey: true,
 		},
