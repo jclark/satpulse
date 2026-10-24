@@ -252,11 +252,12 @@ const maxPacketAge = 2 * time.Second
 // it returns.
 func connQueue(ctx context.Context, lg *slog.Logger, cfg svcConfig, ch <-chan scan.Packet, writerCh chan<- scan.Packet) {
 	defer close(writerCh)
+	const stoppedMsg = "stopped dropping packets for proxy client"
 	var q []scan.Packet
 	nDropped := 0
 	defer func() {
 		if nDropped > 0 {
-			lg.Info("stopped dropping packets for proxy client", "nDropped", nDropped)
+			lg.Info(stoppedMsg, "nDropped", nDropped)
 		}
 	}()
 	for {
@@ -293,7 +294,7 @@ func connQueue(ctx context.Context, lg *slog.Logger, cfg svcConfig, ch <-chan sc
 			q[0] = scan.Packet{}
 			q = q[1:]
 			if len(q) == 0 && nDropped > 0 {
-				lg.Info("stopped dropping packets for proxy client", "nDropped", nDropped)
+				lg.Info(stoppedMsg, "nDropped", nDropped)
 				nDropped = 0
 			}
 		}
