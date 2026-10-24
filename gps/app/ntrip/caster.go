@@ -353,10 +353,9 @@ func (r respWriter) flush() error                { return r.rc.Flush() }
 
 // streamLoop subscribes to the packet bcast and writes RTCM packets
 // to w until ctx is cancelled, the bcast closes, or a write fails.
-// Mirrors proxy.connWriteWorker in time/internal/proxy.  When the
-// mountpoint requests MSM7->MSM4 conversion, each MSM7 packet is
-// rewritten before being forwarded; non-MSM7 packets pass through
-// unchanged.
+// When the mountpoint requests MSM7->MSM4 conversion, each MSM7
+// packet is rewritten before being forwarded; non-MSM7 packets pass
+// through unchanged.
 func (c *caster) streamLoop(ctx context.Context, m *mount, w streamWriter) {
 	defer c.lg.Debug("about to exit ntrip stream worker")
 	ch := c.bcast.Subscribe()
