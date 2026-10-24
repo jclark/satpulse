@@ -15,7 +15,6 @@ import (
 	"github.com/jclark/satpulse/time/internal/proxy"
 	"github.com/jclark/satpulse/time/internal/sseobs"
 	"github.com/jclark/satpulse/time/internal/web"
-	"github.com/jclark/satpulse/time/lib/sse"
 )
 
 type HTTPConfig struct {
@@ -62,7 +61,7 @@ func registerPprofHandlers(mux *http.ServeMux) {
 	mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 }
 
-func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sse.Event], sseObs *sseobs.SSEObserver, promObs *promobs.PrometheusObserver, posObs *positionObserver) error {
+func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []HTTPConfig, b *bcast.Bcast[sseobs.TimedEvent], sseObs *sseobs.SSEObserver, promObs *promobs.PrometheusObserver, posObs *positionObserver) error {
 	if len(cfg) == 0 {
 		return nil
 	}
@@ -139,7 +138,7 @@ func startHTTP(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg []H
 	return nil
 }
 
-func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sse.Event], sseObs *sseobs.SSEObserver) {
+func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWriter, r *http.Request, b *bcast.Bcast[sseobs.TimedEvent], sseObs *sseobs.SSEObserver) {
 	defer lg.Debug("about to exit HTTP SSE request handler")
 	lg.Debug("starting to handle HTTP SSE request")
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -174,7 +173,7 @@ func sseHandleRequest(ctx context.Context, lg *slog.Logger, w http.ResponseWrite
 				lg.Debug("broadcast channel to SSE request handler closed")
 				return
 			}
-			lg.Debug("received a broadcast SSE event", "event", event)
+			lg.Debug("received a broadcast SSE event", "event", event.Event)
 			// XXX: handle error
 			_, err := w.Write(([]byte)(event.Format()))
 			if err != nil {

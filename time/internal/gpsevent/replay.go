@@ -57,7 +57,7 @@ func (r *Replayer) replayEvent(bytes []byte) error {
 		})
 	case *gpsprot.TimeMsg:
 		r.timeMsgBuffer.Time(data, tRead)
-		r.ctrl.TimeMessage()
+		r.ctrl.TimeMessage(tRead)
 	case *gpsprot.LeapSecondMsg:
 		var ls ptime.LeapSecond
 		if data.UpdateLeapSecond(&ls) {

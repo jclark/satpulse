@@ -153,7 +153,7 @@ than flattened.
 
 `ModeChanged` should ideally be represented by serialization of the phcsync
 observability type used on the daemon observability bus. The current callback
-is `ModeChanged(oldMode, newMode phcsync.Mode)`, so this may require a named
+is `ModeChanged(oldMode, newMode phcsync.Mode, t time.Time)`, so this may require a named
 payload type before it can replace `ModeSSE`.
 
 ### Init session events

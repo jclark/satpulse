@@ -37,7 +37,7 @@ type EventKind int
 const (
 	_ EventKind = iota
 	EdgeEvent
-	PauseEvent
+	PauseEvent // only TReadMono.Sys is set: when carrier loss was seen
 	ResumeEvent
 )
 
@@ -237,7 +237,7 @@ func noCarrier(flags net.Flags) bool {
 }
 
 func (clk *Clock) handleNoCarrier(ctx context.Context, lg *slog.Logger, tsCh chan<- Event, _ net.Flags) <-chan net.Flags {
-	tsCh <- Event{Kind: PauseEvent}
+	tsCh <- Event{Kind: PauseEvent, TReadMono: phctime.Sample{Sys: time.Now()}}
 	lg.Info("carrier lost; waiting for it to return", "interface", clk.ifName)
 	clk.logExttsEnable(lg, false)
 	wCh := clk.w.SetCond(hasCarrier)

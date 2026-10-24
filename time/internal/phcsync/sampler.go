@@ -53,7 +53,14 @@ type Observer interface {
 	// by a sample (e.g. carrier-loss Pause). At controller startup the
 	// initial transition out of ModeInvalid into ModeReset is also
 	// reported here.
-	ModeChanged(oldMode, newMode Mode)
+	//
+	// t is the system time of the event behind the transition: for a
+	// transition caused by a sample, the sample's Sys, which is the
+	// estimated time of the pulse and can be up to about a second before
+	// the input that produced the sample was read; for leap-second
+	// detection, the read time of the time message; for carrier loss,
+	// when it was seen. It is zero for the initial transition at startup.
+	ModeChanged(oldMode, newMode Mode, t time.Time)
 }
 
 // MultiObserver fans out events to multiple observers.
@@ -74,9 +81,9 @@ func (m *MultiObserver) Sample(data Sample) {
 }
 
 // ModeChanged implements Observer by calling ModeChanged on all observers.
-func (m *MultiObserver) ModeChanged(oldMode, newMode Mode) {
+func (m *MultiObserver) ModeChanged(oldMode, newMode Mode, t time.Time) {
 	for _, o := range m.observers {
-		o.ModeChanged(oldMode, newMode)
+		o.ModeChanged(oldMode, newMode, t)
 	}
 }
 

@@ -249,7 +249,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 				continue
 			}
 			if e.Kind == ts.PauseEvent {
-				d.controller.Pause()
+				d.controller.Pause(e.TReadMono.Sys)
 				continue
 			}
 			if e.Kind == ts.ResumeEvent {
@@ -576,7 +576,7 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {
-		d.controller.TimeMessage()
+		d.controller.TimeMessage(tRead)
 	}
 
 	d.timeTicker.Time(mt, tRead)
