@@ -1,4 +1,4 @@
-"""Quectel: the LG290P and LC29H message files and the PQTM fix-rate reply."""
+"""Quectel: the LG290P message file and the PQTM fix-rate reply."""
 
 import re
 from pathlib import Path
@@ -9,7 +9,7 @@ from vendor import Vendor, received
 # Message files by hardware-name prefix. The backend's hardware name is the
 # module name from PQTMVERNO, which carries a variant suffix the files do
 # not (LG290P03).
-MSG_FILES = {"LG290P": "quectel/lg290p.toml", "LC29H": "quectel/lc29h.toml"}
+MSG_FILES = {"LG290P": "quectel/lg290p.toml"}
 
 
 class Quectel(Vendor):

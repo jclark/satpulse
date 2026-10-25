@@ -1,0 +1,18 @@
+#:schema ../gpsmsg-schema.json
+# Airoha AG3335 PAIR configuration messages not in ag33xx.toml
+# The PAIR messages only the AG3335 supports. Includes nothing, so that a
+# module file can include it next to a file that includes ag33xx.toml;
+# ag3335.toml combines the two.
+#
+# Tested boards:
+#   LC29H(AA) A03S: Quectel LC29HAANR11A03S, AG3335M V3.0.4
+#   LC29H(AA) A05S: Quectel LC29HAANR11A05S, AG3335M V3.2.2
+#   LC29H(DA):      Quectel LC29HDANR11A03S_RSA, AG3335A V2.6.0
+
+# Dual band (L1+L5) status
+# Verified PAIR105 response on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Rejected as unsupported on LC76G(AB) A05S (AG3352Q)
+[[nmea]]
+text = "PAIR105"
+tag = "get-band"
+description = "Get dual band setting"

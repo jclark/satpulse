@@ -1,0 +1,285 @@
+#:schema ../gpsmsg-schema.json
+# Airoha AG3352 PAIR configuration messages not in ag33xx.toml
+# The PAIR messages only the AG3352 supports. Includes nothing, so that a
+# module file can include it next to a file that includes ag33xx.toml;
+# ag3352.toml combines the two. Some are documented only by LOCOSYS (AG3352Q
+# command list V1.1), not by Quectel.
+#
+# Tested board:
+#   LC76G(AB) A05S: Quectel LC76GABNR12A05S, AG3352Q V3.2.2
+
+# Version and settings (LOCOSYS only): PAIR020 fields followed by settings
+# Verified PAIR021 response on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR021"
+tag = "get-settings"
+description = "Get firmware version and settings"
+
+# Position and time queries (LOCOSYS only)
+# Verified PAIR030, PAIR031 and PAIR043 responses on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR030"
+tag = "get-pos-xyz"
+description = "Get ECEF position"
+[[nmea]]
+text = "PAIR031"
+tag = "get-vel-xyz"
+description = "Get ECEF velocity"
+[[nmea]]
+text = "PAIR043"
+tag = "get-week-tow"
+description = "Get GPS week number and time of week"
+
+# BDS B1C signal (PAIR158); factory setting off
+# Verified get-b1c returns the new value and BDS GSV shows signal ID 3 after
+# b1c on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR159"
+tag = "get-b1c"
+description = "Get BDS B1C status"
+[[nmea]]
+text = "PAIR158,1"
+tag = "b1c"
+description = "Enable BDS B1C signal"
+[[nmea]]
+text = "PAIR158,0"
+tag = "b1c-off"
+description = "Disable BDS B1C signal"
+
+# RLM (Galileo return link message) output at 1 Hz (PAIR154)
+# Verified RLM appears after nmea-rlm and stops after nmea-rlm-off on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR155"
+tag = "get-nmea-rlm"
+description = "Get RLM output status"
+[[nmea]]
+text = "PAIR154,1"
+tag = "nmea-rlm"
+description = "Enable NMEA RLM message"
+[[nmea]]
+text = "PAIR154,0"
+tag = "nmea-rlm-off"
+description = "Disable NMEA RLM message"
+
+# Real-time speed response (PAIR160); factory setting off
+# Verified ACK received and get-immediate-speed returns the new value on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR161"
+tag = "get-immediate-speed"
+description = "Get real-time speed response mode"
+[[nmea]]
+text = "PAIR160,1"
+tag = "immediate-speed"
+description = "Enable real-time speed response mode"
+[[nmea]]
+text = "PAIR160,0"
+tag = "immediate-speed-off"
+description = "Disable real-time speed response mode"
+
+# 2D fix mode (PAIR162); factory setting off
+# Verified ACK received and get-2d-fix returns the new value on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR163"
+tag = "get-2d-fix"
+description = "Get 2D fix mode"
+[[nmea]]
+text = "PAIR162,1"
+tag = "2d-fix"
+description = "Enable 2D fix mode"
+[[nmea]]
+text = "PAIR162,0"
+tag = "2d-fix-off"
+description = "Disable 2D fix mode"
+
+# Static mode (LOCOSYS only: PAIR092); factory setting on
+# Verified ACK received and get-static-mode returns the new value on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR093"
+tag = "get-static-mode"
+description = "Get static mode"
+[[nmea]]
+text = "PAIR092,1"
+tag = "static-mode"
+description = "Enable static mode"
+[[nmea]]
+text = "PAIR092,0"
+tag = "static-mode-off"
+description = "Disable static mode"
+
+# NMEA position digits (LOCOSYS only: PAIR098): 2=latitude and longitude
+# minutes to 6 decimal places, altitude to 3; 3=7 and 3; factory setting 2
+# Verified ACK received and get-nmea-pos-digits returns the new value on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR099"
+tag = "get-nmea-pos-digits"
+description = "Get NMEA position decimal places"
+[[nmea]]
+text = "PAIR098,2"
+tag = "nmea-pos-digits-6"
+description = "Output position with 6 decimal places"
+[[nmea]]
+text = "PAIR098,3"
+tag = "nmea-pos-digits-7"
+description = "Output position with 7 decimal places"
+
+# Horizontal accuracy mask (LOCOSYS only: PAIR064, m, 30-200; 0 disables)
+# Verified ACK received and get-hacc-mask returns the new value on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR065"
+tag = "get-hacc-mask"
+description = "Get horizontal accuracy mask"
+[[nmea]]
+text = "PAIR064,50"
+tag = "hacc-mask-50"
+description = "Fix only when horizontal accuracy is better than 50 m"
+[[nmea]]
+text = "PAIR064,0"
+tag = "hacc-mask-off"
+description = "Disable horizontal accuracy mask"
+
+# HDOP threshold (LOCOSYS only: PAIR068; 0 disables)
+# Verified ACK received and get-hdop-threshold returns the new value on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR069"
+tag = "get-hdop-threshold"
+description = "Get HDOP threshold"
+[[nmea]]
+text = "PAIR068,5.0"
+tag = "hdop-threshold-5"
+description = "Fix only when HDOP is below 5"
+[[nmea]]
+text = "PAIR068,0"
+tag = "hdop-threshold-off"
+description = "Disable HDOP threshold"
+
+# RTCM input version (LOCOSYS only: PAIR430): 0=RTCM v2.x, 1=RTCM v3.x;
+# factory setting 0
+# Verified ACK received and get-rtcm-in-ver returns the new value on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR431"
+tag = "get-rtcm-in-ver"
+description = "Get RTCM input version"
+[[nmea]]
+text = "PAIR430,1"
+tag = "rtcm-in-ver-3"
+description = "Set RTCM input version to 3.x"
+[[nmea]]
+text = "PAIR430,0"
+tag = "rtcm-in-ver-2"
+description = "Set RTCM input version to 2.x"
+
+# EPOC self-generated orbit prediction (LOCOSYS only: PAIR496, status
+# PAIR508); factory setting on
+# Verified ACK received and get-epoc returns the new value on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR508"
+tag = "get-epoc"
+description = "Get EPOC status"
+[[nmea]]
+text = "PAIR496,1"
+tag = "epoc"
+description = "Enable EPOC orbit prediction"
+[[nmea]]
+text = "PAIR496,0"
+tag = "epoc-off"
+description = "Disable EPOC orbit prediction"
+
+# Binary raw measurement output (LOCOSYS only: PAIR830): 1=raw measurements
+# Verified binary output appears after raw and stops after raw-off on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR831"
+tag = "get-raw"
+description = "Get raw measurement output setting"
+[[nmea]]
+text = "PAIR830,1"
+tag = "raw"
+description = "Enable binary raw measurement output"
+[[nmea]]
+text = "PAIR830,0"
+tag = "raw-off"
+description = "Disable binary raw measurement output"
+
+# Fixed 350 ms between PPS and NMEA output (PAIR751)
+# Verified the first NMEA sentence starts 355-372 ms after PPS after
+# pps-nmea-sync and 164-180 ms after pps-nmea-sync-off on LC76G(AB) A05S
+# (measured through an FTDI adapter with a 16 ms latency timer)
+[[nmea]]
+text = "PAIR751,1"
+tag = "pps-nmea-sync"
+description = "Output NMEA 350 ms after PPS"
+[[nmea]]
+text = "PAIR751,0"
+tag = "pps-nmea-sync-off"
+description = "Disable fixed PPS to NMEA timing"
+
+# PPS edge (LOCOSYS only: PAIR757): 0=rising (factory setting), 1=falling
+# Verified the timed PPS edge moves 100 ms later after pps-falling-edge and
+# back after pps-rising-edge on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR758"
+tag = "get-pps-edge"
+description = "Get PPS edge"
+[[nmea]]
+text = "PAIR757,1"
+tag = "pps-falling-edge"
+description = "Trigger PPS on falling edge"
+[[nmea]]
+text = "PAIR757,0"
+tag = "pps-rising-edge"
+description = "Trigger PPS on rising edge"
+
+# PPS time base (LOCOSYS only: PAIR755,<Enable>,<Time_base>); only the GPS
+# time base (1) is supported
+# Verified ACK received and get-pps-timebase returns 1,1 after
+# pps-timebase-gps on LC76G(AB) A05S; it returns 0,0 after
+# pps-timebase-off
+[[nmea]]
+text = "PAIR756"
+tag = "get-pps-timebase"
+description = "Get PPS time base"
+[[nmea]]
+text = "PAIR755,1,1"
+tag = "pps-timebase-gps"
+description = "Align PPS to GPS time"
+[[nmea]]
+text = "PAIR755,0,1"
+tag = "pps-timebase-off"
+description = "Disable PPS time base setting"
+
+# Factory reset: restore the default configuration, then cold start.
+# PAIR514 works only while the GNSS system is off. It does not restore the
+# baud rate (PAIR864) or the LOCUS settings (PAIR900, PAIR902, PAIR904).
+# Verified each step acknowledged, an unsaved elevation mask restored to
+# its default and RMC status V after the cold start on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR382,1"
+tag = "factory-reset"
+description = "Restore factory defaults and cold start"
+delay = 0.5
+[[nmea]]
+text = "PAIR003"
+tag = "factory-reset"
+delay = 0.5
+[[nmea]]
+text = "PAIR514"
+tag = "factory-reset"
+delay = 0.5
+[[nmea]]
+text = "PAIR002"
+tag = "factory-reset"
+delay = 0.5
+[[nmea]]
+text = "PAIR382,0"
+tag = "factory-reset"
+delay = 0.5
+[[nmea]]
+text = "PAIR006"
+tag = "factory-reset"
