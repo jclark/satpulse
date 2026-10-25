@@ -12,10 +12,12 @@
 #   LC29H(AA) A03S: firmware LC29HAANR11A03S (2023/12/14)
 #   LC29H(AA) A05S: firmware LC29HAANR11A05S (2025/09/12)
 #   LC29H(DA):      firmware LC29HDANR11A03S_RSA (2024/03/19)
-# The gnss-* tags use PAIR066 rather than PQTMCFGCNST: on the LC29H a
-# PQTMCFGCNST setting takes effect only after PQTMSAVEPAR and a restart,
-# whereas PAIR066 followed by a hot start takes effect at once on the
-# LC29H(AA).
+# The restart tags use PAIR004, PAIR005 and PAIR006 from
+# ../airoha/ag33xx.toml, which work on all our LC29H boards. PQTMHOT,
+# PQTMWARM and PQTMCOLD are documented for all variants and work on
+# LC29H(AA) A03S, but LC29H(DA) rejects them as unsupported. The gnss-*
+# tags use PAIR066, which only the LC29H(AA) supports; lc29h-da.toml
+# overrides them with PQTMCFGCNST.
 
 [[include]]
 src = "lc29h_lc76g.toml"
@@ -61,43 +63,25 @@ text = "PQTMCFGSVIN,W,2,0,0,-1144698.0455,6090335.4099,1504171.3914"
 tag = "fixed-pos-example"
 description = "Set fixed ECEF position (example coordinates - replace with yours)"
 
-# Reboot, which reloads the configuration from NVM
-# Not tested
-[[nmea]]
-text = "PQTMSRR"
-tag = "reload"
-description = "Reload configuration from NVM (reboot)"
-
-# Factory reset: restore defaults, reboot to apply them, then cold start.
-# On LC29H (AA) PQTMRESTOREPAR restores all parameters; on LC29H (BA, CA,
-# DA, EA) only those set by PQTM commands, PAIR050 and PAIR062.
-# Not tested
+# Factory reset: restore the default configuration, then cold start.
+# lc29h-aa.toml overrides this to reboot before the cold start.
+# On LC29H (BA, CA, DA, EA) PQTMRESTOREPAR restores only the parameters set
+# by PQTM commands, PAIR050 and PAIR062.
+# Verified PQTMRESTOREPAR restores an unsaved odometer setting at once, and
+# PAIR006 is accepted after it, each sent on its own, on LC29H(DA); the
+# sequence is not tested
 [[nmea]]
 text = "PQTMRESTOREPAR"
 tag = "factory-reset"
-description = "Restore factory defaults, reboot and cold start"
+description = "Restore factory defaults and cold start"
+delay = 1
 [[nmea]]
-text = "PQTMSRR"
+text = "PAIR006"
 tag = "factory-reset"
-delay = 3
-[[nmea]]
-text = "PQTMCOLD"
-tag = "factory-reset"
-
-# Restarts; the module sends no reply. PQTMWARM is documented only for
-# LC29H (AA), so warm-start keeps PAIR005 here.
-# Not tested
-[[nmea]]
-text = "PQTMHOT"
-tag = "hot-start"
-description = "Hot start (use available data in NVRAM)"
-[[nmea]]
-text = "PQTMCOLD"
-tag = "cold-start"
-description = "Cold start (do not use position, almanac or ephemeris)"
 
 # GNSS engine
-# Not tested
+# Verified output stops after subsys-off and resumes after subsys-on on
+# LC29H(AA) A03S and LC29H(DA)
 [[nmea]]
 text = "PQTMGNSSSTOP"
 tag = "subsys-off"
@@ -108,7 +92,8 @@ tag = "subsys-on"
 description = "Start the GNSS engine"
 
 # Debug logging; the debug-on state can be saved with PQTMSAVEPAR
-# Not tested
+# Verified OK on LC29H(AA) A03S and LC29H(DA); the debug output itself
+# was not checked
 [[nmea]]
 text = "PQTMDEBUGON"
 tag = "debug-log"

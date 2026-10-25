@@ -284,6 +284,8 @@ tag = "gnss-gps"
 
 # Verified ACK received on LC29H(AA) A03S and LC29H(AA) A05S
 # Rejected on LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
 [[nmea]]
 text = "PAIR066,0,0,0,1,0,0"
 tag = "gnss-bds"
@@ -294,6 +296,8 @@ tag = "gnss-bds"
 
 # Verified ACK received on LC29H(AA) A05S
 # Rejected on LC29H(AA) A03S and LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
 [[nmea]]
 text = "PAIR066,1,1,0,0,1,0"
 tag = "gnss-gps-glo"
@@ -304,6 +308,8 @@ tag = "gnss-gps-glo"
 
 # Verified ACK received on LC29H(AA) A03S and LC29H(AA) A05S
 # Rejected on LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
 [[nmea]]
 text = "PAIR066,1,0,1,0,1,0"
 tag = "gnss-gps-gal"
@@ -313,6 +319,8 @@ text = "PAIR004"
 tag = "gnss-gps-gal"
 
 # Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
 [[nmea]]
 text = "PAIR066,1,0,0,1,1,0"
 tag = "gnss-gps-bds"
@@ -322,6 +330,8 @@ text = "PAIR004"
 tag = "gnss-gps-bds"
 
 # Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
 [[nmea]]
 text = "PAIR066,1,0,1,1,1,0"
 tag = "gnss-gps-gal-bds"
@@ -332,6 +342,8 @@ tag = "gnss-gps-gal-bds"
 
 # Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
 # Verified GPGSV, GLGSV, GAGSV and GBGSV return after gnss-all on LC29H(AA) A03S and LC29H(AA) A05S
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
 [[nmea]]
 text = "PAIR066,1,1,1,1,1,0"
 tag = "gnss-all"
@@ -356,7 +368,7 @@ description = "Get PPS configuration"
 # Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
 # Verified PAIR763 returns the new setting on LC29H(AA) A03S and LC29H(AA) A05S
 # Verified PPS pulses stop after pps-off and resume after pps on
-# LC29H(AA) A03S and LC76G(AB) A05S
+# LC29H(AA) A03S, LC29H(DA) A03S_RSA and LC76G(AB) A05S
 # Verified PAIR763 returns the new setting on LC76G(AB) A05S
 [[nmea]]
 text = "PAIR752,2,100"
@@ -551,6 +563,8 @@ tag = "subsys-on"
 
 # Minimum SNR of satellites used (PAIR058, dB, 9-37); factory setting 9
 # Verified ACK received and get-min-snr returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-min-snr returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
 [[nmea]]
 text = "PAIR059"
 tag = "get-min-snr"
@@ -568,6 +582,8 @@ description = "Set minimum SNR of satellites used to 15 dB"
 # factory setting 0
 # Verified ACK received and get-static-speed returns the new value on
 # LC76G(AB) A05S
+# Verified ACK received and get-static-speed returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
 [[nmea]]
 text = "PAIR071"
 tag = "get-static-speed"
@@ -583,6 +599,8 @@ description = "Set static navigation speed threshold to 0.4 m/s"
 
 # Active interference cancellation (PAIR074); factory setting on
 # Verified ACK received and get-aic returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-aic returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
 [[nmea]]
 text = "PAIR075"
 tag = "get-aic"
@@ -598,6 +616,8 @@ description = "Disable active interference cancellation"
 
 # Navigation mode (PAIR080): 0=normal, 4=stationary; factory setting 0
 # Verified ACK received and get-nav-mode returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-nav-mode returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
 [[nmea]]
 text = "PAIR081"
 tag = "get-nav-mode"
@@ -614,6 +634,7 @@ description = "Set stationary navigation mode"
 # Binary debug log output (PAIR086)
 # Verified binary output appears and get-debug-log returns 1 after
 # debug-log on LC76G(AB) A05S
+# Verified get-debug-log response on LC29H(DA)
 [[nmea]]
 text = "PAIR087"
 tag = "get-debug-log"
@@ -630,6 +651,7 @@ description = "Disable binary debug log output"
 # Jamming detection (PAIR391), reported in PAIRSPF sentences
 # Verified PAIRSPF appears after jamming-detect and stops after
 # jamming-detect-off on LC76G(AB) A05S
+# Verified ACK received on LC29H(DA)
 [[nmea]]
 text = "PAIR391,1"
 tag = "jamming-detect"
@@ -643,6 +665,8 @@ description = "Disable jamming detection"
 # Verified ACK received and get-dgps returns the new value on LC76G(AB) A05S
 # Verified GGA quality 1 after dgps-off on LC76G(AB) A05S; quality 2 returns
 # some minutes after dgps-sbas
+# Verified ACK received and get-dgps returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
 [[nmea]]
 text = "PAIR401"
 tag = "get-dgps"
@@ -658,6 +682,8 @@ description = "Use no DGPS correction source"
 
 # SBAS satellite search (PAIR410); factory setting on
 # Verified ACK received and get-sbas returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-sbas returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
 [[nmea]]
 text = "PAIR411"
 tag = "get-sbas"
@@ -673,6 +699,8 @@ description = "Disable SBAS satellite search"
 
 # SLAS (PAIR420); factory setting off
 # Verified ACK received and get-slas returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-slas returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
 [[nmea]]
 text = "PAIR421"
 tag = "get-slas"
@@ -687,7 +715,7 @@ tag = "slas-off"
 description = "Disable SLAS"
 
 # Save navigation data from RTC RAM to NVM
-# Not tested
+# Verified ACK received on LC29H(DA); the effect is not tested
 [[nmea]]
 text = "PAIR511"
 tag = "save-nav-data"

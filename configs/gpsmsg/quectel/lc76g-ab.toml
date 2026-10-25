@@ -5,7 +5,11 @@
 # common with the LC29H come from lc29h_lc76g.toml and the PAIR messages
 # only the AG3352 supports from ../airoha/ag3352-add.toml; this file adds
 # the PQTM messages Quectel documents for the LC76G but not for all LC29H
-# variants, overriding PAIR tags where they do the same job.
+# variants. It overrides a PAIR tag only for rtcm-base-id-*, whose PAIR
+# commands are not in the LC76G manual; pps, gnss-*, slas and factory-reset
+# use the documented PAIR commands, which work on the LC76G. PQTMCFGPPS,
+# PQTMCFGCNST, PQTMCFGSLAS and PQTMRESTOREPAR followed by PAIR006 also work
+# on LC76G(AB) A05S.
 #
 # Tested board:
 #   LC76G(AB) A05S: firmware LC76GABNR12A05S (2025/09/25), AG3352Q V3.2.2
@@ -20,82 +24,6 @@ src = "lc29h_lc76g.toml"
 
 [[include]]
 src = "../airoha/ag3352-add.toml"
-
-# Factory reset: restore the default configuration, then cold start.
-# PQTMRESTOREPAR applies the defaults at once by restarting the GNSS system.
-# It does not restore the baud rate (PAIR864) or the LOCUS settings
-# (PAIR900, PAIR902, PAIR904).
-# Verified OK, get-gnss and get-rtcm-base-id return the factory settings
-# and RMC status V after factory-reset on LC76G(AB) A05S
-[[nmea]]
-text = "PQTMRESTOREPAR"
-tag = "factory-reset"
-description = "Restore factory defaults and cold start"
-delay = 1
-[[nmea]]
-text = "PAIR006"
-tag = "factory-reset"
-
-# PPS (PQTMCFGPPS,W,<Index>,<Enable>[,<Duration ms>,<Mode>,<Polarity>,
-# <Interval>]): Mode 3=3D fix; Polarity 1=high; Interval 0=every second.
-# The fields after Enable must be omitted when disabling.
-# Verified PPS pulses stop after pps-off and resume after pps, and get-pps
-# returns the new setting, on LC76G(AB) A05S
-[[nmea]]
-text = "PQTMCFGPPS,R,1"
-tag = "get-pps"
-description = "Get PPS configuration"
-[[nmea]]
-text = "PQTMCFGPPS,W,1,1,100,3,1,0"
-tag = "pps"
-description = "Enable PPS output (100 ms pulse, 3D fix only)"
-[[nmea]]
-text = "PQTMCFGPPS,W,1,0"
-tag = "pps-off"
-description = "Disable PPS output"
-
-# GNSS search mode (PQTMCFGCNST,W,<GPS>,<GLONASS>,<Galileo>,<BDS>,<QZSS>,
-# <NavIC>). A new setting restarts the GNSS system; unless saved, it
-# reverts to the default at the next reset.
-# Verified get-gnss returns 1,0,0,0,1,0 after the PAIR066 form of gnss-gps
-# on LC76G(AB) A05S
-# Verified OK, GNSS system restart and all constellations in GSV after
-# gnss-all on LC76G(AB) A05S
-# Verified OK, get-gnss returns the new setting and GSV shows only the
-# selected constellations after each of the other gnss-* tags on
-# LC76G(AB) A05S
-[[nmea]]
-text = "PQTMCFGCNST,R"
-tag = "get-gnss"
-description = "Get GNSS search mode"
-[[nmea]]
-text = "PQTMCFGCNST,W,1,0,0,0,1,0"
-tag = "gnss-gps"
-description = "Enable GPS and QZSS"
-[[nmea]]
-text = "PQTMCFGCNST,W,0,0,0,1,0,0"
-tag = "gnss-bds"
-description = "Enable BDS only"
-[[nmea]]
-text = "PQTMCFGCNST,W,1,1,0,0,1,0"
-tag = "gnss-gps-glo"
-description = "Enable GPS, GLONASS and QZSS"
-[[nmea]]
-text = "PQTMCFGCNST,W,1,0,1,0,1,0"
-tag = "gnss-gps-gal"
-description = "Enable GPS, Galileo and QZSS"
-[[nmea]]
-text = "PQTMCFGCNST,W,1,0,0,1,1,0"
-tag = "gnss-gps-bds"
-description = "Enable GPS, BDS and QZSS"
-[[nmea]]
-text = "PQTMCFGCNST,W,1,0,1,1,1,0"
-tag = "gnss-gps-gal-bds"
-description = "Enable GPS, Galileo, BDS and QZSS"
-[[nmea]]
-text = "PQTMCFGCNST,W,1,1,1,1,1,0"
-tag = "gnss-all"
-description = "Enable GPS, GLONASS, Galileo, BDS and QZSS"
 
 # RTCM reference station ID (PQTMCFGRSID,W,<ID>, range 0-4095); factory
 # setting 3352
@@ -116,21 +44,26 @@ text = "PQTMCFGRSID,W,1234"
 tag = "rtcm-base-id-1234"
 description = "Set RTCM reference station ID to 1234"
 
-# SLAS (PQTMCFGSLAS,W,<State>); factory setting off
-# Verified OK and get-slas and PAIR421 return the new value on
+# GRS and GNS output, not supported on LC29H (BA, CA, DA, EA)
+# Verified each message appears after enable and stops after disable on
 # LC76G(AB) A05S
 [[nmea]]
-text = "PQTMCFGSLAS,R"
-tag = "get-slas"
-description = "Get SLAS status"
+text = "PQTMCFGMSGRATE,W,GRS,1"
+tag = "nmea-grs"
+description = "Enable NMEA GRS message"
 [[nmea]]
-text = "PQTMCFGSLAS,W,1"
-tag = "slas"
-description = "Enable SLAS"
+text = "PQTMCFGMSGRATE,W,GRS,0"
+tag = "nmea-grs-off"
+description = "Disable NMEA GRS message"
+
 [[nmea]]
-text = "PQTMCFGSLAS,W,0"
-tag = "slas-off"
-description = "Disable SLAS"
+text = "PQTMCFGMSGRATE,W,GNS,1"
+tag = "nmea-gns"
+description = "Enable NMEA GNS message"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,0"
+tag = "nmea-gns-off"
+description = "Disable NMEA GNS message"
 
 # RLM (Galileo return link message) output
 # Verified RLM appears after nmea-rlm and stops after nmea-rlm-off on

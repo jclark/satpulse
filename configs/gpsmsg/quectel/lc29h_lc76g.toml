@@ -3,10 +3,12 @@
 # The LC29H is built on the Airoha AG3335 and the LC76G on the AG3352. This
 # file includes the PAIR messages common to both (../airoha/ag33xx.toml)
 # and adds the PQTM messages Quectel documents for all LC29H variants and
-# for the LC76G. Where a PQTM message does the job of a PAIR tag, this file
-# overrides that tag with it. lc29h.toml and lc76g-ab.toml include this file
-# with the PAIR messages of their chip (../airoha/ag3335-add.toml,
-# ../airoha/ag3352-add.toml) and add the PQTM messages of one module.
+# for the LC76G. A tag uses the command that works on the most of our
+# boards, and among those one the Quectel manuals document; so this file
+# overrides only the PAIR get-version and save tags. lc29h.toml and
+# lc76g-ab.toml include this file with the PAIR messages of their chip
+# (../airoha/ag3335-add.toml, ../airoha/ag3352-add.toml) and add the PQTM
+# messages of one module.
 #
 # Tested boards:
 #   LC29H(AA) A03S: firmware LC29HAANR11A03S (2023/12/14)
@@ -30,124 +32,16 @@ description = "Get module and chip firmware versions"
 text = "PAIR020"
 tag = "get-version"
 
-# NMEA output rate (PQTMCFGMSGRATE,W,<MsgName>,<Rate>): Rate is the output
-# interval in position fixes, 0 disables.
-# Not tested on LC29H or LC76G(AB) A05S for GGA, GLL, GSA, GSV, RMC, VTG
-# and ZDA; LC29H(DA) rejects ZDA through PAIR062.
+# The standard NMEA tags use PAIR062 from ../airoha/ag33xx.toml, which works
+# on all our boards. PQTMCFGMSGRATE,W,<MsgName>,<Rate> does the same job on
+# LC29H(DA) and is documented for both modules, but LC29H(AA) A03S rejects
+# it with "invalid parameters" for every standard NMEA sentence.
 
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GGA,1"
-tag = "nmea-gga"
-description = "Enable NMEA GGA message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GGA,0"
-tag = "nmea-gga-off"
-description = "Disable NMEA GGA message"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GLL,1"
-tag = "nmea-gll"
-description = "Enable NMEA GLL message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GLL,0"
-tag = "nmea-gll-off"
-description = "Disable NMEA GLL message"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSA,1"
-tag = "nmea-gsa"
-description = "Enable NMEA GSA message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSA,0"
-tag = "nmea-gsa-off"
-description = "Disable NMEA GSA message"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSV,1"
-tag = "nmea-gsv"
-description = "Enable NMEA GSV message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSV,0"
-tag = "nmea-gsv-off"
-description = "Disable NMEA GSV message"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RMC,1"
-tag = "nmea-rmc"
-description = "Enable NMEA RMC message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RMC,0"
-tag = "nmea-rmc-off"
-description = "Disable NMEA RMC message"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,VTG,1"
-tag = "nmea-vtg"
-description = "Enable NMEA VTG message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,VTG,0"
-tag = "nmea-vtg-off"
-description = "Disable NMEA VTG message"
-
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,ZDA,1"
-tag = "nmea-zda"
-description = "Enable NMEA ZDA message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,ZDA,0"
-tag = "nmea-zda-off"
-description = "Disable NMEA ZDA message"
-
-# Disable GGA, GLL, GSA, GSV, RMC and VTG, the sentences output by default
-# Not tested on LC29H or LC76G(AB) A05S
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GGA,0"
-tag = "nmea-off"
-description = "Disable standard NMEA messages"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GLL,0"
-tag = "nmea-off"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSA,0"
-tag = "nmea-off"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSV,0"
-tag = "nmea-off"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RMC,0"
-tag = "nmea-off"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,VTG,0"
-tag = "nmea-off"
-
-# Enable RMC, GGA, GSV and GSA (messages used by satpulse daemon)
-# Not tested on LC29H or LC76G(AB) A05S
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RMC,1"
-tag = "nmea-daemon"
-description = "Enable NMEA messages for satpulse daemon"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GGA,1"
-tag = "nmea-daemon"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSV,1"
-tag = "nmea-daemon"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GSA,1"
-tag = "nmea-daemon"
-
-# Verified each message appears after enable and stops after disable on
-# LC76G(AB) A05S
-# Not tested on LC29H
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GRS,1"
-tag = "nmea-grs"
-description = "Enable NMEA GRS message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GRS,0"
-tag = "nmea-grs-off"
-description = "Disable NMEA GRS message"
-
+# GST output (PQTMCFGMSGRATE,W,GST,<Rate>), documented for all LC29H
+# variants and for the LC76G
+# Verified GST appears after enable and stops after disable on LC76G(AB) A05S
+# Rejected with "invalid parameters" on LC29H(AA) A03S and LC29H(DA)
+# Not tested on LC29H(AA) A05S
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,GST,1"
 tag = "nmea-gst"
@@ -157,27 +51,17 @@ text = "PQTMCFGMSGRATE,W,GST,0"
 tag = "nmea-gst-off"
 description = "Disable NMEA GST message"
 
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GNS,1"
-tag = "nmea-gns"
-description = "Enable NMEA GNS message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,GNS,0"
-tag = "nmea-gns-off"
-description = "Disable NMEA GNS message"
-
 # PQTM output messages (PQTMCFGMSGRATE,W,<MsgName>,<Rate>,<MsgVer>)
 # Verified OK and the message appears after enable and stops after disable
-# on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA) and LC76G(AB) A05S, except
-# as noted
+# on LC29H(AA) A03S, LC29H(DA) and LC76G(AB) A05S, except as noted
+# Not tested on LC29H(AA) A05S, except as noted
 
-# Verified get-pqtm-geofence on LC29H(AA) and LC76G(AB) A05S
+# Verified get-pqtm-geofence on LC29H(AA), LC29H(DA) and LC76G(AB) A05S
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,PQTMGEOFENCESTATUS,1"
 tag = "get-pqtm-geofence"
 description = "Get PQTMGEOFENCESTATUS message rate"
 
-# Verified only on LC76G(AB) A05S; not tested on LC29H
 [[nmea]]
 text = "PQTMCFGMSGRATE,W,PQTMGEOFENCESTATUS,1,1"
 tag = "pqtm-geofencestatus"
@@ -205,7 +89,7 @@ text = "PQTMCFGMSGRATE,W,PQTMEPE,0,2"
 tag = "pqtm-epe-off"
 description = "Disable PQTMEPE message"
 
-# Verified get-pqtm-dop on LC29H(AA) and LC76G(AB) A05S
+# Verified get-pqtm-dop on LC29H(AA), LC29H(DA) and LC76G(AB) A05S
 [[nmea]]
 text = "PQTMCFGMSGRATE,R,PQTMDOP,1"
 tag = "get-pqtm-dop"
@@ -249,10 +133,11 @@ description = "Disable PQTMODO message"
 
 # NMEA decimal places (PQTMCFGNMEADP,W,<UTC_DP>,<POS_DP>,<ALT_DP>,<DOP_DP>,
 # <SPD_DP>,<COG_DP>); factory setting 3,6,3,2,2,2, except SPD_DP 3 on
-# LC29H (BA, CA, DA, EA)
+# LC29H (BA, CA, DA, EA), for which lc29h-da.toml overrides nmea-dp-default
 # Verified OK, get-nmea-dp returns the new setting and GGA and RMC use it on
 # LC76G(AB) A05S
-# Not tested on LC29H
+# Verified OK and get-nmea-dp returns the new setting on LC29H(DA)
+# No response on LC29H(AA) A03S; not tested on LC29H(AA) A05S
 [[nmea]]
 text = "PQTMCFGNMEADP,R"
 tag = "get-nmea-dp"
@@ -260,13 +145,15 @@ description = "Get NMEA decimal places"
 [[nmea]]
 text = "PQTMCFGNMEADP,W,3,6,3,2,2,2"
 tag = "nmea-dp-default"
-description = "Set NMEA decimal places to 3,6,3,2,2,2 (factory setting except LC29H(DA))"
+description = "Set NMEA decimal places to the factory setting (3,6,3,2,2,2)"
 
 # Odometer (PQTMCFGODO,W,<State>,<InitDist m>)
 # Verified OK, get-odo returns the new setting and PQTMODO reports it on
 # LC76G(AB) A05S
-# Verified OK after reset-odo on LC76G(AB) A05S (no movement to reset)
-# Not tested on LC29H
+# Verified OK and get-odo returns the new setting on LC29H(DA)
+# Verified OK after reset-odo on LC76G(AB) A05S and LC29H(DA) (no movement
+# to reset)
+# No response on LC29H(AA) A03S; not tested on LC29H(AA) A05S
 [[nmea]]
 text = "PQTMCFGODO,R"
 tag = "get-odo"
@@ -285,11 +172,13 @@ tag = "reset-odo"
 description = "Reset odometer distance"
 
 # Geofence (PQTMCFGGEOFENCE,W,<Index>,<Status>,<Res>,<Shape>,<Lat0>,<Lon0>,
-# <Radius m>): shape 0 = circle around Lat0,Lon0
+# <Radius m>): shape 0 = circle around Lat0,Lon0. The LC29H manual gives no
+# short form for disabling, but geofence-off works on LC29H.
 # Verified OK, get-geofence returns the new setting and PQTMGEOFENCESTATUS
 # reports inside for a fence around the antenna and outside for a distant
 # fence on LC76G(AB) A05S
-# Not tested on LC29H
+# Verified OK and get-geofence returns the new setting after
+# geofence-example and geofence-off on LC29H(AA) A03S and LC29H(DA)
 [[nmea]]
 text = "PQTMCFGGEOFENCE,R,0"
 tag = "get-geofence"
@@ -303,10 +192,12 @@ text = "PQTMCFGGEOFENCE,W,0,0"
 tag = "geofence-off"
 description = "Disable geofence 0"
 
-# Save configuration to NVM
-# Not tested on LC29H
-# Verified OK on LC76G(AB) A05S, but not tested that the configuration
-# survives a power cycle
+# Save configuration to NVM. PAIR513 does the same, but is not tested on
+# LC29H(DA).
+# Verified OK on LC29H(DA) and LC76G(AB) A05S
+# Verified a PPS setting and a geofence saved with it survive a reboot
+# (PQTMSRR) on LC29H(AA) A03S
+# Not tested that the configuration survives a power cycle
 [[nmea]]
 text = "PQTMSAVEPAR"
 tag = "save"

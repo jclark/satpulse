@@ -2,9 +2,10 @@
 # Quectel LC29H(AA) configuration messages
 # Default baud rate: 115200
 # The messages common to the LC29H variants come from lc29h.toml; this file
-# adds the PQTM messages that only the LC29H(AA) supports, and overrides
-# the PAIR fix rate, baud rate, warm start, PPS and RTCM reference station
-# ID tags with their PQTM equivalents.
+# adds the PQTM messages that Quectel documents only for the LC29H(AA). It
+# uses PQTMCFGFIXRATE for the fix rate, since PAIR050 below 1000 ms needs a
+# power-off and a save on the LC29H(AA), and PQTMCFGPPS for the PPS query,
+# since PAIR763 is not in the LC29H manual.
 #
 # Tested boards:
 #   LC29H(AA) A03S: firmware LC29HAANR11A03S (2023/12/14), AG3335M V3.0.4
@@ -57,7 +58,33 @@ text = "PQTMCFGMSGRATE,W,PQTMSTD,0,1"
 tag = "pqtm-std-off"
 description = "Disable PQTMSTD message"
 
-# Fix rate (PQTMCFGFIXRATE,W,<Interval ms>)
+# NMEA output not supported on LC29H (BA, CA, DA, EA)
+# Verified each message appears after enable and stops after disable on
+# LC76G(AB) A05S
+# Rejected with "invalid parameters" on LC29H(AA) A03S, which rejects
+# PQTMCFGMSGRATE for every standard NMEA sentence; not tested on
+# LC29H(AA) A05S
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GRS,1"
+tag = "nmea-grs"
+description = "Enable NMEA GRS message"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GRS,0"
+tag = "nmea-grs-off"
+description = "Disable NMEA GRS message"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,1"
+tag = "nmea-gns"
+description = "Enable NMEA GNS message"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,GNS,0"
+tag = "nmea-gns-off"
+description = "Disable NMEA GNS message"
+
+# Fix rate (PQTMCFGFIXRATE,W,<Interval ms>), which takes effect at once on
+# LC29H(AA). The PAIR050 form in ../airoha/ag33xx.toml needs the GNSS system
+# powered off and the configuration saved for intervals below 1000 ms.
 # Verified OK, get-fix-rate returns 500 and GGA comes at 2 Hz after
 # fix-rate-2 on LC29H(AA) A05S; fix-rate-1 restores 1 Hz
 # No response on LC29H(AA) A03S
@@ -79,71 +106,46 @@ text = "PQTMCFGFIXRATE,W,100"
 tag = "fix-rate-10"
 description = "Set fix rate to 10 Hz"
 
-# UART baud rate (PQTMCFGUART,W,<Baudrate>)
-# Not tested. PQTMCFGUART,R answers on LC29H(AA) A05S but not on LC29H(AA) A03S.
-
-[[nmea]]
-text = "PQTMCFGUART,W,9600"
-tag = "speed-9600"
-description = "Set baud rate to 9600"
-[[nmea]]
-text = "PQTMCFGUART,W,115200"
-tag = "speed-115200"
-description = "Set baud rate to 115200"
-[[nmea]]
-text = "PQTMCFGUART,W,230400"
-tag = "speed-230400"
-description = "Set baud rate to 230400"
-[[nmea]]
-text = "PQTMCFGUART,W,460800"
-tag = "speed-460800"
-description = "Set baud rate to 460800"
-[[nmea]]
-text = "PQTMCFGUART,W,921600"
-tag = "speed-921600"
-description = "Set baud rate to 921600"
-
-# Warm start; the module sends no reply
-# Not tested
-[[nmea]]
-text = "PQTMWARM"
-tag = "warm-start"
-description = "Warm start (do not use ephemeris)"
-
-# PPS (PQTMCFGPPS,W,<Index>,<Enable>,<Duration ms>,<Mode>,<Polarity>,
-# <Reserved>): Mode 1=always, 2=2D fix, 3=3D fix; Polarity 1=high
-# Not tested
+# PPS query (PQTMCFGPPS,R,1). pps and pps-off use PAIR752 from
+# ../airoha/ag33xx.toml, which works on all our boards; the PAIR763 query
+# there is not in the LC29H manual.
+# Verified response on LC29H(AA) A03S and LC29H(AA) A05S
 [[nmea]]
 text = "PQTMCFGPPS,R,1"
 tag = "get-pps"
 description = "Get PPS configuration"
-[[nmea]]
-text = "PQTMCFGPPS,W,1,1,100,3,1,0"
-tag = "pps"
-description = "Enable PPS output (100 ms pulse, 3D fix only)"
-[[nmea]]
-text = "PQTMCFGPPS,W,1,0,100,3,1,0"
-tag = "pps-off"
-description = "Disable PPS output"
 
-# RTCM reference station ID (PQTMCFGRSID,W,<ID>, range 0-4095)
-# Not tested
+# System reset and reboot (PQTMSRR); the module sends no reply. Not a
+# reload: unsaved changes to most settings survive it.
+# Verified boot output and PQTMVER after reboot on LC29H(AA) A03S
+# Verified unsaved PPS and geofence settings revert to the saved ones, and
+# unsaved changes to 15 PAIR settings (including constellations, elevation
+# and SNR masks, NMEA rate and RTCM output) survive, on LC29H(AA) A03S
 [[nmea]]
-text = "PQTMCFGRSID,R"
-tag = "get-rtcm-base-id"
-description = "Get RTCM reference station ID"
+text = "PQTMSRR"
+tag = "reboot"
+description = "Reboot the receiver"
+
+# Factory reset: restore all parameters to their defaults, reboot to apply
+# them, then cold start
+# Verified OK, the defaults restored, a reboot and RMC status V after the
+# cold start on LC29H(AA) A03S
 [[nmea]]
-text = "PQTMCFGRSID,W,0"
-tag = "rtcm-base-id-0"
-description = "Set RTCM reference station ID to 0"
+text = "PQTMRESTOREPAR"
+tag = "factory-reset"
+description = "Restore factory defaults, reboot and cold start"
 [[nmea]]
-text = "PQTMCFGRSID,W,1234"
-tag = "rtcm-base-id-1234"
-description = "Set RTCM reference station ID to 1234"
+text = "PQTMSRR"
+tag = "factory-reset"
+delay = 3
+[[nmea]]
+text = "PQTMCOLD"
+tag = "factory-reset"
 
 # NMEA talker ID (PQTMCFGNMEATID,W,<Main_TalkerID>,<GSV_TalkerID>):
 # Main_TalkerID 00 = per constellation
-# Not tested
+# No response on LC29H(AA) A03S; rejected as unsupported on LC29H(DA);
+# not tested on LC29H(AA) A05S
 [[nmea]]
 text = "PQTMCFGNMEATID,R"
 tag = "get-nmea-talker"
