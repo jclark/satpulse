@@ -65,18 +65,6 @@ text = "PQTMCFGMSGRATE,W,GNS,0"
 tag = "nmea-gns-off"
 description = "Disable NMEA GNS message"
 
-# RLM (Galileo return link message) output
-# Verified RLM appears after nmea-rlm and stops after nmea-rlm-off on
-# LC76G(AB) A05S
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RLM,1"
-tag = "nmea-rlm"
-description = "Enable NMEA RLM message"
-[[nmea]]
-text = "PQTMCFGMSGRATE,W,RLM,0"
-tag = "nmea-rlm-off"
-description = "Disable NMEA RLM message"
-
 # PQTM output messages (PQTMCFGMSGRATE,W,<MsgName>,<Rate>,<MsgVer>)
 # Verified OK and the message appears after enable and stops after disable
 # on LC76G(AB) A05S, except as noted

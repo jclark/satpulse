@@ -587,7 +587,7 @@ description = "Set minimum SNR of satellites used to 15 dB"
 [[nmea]]
 text = "PAIR071"
 tag = "get-static-speed"
-description = "Get static navigation speed threshold (m/s)"
+description = "Get static navigation speed threshold (dm/s)"
 [[nmea]]
 text = "PAIR070,0"
 tag = "static-speed-off"
