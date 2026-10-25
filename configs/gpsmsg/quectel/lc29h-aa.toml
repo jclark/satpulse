@@ -2,10 +2,8 @@
 # Quectel LC29H(AA) configuration messages
 # Default baud rate: 115200
 # The messages common to the LC29H variants come from lc29h.toml; this file
-# adds the PQTM messages that Quectel documents only for the LC29H(AA). It
-# uses PQTMCFGFIXRATE for the fix rate, since PAIR050 below 1000 ms needs a
-# power-off and a save on the LC29H(AA), and PQTMCFGPPS for the PPS query,
-# since PAIR763 is not in the LC29H manual.
+# adds those specific to the LC29H(AA), either documented for it or known to
+# work on it.
 #
 # Tested boards:
 #   LC29H(AA) A03S: firmware LC29HAANR11A03S (2023/12/14), AG3335M V3.0.4
