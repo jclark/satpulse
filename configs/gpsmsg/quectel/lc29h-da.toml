@@ -1,9 +1,9 @@
 #:schema ../gpsmsg-schema.json
 # Quectel LC29H(DA) configuration messages
 # Default baud rate: 115200
-# The PAIR messages common to the AG3335 and the PQTM messages common to the
-# LC29H variants come from lc29h-pqtm.toml; this file adds the PQTM
-# messages that the LC29H(DA) supports but the LC29H(AA) does not.
+# The messages common to the LC29H variants come from lc29h.toml; this file
+# adds the PQTM messages that the LC29H(DA) supports but the LC29H(AA) does
+# not.
 #
 # Tested board:
 #   LC29H(DA): firmware LC29HDANR11A03S_RSA (2024/03/19), AG3335A V2.6.0
@@ -12,7 +12,7 @@
 # constellation (gnss-*) changes only after a save and restart.
 
 [[include]]
-src = "lc29h-pqtm.toml"
+src = "lc29h.toml"
 
 # Receiver mode (PQTMCFGRCVRMODE,W,<Mode>): 1=rover, 2=base station.
 # Takes effect after PQTMSAVEPAR and a restart. In base station mode the

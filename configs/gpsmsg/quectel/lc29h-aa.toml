@@ -1,9 +1,10 @@
 #:schema ../gpsmsg-schema.json
 # Quectel LC29H(AA) configuration messages
 # Default baud rate: 115200
-# The PAIR messages common to the AG3335 and the PQTM messages common to the
-# LC29H variants come from lc29h-pqtm.toml; this file adds the PQTM
-# messages that only the LC29H(AA) supports.
+# The messages common to the LC29H variants come from lc29h.toml; this file
+# adds the PQTM messages that only the LC29H(AA) supports, and overrides
+# the PAIR fix rate, baud rate, warm start, PPS and RTCM reference station
+# ID tags with their PQTM equivalents.
 #
 # Tested boards:
 #   LC29H(AA) A03S: firmware LC29HAANR11A03S (2023/12/14), AG3335M V3.0.4
@@ -11,7 +12,7 @@
 # A03S silently ignores many PQTM commands that A05S supports.
 
 [[include]]
-src = "lc29h-pqtm.toml"
+src = "lc29h.toml"
 
 # Verified PQTMUNIQID response on LC29H(AA) A05S
 # No response on LC29H(AA) A03S; rejected as unsupported on LC29H(DA)
@@ -101,3 +102,57 @@ description = "Set baud rate to 460800"
 text = "PQTMCFGUART,W,921600"
 tag = "speed-921600"
 description = "Set baud rate to 921600"
+
+# Warm start; the module sends no reply
+# Not tested
+[[nmea]]
+text = "PQTMWARM"
+tag = "warm-start"
+description = "Warm start (do not use ephemeris)"
+
+# PPS (PQTMCFGPPS,W,<Index>,<Enable>,<Duration ms>,<Mode>,<Polarity>,
+# <Reserved>): Mode 1=always, 2=2D fix, 3=3D fix; Polarity 1=high
+# Not tested
+[[nmea]]
+text = "PQTMCFGPPS,R,1"
+tag = "get-pps"
+description = "Get PPS configuration"
+[[nmea]]
+text = "PQTMCFGPPS,W,1,1,100,3,1,0"
+tag = "pps"
+description = "Enable PPS output (100 ms pulse, 3D fix only)"
+[[nmea]]
+text = "PQTMCFGPPS,W,1,0,100,3,1,0"
+tag = "pps-off"
+description = "Disable PPS output"
+
+# RTCM reference station ID (PQTMCFGRSID,W,<ID>, range 0-4095)
+# Not tested
+[[nmea]]
+text = "PQTMCFGRSID,R"
+tag = "get-rtcm-base-id"
+description = "Get RTCM reference station ID"
+[[nmea]]
+text = "PQTMCFGRSID,W,0"
+tag = "rtcm-base-id-0"
+description = "Set RTCM reference station ID to 0"
+[[nmea]]
+text = "PQTMCFGRSID,W,1234"
+tag = "rtcm-base-id-1234"
+description = "Set RTCM reference station ID to 1234"
+
+# NMEA talker ID (PQTMCFGNMEATID,W,<Main_TalkerID>,<GSV_TalkerID>):
+# Main_TalkerID 00 = per constellation
+# Not tested
+[[nmea]]
+text = "PQTMCFGNMEATID,R"
+tag = "get-nmea-talker"
+description = "Get NMEA talker ID"
+[[nmea]]
+text = "PQTMCFGNMEATID,W,GP,0"
+tag = "nmea-talker-gp"
+description = "Use talker ID GP"
+[[nmea]]
+text = "PQTMCFGNMEATID,W,00,0"
+tag = "nmea-talker-default"
+description = "Use the factory talker IDs"

@@ -1,0 +1,11 @@
+#:schema ../gpsmsg-schema.json
+# Airoha AG3352 PAIR configuration messages
+# For modules built on the AG3352 that have no message file of their own:
+# the PAIR messages common to the AG33xx (ag33xx.toml) and those only the
+# AG3352 supports (ag3352-add.toml).
+
+[[include]]
+src = "ag33xx.toml"
+
+[[include]]
+src = "ag3352-add.toml"

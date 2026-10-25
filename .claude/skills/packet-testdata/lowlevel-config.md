@@ -15,7 +15,9 @@ Existing message files are in per-vendor subdirectories of `configs/gpsmsg/`. Ea
 - `techtotop/techtotop.toml` -- Techtotop/Taidou receivers
 - `zhongke/atgm332d-v5.toml`, `zhongke/atgm332d-v6.toml` -- Zhongke ATGM332D/ATGM336H V5/V6 firmware
 - `zhongke/at632.toml` -- Zhongke AT632-6T-30 timing receiver
-- `quectel/lc29h-aa.toml`, `quectel/lc29h-da.toml` -- Quectel LC29H(AA) and LC29H(DA) (include `quectel/lc29h-pqtm.toml`, which includes `airoha/ag3335.toml`)
+- `quectel/lc29h-aa.toml`, `quectel/lc29h-da.toml` -- Quectel LC29H(AA) and LC29H(DA) (include `quectel/lc29h.toml`, which includes `quectel/lc29h_lc76g.toml` and `airoha/ag3335-add.toml`)
+- `quectel/lc76g-ab.toml` -- Quectel LC76G(AB) (includes `quectel/lc29h_lc76g.toml` and `airoha/ag3352-add.toml`)
+- `airoha/ag3335.toml`, `airoha/ag3352.toml` -- Airoha AG3335 and AG3352 modules without their own file (include `airoha/ag33xx.toml`)
 - `quectel/lg290p.toml` -- Quectel LG290P
 - `bynav/m10-m20.toml` -- Bynav M10 and M2 series (M20/M21/M22) receivers
 - `sinognss/k8-k9.toml` -- SinoGNSS K8/K9 receivers

@@ -4,7 +4,7 @@ toc: false
 classes: wide
 ---
 
-SatPulse supports the LG290P and LC29H series of modules from [Quectel](https://www.quectel.com/).
+SatPulse supports the LG290P, LC29H and LC76G series of modules from [Quectel](https://www.quectel.com/).
 The vendor name used with the `--vendor` option and `vendor` key is `quectel`.
 
 Rather than a completely separate protocol,
@@ -13,7 +13,7 @@ Quectel has defined a set of sentences starting with `PQTM` (`P` together with `
 These are used for both periodic data and configuration.
 
 Some Quectel modules also expose the protocol used by the chipset.
-In the case of the LC29H, which uses the Airoha AG3335 chipset,
+In the case of the LC29H and LC76G, which use the Airoha AG3335 and AG3352 chipsets,
 the chipset also uses NMEA proprietary sentences, but starting with `PAIR` (where `AIR` is the mnemonic for Airoha).
 These sentences are used only for configuration.
 The LG290P uses only PQTM.
@@ -22,13 +22,14 @@ SatPulse supports:
 
 - conversion of PQTM sentences into the SatPulse device-independent data model
 - low-level configuration
-  - message files for configuration of LG290P and LC29H
+  - message files for configuration of LG290P, LC29H and LC76G
   - correlation of responses to PQTM and PAIR messages
 
 High-level configuration for the LG290P is [under development](https://github.com/jclark/satpulse/pull/355).
 
-SatPulse has been tested with the LG290P and the LC29H.
+SatPulse has been tested with the LG290P, the LC29H and the LC76G.
 The LG580P and LG680P use the same protocol as the LG290P.
+The LC26G and LC86G use the same protocol as the LC76G.
 
 ## Low-level configuration
 

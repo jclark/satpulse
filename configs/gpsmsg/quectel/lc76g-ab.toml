@@ -1,0 +1,221 @@
+#:schema ../gpsmsg-schema.json
+# Quectel LC76G(AB) configuration messages
+# Default baud rate: 115200
+# The LC76G is built on the Airoha AG3352Q (single frequency). The messages
+# common with the LC29H come from lc29h_lc76g.toml and the PAIR messages
+# only the AG3352 supports from ../airoha/ag3352-add.toml; this file adds
+# the PQTM messages Quectel documents for the LC76G but not for all LC29H
+# variants, overriding PAIR tags where they do the same job.
+#
+# Tested board:
+#   LC76G(AB) A05S: firmware LC76GABNR12A05S (2025/09/25), AG3352Q V3.2.2
+# There is no reload or reset tag: no command reloads the configuration
+# from NVM (PQTMSRR is rejected as unsupported).
+# Rejected on LC76G(AB) A05S: PQTMUNIQID, PQTMCFGSVIN, PQTMCFGFIXRATE,
+# PQTMCFGANTENNA, and PQTMCFGMSGRATE for PQTMLS, PQTMSTD, PQTMSVINSTATUS,
+# PQTMANTENNASTATUS and PQTMUTC.
+
+[[include]]
+src = "lc29h_lc76g.toml"
+
+[[include]]
+src = "../airoha/ag3352-add.toml"
+
+# Factory reset: restore the default configuration, then cold start.
+# PQTMRESTOREPAR applies the defaults at once by restarting the GNSS system.
+# It does not restore the baud rate (PAIR864) or the LOCUS settings
+# (PAIR900, PAIR902, PAIR904).
+# Verified OK, get-gnss and get-rtcm-base-id return the factory settings
+# and RMC status V after factory-reset on LC76G(AB) A05S
+[[nmea]]
+text = "PQTMRESTOREPAR"
+tag = "factory-reset"
+description = "Restore factory defaults and cold start"
+delay = 1
+[[nmea]]
+text = "PAIR006"
+tag = "factory-reset"
+
+# PPS (PQTMCFGPPS,W,<Index>,<Enable>[,<Duration ms>,<Mode>,<Polarity>,
+# <Interval>]): Mode 3=3D fix; Polarity 1=high; Interval 0=every second.
+# The fields after Enable must be omitted when disabling.
+# Verified PPS pulses stop after pps-off and resume after pps, and get-pps
+# returns the new setting, on LC76G(AB) A05S
+[[nmea]]
+text = "PQTMCFGPPS,R,1"
+tag = "get-pps"
+description = "Get PPS configuration"
+[[nmea]]
+text = "PQTMCFGPPS,W,1,1,100,3,1,0"
+tag = "pps"
+description = "Enable PPS output (100 ms pulse, 3D fix only)"
+[[nmea]]
+text = "PQTMCFGPPS,W,1,0"
+tag = "pps-off"
+description = "Disable PPS output"
+
+# GNSS search mode (PQTMCFGCNST,W,<GPS>,<GLONASS>,<Galileo>,<BDS>,<QZSS>,
+# <NavIC>). A new setting restarts the GNSS system; unless saved, it
+# reverts to the default at the next reset.
+# Verified get-gnss returns 1,0,0,0,1,0 after the PAIR066 form of gnss-gps
+# on LC76G(AB) A05S
+# Verified OK, GNSS system restart and all constellations in GSV after
+# gnss-all on LC76G(AB) A05S
+# Verified OK, get-gnss returns the new setting and GSV shows only the
+# selected constellations after each of the other gnss-* tags on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PQTMCFGCNST,R"
+tag = "get-gnss"
+description = "Get GNSS search mode"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,0,0,1,0"
+tag = "gnss-gps"
+description = "Enable GPS and QZSS"
+[[nmea]]
+text = "PQTMCFGCNST,W,0,0,0,1,0,0"
+tag = "gnss-bds"
+description = "Enable BDS only"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,1,0,0,1,0"
+tag = "gnss-gps-glo"
+description = "Enable GPS, GLONASS and QZSS"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,1,0,1,0"
+tag = "gnss-gps-gal"
+description = "Enable GPS, Galileo and QZSS"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,0,1,1,0"
+tag = "gnss-gps-bds"
+description = "Enable GPS, BDS and QZSS"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,1,1,1,0"
+tag = "gnss-gps-gal-bds"
+description = "Enable GPS, Galileo, BDS and QZSS"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,1,1,1,1,0"
+tag = "gnss-all"
+description = "Enable GPS, GLONASS, Galileo, BDS and QZSS"
+
+# RTCM reference station ID (PQTMCFGRSID,W,<ID>, range 0-4095); factory
+# setting 3352
+# Verified OK and get-rtcm-base-id and PAIR443 return 1234 after
+# rtcm-base-id-1234 on LC76G(AB) A05S
+# Verified OK and get-rtcm-base-id returns 0 after rtcm-base-id-0 on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PQTMCFGRSID,R"
+tag = "get-rtcm-base-id"
+description = "Get RTCM reference station ID"
+[[nmea]]
+text = "PQTMCFGRSID,W,0"
+tag = "rtcm-base-id-0"
+description = "Set RTCM reference station ID to 0"
+[[nmea]]
+text = "PQTMCFGRSID,W,1234"
+tag = "rtcm-base-id-1234"
+description = "Set RTCM reference station ID to 1234"
+
+# SLAS (PQTMCFGSLAS,W,<State>); factory setting off
+# Verified OK and get-slas and PAIR421 return the new value on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PQTMCFGSLAS,R"
+tag = "get-slas"
+description = "Get SLAS status"
+[[nmea]]
+text = "PQTMCFGSLAS,W,1"
+tag = "slas"
+description = "Enable SLAS"
+[[nmea]]
+text = "PQTMCFGSLAS,W,0"
+tag = "slas-off"
+description = "Disable SLAS"
+
+# RLM (Galileo return link message) output
+# Verified RLM appears after nmea-rlm and stops after nmea-rlm-off on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RLM,1"
+tag = "nmea-rlm"
+description = "Enable NMEA RLM message"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,RLM,0"
+tag = "nmea-rlm-off"
+description = "Disable NMEA RLM message"
+
+# PQTM output messages (PQTMCFGMSGRATE,W,<MsgName>,<Rate>,<MsgVer>)
+# Verified OK and the message appears after enable and stops after disable
+# on LC76G(AB) A05S, except as noted
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,1,1"
+tag = "pqtm-jammingstatus"
+description = "Enable PQTMJAMMINGSTATUS message (jamming detection)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMJAMMINGSTATUS,0,1"
+tag = "pqtm-jammingstatus-off"
+description = "Disable PQTMJAMMINGSTATUS message"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMTIMEGPS,1,1"
+tag = "pqtm-timegps"
+description = "Enable PQTMTIMEGPS message (GPS time)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMTIMEGPS,0,1"
+tag = "pqtm-timegps-off"
+description = "Disable PQTMTIMEGPS message"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPOSECEF,1,1"
+tag = "pqtm-posecef"
+description = "Enable PQTMPOSECEF message (ECEF position)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPOSECEF,0,1"
+tag = "pqtm-posecef-off"
+description = "Disable PQTMPOSECEF message"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVELECEF,1,1"
+tag = "pqtm-velecef"
+description = "Enable PQTMVELECEF message (ECEF velocity)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMVELECEF,0,1"
+tag = "pqtm-velecef-off"
+description = "Disable PQTMVELECEF message"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPVTECEF,1,1"
+tag = "pqtm-pvtecef"
+description = "Enable PQTMPVTECEF message (ECEF position, velocity, time)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMPVTECEF,0,1"
+tag = "pqtm-pvtecef-off"
+description = "Disable PQTMPVTECEF message"
+
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSLAS,1,1"
+tag = "pqtm-slas"
+description = "Enable PQTMSLAS message (SLAS status)"
+[[nmea]]
+text = "PQTMCFGMSGRATE,W,PQTMSLAS,0,1"
+tag = "pqtm-slas-off"
+description = "Disable PQTMSLAS message"
+
+# NMEA talker ID (PQTMCFGNMEATID,W,<Main_TalkerID>,<GSV_TalkerID>), also
+# in lc29h-aa.toml since the LC29H manual documents it only for LC29H(AA);
+# factory setting 00,0 (talker per constellation, GN for combined)
+# Verified OK, get-nmea-talker returns the new setting and GGA, GSA and RMC
+# use GP after nmea-talker-gp on LC76G(AB) A05S
+[[nmea]]
+text = "PQTMCFGNMEATID,R"
+tag = "get-nmea-talker"
+description = "Get NMEA talker ID"
+[[nmea]]
+text = "PQTMCFGNMEATID,W,GP,0"
+tag = "nmea-talker-gp"
+description = "Use talker ID GP"
+[[nmea]]
+text = "PQTMCFGNMEATID,W,00,0"
+tag = "nmea-talker-default"
+description = "Use the factory talker IDs"
