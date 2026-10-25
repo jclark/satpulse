@@ -87,7 +87,7 @@ type RequestClass struct {
 // the wrong answer. Sorted for binary search.
 var pairParityExceptions = []int{
 	3, 5, 7, 8, 11, 20, 23, 24, 30, 391, 412, 507, 508, 511, 513,
-	596, 751, 753, 754, 755, 756, 757, 758, 762, 906, 907, 908,
+	596, 751, 753, 754, 755, 756, 757, 758, 761, 762, 906, 907, 908,
 }
 
 // ClassifyRequest classifies a sent NMEA payload (between $ and *).
