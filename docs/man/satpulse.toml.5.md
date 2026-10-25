@@ -140,7 +140,9 @@ maxDelay = 0.8
 The `gps` table relates to configuration of the GPS receiver. It can have the following keys:
 
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
-  currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
+  currently this works only with u-blox receivers (from the u-blox 6 platform through to the X20 platform),
+  Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960),
+  and Zhongke Microelectronics receivers using CASIC (such as the ATGM332D and ATGM336H);
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
   if you use `false` here, then all the other keys in the table other than `vendor` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
