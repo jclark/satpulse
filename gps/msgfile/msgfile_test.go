@@ -13,9 +13,20 @@ import (
 	"github.com/pelletier/go-toml/v2"
 )
 
+// tempDir is t.TempDir with a skip for platforms that have no file
+// system, which is every test here that writes a message file and reads
+// it back.
+func tempDir(t *testing.T) string {
+	t.Helper()
+	if !hasFS {
+		t.Skip("no file system to write a message file to")
+	}
+	return t.TempDir()
+}
+
 func loadFromString(t *testing.T, content string) *Parsed {
 	t.Helper()
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "test.toml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -120,7 +131,7 @@ tag = "shared"
 
 func loadPayloadFromString(t *testing.T, content string) Payload {
 	t.Helper()
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "payload.toml")
 	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
 		t.Fatal(err)
@@ -141,7 +152,7 @@ func TestUnknownField(t *testing.T) {
 text = "TEST"
 unknown = "bad"
 `
-	dir := t.TempDir()
+	dir := tempDir(t)
 	path := filepath.Join(dir, "test.toml")
 	if err := os.WriteFile(path, []byte(toml), 0644); err != nil {
 		t.Fatal(err)
@@ -817,7 +828,7 @@ func writeFile(t *testing.T, dir, rel, content string) {
 }
 
 func TestIncludeBasic(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [[line]]
 text = "FROM_A"
@@ -885,7 +896,7 @@ tag = "second"
 }
 
 func TestIncludeTagOverride(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [[line]]
 text = "MAIN_X"
@@ -920,7 +931,7 @@ tag = "y"
 }
 
 func TestIncludeConflict(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [[include]]
 src = "b.toml"
@@ -948,7 +959,7 @@ tag = "y"
 }
 
 func TestIncludeCircular(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "a.toml", `
 [[include]]
 src = "b.toml"
@@ -967,7 +978,7 @@ src = "a.toml"
 }
 
 func TestIncludeDiamond(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "a.toml", `
 [[include]]
 src = "b.toml"
@@ -998,7 +1009,7 @@ tag = "d"
 }
 
 func TestIncludeRelativePath(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [[include]]
 src = "sub/child.toml"
@@ -1018,7 +1029,7 @@ tag = "c"
 }
 
 func TestIncludeMissingFile(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [[include]]
 src = "nonexistent.toml"
@@ -1033,7 +1044,7 @@ src = "nonexistent.toml"
 }
 
 func TestIncludeRecursiveOverride(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "a.toml", `
 [[line]]
 text = "A_X"
@@ -1071,7 +1082,7 @@ tag = "z"
 }
 
 func TestIncludeIndependentDefaults(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [default.line]
 tag = "main-default"
@@ -1105,7 +1116,7 @@ text = "FROM_B"
 }
 
 func TestIncludeSelfInclude(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "self.toml", `
 [[line]]
 text = "SELF"
@@ -1123,7 +1134,7 @@ src = "self.toml"
 }
 
 func TestIncludeEmptySrc(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [[include]]
 src = ""
@@ -1138,7 +1149,7 @@ src = ""
 }
 
 func TestIncludeEmptyTagOverride(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "main.toml", `
 [[line]]
 text = "MAIN_UNTAGGED"
@@ -1192,7 +1203,7 @@ tag = "greet"
 }
 
 func TestLoadFromReaderWithInclude(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "inc.toml", `
 [[line]]
 text = "INCLUDED"
@@ -1230,7 +1241,7 @@ src = "inc.toml"
 }
 
 func TestIncludeSingleFileUnchanged(t *testing.T) {
-	dir := t.TempDir()
+	dir := tempDir(t)
 	writeFile(t, dir, "single.toml", `
 [default.line]
 tag = "setup"

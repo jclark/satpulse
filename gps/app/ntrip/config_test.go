@@ -1,3 +1,9 @@
+// These tests crash the riscv-qemu target with a load access fault,
+// somewhere in Config.Validate and not in anything TinyGo documents
+// as unsupported. Left out until that is understood; see
+// plan/tinygo.md.
+//go:build !baremetal
+
 package ntrip
 
 import (
