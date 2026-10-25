@@ -265,6 +265,9 @@ tag = "save"
 description = "Save configuration to NVM"
 
 # Reload configuration from NVM (reboot receiver)
+# Verified unsaved changes to 29 settings revert to their saved values after
+# a reboot, and a saved non-default elevation mask is restored, on LG290P
+# (R02A01S)
 [[nmea]]
 text = "PQTMSRR"
 tag = "reload"
