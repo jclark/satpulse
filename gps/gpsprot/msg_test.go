@@ -710,6 +710,38 @@ func TestAccuracyFillDoesNotOverwrite(t *testing.T) {
 	}
 }
 
+func TestAccuracyFillDerived(t *testing.T) {
+	tests := []struct {
+		name   string
+		acc    Accuracy
+		expect Accuracy
+	}{
+		{
+			name:   "hor and vert",
+			acc:    Accuracy{Hor: opt.Make(3 * Meter), Vert: opt.Make(4 * Meter)},
+			expect: Accuracy{Pos: opt.Make(5 * Meter), Hor: opt.Make(3 * Meter), Vert: opt.Make(4 * Meter)},
+		},
+		{
+			name:   "pos already set",
+			acc:    Accuracy{Pos: opt.Make(7 * Meter), Hor: opt.Make(3 * Meter), Vert: opt.Make(4 * Meter)},
+			expect: Accuracy{Pos: opt.Make(7 * Meter), Hor: opt.Make(3 * Meter), Vert: opt.Make(4 * Meter)},
+		},
+		{
+			name:   "vert unset",
+			acc:    Accuracy{Hor: opt.Make(3 * Meter)},
+			expect: Accuracy{Hor: opt.Make(3 * Meter)},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			tc.acc.FillDerived()
+			if !reflect.DeepEqual(tc.acc, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", tc.acc, tc.expect)
+			}
+		})
+	}
+}
+
 func TestMergeNavEpochNils(t *testing.T) {
 	msg := &NavEpochMsg{Tag: "UBX"}
 	m := MergeNavEpoch(nil, msg)

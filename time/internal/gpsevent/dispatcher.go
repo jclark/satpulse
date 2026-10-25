@@ -623,6 +623,7 @@ func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	d.logMsg(msg, tRead)
 	d.timeTicker.NavEpoch(msg, tRead)
+	msg.Acc.FillDerived() // after logMsg, so the event log has only reported values
 	d.pvAccum.PVMsgBundle.FillDerived()
 	pv := d.pvAccum.PVMsgBundle // copy before clearing
 	d.pvAccum.NavEpoch(msg, tRead)

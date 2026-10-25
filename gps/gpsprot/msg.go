@@ -1247,6 +1247,14 @@ func (a *Accuracy) Fill(other *Accuracy) {
 	a.Course.Fill(other.Course)
 }
 
+// FillDerived sets Pos from Hor and Vert when Pos is unset and both are set.
+func (a *Accuracy) FillDerived() {
+	if !a.Pos.IsSet() && a.Hor.IsSet() && a.Vert.IsSet() {
+		h, v := a.Hor.Get().Meters(), a.Vert.Get().Meters()
+		a.Pos.Set(Meters(math.Sqrt(h*h + v*v)))
+	}
+}
+
 // MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
 // argument order: the first non-nil message wins for scalar fields (Tag,
 // FixLevel, SolutionDim); optional fields use fill-if-unset semantics; bitmask
