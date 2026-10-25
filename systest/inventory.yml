@@ -52,6 +52,7 @@ all:
         feta.lan:
         fontina.lan:
         montasio.lan:
+        ossau.lan:
         raschera.lan:
         tomino.lan:
     virtual_hosts:
@@ -219,3 +220,10 @@ all:
     crottin.lan:
       interface: ""
       rpi_pps_gpio: 18
+
+    # Quectel LC29H(DA) on a Pi-style HAT; ODROID-M1 (RK3568; PHC has no SDPs, PPS via GPIO on header pin 12, UART on pins 8/10)
+    ossau.lan:
+      interface: ""
+      instance: ttyS0
+      speed: 115200
+      vendor: '"Quectel"'
