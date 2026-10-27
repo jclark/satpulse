@@ -833,7 +833,7 @@ receiver protocol and needs no SBF-specific code). Source:
 | `MsgID`/`NativeMsg`/`NBytes` | the mode-specific trailing content (`raw[16:Length]`, untrimmed -- the inner protocol is self-delimiting) | `rtcmbin.ExtractMsgID`/`ParseMsg` for Mode 2, `spartnbin.MsgID`/`Parse` for Mode 4; `NBytes` from the inner protocol's own framed length, never from SBF's `Length-16` (which includes 0-3 padding bytes) |
 | `ChecksumOK` | block existence | `true` unconditionally -- the receiver only emits `DiffCorrIn` for messages that already passed their own frame-integrity check |
 | `RTCMRefBaseID` | `BaseStation.BaseStationID`, only when `BaseStation.Source==8` (RTCM3 1005/1006) | best-effort cross-block fill (section 10) |
-| `Used`, `FinalFragment` | **no SBF field for either** | always absent for SBF-sourced reports |
+| `Used`, `FinalInEpoch` | **no SBF field for either** | always absent for SBF-sourced reports |
 
 `DiffCorrIn` is purely event-driven with no periodic/keepalive
 emission; "no `CorReport` dispatch yet" is the correct read for "no

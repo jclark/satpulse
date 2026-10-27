@@ -41,6 +41,8 @@ type PrometheusObserver struct {
 	freqDeltaSumSqCounter prometheus.Counter
 
 	// RTCM input metrics
+	rtcmEpoch                int            // epochs completed on the correction feed
+	rtcmMSMEpoch             map[string]int // epoch in which each MSM type was last counted
 	rtcmInputMessages        *prometheus.CounterVec
 	rtcmInputPacketsObserved *prometheus.CounterVec
 	rtcmInputBytes           prometheus.Counter
@@ -155,7 +157,7 @@ func New(clockAccuracyNanos int64) *PrometheusObserver {
 
 	rtcmInputMessages := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "satpulse_rtcm_input_messages_total",
-		Help: "Total complete logical RTCM input messages observed from the correction feed",
+		Help: "Total logical RTCM input messages observed from the correction feed (an MSM split across packets counts once)",
 	}, []string{"msg_id"})
 	rtcmInputPacketsObserved := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "satpulse_rtcm_input_packets_observed_total",
@@ -228,6 +230,7 @@ func New(clockAccuracyNanos int64) *PrometheusObserver {
 	return &PrometheusObserver{
 		reg:                      reg,
 		activeSatellites:         make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
+		rtcmMSMEpoch:             make(map[string]int),
 		inSyncGauge:              inSyncGauge,
 		syncModeGauge:            syncModeGauge,
 		offsetHistogram:          offsetHistogram,
@@ -379,8 +382,19 @@ func (p *PrometheusObserver) corReportPull(msg *gpsprot.CorReportMsg) {
 		return
 	}
 	p.rtcmInputPacketsObserved.WithLabelValues(msg.MsgID).Inc()
-	if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() {
+	if !msg.FinalInEpoch.IsSet() {
 		p.rtcmInputMessages.WithLabelValues(msg.MsgID).Inc()
+		return
+	}
+	// FinalInEpoch marks the end of the epoch, not of a split message, so an
+	// MSM type counts once per epoch; its further packets in the epoch are
+	// parts of the same message.
+	if last, ok := p.rtcmMSMEpoch[msg.MsgID]; !ok || last != p.rtcmEpoch {
+		p.rtcmMSMEpoch[msg.MsgID] = p.rtcmEpoch
+		p.rtcmInputMessages.WithLabelValues(msg.MsgID).Inc()
+	}
+	if msg.FinalInEpoch.Get() {
+		p.rtcmEpoch++
 	}
 }
 
