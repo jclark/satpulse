@@ -52,7 +52,7 @@ func corReportFromPacket(pkt scan.Packet) *gpsprot.CorReportMsg {
 func corReportFromRTCM(pkt scan.Packet) (*gpsprot.CorReportMsg, error) {
 	msg := corReportFromPacket(pkt)
 	if mmb, ok := rtcmbin.MultipleMessageBit(pkt.Data); ok {
-		msg.FinalFragment = opt.Make(!mmb)
+		msg.FinalInEpoch = opt.Make(!mmb)
 	}
 	if !pkt.ChecksumValid {
 		return msg, nil

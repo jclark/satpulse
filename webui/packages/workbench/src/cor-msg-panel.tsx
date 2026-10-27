@@ -47,8 +47,8 @@ function isStale(age: number, interval: number): boolean {
 
 export function CorMsgPanel({connected, sessionSeq, running}: Props) {
     const rowsRef = useRef<Map<string, MsgRow>>(new Map());
-    // Epoch counter reconstructed from finalFragment: incremented after
-    // each packet that completes a logical message (finalFragment true).
+    // Epoch counter reconstructed from finalInEpoch: incremented after
+    // the last message of each epoch (finalInEpoch true).
     const epochRef = useRef(0);
     const [displayed, setDisplayed] = useState<Map<string, MsgRow>>(new Map());
     const [tick, setTick] = useState(0);
@@ -65,10 +65,10 @@ export function CorMsgPanel({connected, sessionSeq, running}: Props) {
             if (evt.rtcmRefBaseID != null && row) {
                 row.station = evt.rtcmRefBaseID;
             }
-            if (evt.finalFragment != null) {
-                // Fragmentable message (MSM): count by reconstructed epoch.
+            if (evt.finalInEpoch != null) {
+                // Message with an epoch marker (MSM): count by reconstructed epoch.
                 const epoch = epochRef.current;
-                if (evt.finalFragment) epochRef.current++;
+                if (evt.finalInEpoch) epochRef.current++;
                 if (row) {
                     if (epoch !== row.lastEpoch) {
                         row.count++;
@@ -86,7 +86,7 @@ export function CorMsgPanel({connected, sessionSeq, running}: Props) {
                     });
                 }
             } else {
-                // Non-fragmentable message (non-MSM RTCM, all SPARTN): count
+                // Message without an epoch marker (non-MSM RTCM, all SPARTN): count
                 // every packet.
                 if (row) {
                     row.count++;

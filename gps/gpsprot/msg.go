@@ -1622,26 +1622,27 @@ type CorReportMsg struct {
 
 	NBytes     opt.Val[int]  `json:"nBytes,omitzero"`
 	ChecksumOK opt.Val[bool] `json:"checksumOK,omitzero"`
-	// FinalFragment reports whether this packet is the final fragment of a
-	// logical correction message that may be split across multiple consecutive
-	// packets with the same Tag.
+	// FinalInEpoch reports whether this packet is the last correction message
+	// of its epoch. For RTCM MSM it is the negation of the Multiple Message Bit
+	// (DF393), which is 1 while more MSMs follow for the same time and
+	// reference station, for the same or another GNSS, and 0 on the last MSM
+	// of the epoch. The bit says nothing about splitting: a message split
+	// across packets (same type, same epoch time) has it set on every part
+	// except the last of the epoch.
 	//
-	// Absent -- the report carries no information about fragmentation. This is
-	// the case for every receiver-source report (the receiver does not report
-	// on-the-wire fragmentation), and for every pull-source report whose message
-	// type cannot be fragmented across consecutive same-Tag packets.
+	// Absent -- the report carries no epoch information. This is the case for
+	// every receiver-source report and for every pull-source report of a
+	// message type without an epoch marker (non-MSM RTCM, SPARTN).
 	//
-	// false -- a producer that can observe fragmentation determined this is a
-	// non-final fragment; more packets follow for this logical message.
+	// false -- more messages of this epoch follow.
 	//
-	// true -- this is the final fragment. A logical message carried in a single
-	// packet is true, not absent.
+	// true -- this is the last message of the epoch.
 	//
-	// The three states are deliberately chosen so a consumer can decide
-	// statelessly: a logical message is complete iff FinalFragment is true;
-	// incomplete iff false; and absent means the consumer has no fragmentation
-	// information and must fall back to its own policy.
-	FinalFragment opt.Val[bool]   `json:"finalFragment,omitzero"`
+	// A consumer that wants to count messages rather than packets can advance
+	// an epoch counter after each true and count each message type once per
+	// epoch; further packets of a type within one epoch are parts of a split
+	// message.
+	FinalInEpoch  opt.Val[bool]   `json:"finalInEpoch,omitzero"`
 	Used          opt.Val[bool]   `json:"used,omitzero"`
 	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
 }

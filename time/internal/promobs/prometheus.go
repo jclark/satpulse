@@ -41,6 +41,7 @@ type PrometheusObserver struct {
 	freqDeltaSumSqCounter prometheus.Counter
 
 	// RTCM input metrics
+	rtcmEpochMsgIDs          map[string]struct{} // MSM types counted in the current epoch
 	rtcmInputMessages        *prometheus.CounterVec
 	rtcmInputPacketsObserved *prometheus.CounterVec
 	rtcmInputBytes           prometheus.Counter
@@ -155,7 +156,7 @@ func New(clockAccuracyNanos int64) *PrometheusObserver {
 
 	rtcmInputMessages := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "satpulse_rtcm_input_messages_total",
-		Help: "Total complete logical RTCM input messages observed from the correction feed",
+		Help: "Total logical RTCM input messages",
 	}, []string{"msg_id"})
 	rtcmInputPacketsObserved := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "satpulse_rtcm_input_packets_observed_total",
@@ -228,6 +229,7 @@ func New(clockAccuracyNanos int64) *PrometheusObserver {
 	return &PrometheusObserver{
 		reg:                      reg,
 		activeSatellites:         make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
+		rtcmEpochMsgIDs:          make(map[string]struct{}),
 		inSyncGauge:              inSyncGauge,
 		syncModeGauge:            syncModeGauge,
 		offsetHistogram:          offsetHistogram,
@@ -379,8 +381,19 @@ func (p *PrometheusObserver) corReportPull(msg *gpsprot.CorReportMsg) {
 		return
 	}
 	p.rtcmInputPacketsObserved.WithLabelValues(msg.MsgID).Inc()
-	if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() {
+	if !msg.FinalInEpoch.IsSet() {
 		p.rtcmInputMessages.WithLabelValues(msg.MsgID).Inc()
+		return
+	}
+	// FinalInEpoch marks the end of the epoch, not of a split message, so an
+	// MSM type counts once per epoch; its further packets in the epoch are
+	// parts of the same message.
+	if _, ok := p.rtcmEpochMsgIDs[msg.MsgID]; !ok {
+		p.rtcmEpochMsgIDs[msg.MsgID] = struct{}{}
+		p.rtcmInputMessages.WithLabelValues(msg.MsgID).Inc()
+	}
+	if msg.FinalInEpoch.Get() {
+		clear(p.rtcmEpochMsgIDs)
 	}
 }
 
