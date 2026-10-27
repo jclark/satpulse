@@ -4,7 +4,7 @@ all:
     ansible_python_interpreter: auto_silent
     virtual_host: false  # Set to true for virtual hosts (multiple instances on same machine)
     instance: ttyAMA0  # Instance for systemd service
-    pin: 0             # PHC pin
+    pin: 0             # PHC pin; "" for a PHC without pins (no pin key is written)
     channel: 0         # PHC channel
     speed: 9600        # Baud rate
     interface: eth0    # Network interface
@@ -20,6 +20,7 @@ all:
       hosts:
         abondance.lan:
         abondance-ttySEP0.lan:
+        banon.lan:
         brie.lan:
         burrata.lan:
         caciocavallo.lan:
@@ -106,6 +107,13 @@ all:
       config_file: /etc/satpulse.d/ttySEP0.toml
       http_port: 2001
       sock_path: /var/run/chrony.satpulse.ttySEP0.sock
+
+    # Allystar TAU951M-P200 on UART; BeagleY-AI, PPS into the CPTS PHC (no pins)
+    banon.lan:
+      speed: 115200
+      config: "false"
+      vendor: '"Allystar"'
+      pin: ""
   
     # AT632-6T-30 on UART
     ricotta.lan:
