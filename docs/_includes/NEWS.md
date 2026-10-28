@@ -1,6 +1,6 @@
 ## Changes in 0.3
 
-_Not yet released_
+_Released 2026-10-28_
 
 ### RTK and RTCM
 
