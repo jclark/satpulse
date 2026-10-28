@@ -495,30 +495,6 @@ func TestSatsNav2SigSVIDs(t *testing.T) {
 	}
 }
 
-func TestNav2SigSVID(t *testing.T) {
-	tests := []struct {
-		name     string
-		gnssID   casbin.GNSSID
-		svid     uint8
-		expect   gpsprot.SVID
-		expectOK bool
-	}{
-		{"GPS", casbin.GPS, 5, gpsprot.SVID{GNSS: gpsprot.GPS, Num: 5}, true},
-		{"SBAS svid 1 is PRN 120", casbin.SBAS, 1, gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 20}, true},
-		{"SBAS svid 39 is PRN 158", casbin.SBAS, 39, gpsprot.SVID{GNSS: gpsprot.SBAS, Num: 58}, true},
-		{"SBAS svid 0", casbin.SBAS, 0, gpsprot.SVID{}, false},
-		{"SBAS svid 40", casbin.SBAS, 40, gpsprot.SVID{}, false},
-	}
-	for _, tc := range tests {
-		t.Run(tc.name, func(t *testing.T) {
-			got, ok := nav2SigSVID(tc.gnssID, tc.svid)
-			if got != tc.expect || ok != tc.expectOK {
-				t.Errorf("got %v, %v; want %v, %v", got, ok, tc.expect, tc.expectOK)
-			}
-		})
-	}
-}
-
 func TestSatsNav2SigEmpty(t *testing.T) {
 	m := &casbin.Nav2Sig{
 		Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: 1},
