@@ -82,13 +82,16 @@ var casicSigIDMap = map[casbin.SigID]gpsprot.SignalID{
 // Unlike V5 where SBAS/QZSS are embedded in GPS messages by PRN range,
 // V6 NAV2-SIG has explicit GNSS IDs. The SBAS svid is a 1-based index,
 // not a PRN: svid 1 is PRN 120 (PCAS15, matching NMEA GSV SV 33), so Num
-// (PRN-100) is svid+19.
-func nav2SigSVID(gnssID casbin.GNSSID, svid uint8) gpsprot.SVID {
+// (PRN-100) is svid+19. An SBAS svid outside PRNs 120-158 is not valid.
+func nav2SigSVID(gnssID casbin.GNSSID, svid uint8) (gpsprot.SVID, bool) {
 	gnss := gnssIDToGNSS(gnssID)
 	if gnss == gpsprot.SBAS {
-		return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid + 19}
+		if svid < 1 || svid > 39 {
+			return gpsprot.SVID{}, false
+		}
+		return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid + 19}, true
 	}
-	return gpsprot.SVID{GNSS: gnss, Num: svid}
+	return gpsprot.SVID{GNSS: gnss, Num: svid}, true
 }
 
 // satsNav2Sig converts NAV2-SIG per-signal entries to a SatellitesMsg.
@@ -101,7 +104,10 @@ func satsNav2Sig(m *casbin.Nav2Sig) *gpsprot.SatellitesMsg {
 		if sig.CNO == 0 {
 			continue
 		}
-		svid := nav2SigSVID(sig.GNSSID, sig.SVID)
+		svid, ok := nav2SigSVID(sig.GNSSID, sig.SVID)
+		if !ok {
+			continue
+		}
 		idx, ok := sigIndex[svid]
 		if !ok {
 			idx = len(svs)
