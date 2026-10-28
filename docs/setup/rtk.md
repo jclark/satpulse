@@ -1,5 +1,7 @@
 ---
 title: RTK setup
+redirect_from:
+  - /howtos/rtk.html
 ---
 
 The [Precision positioning]({% link intro/positioning.md %}#real-time-kinematic) page explains the concepts behind RTK.

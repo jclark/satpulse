@@ -146,8 +146,6 @@ docs:
     children:
       - title: "Precisely determine position"
         url: "/howtos/precise-position.html"
-      - title: "Use RTK"
-        url: "/howtos/rtk.html"
       - title: "Measure time synchronization"
         url: "/howtos/measure.html"
       - title: "Windows PTP client"
