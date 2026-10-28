@@ -100,6 +100,9 @@ func satsNav2Sig(m *casbin.Nav2Sig) *gpsprot.SatellitesMsg {
 			continue
 		}
 		svid := nav2SigSVID(sig.GNSSID, sig.SVID)
+		if !svid.IsValid() {
+			continue
+		}
 		idx, ok := sigIndex[svid]
 		if !ok {
 			idx = len(svs)
