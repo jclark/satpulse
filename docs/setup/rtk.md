@@ -72,7 +72,7 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/quectel
 
 ### Ntrip caster
 
-satpulsed includes a native Ntrip caster. {% include new-in-03.html %}
+satpulsed includes a native Ntrip caster.
 Unlike a normal Ntrip caster, this gets corrections direct from the receiver, rather than from an Ntrip server.
 The minimum configuration needed for a caster is to specify a mountpoint name.
 
@@ -144,7 +144,7 @@ Add `--user rover:secret` if the mountpoint requires authentication.
 
 ### Ntrip server
 
-satpulsed can also act as an Ntrip server, where it pushes corrections to a separate Ntrip caster. {% include new-in-03.html %}
+satpulsed can also act as an Ntrip server, where it pushes corrections to a separate Ntrip caster.
 This can either be an Ntrip caster you operate yourself (such as the [BKG Ntrip caster]({% link intro/other-software.md %}#bkg-ntrip-caster)),
 or a public caster network such as [RTK2go](http://rtk2go.com/). 
 
@@ -177,7 +177,7 @@ SatPulse is designed for hardware RTK, where the RTK position solution is comput
 On the rover side, the job of satpulsed is to feed corrections to the receiver and monitor the solution status.
 
 The `[stream.pull]` table configures a network endpoint as the source of correction data;
-the data is scanned as RTCM and sent to the receiver over the configured serial connection. {% include new-in-03.html %}
+the data is scanned as RTCM and sent to the receiver over the configured serial connection.
 
 ### Ntrip client
 

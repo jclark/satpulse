@@ -33,7 +33,7 @@ They are numbered starting from 0 and also have a name.
 SatPulse defaults to using pin 0.
 So if there is only one pin, then there is no need to specify anything.
 Some PHCs, such as the TI am65-cpts on the BeagleY-AI, have no pins:
-the routing of the PPS input to a timestamping channel is fixed by the board's device tree. {% include new-in-03.html %}
+the routing of the PPS input to a timestamping channel is fixed by the board's device tree.
 SatPulse then uses the channel directly, which defaults to channel 0, and there is no pin to specify.
 
 The ethernet controller will have a PTP Hardware Clock (PHC) device associated with it,

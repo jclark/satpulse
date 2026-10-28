@@ -32,7 +32,7 @@ such as the [Adafruit FT232H breakout](https://www.adafruit.com/product/2264).
 
 ## Install SatPulse
 
-Install using the Homebrew tap `jclark/satpulse`. {% include new-in-03.html %}
+Install using the Homebrew tap `jclark/satpulse`.
 While 0.3 is still a prerelease, you need to use the `satpulse-pre` formula:
 
 ```sh
