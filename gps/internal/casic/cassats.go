@@ -16,13 +16,21 @@ var casicSignalID = map[casbin.GNSSID]gpsprot.SignalID{
 	casbin.GLN: gpsprot.SigIDGLOL1,
 }
 
+// SBAS PRNs run from sbasMinPRN to sbasMaxPRN; gpsprot numbers an SBAS
+// satellite by its PRN minus sbasPRNOffset.
+const (
+	sbasMinPRN    = 120
+	sbasMaxPRN    = 158
+	sbasPRNOffset = 100
+)
+
 // casicSVID converts CASIC GNSS ID and SVID to gpsprot.SVID.
 // CASIC binary reports SBAS and QZSS in NAV-GPSINFO (system=GPS) using raw PRN numbers.
 // We detect these by PRN range and convert to RINEX numbering (PRN-100 for SBAS, PRN-192 for QZSS).
 func casicSVID(gnss gpsprot.GNSS, svid uint8) gpsprot.SVID {
 	if gnss == gpsprot.GPS {
-		if svid >= 120 && svid <= 158 {
-			return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid - 100}
+		if svid >= sbasMinPRN && svid <= sbasMaxPRN {
+			return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid - sbasPRNOffset}
 		}
 		if svid >= 193 && svid <= 199 {
 			return gpsprot.SVID{GNSS: gpsprot.QZSS, Num: svid - 192}
@@ -81,15 +89,15 @@ var casicSigIDMap = map[casbin.SigID]gpsprot.SignalID{
 // nav2SigSVID converts NAV2-SIG GNSSID and SVID to gpsprot.SVID.
 // Unlike V5 where SBAS/QZSS are embedded in GPS messages by PRN range,
 // V6 NAV2-SIG has explicit GNSS IDs. The SBAS svid is a 1-based index,
-// not a PRN: svid 1 is PRN 120 (PCAS15, matching NMEA GSV SV 33), so Num
-// (PRN-100) is svid+19. An SBAS svid outside PRNs 120-158 is not valid.
+// not a PRN: svid 1 is sbasMinPRN (PCAS15, matching NMEA GSV SV 33). An
+// SBAS svid whose PRN would be beyond sbasMaxPRN is not valid.
 func nav2SigSVID(gnssID casbin.GNSSID, svid uint8) (gpsprot.SVID, bool) {
 	gnss := gnssIDToGNSS(gnssID)
 	if gnss == gpsprot.SBAS {
-		if svid < 1 || svid > 39 {
+		if svid < 1 || svid > sbasMaxPRN-sbasMinPRN+1 {
 			return gpsprot.SVID{}, false
 		}
-		return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid + 19}, true
+		return gpsprot.SVID{GNSS: gpsprot.SBAS, Num: svid + sbasMinPRN - 1 - sbasPRNOffset}, true
 	}
 	return gpsprot.SVID{GNSS: gnss, Num: svid}, true
 }
