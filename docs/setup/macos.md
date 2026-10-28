@@ -32,13 +32,18 @@ such as the [Adafruit FT232H breakout](https://www.adafruit.com/product/2264).
 
 ## Install SatPulse
 
-Install using the Homebrew tap `jclark/satpulse`.
-While 0.3 is still a prerelease, you need to use the `satpulse-pre` formula:
+Install using the Homebrew tap `jclark/satpulse`:
 
 ```sh
 brew tap jclark/satpulse
-brew install jclark/satpulse/satpulse-pre
+brew install jclark/satpulse/satpulse
 ```
+
+As well as the `satpulse` formula, which tracks releases,
+there is a `satpulse-pre` formula, which tracks prereleases.
+This has [its own instructions](#satpulse-prereleases),
+including on how to switch from the `satpulse-pre` formula to the `satpulse` formula.
+The two formulas cannot both be installed.
 
 If you want the bleeding edge, you can instead install the `master` branch:
 
@@ -65,8 +70,8 @@ The Homebrew tap installs the following files.
 | man pages | `/opt/homebrew/share/man/man{1,5,8}/...` |
 | gpsmsg tree | `/opt/homebrew/share/satpulse/gpsmsg/...` |
 | logs | `/opt/homebrew/var/log/satpulse/...` |
-| service wrapper | `/opt/homebrew/opt/<formula>/libexec/satpulse-service` |
-| launchd plist | `/opt/homebrew/opt/<formula>/sh.brew.<formula>.plist` |
+| service wrapper | `/opt/homebrew/opt/satpulse/libexec/satpulse-service` |
+| launchd plist | `/opt/homebrew/opt/satpulse/sh.brew.satpulse.plist` |
 
 ## Serial connection
 
@@ -135,12 +140,6 @@ FIND_SERIAL_OPTS="--vid 1546 --pid 01A9"
 The service is managed with `brew services`.
 Usually the daemon is started as a per-user LaunchAgent without using `sudo`.
 Start the service with:
-
-```sh
-brew services run satpulse-pre
-```
-
-If you installed the latest code on the `master` branch, start the service with:
 
 ```sh
 brew services run satpulse
@@ -237,8 +236,8 @@ sock.path = "/var/db/satpulse/chrony.sock"
 Then restart `satpulsed`:
 
 ```sh
-brew services stop satpulse-pre
-brew services run satpulse-pre
+brew services stop satpulse
+brew services run satpulse
 ```
 
 If you use `start` rather than `run`, then satpulsed will run automatically when you log in.
@@ -266,13 +265,13 @@ With this approach, `brew services` must be run with `sudo`.
 If it was running as a per-user LaunchAgent, then stop it first:
 
 ```sh
-brew services stop satpulse-pre
+brew services stop satpulse
 ```
 
 Then start it again using `sudo`:
 
 ```sh
-sudo brew services start satpulse-pre
+sudo brew services start satpulse
 ```
 
 When you do this brew will warn about changing ownership of various files installed by the tap.
@@ -283,12 +282,12 @@ When you upgrade satpulse, you will need to stop satpulsed, and then change the 
 
 ```sh
 sudo chown -h "$(id -un)" \
-  /opt/homebrew/opt/satpulse-pre \
-  /opt/homebrew/var/homebrew/linked/satpulse-pre \
-  /opt/homebrew/opt/satpulse-pre/bin \
-  /opt/homebrew/opt/satpulse-pre/sbin \
-  /opt/homebrew/opt/satpulse-pre/libexec \
-  /opt/homebrew/opt/satpulse-pre/libexec/satpulse-service
+  /opt/homebrew/opt/satpulse \
+  /opt/homebrew/var/homebrew/linked/satpulse \
+  /opt/homebrew/opt/satpulse/bin \
+  /opt/homebrew/opt/satpulse/sbin \
+  /opt/homebrew/opt/satpulse/libexec \
+  /opt/homebrew/opt/satpulse/libexec/satpulse-service
 ```
 
 `brew services` does not support `run` with `sudo`, so you must use `start`, which will both start the service and register it to start on boot.
@@ -359,3 +358,51 @@ find-serial --vid 1546 --pid 01A9 --exec -- satpulsewb -s 9600 -d {}
 With `--wait`, if there is no matching device, then find-serial will listen for notifications of new USB devices,
 until there is a matching device,
 instead of failing immediately.
+
+## SatPulse prereleases
+
+The tap also has a `satpulse-pre` formula,
+which tracks the latest prerelease, or the latest release when that is newer.
+The [Releases](https://github.com/jclark/satpulse/releases) page
+says what prereleases are available.
+
+The two formulas install the same files, so only one can be installed at a time.
+To switch from `satpulse-pre` to `satpulse`, stop the service, uninstall `satpulse-pre`, and install `satpulse`:
+
+```sh
+brew services stop satpulse-pre
+brew uninstall satpulse-pre
+brew install jclark/satpulse/satpulse
+```
+
+Switching the other way is the same with the names swapped.
+If you started the service with `sudo`, also stop it with `sudo`.
+Uninstalling leaves `satpulse.toml` and `find-serial.env` in place, so your configuration carries over.
+
+To install `satpulse-pre`:
+
+```sh
+brew install jclark/satpulse/satpulse-pre
+```
+
+With `satpulse-pre`, the `brew services` commands take `satpulse-pre` instead of `satpulse`, for example:
+
+```sh
+brew services run satpulse-pre
+```
+
+If you run the service as root, the `chown` command to use before upgrading is:
+
+```sh
+sudo chown -h "$(id -un)" \
+  /opt/homebrew/opt/satpulse-pre \
+  /opt/homebrew/var/homebrew/linked/satpulse-pre \
+  /opt/homebrew/opt/satpulse-pre/bin \
+  /opt/homebrew/opt/satpulse-pre/sbin \
+  /opt/homebrew/opt/satpulse-pre/libexec \
+  /opt/homebrew/opt/satpulse-pre/libexec/satpulse-service
+```
+
+The service wrapper is `/opt/homebrew/opt/satpulse-pre/libexec/satpulse-service`
+and the launchd plist is `/opt/homebrew/opt/satpulse-pre/sh.brew.satpulse-pre.plist`;
+all other files are where the table in [Install SatPulse](#install-satpulse) shows.
