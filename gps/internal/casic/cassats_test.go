@@ -1,6 +1,8 @@
 package casic
 
 import (
+	"encoding/hex"
+	"reflect"
 	"testing"
 	"time"
 
@@ -444,6 +446,52 @@ func TestSatsNav2Sig(t *testing.T) {
 	}
 	if bds10.Used {
 		t.Error("BDS:10 Used = true, want false")
+	}
+}
+
+// TestSatsNav2SigSVIDs checks satellite numbering in real NAV2-SIG
+// packets. The SBAS svid is a 1-based index: svid 1 is PRN 120 (PCAS15),
+// and the same receiver reports svid 9 and 10 in NMEA GSV as SVs 41 and 42
+// (PRN 128 and 129) at the same elevation and azimuth.
+func TestSatsNav2SigSVIDs(t *testing.T) {
+	tests := []struct {
+		name   string
+		hex    string
+		expect []gpsprot.SVID
+	}{
+		{
+			name: "ATGM332D-F8N GPS L1 and SBAS L1",
+			hex:  "baceb800110668045110000b0900000200022b0018f12875250f0d019700000a000ae3ff2ff758752b359400630000100010cfff27ff58751019c700990000170017b4ff22f758751b129400be0000190019680016f92875290f2900b200001a001ad9ff2ef75875003ec0005900001c001c00002bf728751f2d00005b00001f001ff9ff30ff2875033438014e0000200020040024f7287501292a005a00050903090000307300401940e9000000050a030a000031730040203874000000c5898e50",
+			expect: []gpsprot.SVID{
+				{GNSS: gpsprot.GPS, Num: 2}, {GNSS: gpsprot.GPS, Num: 10}, {GNSS: gpsprot.GPS, Num: 16},
+				{GNSS: gpsprot.GPS, Num: 23}, {GNSS: gpsprot.GPS, Num: 25}, {GNSS: gpsprot.GPS, Num: 26},
+				{GNSS: gpsprot.GPS, Num: 28}, {GNSS: gpsprot.GPS, Num: 31}, {GNSS: gpsprot.GPS, Num: 32},
+				{GNSS: gpsprot.SBAS, Num: 28}, {GNSS: gpsprot.SBAS, Num: 29},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := hex.DecodeString(tc.hex)
+			if err != nil {
+				t.Fatalf("bad hex: %v", err)
+			}
+			msg, err := casbin.ParseMsg(string(b))
+			if err != nil {
+				t.Fatalf("ParseMsg: %v", err)
+			}
+			m, ok := msg.(*casbin.Nav2Sig)
+			if !ok {
+				t.Fatalf("unexpected type %T", msg)
+			}
+			var got []gpsprot.SVID
+			for _, sv := range satsNav2Sig(m).SVs {
+				got = append(got, sv.ID)
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
 	}
 }
 
