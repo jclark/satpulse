@@ -53,6 +53,9 @@ every build recompiles from scratch, so running `make docker-pkg` first
 would just do the same work twice and the release would upload the
 second build.
 
+When you publish a prerelease, re-point the Homebrew tap's `satpulse-pre`
+formula to it, as the tap's README describes.
+
 ### Testing with Ansible
 
 Deploy and test on real hardware:
@@ -74,6 +77,9 @@ Ensure all changes are committed and tests pass:
 git status  # Should be clean
 make test   # Run unit tests
 ```
+
+In `docs/_includes/NEWS.md`, change the release's `_Not yet released_`
+to `_Released YYYY-MM-DD_`, using the date you tag and build, and commit.
 
 ### 2. Create release tag
 
@@ -102,6 +108,10 @@ ls out/*.deb
 ```
 
 On GitHub, edit the draft's description.
+Link the full list of changes as `docs/_includes/NEWS.md` at the tag
+(`https://github.com/jclark/satpulse/blob/v0.1/docs/_includes/NEWS.md`):
+the root `NEWS.md` is a symlink, which GitHub shows as a link rather than
+its content.
 
 ### 4. Hardware testing
 
@@ -115,6 +125,12 @@ cd systest
 ./t check
 ```
 
+Also check the Homebrew build: in a local clone of the
+[homebrew-satpulse](https://github.com/jclark/homebrew-satpulse) tap,
+re-point the `satpulse-pre` formula to the release commit, as its README
+describes, then build it from source and run `brew test`.
+`satpulse-pre` is pinned by revision, so it builds before the tag is pushed.
+
 If issues are found, you can fix them and move the tag to a different commit:
 
 ```bash
@@ -124,6 +140,7 @@ make tag    # Moves the tag to current commit
 
 then delete the draft release on GitHub before rerunning
 `make docker-release`.
+If the date has changed, update the release date in NEWS.md before moving the tag.
 
 To abandon the release process:
 
@@ -175,6 +192,8 @@ Also set `man_prerelease_notice: false` in `docs/_config.yml` to remove
 the pre-release banner from the man pages on the website.
 Turn it back on later if and when the man pages on master diverge
 significantly from the last release.
+In the same file set `prerelease_labels: false`, remove the "new in"
+label markup from the pages, and point the home page at the release.
 
 #### For patch release (e.g., 0.1.1)
 
@@ -189,6 +208,22 @@ git commit -m "Prepare for ${next_patch} patch release"
 # Push
 git push
 ```
+
+### 7. Homebrew tap
+
+After publishing a release, update the
+[homebrew-satpulse](https://github.com/jclark/homebrew-satpulse) tap:
+give the `satpulse` formula a stable spec on the new tag (`tag:` and
+`revision:`), and re-point `satpulse-pre` to the same commit with the
+release version.
+Now that the tag is pushed, build `satpulse` from source and check that
+`satpulsetool --version` reports the release version.
+Then push the tap and check its CI.
+
+### 8. Milestone
+
+Decide what happens to each open issue left on the release's milestone,
+then close the milestone.
 
 ## Quick reference
 
