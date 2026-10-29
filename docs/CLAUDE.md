@@ -68,12 +68,13 @@ synchronize).
 - The tutorial pages describe the current pre-release. The man pages
   are generated from master and carry their own whole-page banner
   (`man_prerelease_notice` in `_config.yml`).
-- Anything not in the latest stable release is marked "new in 0.3"
-  with `{% include new-in-03.html %}`, placed at the end of the first
-  sentence that introduces the feature, on the same line, never on a
-  heading. The label renders only while `prerelease_labels` is on in
-  `_config.yml`; when 0.3 final ships, the flag goes off and the
-  markup is removed from the pages.
+- Anything not in the latest stable release is marked with
+  `{% include new-in.html version="0.4" %}`, giving the version in
+  development, placed at the end of the first sentence that
+  introduces the feature, on the same line, never on a heading. The
+  label renders only while `version` equals `_includes/VERSION`, so
+  it disappears when VERSION is bumped after the release; the markup
+  is then removed from the pages.
 
 ## Agent tells to avoid
 
@@ -125,7 +126,7 @@ power cycled."
   something, when the pre-release has a new way, is not superseded
   until the next final release ships: it stays in the navigation
   with a notice at the top framing it as the stable-release path and
-  pointing at the new page (`howtos/rtk.md` is the model), and is
+  pointing at the new page, and is
   deleted with its redirect when the release switch is made.
 - When a superseded page is finally deleted, its old URL gets a
   `redirect_from` entry on whichever page replaces it.

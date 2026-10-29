@@ -192,8 +192,8 @@ Also set `man_prerelease_notice: false` in `docs/_config.yml` to remove
 the pre-release banner from the man pages on the website.
 Turn it back on later if and when the man pages on master diverge
 significantly from the last release.
-In the same file set `prerelease_labels: false`, remove the "new in"
-label markup from the pages, and point the home page at the release.
+Remove the "new in" label markup from the pages (the VERSION bump has
+already hidden it), and point the home page at the release.
 
 #### For patch release (e.g., 0.1.1)
 
