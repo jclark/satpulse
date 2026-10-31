@@ -51,6 +51,18 @@ The most useful fields in `.result.toml` for comparing configurations are:
 - **`absOffMax`** — the worst-case offset between the disciplined PHC and true time, in nanoseconds.
 - **`trackingADev`** — the Allan deviation of the offset, a measure of frequency stability. 
 
+## Gap tolerance
+
+`track.badSampleRunLimit` bounds how long a PPS signal loss is ridden out in tracking quality before falling back to a reset; gap-mode MAD recovery (issue #188) is what makes raising it useful, by accepting the legitimate post-gap samples that reflect clock drift across the gap. The safe value is hardware dependent: drift during a gap is dominated by the error of the held frequency estimate, so the budget is roughly `accuracy budget / drift rate`. The values in these configs were derived by simulating repeated outages of increasing duration (20 gap windows per duration) and requiring that every gap recovers without a reset and that the worst in-sync offset stays within ~100ns:
+
+| Hardware | Drift rate | Safe gap | `badSampleRunLimit` |
+|----------|-----------|----------|---------------------|
+| timehat-f9t | ~2-3 ppb | 30s | 30 |
+| cm4-f9t | ~8-13 ppb | 10s | 10 |
+| i225-m8t | ~25 ppb | ~6s | 5 (default) |
+
+`gap.driftLimit` (default 100ns) encodes the accuracy budget itself and should not be raised to extend gap tolerance: drift beyond it means the clock can no longer honestly claim tracking quality, which is holdover's territory. When the run limit exceeds half of `track.badSampleWindow` (default 60), also raise the window so the bad-sample ratio limit does not preempt the run limit during a long gap.
+
 ## Tuning your own hardware
 
 To explore different controller parameters for a hardware combination, copy one of the top-level configs and edit the `[sync]` block. For systematic sweeps, generate one config per parameter combination and use `make -j` to run them in parallel.

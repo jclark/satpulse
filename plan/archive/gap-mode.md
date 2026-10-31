@@ -1,6 +1,4 @@
-# Gap Mode
-
-Fixes: #188
+# Gap mode (#188)
 
 ## Introduction
 
@@ -60,7 +58,7 @@ tracking ──[any missing sample]──> gap
 **Transitions:**
 
 - **tracking -> gap mode**: Any missing sample
-- **gap mode -> holdover**: `consecutiveMissingSamples >= holdoverThreshold`
+- **gap mode -> holdover**: `consecutiveMissingSamples >= holdoverThreshold` (deferred to #199; until holdover exists, a long gap exits to reset via `badSampleRunLimit`)
 - **gap mode -> tracking**: Successful recovery
 - **gap mode -> reset**: Recovery drift exceeds `driftLimit`
 
@@ -68,14 +66,15 @@ tracking ──[any missing sample]──> gap
 
 **Principle**: Parameters belong to the config section of the mode that uses them, not the mode they trigger transition to.
 
-New config section `[phcsync.gap]`:
+New config section `[sync.gap]`:
 
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
-| `recoveryThreshold` | int | 5 | Consecutive missing samples before MAD recovery is needed |
-| `holdoverThreshold` | int | 10 | Consecutive missing samples to transition to full holdover |
+| `recoveryThreshold` | int | 3 | Consecutive missing samples before MAD recovery is needed |
 | `driftLimit` | int64 | 100 | Max allowed median shift (ns) from pre-gap baseline; if exceeded, exit to reset |
 | `recoverySamples` | int | 5 | Samples to collect before shifting window |
+
+`holdoverThreshold` (consecutive missing samples to transition to full holdover) is deferred to #199 along with the holdover mode itself; adding it before the mode exists would be dead config.
 
 **Parameter semantics:**
 
@@ -87,11 +86,8 @@ New config section `[phcsync.gap]`:
 
 **Constraints:**
 
-- `recoveryThreshold < holdoverThreshold < badSampleRunLimit`
-
-This ensures:
-1. MAD recovery triggers before holdover consideration
-2. Holdover is possible before the bad sample limit forces an exit
+- `recoveryThreshold < badSampleRunLimit` (enforced by `Config.Validate`), so MAD recovery can trigger before the bad sample limit forces an exit. The default of 3 sits below the default `badSampleRunLimit` of 5.
+- When #199 adds `holdoverThreshold`, the full chain becomes `recoveryThreshold < holdoverThreshold < badSampleRunLimit`, so holdover is possible before the bad sample limit forces an exit. (Note the default `badSampleRunLimit` of 5 will need raising, or the holdover default choosing accordingly.)
 
 ## Phases
 
@@ -100,8 +96,8 @@ This ensures:
 While samples are missing:
 
 - Apply `avgFreq` from tracking processor (moved from tracking mode)
-- Increment `consecutiveMissingSamples`
-- If `consecutiveMissingSamples >= holdoverThreshold`: transition to holdover
+- Increment the missing-sample count and the shared bad-sample bookkeeping; if a bad-sample limit trips, exit to reset
+- (#199) If `consecutiveMissingSamples >= holdoverThreshold`: transition to holdover
 
 ### Phase 2: Recovery
 
@@ -166,21 +162,21 @@ New `gapSampleProcessor`:
 
 ```go
 type gapSampleProcessor struct {
-    cfg                      GapConfig
-    trackingCfg              TrackingConfig
-    trackingProc             *trackingSampleProcessor  // preserved from tracking mode
-    consecutiveMissingSamples int                      // count of missing samples in this gap mode
-    recoveryOffsets          []time.Duration          // collected post-gap offsets (long gaps only)
-    lg                       *slog.Logger
+    cfg             GapConfig
+    trackingProc    *trackingSampleProcessor // preserved from tracking mode
+    missingSamples  int                      // consecutive missing samples, including the one that triggered gap mode
+    recoveryOffsets []time.Duration          // accepted post-gap offsets collected during MAD recovery
+    lg              *slog.Logger
 }
 ```
 
 The processor holds a pointer to the tracking processor, allowing it to:
 - Access `avgFreq` for frequency control during no-sample phase
-- Access the MAD window for relaxed outlier detection
+- Access the MAD window (and tracking config) for relaxed outlier detection
 - Modify the MAD window on successful recovery
+- Share the bad-sample bookkeeping and limit checks (`noteBadSample`/`limitExceeded`)
 
-The `consecutiveMissingSamples` counter determines whether MAD recovery is needed when samples return. The `recoveryOffsets` slice collects post-gap offsets (distinct from the config field `recoverySamples` which specifies the count).
+The `missingSamples` counter (initialized to 1: the triggering sample was processed by tracking) determines whether MAD recovery is needed when samples return. The `recoveryOffsets` slice collects post-gap offsets (distinct from the config field `recoverySamples` which specifies the count).
 
 ### Controller Changes
 
@@ -194,23 +190,15 @@ func (c *Controller) changeMode(mode Mode) {
     // ... existing cases ...
 
     case ModeGap:
-        // Preserve tracking generator and processor
-        trackingGen := c.sampleGen.(*trackingSampleGenerator)
-        trackingProc := c.sampleProc.(*trackingSampleProcessor)
-        c.sampleGen = trackingGen  // reuse
-        c.sampleProc = newGapSampleProcessor(
-            c.cfg.Gap,
-            c.cfg.Track,
-            trackingProc,
-            c.lg,
-        )
+        // Entered only from tracking. Keep the live generator and wrap the
+        // processor so its state survives the gap.
+        c.sampleProc = newGapSampleProcessor(c.cfg.Gap, c.sampleProc.(*trackingSampleProcessor), c.lg)
 
     case ModeTracking:
-        if c.mode == ModeGap {
-            // Restore tracking processor from gap mode
-            mhProc := c.sampleProc.(*gapSampleProcessor)
-            c.sampleProc = mhProc.trackingProc
-            // Generator already correct (was preserved)
+        if gsp, ok := c.sampleProc.(*gapSampleProcessor); ok {
+            // Returning from a gap: restore the preserved tracking processor.
+            // The generator is already the tracking generator.
+            c.sampleProc = gsp.trackingProc
         } else {
             // Normal tracking entry (from converging)
             c.sampleGen = newTrackingSampleGenerator(...)
@@ -220,26 +208,30 @@ func (c *Controller) changeMode(mode Mode) {
 }
 ```
 
+Two further controller details follow from the preserve/restore pattern: the persist-sample extraction on mode exit must reach through the gap processor (so a gap -> reset transition does not lose the drift-validation sample), and `Tick`'s pending-pulse timeout must also run in gap mode, since the tracking generator stays live there.
+
 ### Triggering Gap mode
 
 The tracking processor triggers gap mode on any missing sample:
 
 ```go
 func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
-    // ... existing outlier detection ...
-
     if sample.Kind == SampleMissing {
-        // Any missing sample -> gap mode
-        // Return avgFreq action immediately so PHC uses holdover frequency
-        // starting from this sample (not the next one)
-        return phcAction{actionType: phcAdjustFrequency, freq: p.avgFreq}, ModeGap
+        // Any missing sample -> gap mode. Record it in the shared bookkeeping
+        // so the bad-sample limits carry across the transition, and switch to
+        // the averaged frequency immediately (first bad sample of a run).
+        action := p.noteBadSample()
+        if p.limitExceeded() {
+            return action, ModeReset
+        }
+        return action, ModeGap
     }
 
     // ... rest of existing logic (only handles present samples) ...
 }
 ```
 
-This simplifies tracking mode: it only processes present samples. The `avgFreq` action on the triggering sample ensures the PHC switches to holdover frequency immediately, maintaining parity with current behavior. Subsequent missing samples in gap mode continue using `avgFreq`.
+This simplifies tracking mode: it only processes present samples. The bad-sample bookkeeping and limit checks are factored into `noteBadSample`/`limitExceeded` so gap mode shares them; `noteBadSample` switches the PHC to `avgFreq` on the first bad sample of a run (preserving the existing semantics, including the `AvgFreqTimeConstant = 0` disable case), so the PHC runs at the averaged frequency from the triggering sample onwards.
 
 ### MAD Window Shift
 
@@ -260,33 +252,26 @@ Note: We shift all capacity entries rather than trying to identify active circul
 
 ### Relaxed MAD Detection
 
-The gap mode processor uses a modified MAD check. This is additive to the tracking gates—samples must still pass the unconditional `OutlierThreshold` (and `MADThreshold` if configured). The relaxed check only adjusts the adaptive MAD-based detection:
+The gap mode processor uses a modified MAD check. This is additive to the tracking gates—samples must still pass the unconditional `OutlierThreshold` (and `MADThreshold` if configured). The relaxed check only adjusts the adaptive MAD-based detection.
+
+Rather than duplicating the MAD computation on the gap processor, the tracking processor's `madIsOutlier` is generalized with a slack parameter; the normal check delegates with slack 0 and gap recovery calls it with `driftLimit`:
 
 ```go
-func (p *gapSampleProcessor) relaxedMADIsOutlier(offset time.Duration) bool {
-    // Unconditional gates still apply (checked before this function):
-    // - OutlierThreshold: absolute hard limit
-    // - MADThreshold: optional secondary gate
-    // This function only relaxes the adaptive MAD-based detection.
+func (p *trackingSampleProcessor) madIsOutlier(offset time.Duration) bool {
+    return p.madIsOutlierSlack(offset, 0)
+}
 
-    tw := p.trackingProc.madWindow
-    if tw.Len() < p.trackingCfg.MADMinSamples {
+// madIsOutlierSlack is madIsOutlier with the threshold widened by slack.
+// Gap mode uses a non-zero slack to admit samples showing legitimate drift
+// accumulated while the signal was lost.
+func (p *trackingSampleProcessor) madIsOutlierSlack(offset, slack time.Duration) bool {
+    if p.madWindow.Len() < p.cfg.MADMinSamples {
         return false
     }
-
-    center := tw.Median()
-    mad := median.Median(func(yield func(time.Duration) bool) {
-        tw.Iterate(func(i int, v time.Duration) bool {
-            return yield((v - center).Abs())
-        })
-    })
-
-    // Relaxed threshold: normal + driftLimit
-    threshold := time.Duration(float64(mad) * p.trackingCfg.MADMultiple)
-    threshold += time.Duration(p.cfg.DriftLimit)
-
-    deviation := (offset - center).Abs()
-    return deviation > threshold
+    center := p.madWindow.Median()
+    mad := // ... median of absolute deviations from center, as before ...
+    threshold := time.Duration(float64(mad)*p.cfg.MADMultiple) + slack
+    return (offset - center).Abs() > threshold
 }
 ```
 
@@ -322,36 +307,36 @@ Step 1 moves the existing `avgFreq` handling from tracking mode to gap mode. No 
 
 | File | Changes |
 |------|---------|
-| `internal/phcsync/controller.go` | Add `ModeGap`, update `changeMode` |
-| `internal/phcsync/tracking.go` | Trigger gap mode on missing sample, remove `avgFreq` logic |
-| `internal/phcsync/gap.go` | New file: minimal `gapSampleProcessor` |
-| `internal/syncsim/sync_test.go` | Adjust expected mode sequences |
+| `time/internal/phcsync/controller.go` | Add `ModeGap`, update `changeMode` |
+| `time/internal/phcsync/tracking.go` | Trigger gap mode on missing sample, factor shared bad-sample bookkeeping |
+| `time/internal/phcsync/gap.go` | New file: minimal `gapSampleProcessor` |
+| `time/internal/syncsim/sync_test.go` | Adjust expected mode sequences |
 
 ### Step 2: MAD Window Adjustment
 
 Step 2 adds the MAD recovery logic described in the Phases section above.
 
 **New behavior:**
-- Track `consecutiveMissingSamples` during gap mode
-- If `consecutiveMissingSamples >= holdoverThreshold`: transition to holdover
+- Track the missing-sample count during gap mode
 - On sample return with long gap (`>= recoveryThreshold`): relaxed MAD detection, collect samples, window shift
 - If drift exceeds `driftLimit`: exit to reset
 
 **What changes:**
-- Add `GapConfig` with `recoveryThreshold`, `holdoverThreshold`, `driftLimit`, `recoverySamples`
+- Add `GapConfig` with `recoveryThreshold`, `driftLimit`, `recoverySamples` (`holdoverThreshold` deferred to #199)
 - Add `recoveryOffsets` slice to processor
-- Add `relaxedMADIsOutlier` function
+- Add slack parameter to the tracking processor's MAD check (`madIsOutlierSlack`)
 - Add `ShiftAll` method to `median.Window`
 - Add recovery and window-shift logic
+- Enforce `recoveryThreshold < badSampleRunLimit` in `Config.Validate`
 
 **Files to modify (Step 2):**
 
 | File | Changes |
 |------|---------|
-| `internal/median/median.go` | Add `ShiftAll` method |
-| `internal/phcsync/gap.go` | Add config, recovery logic, window shift |
+| `time/lib/median/median.go` | Add `ShiftAll` method |
+| `time/internal/phcsync/gap.go` | Add config, recovery logic, window shift |
 | `configs/config-schema.json` | Add new config section and parameters |
-| `internal/syncsim/sync_test.go` | Add MAD recovery test scenarios |
+| `time/internal/syncsim/sync_test.go` | Add MAD recovery test scenarios |
 
 ## Test Plan
 
@@ -409,7 +394,7 @@ cfg := Config{
     expectMinTrackingSamples: 90,
     modifyConfig: func(cfg *Config) {
         cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 4.0}}
-        cfg.Fault.Outlier = []OutlierConfig{{Time: 64.5, Offset: 2000}}
+        cfg.Fault.Outlier = []OutlierConfig{{Time: 65, Offset: 2000}}
     },
     // Verify: 2µs outlier still rejected despite relaxed threshold
 }
@@ -422,46 +407,50 @@ cfg := Config{
     name:                     "short gap skips MAD recovery",
     duration:                 120.0,
     maxTrackingStdDev:        15,
-    expectMinTrackingSamples: 100,
+    expectMinTrackingSamples: 95,
     modifyConfig: func(cfg *Config) {
-        // 3s outage < recoveryThreshold (5): enters gap mode
+        // 2s outage < recoveryThreshold (3) missing samples: enters gap mode
         // but returns to tracking without MAD window adjustment
-        cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 3.0}}
+        cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 2.0}}
     },
 }
 ```
+
+The short-gap and recovery paths are distinguished externally by the exact gap-mode sample count (`expectGapSamples`): a short gap attributes only the further missing sample and the gap-ending present sample to gap mode, while recovery adds the collected samples.
 
 #### Gap mode transitions to holdover on long gap
 
-```go
-{
-    name:               "long gap transitions gap mode to holdover",
-    duration:           180.0,
-    expectModeSequence: []Mode{ModeReset, ModeConverging, ModeTracking,
-                               ModeGap, ModeHoldover},
-    modifyConfig: func(cfg *Config) {
-        // Outage exceeds holdoverThreshold while in gap mode
-        cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 15.0}}
-    },
-}
-```
+Deferred to #199 with the holdover mode itself.
 
 #### Excessive drift triggers reset
 
 ```go
 {
     name:               "excessive drift during gap mode triggers reset",
-    duration:           180.0,
-    expectResetSamples: 2,
+    duration:           120.0,
+    expectResetEntered: ptr(2), // initial + drift check failure after recovery
     modifyConfig: func(cfg *Config) {
-        // Long enough to cause > 100ns drift, but inject samples
-        // that show excessive offset
+        cfg.Sync.Track.BadSampleRunLimit = 15 // allow the 8s outage without a bad-sample reset
+        // Soft servo gains so the step is not corrected away while recovery
+        // samples are collected
+        cfg.Sync.Track.Kp = 0.1
+        cfg.Sync.Track.Ki = 0.02
         cfg.Fault.Outage = []OutageConfig{{StartTime: 60.0, Duration: 8.0}}
-        cfg.Fault.PhaseStep = []PhaseStepConfig{{Time: 68.0, Offset: 500}}
+        // 260ns step from the end of the outage, emulated by an excursion
+        // lasting past the end of the simulation
+        cfg.Fault.Excursion = []ExcursionConfig{{
+            StartTime: 67.5,
+            Duration:  60.0,
+            Amplitude: 260,
+            Rise:      RampConfig{Duration: 0.01},
+            Fall:      RampConfig{Duration: 0.01},
+        }}
     },
     // Window shift exceeds driftLimit -> triggers reset
 }
 ```
+
+Two empirical notes on this case. A step at the unconditional `OutlierThreshold` (500ns) never reaches the drift check: every sample is rejected outright and the bad-sample run limit forces the reset instead, so the step must sit inside the relaxed-MAD acceptance band. And at default servo gains the servo corrects ~100ns/s while recovery samples are collected, attenuating the offsets so their median rarely exceeds `driftLimit`; the soft gains keep the step visible across the collection window. The drift check is thus mainly a backstop at default gains.
 
 ## Relationship to Holdover
 

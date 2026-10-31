@@ -348,33 +348,64 @@ func newTrackingSampleProcessor(cfg TrackingConfig, currentFreq, maxFreq float64
 }
 
 func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode) {
-	action := p.sampleAction(sample)
-
-	// Track bad samples (missing or outlier - i.e., not sent to servo)
-	isBad := action.actionType == phcNoAction
-	if isBad {
-		p.consecutiveBadSamples++
-		// Use EMA feature (adjusting on bad samples), if not disabled by AvgFreqTimeConstant = 0
-		if p.consecutiveBadSamples == 1 && p.cfg.AvgFreqTimeConstant > 0 {
-			action.actionType = phcAdjustFrequency
-			action.freq = p.avgFreq
-			p.servo.reset(p.avgFreq)
-			p.lg.Debug("first bad sample; switching to average frequency", "avgFreq", p.avgFreq)
+	if sample.Kind == SampleMissing {
+		// Missing samples are handled by gap mode. Record this one in the
+		// shared bookkeeping so the bad-sample limits carry across the
+		// transition, and switch to the averaged frequency immediately.
+		action := p.noteBadSample()
+		if p.limitExceeded() {
+			return action, ModeReset
 		}
-	} else {
-		p.consecutiveBadSamples = 0
-		// Track start time on first good sample
-		if p.trackingStartTime.IsZero() {
-			p.trackingStartTime = sample.Sys
-		}
-		// Only persist after sufficient time in tracking mode
-		if sample.Sys.Sub(p.trackingStartTime) >= p.persistThreshold {
-			ps := sample.SysSample()
-			p.persistSample = &ps
-		}
+		return action, ModeGap
 	}
 
-	// Track bad sample frequency in sliding window
+	action := p.sampleAction(sample)
+	if action.actionType == phcNoAction {
+		action = p.noteBadSample()
+	} else {
+		p.noteGoodSample(sample)
+	}
+	if p.limitExceeded() {
+		return action, ModeReset
+	}
+	return action, ModeTracking
+}
+
+// noteBadSample records a bad sample (outlier or missing) in the bad-sample
+// bookkeeping shared between tracking and gap mode. On the first bad sample
+// of a run it returns the action switching the PHC to the averaged frequency
+// (unless disabled by AvgFreqTimeConstant = 0).
+func (p *trackingSampleProcessor) noteBadSample() phcAction {
+	var action phcAction
+	p.consecutiveBadSamples++
+	if p.consecutiveBadSamples == 1 && p.cfg.AvgFreqTimeConstant > 0 {
+		action = phcAction{actionType: phcAdjustFrequency, freq: p.avgFreq}
+		p.servo.reset(p.avgFreq)
+		p.lg.Debug("first bad sample; switching to average frequency", "avgFreq", p.avgFreq)
+	}
+	p.recordSample(true)
+	return action
+}
+
+// noteGoodSample records a good sample, resetting the consecutive bad sample
+// count and persisting the sample for drift validation once tracking has been
+// stable long enough.
+func (p *trackingSampleProcessor) noteGoodSample(sample *Sample) {
+	p.consecutiveBadSamples = 0
+	// Track start time on first good sample
+	if p.trackingStartTime.IsZero() {
+		p.trackingStartTime = sample.Sys
+	}
+	// Only persist after sufficient time in tracking mode
+	if sample.Sys.Sub(p.trackingStartTime) >= p.persistThreshold {
+		ps := sample.SysSample()
+		p.persistSample = &ps
+	}
+	p.recordSample(false)
+}
+
+// recordSample tracks bad sample frequency in the sliding window.
+func (p *trackingSampleProcessor) recordSample(isBad bool) {
 	if p.badSamples.Len() == p.badSamples.Cap() {
 		if p.badSamples.Last(p.badSamples.Len() - 1) {
 			p.badSampleCount--
@@ -384,14 +415,16 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 	if isBad {
 		p.badSampleCount++
 	}
+}
 
-	// Check all four limits for transition to reset mode
-	// Limit semantics: a limit of N means N is allowed (use > not >=)
-
+// limitExceeded checks the failure limits shared between tracking and gap
+// mode and reports whether the controller must fall back to reset mode.
+// Limit semantics: a limit of N means N is allowed (use > not >=).
+func (p *trackingSampleProcessor) limitExceeded() bool {
 	// Limit 1: consecutive bad samples
 	if p.consecutiveBadSamples > p.cfg.BadSampleRunLimit {
 		p.lg.Info("entering reset mode", "reason", "consecutiveBadSamples", "count", p.consecutiveBadSamples)
-		return action, ModeReset
+		return true
 	}
 
 	// Limit 2: outlier ratio in MAD window
@@ -400,7 +433,7 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 		outlierRatio := float64(p.madWindow.OutlierCount()) / float64(p.madWindow.Len())
 		if outlierRatio > p.cfg.OutlierRatioLimit {
 			p.lg.Info("entering reset mode", "reason", "outlierRatio", "ratio", outlierRatio)
-			return action, ModeReset
+			return true
 		}
 	}
 
@@ -410,18 +443,14 @@ func (p *trackingSampleProcessor) processSample(sample *Sample) (phcAction, Mode
 		badRatio := float64(p.badSampleCount) / float64(p.badSamples.Len())
 		if badRatio > p.cfg.BadSampleRatioLimit {
 			p.lg.Info("entering reset mode", "reason", "badSampleRatio", "ratio", badRatio)
-			return action, ModeReset
+			return true
 		}
 	}
 
-	return action, ModeTracking
+	return false
 }
 
 func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
-	if sample.Kind == SampleMissing {
-		return phcAction{actionType: phcNoAction}
-	}
-
 	absOffset := sample.Offset.Abs()
 
 	// Upper gate: unconditionally reject and exclude from MAD window
@@ -449,15 +478,18 @@ func (p *trackingSampleProcessor) sampleAction(sample *Sample) phcAction {
 
 	// Apply PI control for good samples
 	freq := p.servo.sample(sample.Offset)
-
-	// Update exponential moving average of frequency
-	// avgFreq = alpha * freq + (1-alpha) * avgFreq
-	p.avgFreq = p.emaAlpha*freq + (1.0-p.emaAlpha)*p.avgFreq
+	p.updateAvgFreq(freq)
 
 	return phcAction{
 		actionType: phcAdjustFrequency,
 		freq:       freq,
 	}
+}
+
+// updateAvgFreq updates the exponential moving average of frequency:
+// avgFreq = alpha * freq + (1-alpha) * avgFreq
+func (p *trackingSampleProcessor) updateAvgFreq(freq float64) {
+	p.avgFreq = p.emaAlpha*freq + (1.0-p.emaAlpha)*p.avgFreq
 }
 
 func (p *trackingSampleProcessor) getPersistSample() *phctime.Sample {
@@ -470,6 +502,13 @@ func (p *trackingSampleProcessor) getPersistSample() *phctime.Sample {
 // exceeds k * MAD. This correctly handles sustained DC bias (e.g., ionospheric
 // delays) while rejecting transient spikes (e.g., multipath errors).
 func (p *trackingSampleProcessor) madIsOutlier(offset time.Duration) bool {
+	return p.madIsOutlierSlack(offset, 0)
+}
+
+// madIsOutlierSlack is madIsOutlier with the threshold widened by slack.
+// Gap mode uses a non-zero slack to admit samples showing legitimate drift
+// accumulated while the signal was lost.
+func (p *trackingSampleProcessor) madIsOutlierSlack(offset, slack time.Duration) bool {
 	// Need minimum samples for MAD to be meaningful
 	if p.madWindow.Len() < p.cfg.MADMinSamples {
 		return false
@@ -487,7 +526,7 @@ func (p *trackingSampleProcessor) madIsOutlier(offset time.Duration) bool {
 	})
 
 	// Check if offset deviates too much from center
-	threshold := time.Duration(float64(mad) * p.cfg.MADMultiple)
+	threshold := time.Duration(float64(mad)*p.cfg.MADMultiple) + slack
 	deviation := (offset - center).Abs()
 
 	return deviation > threshold
