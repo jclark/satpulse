@@ -26,7 +26,7 @@ The following features make this work well for this application:
 
 ### NVMe drive
 
-The Geekwork X1001 looks most suitable since it leaves the 40-pin header exposed.
+The [Geekworm X1001](https://geekworm.com/products/x1001) looks most suitable since it leaves the 40-pin header exposed.
 (I haven't tried this yet.)
 
 ### Cooling
