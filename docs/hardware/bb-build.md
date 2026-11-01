@@ -31,7 +31,7 @@ The Geekwork X1001 looks most suitable since it leaves the 40-pin header exposed
 
 ### Cooling
 
-The Raspberry Pi 5 cooler is supposed to work.
+The [Raspberry Pi Active Cooler](https://www.raspberrypi.com/products/active-cooler/) is supposed to work.
 (I haven't tried this yet.)
 
 ## Connecting an external receiver
