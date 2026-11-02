@@ -28,7 +28,7 @@ In particular, you can:
 
 * run a stratum 1 NTP server using chrony, ntpd-rs or NTPsec on Linux
 * run a stratum 1 NTP server using chrony on macOS
-* run a PTP grandmaster with a Raspberry Pi CM4/CM5 or an Intel NIC using linuxptp
+* run a PTP grandmaster with a Raspberry Pi CM4/CM5, a BeagleY-AI or an Intel NIC using linuxptp
 * act as an RTK base station or rover
 * configure, monitor and evaluate a GPS receiver using a web-based GUI
 
@@ -51,7 +51,8 @@ A typical NTP stratum 1 server, running on, for example, a Raspberry Pi, connect
 SatPulse can take advantage of hardware designed for PTP (Precision Time Protocol).
 The key difference is that the PPS output of the GPS receiver is connected to a PPS input pin *on the ethernet controller*.
 This is supported only on Linux.
-The Raspberry Pi CM4 and CM5 have this capability when used with a suitable IO board.
+The Raspberry Pi CM4 and CM5 have this capability when used with a suitable IO board,
+as does the BeagleY-AI.
 For more details, see the [introduction to precision network timing]({% link intro/timing.md %}).
 Without this special hardware, SatPulse can still supply timing information to an NTP server.
 SatPulse can supply time-of-day information, leaving the NTP server to access the PPS device.

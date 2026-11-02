@@ -19,7 +19,7 @@ title                    : "SatPulse"
 title_separator          : "-"
 subtitle                 : # site tagline that appears below site title in masthead
 name                     : "James Clark"
-description              : "Use GNSS/GPS receiver on Linux, macOS, Windows: stratum 1 NTP server, RTK base/rover, configuration/evaluation GUI, PTP grandmaster on Raspberry Pi CM4/CM5"
+description              : "Use GNSS/GPS receiver on Linux, macOS, Windows: stratum 1 NTP server; RTK base, rover; web GUI; PTP server on Raspberry Pi CM4/CM5, BeagleY-AI, Intel NIC"
 url                      : "https://satpulse.net"
 baseurl                  : ""
 repository               : "jclark/satpulse"

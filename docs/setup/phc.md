@@ -90,6 +90,40 @@ should print one or two numbers, like this
 
 This means it has received two timestamps, one second apart, so everything is working as expected.
 
+### BeagleY-AI
+
+On the BeagleY-AI with [Debian]({% link setup/bb-debian.md %}), the network interface is `eth0`.
+
+The routing between pins and channels is managed by the device-tree overlay rather than by the PHC subsystem.
+Accordingly `phc_ctl eth0` will report that `eth0` has no pins.
+The device-tree overlay routes header pin 33 to timestamp channel 0,
+which is what SatPulse uses by default.
+
+`satpulsetool sdp eth0` should show something like this:
+
+```
+Interface: eth0
+  Status: up, carrier
+  Driver: am65-cpsw-nuss
+  PCI: 8000000.ethernet
+  PTP clock device: /dev/ptp0
+  External timestamp channels: 4
+  Periodic output channels: 2
+```
+
+Doing
+
+```
+sudo satpulsetool sdp -i eth0
+```
+
+should print one or two numbers, like this
+
+```
+32.978236091
+33.978225423
+```
+
 ### Intel
 
 With Intel ethernet controllers, the name of interface can vary.
