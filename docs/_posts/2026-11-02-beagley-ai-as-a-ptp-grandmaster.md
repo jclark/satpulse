@@ -21,7 +21,7 @@ reference manuals and schematics in order to determine
 whether there is any possibility of a particular board working for this.
 Then it's a matter of buying one and seeing whether it actually can be made to work.
 
-I am very excited to share that this effort has finally yielded a new option: the [BeagleY-AI](https://www.beagleboard.org/boards/beagley-ai).
+I am pleased to report that this effort has finally yielded a new option: the [BeagleY-AI](https://www.beagleboard.org/boards/beagley-ai).
 
 It turns out that very little was needed to make this work:
 a new [device tree overlay](https://github.com/beagleboard/BeagleBoard-DeviceTrees/pull/122)
@@ -93,11 +93,11 @@ the BeagleY-AI is clearly superior.
 
 I want to mention one other point which I think is really important,
 and that is the availability of documentation for the hardware.
-The AM67A has very complete publically available documentation, including for all the timing hardware;
-the TRM is about 2,500 pages.
+The AM67A has very complete publicly available documentation, including for all the timing hardware;
+the [TRM](https://www.ti.com/lit/zip/SPRUJB3) is about 2,500 pages.
 For the Raspberry Pi CM4/CM5 the situation is dismal:
 there is no public documentation on the timing-related hardware, in particular the BCM54210PE PHY.
 
 I will have more to say both on the timing hardware in the BeagleY-AI and
 on the PHC-system clock synchronization problem on the Raspberry Pi CM4/CM5 in future posts.
-But hopefully there is enough in this post to explain why I am so excited about the BeagleY-AI.
+But hopefully there is enough in this post to explain why I am excited about the BeagleY-AI.
