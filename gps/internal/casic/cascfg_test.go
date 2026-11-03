@@ -1887,6 +1887,34 @@ func TestTimeMode(t *testing.T) {
 			hasMode: true,
 		},
 		{
+			name:   "V6 survey limit rounds down",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{Static: true})
+				target.Opts.Survey = gpsprot.Survey{MinDur: 300 * time.Second, AccLimit: 1900 * gpsprot.Micrometer}
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Survey, SvinMinDur: 300, SvinPaccLim: 1},
+			static:  true,
+			hasMode: true,
+		},
+		{
+			name:   "V6 fixed position accuracy rounds up",
+			monVer: v6,
+			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
+			setup: func(target *gpsprot.ConfigTarget) {
+				target.Props.SetMode(gpsprot.Mode{
+					Static:       true,
+					PosType:      gpsprot.PosTypeECEF,
+					FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(6378137), 0, 0},
+					FixedPosAcc:  1100 * gpsprot.Micrometer,
+				})
+			},
+			expect6: &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Fixed, XFixed: 637813700, FixedPacc: 2},
+			static:  true,
+			hasMode: true,
+		},
+		{
 			name:   "V6 survey limit below a millimeter",
 			monVer: v6,
 			tm6:    &casbin.CfgTMode2{TimFixMode: casbin.CfgTMode2Realtime},
