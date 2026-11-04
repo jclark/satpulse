@@ -12,18 +12,9 @@ import (
 
 const lockTimeTolerance = 0.05
 
-// Options controls Unicore to RINEX conversion.
-type Options struct {
-	// OmitDoWithoutCP omits OBSVM Doppler observations whose signal has
-	// no valid carrier phase. This matches rtklib-ex unicore.c, which zeroes
-	// both phase and Doppler when the phase-lock flag is clear.
-	OmitDoWithoutCP bool
-}
-
 // Converter converts OBSVM messages to RINEX observations.
 type Converter struct {
 	sink  rinex.Sink
-	opts  Options
 	state map[signalKey]signalState
 }
 
@@ -41,13 +32,12 @@ type signalState struct {
 
 // New creates a Converter that writes records to sink.
 // It panics if sink is nil.
-func New(sink rinex.Sink, opts Options) *Converter {
+func New(sink rinex.Sink) *Converter {
 	if sink == nil {
 		panic("nil RINEX sink")
 	}
 	return &Converter{
 		sink:  sink,
-		opts:  opts,
 		state: make(map[signalKey]signalState),
 	}
 }
@@ -93,7 +83,7 @@ func (c *Converter) convertObs(t rinex.Time, meas uncmsg.ObsVMObs) (bool, error)
 	if cpOK {
 		obs.CP = opt.Make(-meas.ADR)
 	}
-	if finite32(meas.Dopp) && (cpOK || !c.opts.OmitDoWithoutCP) {
+	if finite32(meas.Dopp) {
 		obs.Do = opt.Make(float64(meas.Dopp))
 	}
 	if meas.CN0 != 0 {

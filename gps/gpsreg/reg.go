@@ -315,6 +315,12 @@ func NovVariant(vendors []Vendor) nov.Variant {
 	return novVariantFor(novVendor)
 }
 
+// SinoNovVariant reports whether the NovAtel protocol variant of vendors
+// (see NovVariant) is the SinoGNSS one.
+func SinoNovVariant(vendors []Vendor) bool {
+	return NovVariant(vendors) == nov.VariantSinoGNSS
+}
+
 func setNovVariant(procs map[gpsprot.Tag]gpsprot.PacketProcessor, v nov.Variant) {
 	for _, pp := range procs {
 		if vs, ok := pp.(novVariantSetter); ok {
