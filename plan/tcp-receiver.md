@@ -60,8 +60,11 @@ func OpenTCP(addr string) (*NetConn, error)
 ```
 
 A plain `net.Dial` (stdlib default keepalive), returning the
-existing `NetConn` unchanged (100ms read deadline, `Direct()` false,
-`Buffered()` 0, `Drain()` no-op). `addr` is `host:port` with DNS
+existing `NetConn` (100ms read deadline, `Direct()` false,
+`Buffered()` 0, `Drain()` no-op). It satisfies `session.Conn`:
+`Speed()` returns 0, `WritePacket()` delegates to `Write()`, and
+`SetPacketLog()` completes the output half immediately because
+output-packet logging is unsupported. `addr` is `host:port` with DNS
 names and IPv4/IPv6 literals (bracketed IPv6), matching
 `CorrectionSource.Host` semantics.
 
