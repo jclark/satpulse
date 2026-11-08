@@ -106,6 +106,8 @@ type Dispatcher struct {
 	rc                    *refclock.ProxyRefClock
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
+	pulseRef              bool        // refclock samples refer to the GNSS pulse, not the steered PHC
+	wall                  pendingWall // the wall-clock pair of the pulse awaiting its sample, when pulseRef
 	timeMsgBuffer         *timemsg.Buffer
 	ppsGen                 *pps.Generator
 	timeTicker            gpsprot.TimeTicker
@@ -134,6 +136,7 @@ func NewDispatcher(
 	eventLogPath string,
 	tStart time.Time,
 	ggaSelector GGASelector,
+	pulseRef bool,
 ) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
 	var minWindow time.Duration
@@ -157,6 +160,7 @@ func NewDispatcher(
 		obs:           obs,
 		tStart:        tStart,
 		ggaSelector:   ggaSelector,
+		pulseRef:      pulseRef,
 	}
 	if ggaSelector != nil {
 		d.ggaSynth = nmeasyn.New(ggaSelector)
@@ -300,7 +304,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 				pullPktCh = nil
 			}
 		case t := <-tickerCh:
-			d.controller.Tick(t)
+			d.pulseRefSample(d.controller.Tick(t))
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
@@ -509,13 +513,18 @@ func (e *LogEvent) UnmarshalJSON(data []byte) error {
 func (d *Dispatcher) timestamp(e ts.Event) {
 	// timestamp events only occur when PHC is available, so d.controller is non-nil
 	// Pass monotonic sample to controller (for PHC sync logic)
-	d.controller.PulseEdge(phcsync.PulseEdge{
+	sample := d.controller.PulseEdge(phcsync.PulseEdge{
 		Timestamp: e.Ts,
 		TRead:     e.TReadMono,
 	})
 
 	// Pass wallclock sample to sysSample (for NTP refclocks)
-	d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys, e.Precision)
+	if d.pulseRef {
+		d.wall = pendingWall{pulse: e.Ts, wall: e.TReadWall, precision: e.Precision}
+		d.pulseRefSample(sample)
+	} else {
+		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys, e.Precision)
+	}
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
@@ -527,6 +536,32 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 			TRead: e.TReadMono.PHC.T,
 		},
 	})
+}
+
+// pendingWall is the wall-clock pair read with a pulse's timestamp, kept until
+// the controller's sample for that pulse gives the PHC's error at the pulse.
+type pendingWall struct {
+	pulse     phctime.Time
+	wall      phctime.Sample
+	precision time.Duration
+}
+
+// pulseRefSample sends the refclock sample for a pulse once the controller has
+// measured the PHC's error at it. The pair's PHC reading less that error is the
+// GNSS pulse carried to the system clock by the pair, so the PHC's own steering
+// error drops out of the sample; what remains is the pulse's jitter, which is
+// fresh every second and so averages out in the NTP daemon, unlike the error of
+// a servo-steered PHC, which persists from one second to the next.
+func (d *Dispatcher) pulseRefSample(s *phcsync.Sample) {
+	if !d.pulseRef || s == nil || s.Kind != phcsync.SampleOK || s.Mode != phcsync.ModeTracking {
+		return
+	}
+	w := d.wall
+	if w.wall.PHC.T.IsZero() || w.pulse.Era != s.Era || w.pulse.T != s.Ref.Add(s.Offset) {
+		return
+	}
+	d.wall = pendingWall{}
+	d.sysSample(w.wall.PHC.T.Add(-s.Offset), w.wall.Sys, w.precision)
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
@@ -576,7 +611,7 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {
-		d.controller.TimeMessage(tRead)
+		d.pulseRefSample(d.controller.TimeMessage(tRead))
 	}
 
 	d.timeTicker.Time(mt, tRead)

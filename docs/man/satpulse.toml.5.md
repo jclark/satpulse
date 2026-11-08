@@ -134,6 +134,19 @@ delayUncertainty = 0.005
 maxDelay = 0.8
 ```
 
+## `sample.phc.sync` table
+
+The `sample.phc.sync` table controls how the samples sent to an NTP daemon are derived from a PHC synchronized by SatPulse. It can have the following key:
+
+* `followPulse` - a boolean saying whether samples should follow the PPS edges timestamped by the PHC rather than the PHC's synchronized time; the default is `false`
+
+Example:
+
+```toml
+[sample.phc.sync]
+followPulse = true
+```
+
 
 ## `gps` table
 

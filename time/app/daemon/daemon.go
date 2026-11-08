@@ -425,7 +425,7 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ppsGen, ls, obs, eventLogPath, tStart, gs)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ppsGen, ls, obs, eventLogPath, tStart, gs, cfg.Sample.PHC.Sync.FollowPulse)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
