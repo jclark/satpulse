@@ -220,16 +220,19 @@ func (c *Controller) SetTimeMsgBuffer(buf TimeMsgBuffer) {
 	c.changeMode(ModeReset, time.Time{})
 }
 
-// PulseEdge handles edge timestamp events from the PHC.
-func (c *Controller) PulseEdge(edge PulseEdge) {
+// PulseEdge handles edge timestamp events from the PHC. It returns the
+// sample the edge produced, or nil when the edge is held for a pulse correction.
+func (c *Controller) PulseEdge(edge PulseEdge) *Sample {
 	sample := c.sampleGen.pulseEdgeSample(edge, c.edgeIndex)
 	c.edgeIndex++
 	c.processPresentSample(sample)
+	return sample
 }
 
 // TimeMessage handles notification that a time message occurred.
-// tRead is when the message was read.
-func (c *Controller) TimeMessage(tRead time.Time) {
+// tRead is when the message was read. It returns the sample of a held
+// pulse that the message completed, or nil.
+func (c *Controller) TimeMessage(tRead time.Time) *Sample {
 	// The reset triggered here would be rejected by the drift-rate check against
 	// the tracking-mode persisted sample (see TrackingConfig.PersistThreshold),
 	// since a stale-firmware leap correction looks like ~1s of drift. The default
@@ -237,10 +240,11 @@ func (c *Controller) TimeMessage(tRead time.Time) {
 	// so the correction is detected before any sample is persisted.
 	if c.detectLeap != nil && c.detectLeap() {
 		c.changeMode(ModeReset, tRead)
-		return
+		return nil
 	}
 	sample := c.sampleGen.timeMessageSample()
 	c.processPresentSample(sample)
+	return sample
 }
 
 // processPresentSample handles samples from actual events (not missing).
@@ -315,12 +319,13 @@ func (c *Controller) Pause(t time.Time) {
 	c.changeMode(ModeReset, t)
 }
 
-// Tick handles regular tick events (0.25s intervals).
-func (c *Controller) Tick(now time.Time) {
+// Tick handles regular tick events (0.25s intervals). It returns the sample
+// of a held pulse whose correction timed out, or nil.
+func (c *Controller) Tick(now time.Time) *Sample {
 	defer c.gmRetry(now)
 	// Don't generate missing samples in reset mode
 	if c.mode == ModeReset {
-		return
+		return nil
 	}
 
 	// Check for pending pulse timeout in tracking mode
@@ -329,14 +334,14 @@ func (c *Controller) Tick(now time.Time) {
 			sample := tsg.tickSample(now)
 			if sample != nil {
 				c.processPresentSample(sample)
-				return
+				return sample
 			}
 		}
 	}
 
 	// Check if we're overdue for a sample
 	if now.Sub(c.lastSample.Sys) <= sampleIntervalMax {
-		return
+		return nil
 	}
 
 	// Create missing sample
@@ -356,6 +361,7 @@ func (c *Controller) Tick(now time.Time) {
 
 	// Missing samples go directly to processSample
 	c.processSample(sample)
+	return nil
 }
 
 // Close gracefully shuts down the controller.

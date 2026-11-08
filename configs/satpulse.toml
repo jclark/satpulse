@@ -64,6 +64,12 @@ speed = 9600
 # Uncomment and edit to specify the pin to which the PPS signal is attached
 #pin = 0
 
+# Uncomment so samples sent to an NTP daemon follow the PPS edges
+# rather than the synchronized PHC
+# (for a PHC whose oscillator wanders more than the pulses jitter)
+#[sample.phc.sync]
+#followPulse = true
+
 # This section controls how to provide information to a PTP server
 [ptp]
 # Unix domain socket for PTP management
