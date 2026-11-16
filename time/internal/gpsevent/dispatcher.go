@@ -303,7 +303,10 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 				pullPktCh = nil
 			}
 		case t := <-tickerCh:
-			d.pulseRefSample(d.controller.Tick(t))
+			s := d.controller.Tick(t)
+			if d.followPulse {
+				d.sysSample(followPulseSample(s))
+			}
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
@@ -525,7 +528,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	}
 	// Pass wallclock sample to sysSample (for NTP refclocks)
 	if d.followPulse {
-		d.pulseRefSample(sample)
+		d.sysSample(followPulseSample(sample))
 	} else {
 		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
 	}
@@ -542,22 +545,18 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	})
 }
 
-// pulseRefSample sends the refclock sample for a pulse once the controller has
-// measured the PHC's error at it. The PHC reading of the pulse's SysOffset
-// pair less that error is the GNSS pulse carried to the system clock by the
-// pair, so the PHC's own steering error drops out of the sample; what remains
-// is the pulse's jitter, which is fresh every second and so averages out in the
-// NTP daemon, unlike the error of a servo-steered PHC, which persists from one
-// second to the next.
-func (d *Dispatcher) pulseRefSample(s *phcsync.Sample) {
-	if !d.followPulse || s == nil || s.Kind != phcsync.SampleOK || s.Mode != phcsync.ModeTracking {
+// followPulseSample returns the reference time and system time of s's SysOffset
+// pair, with the PHC's offset at the pulse removed from the PHC time.
+// ref is zero unless s is a tracking-mode SampleOK with a SysOffset.
+func followPulseSample(s *phcsync.Sample) (ref ptime.Time, sys time.Time) {
+	if s == nil || s.Kind != phcsync.SampleOK || s.Mode != phcsync.ModeTracking {
 		return
 	}
 	so := s.SysOffset
 	if so.PHC.T.IsZero() {
 		return
 	}
-	d.sysSample(so.PHC.T.Add(-s.Offset), so.Sys)
+	return so.PHC.T.Add(-s.Offset), so.Sys
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
@@ -604,7 +603,10 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {
-		d.pulseRefSample(d.controller.TimeMessage(tRead))
+		s := d.controller.TimeMessage(tRead)
+		if d.followPulse {
+			d.sysSample(followPulseSample(s))
+		}
 	}
 
 	d.timeTicker.Time(mt, tRead)
