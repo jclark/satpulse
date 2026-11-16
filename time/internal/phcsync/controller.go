@@ -206,7 +206,7 @@ func NewController(
 
 type PulseEdge struct {
 	Timestamp phctime.Time   // PHC clock timestamp for the pulse edge
-	TRead     phctime.Sample // PHC and system time immediately after the timestamp event was read
+	TReadMono phctime.Sample // PHC and monotonic system time immediately after the timestamp event was read
 }
 
 // SetTimeMsgBuffer sets the time message buffer for the controller.

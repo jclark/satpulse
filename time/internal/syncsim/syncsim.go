@@ -347,7 +347,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 
 				edge := phcsync.PulseEdge{
 					Timestamp: lastReading.Timestamp,
-					TRead: phctime.Sample{
+					TReadMono: phctime.Sample{
 						PHC: tReadPHC,
 						Sys: tSys,
 					},

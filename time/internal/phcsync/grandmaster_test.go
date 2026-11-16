@@ -271,7 +271,7 @@ func (f *grandmasterController) step() {
 		reading, _ := f.clock.ReadTimestamp()
 		f.c.PulseEdge(phcsync.PulseEdge{
 			Timestamp: reading.Timestamp,
-			TRead:     phctime.Sample{PHC: f.clock.Now(), Sys: sys},
+			TReadMono: phctime.Sample{PHC: f.clock.Now(), Sys: sys},
 		})
 	}
 	// Deliver the navigation time message 250ms after each pulse.
