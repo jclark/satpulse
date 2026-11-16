@@ -521,9 +521,8 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 		TReadWall: e.TReadWall,
 	})
 
-	// The precision belongs to the PTP_SYS_OFFSET read, not to a sample: with
-	// followPulse, the sample sent may be from an earlier read.
-	if d.sps != nil && !e.TReadWall.PHC.T.IsZero() && d.controller.Mode() == phcsync.ModeTracking {
+	// We are just establishing the precision of the PTP_SYS_OFFSET ioctl.
+	if d.sps != nil && !e.TReadWall.PHC.T.IsZero() {
 		d.sps.setSamplePrecision(e.Precision)
 	}
 	// Pass wallclock sample to sysSample (for NTP refclocks)
