@@ -105,6 +105,7 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 		Era:       edge.Timestamp.Era,
 		EdgeIndex: edgeIndex,
 		Sys:       sys,
+		SysOffset: edge.TReadWall,
 		// Freq and Mode will be filled in by processSample
 	}
 }

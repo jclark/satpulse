@@ -290,6 +290,7 @@ func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, 
 		Era:       edge.Timestamp.Era,
 		EdgeIndex: edgeIndex,
 		Sys:       sys,
+		SysOffset: edge.TReadWall,
 		// Freq and Mode will be filled in by processSample
 	}
 

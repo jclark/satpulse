@@ -19,15 +19,16 @@ const (
 
 // Sample contains all information about a synchronization sample
 type Sample struct {
-	Kind      SampleKind    // Determines validity of other fields
-	Ref       ptime.Time    // GPS reference time (different from system time)
-	Offset    time.Duration // PHC/GPS offset (valid for SampleOK and SampleOutlier, 0 for SampleMissing)
-	Freq      float64       // Current frequency adjustment in PPB (always valid)
-	FreqDelta float64       // Change in frequency adjustment in PPB (valid for SampleOK, 0 for SampleOutlier)
-	Mode      Mode          // Current synchronization mode (always valid)
-	Era       phctime.Era   // For clock step tracking and logging (always valid)
-	EdgeIndex uint64        // Tracks which edge produced this sample (odd/even)
-	Sys       time.Time     // Estimated monotonic system time of pulse
+	Kind      SampleKind     // Determines validity of other fields
+	Ref       ptime.Time     // GPS reference time (different from system time)
+	Offset    time.Duration  // PHC/GPS offset (valid for SampleOK and SampleOutlier, 0 for SampleMissing)
+	Freq      float64        // Current frequency adjustment in PPB (always valid)
+	FreqDelta float64        // Change in frequency adjustment in PPB (valid for SampleOK, 0 for SampleOutlier)
+	Mode      Mode           // Current synchronization mode (always valid)
+	Era       phctime.Era    // For clock step tracking and logging (always valid)
+	EdgeIndex uint64         // Tracks which edge produced this sample (odd/even)
+	Sys       time.Time      // Estimated monotonic system time of pulse
+	SysOffset phctime.Sample // TReadWall of the edge this sample measures (zero for SampleMissing)
 }
 
 // SysSample returns a phctime.Sample pairing the GPS reference time with

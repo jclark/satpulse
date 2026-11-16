@@ -1,8 +1,14 @@
 package phcsync
 
 import (
+	"io"
+	"log/slog"
+	"reflect"
 	"testing"
 	"time"
+
+	"github.com/jclark/satpulse/gps/ptime"
+	"github.com/jclark/satpulse/time/phctime"
 )
 
 func TestMADWindow(t *testing.T) {
@@ -113,4 +119,81 @@ func TestMADWindow(t *testing.T) {
 			t.Errorf("Outlier ratio: got %v, want 0.3", ratio)
 		}
 	})
+}
+
+// corrBuffer is a TimeMsgBuffer whose post-pulse correction is awaited until
+// corr is set.
+type corrBuffer struct {
+	corr *time.Duration
+}
+
+func (b *corrBuffer) GetPostTimeMessages(n int) (ptime.Time, []time.Time, func(time.Duration) bool) {
+	return 0, nil, nil
+}
+
+func (b *corrBuffer) GetPulseCorrection(refTime ptime.Time) (time.Duration, bool) {
+	if b.corr == nil {
+		return 0, false
+	}
+	return *b.corr, true
+}
+
+func (b *corrBuffer) WaitForPulseCorrection(refTime ptime.Time) bool { return true }
+
+// TestHeldPulseTReadWall checks that the sample for a pulse held for its
+// correction carries that pulse's TReadWall, even when a trailing edge, which
+// is ignored, arrives before the sample.
+func TestHeldPulseTReadWall(t *testing.T) {
+	corr := 3 * time.Nanosecond
+	lead := PulseEdge{
+		Timestamp: phctime.Time{T: ptime.Unix(100, 20), Era: 1},
+		TReadMono: phctime.Sample{PHC: phctime.Time{T: ptime.Unix(100, 1020), Era: 1}, Sys: time.Unix(5, 2000)},
+		TReadWall: phctime.Sample{PHC: phctime.Time{T: ptime.Unix(100, 1100), Era: 1}, Sys: time.Unix(1_700_000_000, 0)},
+	}
+	trail := PulseEdge{
+		Timestamp: phctime.Time{T: ptime.Unix(100, 100_000_020), Era: 1},
+		TReadMono: phctime.Sample{PHC: phctime.Time{T: ptime.Unix(100, 100_001_020), Era: 1}, Sys: time.Unix(5, 100_002_000)},
+		TReadWall: phctime.Sample{PHC: phctime.Time{T: ptime.Unix(100, 100_001_100), Era: 1}, Sys: time.Unix(1_700_000_000, 100_000_000)},
+	}
+	tests := []struct {
+		name    string
+		timeout bool // the correction never arrives, so Tick releases the pulse
+		expect  *Sample
+	}{
+		{
+			name: "Correction",
+			expect: &Sample{Kind: SampleOK, Ref: ptime.Unix(100, -3), Offset: 23, Era: 1, EdgeIndex: 2,
+				Sys: time.Unix(5, 1000), SysOffset: lead.TReadWall},
+		},
+		{
+			name:    "Timeout",
+			timeout: true,
+			expect: &Sample{Kind: SampleOK, Ref: ptime.Unix(100, 0), Offset: 20, Era: 1, EdgeIndex: 2,
+				Sys: time.Unix(5, 1000), SysOffset: lead.TReadWall},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			buf := &corrBuffer{}
+			last := &Sample{Kind: SampleOK, Ref: ptime.Unix(99, 0), Era: 1, EdgeIndex: 0}
+			g := newTrackingSampleGenerator(defaultTrackingConfig(), PulseType{EdgesPerPulse: 2, PulseWidth: 100 * time.Millisecond},
+				last, 0, 1e8, buf, slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if s := g.pulseEdgeSample(lead, 2); s != nil {
+				t.Fatalf("leading edge not held: %+v", s)
+			}
+			if s := g.pulseEdgeSample(trail, 3); s != nil {
+				t.Fatalf("trailing edge not ignored: %+v", s)
+			}
+			var got *Sample
+			if tc.timeout {
+				got = g.tickSample(time.Unix(6, 0))
+			} else {
+				buf.corr = &corr
+				got = g.timeMessageSample()
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
 }

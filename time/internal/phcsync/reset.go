@@ -358,6 +358,7 @@ func (g *resetSampleGenerator) tryAlignment(edgeList pulseEdgeList, lastSec ptim
 		Era:       lastPulseTimestamp.Era,
 		EdgeIndex: g.lastEdgeIndex,
 		Sys:       pulseTimes[len(pulseTimes)-1],
+		SysOffset: edges[len(edges)-1].TReadWall,
 		// Mode will be filled in by processSample
 	}, nil
 }

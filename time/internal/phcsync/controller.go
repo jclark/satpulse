@@ -207,6 +207,12 @@ func NewController(
 type PulseEdge struct {
 	Timestamp phctime.Time   // PHC clock timestamp for the pulse edge
 	TReadMono phctime.Sample // PHC and monotonic system time immediately after the timestamp event was read
+	TReadWall phctime.Sample // PHC and wall-clock time read with PTP_SYS_OFFSET after TReadMono; not used by the controller, only carried to the Sample
+}
+
+// SetObserver replaces the observer given to NewController.
+func (c *Controller) SetObserver(o Observer) {
+	c.observer = o
 }
 
 // SetTimeMsgBuffer sets the time message buffer for the controller.

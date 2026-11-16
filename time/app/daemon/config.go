@@ -67,10 +67,19 @@ type SerialPPSConfig struct {
 
 type SampleConfig struct {
 	Serial SerialSampleConfig `toml:"serial"`
+	PHC    PHCSampleConfig    `toml:"phc"`
 }
 
 type SerialSampleConfig struct {
 	PPS serialpps.Config `toml:"pps"`
+}
+
+type PHCSampleConfig struct {
+	Sync PHCSyncSampleConfig `toml:"sync"`
+}
+
+type PHCSyncSampleConfig struct {
+	FollowPulse bool `toml:"followPulse"`
 }
 
 type PHCConfig struct {
