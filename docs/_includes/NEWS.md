@@ -1,3 +1,9 @@
+## Changes in 0.4
+
+_Not yet released_
+
+- `satpulse.toml` has a new `[sample.phc.sync]` table with a `followPulse` key. When it is true, the samples `satpulsed` sends to an NTP daemon follow the PPS edges timestamped by the PHC rather than the synchronized PHC, which helps when the PHC's oscillator wanders more than the pulses jitter. (#536)
+
 ## Changes in 0.3
 
 _Released 2026-10-28_
