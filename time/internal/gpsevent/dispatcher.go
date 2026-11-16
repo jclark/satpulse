@@ -106,7 +106,7 @@ type Dispatcher struct {
 	rc                    *refclock.ProxyRefClock
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
-	pulseRef              bool // refclock samples refer to the GNSS pulse, not the steered PHC
+	followPulse           bool // refclock samples refer to the GNSS pulse, not the steered PHC
 	timeMsgBuffer         *timemsg.Buffer
 	ppsGen                 *pps.Generator
 	timeTicker            gpsprot.TimeTicker
@@ -135,7 +135,7 @@ func NewDispatcher(
 	eventLogPath string,
 	tStart time.Time,
 	ggaSelector GGASelector,
-	pulseRef bool,
+	followPulse bool,
 ) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
 	var minWindow time.Duration
@@ -159,7 +159,7 @@ func NewDispatcher(
 		obs:           obs,
 		tStart:        tStart,
 		ggaSelector:   ggaSelector,
-		pulseRef:      pulseRef,
+		followPulse:   followPulse,
 	}
 	if ggaSelector != nil {
 		d.ggaSynth = nmeasyn.New(ggaSelector)
@@ -519,12 +519,12 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	})
 
 	// The precision belongs to the PTP_SYS_OFFSET read, not to a sample: with
-	// pulseRef, the sample sent may be from an earlier read.
+	// followPulse, the sample sent may be from an earlier read.
 	if d.sps != nil && !e.TReadWall.PHC.T.IsZero() && d.controller.Mode() == phcsync.ModeTracking {
 		d.sps.setSamplePrecision(e.Precision)
 	}
 	// Pass wallclock sample to sysSample (for NTP refclocks)
-	if d.pulseRef {
+	if d.followPulse {
 		d.pulseRefSample(sample)
 	} else {
 		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
@@ -550,7 +550,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 // NTP daemon, unlike the error of a servo-steered PHC, which persists from one
 // second to the next.
 func (d *Dispatcher) pulseRefSample(s *phcsync.Sample) {
-	if !d.pulseRef || s == nil || s.Kind != phcsync.SampleOK || s.Mode != phcsync.ModeTracking {
+	if !d.followPulse || s == nil || s.Kind != phcsync.SampleOK || s.Mode != phcsync.ModeTracking {
 		return
 	}
 	so := s.SysOffset
