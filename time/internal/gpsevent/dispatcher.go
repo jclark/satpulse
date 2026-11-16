@@ -511,7 +511,7 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	// Pass monotonic sample to controller (for PHC sync logic)
 	d.controller.PulseEdge(phcsync.PulseEdge{
 		Timestamp: e.Ts,
-		TRead:     e.TReadMono,
+		TReadMono: e.TReadMono,
 	})
 
 	// Pass wallclock sample to sysSample (for NTP refclocks)
