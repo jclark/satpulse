@@ -303,10 +303,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 				pullPktCh = nil
 			}
 		case t := <-tickerCh:
-			s := d.controller.Tick(t)
-			if d.followPulse {
-				d.sysSample(followPulseSample(s))
-			}
+			d.sample(d.controller.Tick(t))
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
@@ -525,10 +522,9 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	if d.sps != nil && !e.TReadWall.PHC.T.IsZero() {
 		d.sps.setSamplePrecision(e.Precision)
 	}
+	d.sample(sample)
 	// Pass wallclock sample to sysSample (for NTP refclocks)
-	if d.followPulse {
-		d.sysSample(followPulseSample(sample))
-	} else {
+	if !d.followPulse {
 		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys)
 	}
 
@@ -544,18 +540,16 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 	})
 }
 
-// followPulseSample returns the reference time and system time of s's SysOffset
-// pair, with the PHC's offset at the pulse removed from the PHC time.
-// ref is zero unless s is a tracking-mode SampleOK with a SysOffset.
-func followPulseSample(s *phcsync.Sample) (ref ptime.Time, sys time.Time) {
-	if s == nil || s.Kind != phcsync.SampleOK || s.Mode != phcsync.ModeTracking {
+// sample handles a sample returned by the controller.
+func (d *Dispatcher) sample(s *phcsync.Sample) {
+	if !d.followPulse || s == nil || s.Kind != phcsync.SampleOK || s.Mode != phcsync.ModeTracking {
 		return
 	}
 	so := s.SysOffset
 	if so.PHC.T.IsZero() {
 		return
 	}
-	return so.PHC.T.Add(-s.Offset), so.Sys
+	d.sysSample(so.PHC.T.Add(-s.Offset), so.Sys)
 }
 
 // sysSample generates a sample of system time vs true time (based on PHC)
@@ -602,10 +596,7 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {
-		s := d.controller.TimeMessage(tRead)
-		if d.followPulse {
-			d.sysSample(followPulseSample(s))
-		}
+		d.sample(d.controller.TimeMessage(tRead))
 	}
 
 	d.timeTicker.Time(mt, tRead)
