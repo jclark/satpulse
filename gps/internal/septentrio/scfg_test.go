@@ -590,6 +590,62 @@ func TestConfigureFailureGatesSave(t *testing.T) {
 	}
 }
 
+// TestConfigureStaticPosRefused checks that a refused static-position write
+// skips the mode switch that would reference its slot: the slot still holds
+// its previous position, which the switch would silently adopt.
+func TestConfigureStaticPosRefused(t *testing.T) {
+	tests := []struct {
+		name    string
+		mode    gpsprot.Mode
+		posCmd  string
+		nak     string
+		modeCmd string
+	}{
+		{
+			name: "geodetic",
+			mode: gpsprot.Mode{
+				Static:      true,
+				PosType:     gpsprot.PosTypeLLH,
+				FixedPosLLH: [2]gpsprot.Angle{gpsprot.DegreesFromFloat(13.732), gpsprot.DegreesFromFloat(100.567)},
+				Height:      gpsprot.Meters(12.34),
+			},
+			posCmd:  "setStaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400",
+			nak:     "!StaticPosGeodetic: Argument 'Latitude' is invalid!",
+			modeCmd: "setPVTMode, Static, , Geodetic1",
+		},
+		{
+			name: "cartesian",
+			mode: gpsprot.Mode{
+				Static:       true,
+				PosType:      gpsprot.PosTypeECEF,
+				FixedPosECEF: gpsprot.Point3D{gpsprot.Meters(-1132914.5), gpsprot.Meters(6092528.25), gpsprot.Meters(1504633.0)},
+			},
+			posCmd:  "setStaticPosCartesian, Cartesian1, -1132914.5000, 6092528.2500, 1504633.0000",
+			nak:     "!StaticPosCartesian: Argument 'X' is invalid!",
+			modeCmd: "setPVTMode, Static, , Cartesian1",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			replies := make(map[string]string, len(asFoundReplies))
+			maps.Copy(replies, asFoundReplies)
+			replies[tc.posCmd] = tc.nak
+			target := &gpsprot.ConfigTarget{}
+			target.Props.SetMode(tc.mode)
+			_, sent, errs := runConfig(t, target, replies)
+			if len(errs) != 1 {
+				t.Fatalf("errors: got %v; want the refusal alone", errs)
+			}
+			if !slices.Contains(sent, tc.posCmd) {
+				t.Fatalf("position command %q not sent; sent: %v", tc.posCmd, sent)
+			}
+			if slices.Contains(sent, tc.modeCmd) {
+				t.Errorf("mode command %q sent after a refused position write", tc.modeCmd)
+			}
+		})
+	}
+}
+
 // TestConfigureQueryFailureSkipsSets checks that a failed query skips the
 // whole set phase: realizing the target without the current state would be
 // guesswork (an add-only PVT request would wipe the stream's other blocks).

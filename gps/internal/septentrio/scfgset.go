@@ -200,17 +200,24 @@ func (c *Configurator) generateModeReqs() {
 		}
 		c.addReq("setPVTMode, Static, , auto", np.parsePVTMode)
 	case gpsprot.PosTypeLLH:
-		c.addReq(fmt.Sprintf("setStaticPosGeodetic, Geodetic1, %.9f, %.9f, %.4f",
+		c.addStaticReqs(fmt.Sprintf("setStaticPosGeodetic, Geodetic1, %.9f, %.9f, %.4f",
 			float64(m.FixedPosLLH[0])/float64(gpsprot.Degrees),
 			float64(m.FixedPosLLH[1])/float64(gpsprot.Degrees),
-			m.Height.Meters()), np.parseStaticPos)
-		c.addReq("setPVTMode, Static, , Geodetic1", np.parsePVTMode)
+			m.Height.Meters()), "Geodetic1")
 	case gpsprot.PosTypeECEF:
-		c.addReq(fmt.Sprintf("setStaticPosCartesian, Cartesian1, %.4f, %.4f, %.4f",
+		c.addStaticReqs(fmt.Sprintf("setStaticPosCartesian, Cartesian1, %.4f, %.4f, %.4f",
 			m.FixedPosECEF[0].Meters(), m.FixedPosECEF[1].Meters(), m.FixedPosECEF[2].Meters()),
-			np.parseStaticPos)
-		c.addReq("setPVTMode, Static, , Cartesian1", np.parsePVTMode)
+			"Cartesian1")
 	}
+}
+
+// addStaticReqs writes a static position to slot and then switches to static
+// mode on that slot. The switch needs the write: after a refused write the
+// slot still holds whatever position it had before, which the switch would
+// silently adopt.
+func (c *Configurator) addStaticReqs(posCmd, slot string) {
+	pos := &sReq{cmd: posCmd, onReply: c.np.parseStaticPos}
+	c.append(pos, &sReq{cmd: "setPVTMode, Static, , " + slot, onReply: c.np.parsePVTMode, needs: pos})
 }
 
 // generateIdentReqs fetches the receiver identity from the Identification
