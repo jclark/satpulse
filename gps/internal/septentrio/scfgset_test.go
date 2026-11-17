@@ -94,7 +94,15 @@ func TestPPSSetCmd(t *testing.T) {
 				p.SetTimePulseOnlyWhenLocked(true)
 			},
 			current: &ppsParams{interval: "sec1", timeScale: "GPS"},
-			expect:  "setPPSParameters, , , , , 1",
+			expect:  "setPPSParameters, , , , , 60",
+		},
+		{
+			name: "only when locked keeps an existing holdover",
+			props: func(p *gpsprot.ConfigProps) {
+				p.SetTimePulseOnlyWhenLocked(true)
+			},
+			current: &ppsParams{interval: "sec1", timeScale: "GPS", maxHoldover: 30},
+			expect:  "",
 		},
 		{
 			name: "align to GNSS true moves RxClock to GPS",

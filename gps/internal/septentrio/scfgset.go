@@ -287,10 +287,13 @@ func (c *Configurator) ppsSetCmd() string {
 		}
 	}
 	if locked, ok := props.GetTimePulseOnlyWhenLocked(); ok {
-		if locked {
-			args[4] = "1"
-		} else {
+		if !locked {
 			args[4] = "0"
+		} else if np.pps == nil || np.pps.maxHoldover == 0 {
+			// Any nonzero MaxHoldover already stops the pulse after a
+			// holdover, so it is left as configured; only a pulse that
+			// would continue indefinitely gets the receiver default.
+			args[4] = "60"
 		}
 	}
 	if haveWidth && !off {
