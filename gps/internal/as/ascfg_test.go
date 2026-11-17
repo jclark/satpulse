@@ -425,6 +425,9 @@ func TestNVMOps(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			rcvr := &testReceiver{monVer: tau1201Ver()}
+			if tc.rtcm {
+				rcvr.monVer = tau1302Ver()
+			}
 			cp := probe(t, rcvr)
 			target := &gpsprot.ConfigTarget{}
 			target.Opts.Save = tc.save

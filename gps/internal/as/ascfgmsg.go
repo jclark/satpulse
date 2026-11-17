@@ -52,13 +52,16 @@ var rtcmPropIDs = []asbin.MsgID{asbin.RtcmProp4065ID, asbin.RtcmProp4066ID,
 // wire-format request is complete over the receiver's RTCM output:
 // besides the modeled group - MSM4, MSM7, ARP - the broadcast-ephemeris
 // and proprietary targets are turned off, unless RTCMMsgOther restricts
-// the request to the modeled group and leaves them as found. All requests are
-// NAK-tolerant: a receiver without RTCM output (the TAU1201) NAKs
-// every 0xF8 target, and the absence of any achieved RTCM output is
-// the statement - not an error. ARP (1005) is only emitted while a
-// fixed position is set; enabling it without one is accepted and
-// silent.
+// the request to the modeled group and leaves them as found. A receiver
+// without RTCM output (the TAU1201) NAKs every 0xF8 target, so none is
+// sent to it: the absence of any RTCM output is the statement, as for a
+// u-blox model without RTCM. All requests are NAK-tolerant. ARP (1005)
+// is only emitted while a fixed position is set; enabling it without one
+// is accepted and silent.
 func (c *Configurator) generateRTCMReqs(flags gpsprot.RTCMMsgFlags) {
+	if !c.supportsRTCM() {
+		return
+	}
 	msm4 := flags&gpsprot.RTCMMsgMSM4 != 0
 	msm7 := flags&gpsprot.RTCMMsgMSM7 != 0
 	for i := range rtcmMSM4IDs {

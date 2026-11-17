@@ -207,7 +207,7 @@ func TestRTCMOut(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			rcvr := &testReceiver{monVer: tau1201Ver()}
+			rcvr := &testReceiver{monVer: tau1302Ver()}
 			cp := probe(t, rcvr)
 			target := &gpsprot.ConfigTarget{}
 			target.Opts.RTCMMsg.Set(tc.flags)
@@ -238,32 +238,20 @@ func TestRTCMOut(t *testing.T) {
 }
 
 func TestRTCMOutAbsent(t *testing.T) {
-	// The TAU1201 NAKs every 0xF8 target: an RTCM request achieves
-	// nothing and reports no error - absence, not failure.
-	nakAll := make(map[asbin.MsgID]bool)
-	for _, mid := range rtcmMSM4IDs {
-		nakAll[mid] = true
-	}
-	for _, mid := range rtcmMSM7IDs {
-		nakAll[mid] = true
-	}
-	for _, mid := range rtcmEphIDs {
-		nakAll[mid] = true
-	}
-	for _, mid := range rtcmPropIDs {
-		nakAll[mid] = true
-	}
-	nakAll[asbin.RtcmArpID] = true
-	rcvr := &testReceiver{monVer: tau1201Ver(), nakTargets: nakAll}
-	cp := probe(t, rcvr)
-	target := &gpsprot.ConfigTarget{}
-	target.Opts.RTCMMsg.Set(gpsprot.RTCMMsgAuto)
-	_, errCount := configure(t, cp, rcvr, target)
-	if errCount != 0 {
-		t.Errorf("ErrorCount = %d, want 0: no RTCM output shows as absence", errCount)
-	}
-	if len(rcvr.rates) != 0 {
-		t.Errorf("rates = %v, want none applied", rcvr.rates)
+	// The TAU1201 has no RTCM output: an RTCM request sends no 0xF8
+	// target and reports no error - absence, not failure.
+	for _, flags := range []gpsprot.RTCMMsgFlags{gpsprot.RTCMMsgAuto, gpsprot.RTCMMsgNone} {
+		rcvr := &testReceiver{monVer: tau1201Ver()}
+		cp := probe(t, rcvr)
+		target := &gpsprot.ConfigTarget{}
+		target.Opts.RTCMMsg.Set(flags)
+		_, errCount := configure(t, cp, rcvr, target)
+		if errCount != 0 {
+			t.Errorf("%v: ErrorCount = %d, want 0: no RTCM output shows as absence", flags, errCount)
+		}
+		if len(rcvr.msgSets) != 0 {
+			t.Errorf("%v: CFG-MSG sets = %v, want none", flags, rcvr.msgSets)
+		}
 	}
 }
 
