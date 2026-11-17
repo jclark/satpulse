@@ -20,6 +20,7 @@ type nativeProps struct {
 	pps          *ppsParams
 	tracking     []string // snt signal list
 	haveTracking bool
+	satGNSS      *gpsprot.GNSSSet // constellations with a satellite allowed by sst
 	usage        *signalUsage
 	pvtMode      *pvtMode
 	staticPos    *staticPos
@@ -140,6 +141,35 @@ func (np *nativeProps) parseSignalTracking(r *Reply) {
 	np.haveTracking = true
 }
 
+// satPrefixGNSS maps the first letter of a satellite name in a
+// SatelliteTracking list (G01, R05, E12, ...) to its constellation.
+var satPrefixGNSS = map[byte]gpsprot.GNSS{
+	'G': gpsprot.GPS,
+	'R': gpsprot.GLO,
+	'E': gpsprot.GAL,
+	'S': gpsprot.SBAS,
+	'C': gpsprot.BDS,
+	'J': gpsprot.QZSS,
+	'I': gpsprot.NAVIC,
+}
+
+// parseSatelliteTracking records the constellations with at least one
+// satellite allowed to be tracked. The receiver reads the list back per
+// satellite even when it was set by constellation.
+func (np *nativeProps) parseSatelliteTracking(r *Reply) {
+	f := findState(r, "SatelliteTracking")
+	if len(f) < 2 {
+		return
+	}
+	var gs gpsprot.GNSSSet
+	for _, s := range signalList(f[1]) {
+		if g, ok := satPrefixGNSS[s[0]]; ok {
+			gs |= gpsprot.GNSSSetOf(g)
+		}
+	}
+	np.satGNSS = &gs
+}
+
 func (np *nativeProps) parseSignalUsage(r *Reply) {
 	f := findState(r, "SignalUsage")
 	if len(f) < 3 {
@@ -255,7 +285,12 @@ func (np *nativeProps) convertToProps(props *gpsprot.ConfigProps) {
 		np.convertTimePulse(props)
 	}
 	if np.haveTracking {
-		props.SetSignalsEnabled(signalSetFromNames(np.tracking))
+		ss := signalSetFromNames(np.tracking)
+		if np.satGNSS != nil {
+			// A signal is tracked only if its satellite may be tracked too.
+			ss &= gpsprot.BandAll.SignalSet(np.satGNSS.Items()...)
+		}
+		props.SetSignalsEnabled(ss)
 	}
 	if np.pvtMode != nil {
 		np.convertMode(props)
@@ -328,6 +363,7 @@ func (c *Configurator) addReq(cmd string, onReply func(*Reply)) {
 func (c *Configurator) generateQueryReqs() {
 	t, np := c.target, &c.np
 	if t.UsesAny(gpsprot.PropIDSignalsEnabled) {
+		c.addReq("getSatelliteTracking", np.parseSatelliteTracking)
 		c.addReq("getSignalTracking", np.parseSignalTracking)
 	}
 	if t.Props.SetsAny(gpsprot.PropIDSignalsEnabled) {

@@ -124,7 +124,7 @@ func (c *Configurator) generateSignalReqs() {
 	if gset == gpsprot.AllGNSSSet {
 		constList = "all"
 	}
-	c.addReq("setSatelliteTracking, "+listOrNone(constList), nil)
+	c.addReq("setSatelliteTracking, "+listOrNone(constList), c.np.parseSatelliteTracking)
 	c.addReq("setSignalTracking, "+listOrNone(strings.Join(tracking, "+")), c.np.parseSignalTracking)
 	// The PVT usage argument's enum has no GEO entries (SBAS ranging is not
 	// a PVT input on this receiver; a GEO signal there is refused), so the

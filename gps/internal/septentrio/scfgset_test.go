@@ -154,11 +154,12 @@ func TestConfigureSignalsCapabilityGate(t *testing.T) {
 	sntCmd := "setSignalTracking, GALE1BC+GPSL1CA+GALE5"
 	snuCmd := "setSignalUsage, GALE1BC+GPSL1CA+GALE5, GALE1BC+GPSL1CA"
 	replies := map[string]string{
-		"getSignalTracking": "SignalTracking, GPSL1CA+GALE1BC+GALE5",
-		"getSignalUsage":    "SignalUsage, GPSL1CA+GALE5, GPSL1CA",
-		sstCmd:              "SatelliteTracking, G01+E01",
-		sntCmd:              "SignalTracking, GPSL1CA+GALE1BC+GALE5",
-		snuCmd:              "SignalUsage, GPSL1CA+GALE1BC+GALE5, GPSL1CA+GALE1BC",
+		"getSatelliteTracking": allSatsTracking,
+		"getSignalTracking":    "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+		"getSignalUsage":       "SignalUsage, GPSL1CA+GALE5, GPSL1CA",
+		sstCmd:                 "SatelliteTracking, G01+E01",
+		sntCmd:                 "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+		snuCmd:                 "SignalUsage, GPSL1CA+GALE1BC+GALE5, GPSL1CA+GALE1BC",
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(

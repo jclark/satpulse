@@ -22,10 +22,15 @@ func grcReply(capsLine string) string {
 // RTCMv3x all absent).
 const trimmedCapsLine = "ReceiverCapabilities, Main, GPSL1CA+GPSL2C+GLOL1CA+GALE1BC+GALE5a+GEOL1+BDSB1I+QZSL1CA, COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+xPPSOutput+APME+RAIM+GalOSNMA, 50, 50"
 
+// allSatsTracking is the as-found mosaic-G5's SatelliteTracking state line:
+// every satellite allowed, read back per satellite.
+const allSatsTracking = "SatelliteTracking, G01+G02+G03+G04+G05+G06+G07+G08+G09+G10+G11+G12+G13+G14+G15+G16+G17+G18+G19+G20+G21+G22+G23+G24+G25+G26+G27+G28+G29+G30+G31+G32+G33+G34+G35+G36+G38+G39+R01+R02+R03+R04+R05+R06+R07+R08+R09+R10+R11+R12+R13+R14+R15+R16+R17+R18+R19+R20+R21+R22+R23+R24+R25+R26+R27+R28+R29+R30+E01+E02+E03+E04+E05+E06+E07+E08+E09+E10+E11+E12+E13+E14+E15+E16+E17+E18+E19+E20+E21+E22+E23+E24+E25+E26+E27+E28+E29+E30+E31+E32+E33+E34+E35+E36+S120+S121+S122+S123+S124+S125+S126+S127+S128+S129+S130+S131+S132+S133+S134+S135+S136+S137+S138+S139+S140+S141+S142+S143+S144+S145+S146+S147+S148+S149+S150+S151+S152+S153+S154+S155+S156+S157+S158+C01+C02+C03+C04+C05+C06+C07+C08+C09+C10+C11+C12+C13+C14+C15+C16+C17+C18+C19+C20+C21+C22+C23+C24+C25+C26+C27+C28+C29+C30+C31+C32+C33+C34+C35+C36+C37+C38+C39+C40+C41+C42+C43+C44+C45+C46+C47+C48+C49+C50+C51+C52+C53+C54+C55+C56+C57+C58+C59+C60+C61+C62+C63+J01+J02+J03+J04+J05+J06+J07+J08+J09+J10+I01+I02+I03+I04+I05+I06+I07+I08+I09+I10+I11+I12+I13+I14"
+
 // asFoundReplies answers each query with the state line verified on the
 // as-found mosaic-G5 (the SignalTracking list includes GALE5, which has no
 // gpsprot analogue and must not appear in the reported SignalSet).
 var asFoundReplies = map[string]string{
+	"getSatelliteTracking":            allSatsTracking,
 	"getSignalTracking":               "SignalTracking, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GLOL1CA+GLOL2CA+GALE1BC+GALE6BC+GALE5a+GALE5b+GALE5+GEOL1+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+QZSL1CA+QZSL2C+QZSL5+NAVICL5",
 	"getSignalUsage":                  "SignalUsage, GPSL1CA+GPSL2PY+GLOL1CA+GALE5, GPSL1CA+GALE6BC",
 	"getPPSParameters":                "PPSParameters, sec1, Low2High, 0.00, GPS, 1, 100.000000",
@@ -129,8 +134,8 @@ func TestConfigureGetAll(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if sent[0] != "getSignalTracking" {
-		t.Errorf("first configuration packet: got %q want getSignalTracking", sent[0])
+	if sent[0] != "getSatelliteTracking" {
+		t.Errorf("first configuration packet: got %q want getSatelliteTracking", sent[0])
 	}
 
 	expect := &gpsprot.ConfigProps{}
@@ -428,6 +433,24 @@ func TestConfigureSet(t *testing.T) {
 	expect.SetBaudRate(0)
 	if !reflect.DeepEqual(props, expect) {
 		t.Errorf("ConfigProps:\ngot  %+v\nwant %+v", props, expect)
+	}
+}
+
+// TestConfigureGetSatelliteTracking checks that the enabled signals leave
+// out the signals of constellations with no satellite allowed to be tracked:
+// SignalTracking alone allows Galileo and the others, but SatelliteTracking
+// allows only GPS satellites.
+func TestConfigureGetSatelliteTracking(t *testing.T) {
+	replies := make(map[string]string, len(asFoundReplies))
+	maps.Copy(replies, asFoundReplies)
+	replies["getSatelliteTracking"] = "SatelliteTracking, G01+G02+G03"
+	cfg, _, errs := runConfig(t, &gpsprot.ConfigTarget{Get: gpsprot.PropIDSignalsEnabled}, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	expect := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGPSL2P, gpsprot.SigGPSL2C, gpsprot.SigGPSL5)
+	if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || ss != expect {
+		t.Errorf("SignalsEnabled: got %v, %v; want %v", ss, ok, expect)
 	}
 }
 
