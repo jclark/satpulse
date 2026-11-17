@@ -17,7 +17,7 @@ SatPulse supports:
 - conversion of blocks into the SatPulse device-independent data model
 - high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified {% include new-in.html version="0.4" %}
 - low-level configuration
-  - message files for configuration that high-level configuration does not cover
+  - message files
   - a `septentrio` response pattern in message files, for correlation of responses
 - [conversion]({%link man/satpulsetool-convobs.1.md%}) of raw observation (MeasEpoch and MeasExtra) blocks into RINEX
 
