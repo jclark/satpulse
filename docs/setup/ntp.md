@@ -4,6 +4,7 @@ title: Basic use with NTP
 
 This page describes how to use SatPulse to build an NTP server using general-purpose hardware.
 This works on both Linux and macOS.
+For macOS-specific setup, see [Setup on macOS]({% link setup/macos.md %}#use-with-ntp).
 If your machine has a network interface with a PTP Hardware Clock (PHC) that can timestamp a PPS signal,
 use the approach in [Precision timing with a PHC]({% link setup/phc.md %}) instead,
 which covers NTP service as well as PTP.
@@ -18,17 +19,15 @@ There are two different approaches depending on how your PPS signal is wired up:
 
 ## PPS signal connected via serial port
 
-This approach uses a modem control line to carry a PPS signal. {% include new-in-03.html %}
+This approach uses a modem control line to carry a PPS signal.
 An RS-232 style serial interface supports modem control signals in addition to TXD and RXD signals.
 These signals have a direction.
 The ones relevant to PPS are ones that go from the DCE (the GPS receiver in our case) to the DTE (the host computer). These are
 DCD, DSR, CTS, RI. On an RS232 DB9 connector, these use pins 1, 6, 8, 9 respectively.
 Note that modem control lines are the same pin on the DTE and DCE.
 
-USB-serial adapters vary in which signals they support: some support none at all; some support CTS; some also support DCD and DSR.
-In particular, USB-serial adapters that use the CDC-ACM driver (and so appear as /dev/ttyACM*N*) do not support using CTS for a PPS signal (it can only be used for flow control);
-CH343 is one example.
-However, with a suitable USB-serial adapter this approach can work for a computer that has a USB port but no serial port and no GPIO pins.
+[USB serial adapters]({% link hardware/usb-serial.md %}) vary in which signals they support: some support none at all; some support CTS; some also support DCD and DSR.
+However, with a suitable USB serial adapter this approach can work for a computer that has a USB port but no serial port and no GPIO pins.
 
 With this approach, satpulsed reads both the PPS signal and messages over the same port.
 It uses the messages to figure out which second a PPS pulse corresponds to and then generates samples that are sent to the NTP daemon.
@@ -50,7 +49,7 @@ satpulsed supports three methods of using the operating system to determine the 
 
 Which methods are available depends on the operating system and the driver.
 Generally, the `poll` method is always available if any of the three methods are available.
-The `kernel` and `wait` methods are not available on macOS.
+For macOS, see [Use with NTP on macOS]({% link setup/macos.md %}#use-with-ntp).
 The `kernel` method is available on Linux only when the pin is DCD.
 The `wait` method is not supported by some USB serial drivers on Linux (e.g. CP2102).
 

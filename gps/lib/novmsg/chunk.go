@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 
 	"github.com/jclark/satpulse/gps/lib/fieldenc"
 )
@@ -13,6 +14,18 @@ import (
 type Chunked interface {
 	// Chunks returns a push iterator that yields each chunk for sequential reading/writing
 	Chunks() func(yield func(chunk any) bool)
+}
+
+// ClampLen returns n capped at the number of values of type T that fit in
+// the largest binary payload. Chunks methods use it to size a slice from a
+// count taken from the message, so that a malformed count cannot request a
+// huge allocation.
+func ClampLen[T any](n uint32) uint32 {
+	size := binary.Size(*new(T))
+	if size <= 0 {
+		panic(fmt.Sprintf("novmsg: type %T has no fixed binary size", *new(T)))
+	}
+	return min(n, math.MaxUint16/uint32(size))
 }
 
 // DecodeAsciiChunked decodes ASCII data fields into a message, handling both chunked and regular messages

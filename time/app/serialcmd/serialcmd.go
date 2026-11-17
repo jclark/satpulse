@@ -283,7 +283,7 @@ func scanPortList(ctx context.Context, lg *slog.Logger, ports []serialenum.Port,
 }
 
 func captureDevice(ctx context.Context, lg *slog.Logger, device string, speed int, packetLogPath string, timeout time.Duration) (result captureResult) {
-	conn, _, err := gpsio.OpenSerial(device, speed)
+	conn, _, err := gpsio.OpenSerial(lg, device, speed)
 	if err != nil {
 		result.failure = serialCapture.describeError(err)
 		return
@@ -378,7 +378,7 @@ const (
 
 func detectDevice(ctx context.Context, lg *slog.Logger, device, packetLogPath string) (result detectResult) {
 	result.device = device
-	conn, _, err := gpsio.OpenSerial(device, 0)
+	conn, _, err := gpsio.OpenSerial(lg, device, 0)
 	if err != nil {
 		result.failure = serialDetect.describeError(err)
 		return
@@ -450,6 +450,9 @@ func (r detectResult) description() string {
 	}
 	if r.detection.Outcome == gpsio.DetectSilent {
 		return "no output received from the device"
+	}
+	if r.detection.GaplessWindow {
+		return "output had no gaps: suggest configuring the GPS receiver to use a higher speed"
 	}
 	return "output was received, but no known GNSS protocol was validated at a candidate speed"
 }

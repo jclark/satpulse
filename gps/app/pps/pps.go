@@ -18,38 +18,54 @@ const maxMsgAge = 3 * time.Second
 // Edge is a detected leading edge and the time at which the backend read it.
 // Timestamp is the time assigned to the edge: a kernel timestamp, a polling
 // bracket midpoint, or a wait wakeup used as an edge proxy. Its wall reading
-// is always meaningful, and it carries a monotonic reading when the backend
-// can preserve one. TRead is an ordinary time.Now reading captured when the
-// wait or closing poll completed, before subsequent validation.
+// is always meaningful; a reconciled polling timestamp has no monotonic
+// reading. TRead is an ordinary time.Now reading captured when the wait or
+// closing poll completed, before subsequent validation.
 type Edge struct {
 	Timestamp time.Time
 	TRead     time.Time
+	// ReadDelay is the signed interval from the edge to TRead, positive
+	// when the read completes after the edge. Polling measures it using
+	// monotonic readings; wait and kernel backends use TRead.Sub(Timestamp),
+	// which uses wall time when the timestamp has no monotonic reading.
+	// Zero means a zero interval, not an unspecified delay.
+	ReadDelay time.Duration
 }
 
 // CandidateEdge is an edge reported by a detection backend. Poll reports
 // every edge it catches so that diagnostic consumers can follow acquisition:
-// Uncertainty is half the width of the polling bracket, and Settled says no
-// improvement in accuracy is to be expected, because the polling schedule did
-// not limit this measurement (its spacing was at the floor or the state
-// queries paced the window) or the window has stopped shrinking. Candidates
-// are unsettled during acquisition, including the catch that completes it
-// (Settled records the state in which the edge was captured, and acquisition
-// succeeds as a consequence of that catch), and unsettled again during
-// tracking while a window grown by misses is still shrinking back. Timing
-// consumers can accept unsettled candidates with sufficiently small
-// Uncertainty, and use Settled to accept the resolution the hardware can
-// achieve. Outlier says the bracket is far wider than the hardware's recent
-// settled brackets, which is what a query stalled by host load produces:
-// the edge is inside the bracket but its midpoint is not a useful estimate,
-// so timing consumers should withhold it even though it is settled. A wait
-// or kernel candidate carries the backend timestamp directly, has no polling
-// uncertainty, and is always settled.
+// Uncertainty gives the durations before and after Timestamp reaching the
+// start of the query that read the pin off and the end of the query that
+// read it on. This interval contains the edge if each query samples the pin
+// during its call and the clock readings can be reconciled. Reject gives
+// the reason a timing consumer must withhold the candidate, or is empty
+// when it is usable. Acquisition catches are
+// rejected as acquiring; tracking catches are rejected as anomalous when
+// their outer width exceeds four times the median of the previous 31
+// tracking catches. A clockStep rejection means the clock readings could not
+// be reconciled; Timestamp retains the original estimate for diagnostics.
+// Rejection does not affect tracking or acquisition.
+// PollWidths gives the durations of the off and on queries, in that order.
+// Subtracting their sum from the sum of Uncertainty gives the gap between
+// the queries.
+// A wait or kernel candidate carries the backend timestamp directly and has
+// no polling uncertainty.
 type CandidateEdge struct {
 	Edge
-	Uncertainty time.Duration
-	Settled     bool
-	Outlier     bool
+	Uncertainty [2]time.Duration
+	PollWidths  [2]time.Duration
+	Reject      RejectReason
 }
+
+// RejectReason explains why a candidate is unsuitable for timing. The zero
+// value means the candidate is usable.
+type RejectReason string
+
+const (
+	RejectAcquiring RejectReason = "acquiring"
+	RejectAnomalous RejectReason = "anomalous"
+	RejectClockStep RejectReason = "clockStep"
+)
 
 // GeneratorConfig controls how PPS edges are associated with UTC-labelled
 // receiver messages. Durations are expressed in seconds in TOML.
@@ -122,13 +138,13 @@ func (g *Generator) Sample(edge Edge) (Sample, bool) {
 	if g.msgRead.IsZero() {
 		return Sample{}, false
 	}
-	// Transfer the timestamp onto the message-read timeline through TRead.
-	// The long message-to-read interval is monotonic; the short correction
-	// back to the edge uses Timestamp's monotonic reading when it has one and
-	// otherwise its wall reading. A wall-clock step during that correction can
-	// still corrupt it, but a step anywhere else in the message-to-edge span
-	// cannot. Use the transferred interval for both age and UTC extrapolation.
-	edgeSinceMsg := edge.TRead.Sub(g.msgRead) - edge.TRead.Sub(edge.Timestamp)
+	// Transfer the edge onto the message-read timeline through TRead. The
+	// message-to-read interval is monotonic; subtract the backend's measured
+	// ReadDelay to reach the edge. Polling preserves that correction independently
+	// of its reconciled wall timestamp. Backends using wall time for ReadDelay
+	// remain sensitive to a step during that short interval. Use the result for
+	// both age and UTC extrapolation.
+	edgeSinceMsg := edge.TRead.Sub(g.msgRead) - edge.ReadDelay
 	if edgeSinceMsg > maxMsgAge {
 		return Sample{}, false
 	}

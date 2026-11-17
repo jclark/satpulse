@@ -137,7 +137,7 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
 	opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
 	opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
-	if opts.Survey.AccLimit < gpsprot.Millimeter {
+	if opts.Survey.AccLimit < gpsprot.MinAccuracy {
 		return configErrorf("survey accuracy %v is too small", opts.Survey.AccLimit)
 	}
 	if c.Resurvey {
@@ -215,7 +215,7 @@ func (c *GPSConfig) setFixedModeLLH(cp *gpsprot.ConfigProps) error {
 
 func (c *GPSConfig) getFixedPosAcc() (gpsprot.Length, error) {
 	acc := gpsprot.Meters(c.FixedPosAcc)
-	if acc < gpsprot.Millimeter {
+	if acc < gpsprot.MinAccuracy {
 		return 0, configErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
 	}
 	if acc > gpsprot.Meter*1000 {

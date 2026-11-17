@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build unix
 
 package term
 
@@ -33,16 +33,18 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-// Open opens and configures a serial terminal.
-func Open(path string, opts ...AttrSetter) (Term, error) {
+// Open opens and configures a serial terminal. It returns the earliest safe
+// write time, or zero if no wait is needed. The caller must delay writes until then.
+func Open(path string, opts ...AttrSetter) (Term, time.Time, error) {
 	t := new(unixTerm)
-	if err := t.init(path, opts...); err != nil {
-		return nil, err
+	safe, err := t.init(path, opts...)
+	if err != nil {
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, safe, nil
 }
 
-func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
+func (t *unixTerm) init(path string, opts ...AttrSetter) (safe time.Time, err error) {
 	t.path = path
 	// O_CLOEXEC is here, because we are using flock to lock.
 	// Without O_CLOEXEC, the lock would be inherited by child processes, which is probably not what is wanted.
@@ -92,7 +94,8 @@ func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
 			t.clearExclusive()
 		}
 	}()
-	attr := Attr{*tsp}
+	old := Attr{*tsp}
+	attr := old
 	t.tsSaved = *tsp
 	for _, opt := range opts {
 		err = opt(&attr)
@@ -100,30 +103,58 @@ func (t *unixTerm) init(path string, opts ...AttrSetter) (err error) {
 			return
 		}
 	}
-	// XXX turn of IXOFF
 	err = t.setAttrNow(&attr.ts)
+	if err != nil {
+		return
+	}
+	safe = t.safeWriteTime(old, attr)
 	t.storeAttr(attr)
 	_ = t.readError()
 	return
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *unixTerm) Change(opts ...AttrSetter) error {
-	attr := t.loadAttr()
+func (t *unixTerm) Change(opts ...AttrSetter) (time.Time, error) {
+	old := t.loadAttr()
+	attr := old
 	for _, opt := range opts {
 		err := opt(&attr)
 		if err != nil {
-			return err
+			return time.Time{}, err
 		}
 	}
 	if err := t.Drain(); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	if err := t.setAttrNow(&attr.ts); err != nil {
-		return err
+		return time.Time{}, err
 	}
+	safe := t.safeWriteTime(old, attr)
 	t.storeAttr(attr)
-	return nil
+	return safe, nil
+}
+
+func (t *unixTerm) safeWriteTime(old, current Attr) time.Time {
+	if sameHardware(old, current) {
+		return time.Time{}
+	}
+	frames, speed := t.devWaitFrames(old)
+	d := time.Duration(frames) * byteTransmitTime(speed, old.ts)
+	if d <= 0 {
+		return time.Time{}
+	}
+	return time.Now().Add(d)
+}
+
+// hardwareIflag holds the input flags for break and parity error handling;
+// a change to them makes Linux reprogram the UART (the iflag_mask of
+// uart_set_termios). The rest of c_iflag is line discipline only.
+const hardwareIflag = unix.IGNBRK | unix.BRKINT | unix.IGNPAR | unix.PARMRK | unix.INPCK
+
+// sameHardware reports whether a and b program the UART identically.
+func sameHardware(a, b Attr) bool {
+	return a.speed() == b.speed() && a.ts.Cflag&hardwareCflag == b.ts.Cflag&hardwareCflag &&
+		a.ts.Iflag&hardwareIflag == b.ts.Iflag&hardwareIflag
 }
 
 func (t *unixTerm) Speed() int {
@@ -176,8 +207,12 @@ func (t *unixTerm) clearExclusive() error {
 
 func RawMode(a *Attr) error {
 	// this comes from termios(3)
-	a.ts.Iflag &^= unix.IGNBRK | unix.BRKINT | unix.PARMRK | unix.ISTRIP |
+	a.ts.Iflag &^= unix.BRKINT | unix.PARMRK | unix.ISTRIP |
 		unix.INLCR | unix.IGNCR | unix.ICRNL | unix.IXON
+	// Both flags are needed to prevent Linux UART drivers such as PL011
+	// from inserting a zero byte on receive overruns. Error counters
+	// report overruns separately.
+	a.ts.Iflag |= unix.IGNBRK | unix.IGNPAR
 	a.ts.Oflag &^= unix.OPOST
 	a.ts.Lflag &^= unix.ECHO | unix.ECHONL | unix.ICANON | unix.ISIG | unix.IEXTEN
 	a.ts.Cflag &^= unix.CSIZE | unix.PARENB
@@ -204,17 +239,16 @@ func (t *unixTerm) TransmitTime(nBytes int) time.Duration {
 		return 0
 	}
 	attr := t.loadAttr()
-	return attr.byteTransmitTime() * time.Duration(nBytes)
+	return byteTransmitTime(attr.speed(), attr.ts) * time.Duration(nBytes)
 }
 
-// byteTransmitTime returns the time it takes to send a byte using the given Termios settings.
-func (attr *Attr) byteTransmitTime() time.Duration {
-	speed := attr.speed()
+// byteTransmitTime returns the time it takes to send a byte at speed bits per second
+// with the frame format of ts.
+func byteTransmitTime(speed int, ts unix.Termios) time.Duration {
 	if speed <= 0 {
 		return 0
 	}
-	bits := bitsPerByte(attr.ts)
-	// speed is bits per second
+	bits := bitsPerByte(ts)
 	timePerBit := time.Second / time.Duration(speed)
 	return time.Duration(bits) * timePerBit
 }
@@ -412,8 +446,27 @@ func (t *unixTerm) ModemControlPinState() (ModemControlPinState, error) {
 	return state, nil
 }
 
-func (t *unixTerm) Restore() error {
-	return t.setAttrNow(&t.tsSaved)
+func (t *unixTerm) Restore(exceptHardware bool) error {
+	ts := t.tsSaved
+	ts.Lflag &^= unix.ECHO | unix.ECHONL
+	if exceptHardware {
+		current, err := t.getAttr()
+		if err != nil {
+			return err
+		}
+		ts = restoreExceptHardware(ts, *current)
+	}
+	return t.setAttrNow(&ts)
+}
+
+// restoreExceptHardware returns saved with the attributes that program the
+// UART taken from current: the speed, hardwareCflag and hardwareIflag.
+func restoreExceptHardware(saved, current unix.Termios) unix.Termios {
+	saved.Cflag = saved.Cflag&^hardwareCflag | current.Cflag&hardwareCflag
+	saved.Iflag = saved.Iflag&^hardwareIflag | current.Iflag&hardwareIflag
+	saved.Ispeed = current.Ispeed
+	saved.Ospeed = current.Ospeed
+	return saved
 }
 
 func (t *unixTerm) Close() error {

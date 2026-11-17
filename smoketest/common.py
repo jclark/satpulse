@@ -297,8 +297,7 @@ def check_packet_log(ctx: SmokeContext) -> None:
 # detection times out until packets start flowing.
 ALLOWED_WARNINGS = (
     "running without a PTP hardware clock",
-    "GPS detection failed",
-    "no output detected",
+    "no output from GPS",
 )
 
 

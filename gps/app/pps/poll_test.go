@@ -11,14 +11,17 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/jclark/satpulse/time/lib/median"
 )
 
-// acquireCapture records the window attribute of the "serial PPS acquired"
-// debug line, so tests can check where in the descent the latch fired. Read
-// it only after Poll has returned.
+// acquireCapture records the acquisition windows and the handoff extent.
+// Read it only after Poll has returned.
 type acquireCapture struct {
 	slog.Handler
-	window time.Duration
+	window   time.Duration
+	windows  []time.Duration
+	spacings []time.Duration
 }
 
 var truncatesSubMillisecondSleeps = sleepDuration(time.Microsecond) == 0
@@ -26,15 +29,27 @@ var truncatesSubMillisecondSleeps = sleepDuration(time.Microsecond) == 0
 func (h *acquireCapture) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
+	if r.Message != "serial PPS acquired" && r.Message != "serial PPS poll window" {
+		return nil
+	}
+	var window, spacing time.Duration
+	var tracking bool
+	r.Attrs(func(a slog.Attr) bool {
+		switch a.Key {
+		case "window":
+			window, _ = a.Value.Any().(time.Duration)
+		case "spacing":
+			spacing, _ = a.Value.Any().(time.Duration)
+		case "tracking":
+			tracking = a.Value.Bool()
+		}
+		return true
+	})
 	if r.Message == "serial PPS acquired" {
-		r.Attrs(func(a slog.Attr) bool {
-			if a.Key == "window" {
-				if d, ok := a.Value.Any().(time.Duration); ok {
-					h.window = d
-				}
-			}
-			return true
-		})
+		h.window = window
+	} else if !tracking {
+		h.windows = append(h.windows, window)
+		h.spacings = append(h.spacings, spacing)
 	}
 	return nil
 }
@@ -44,19 +59,20 @@ func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
 // deasserted (in pulse) for width after each pulse's leading edge. Pulses
 // with index in [offFrom, offTo) are suppressed (offTo 0 means none), and
 // every lateEvery-th pulse is delivered late by late (lateEvery 0 means
-// none), modelling a delivery tail. A nonzero wakeJitter delays any query
-// that follows an idle gap, alternating between the full amount and an
-// eighth of it, modelling the sleep overshoot observed inside the daemon:
-// queries after a sleep run late by a varying amount, back-to-back queries
-// do not. A nonzero stall delays the single first query at or after
+// none), modelling a delivery tail. A nonzero wakeJitter makes the fake's
+// wait, installed as PollParams.Wait, overshoot every timer sleep by that
+// much or an eighth of it alternately, modelling the sleep overshoot
+// observed inside the daemon: queries after a sleep run late by a varying
+// amount, back-to-back queries do not. A nonzero idleCallDur replaces
+// callDur for the first query after a timer sleep, modelling a host whose
+// queries slow while it idles. A nonzero stall delays the single
+// first query at or after
 // stallAfter (relative to epoch) by that much, stretching one bracket --
 // the noise event that made a latch comparing consecutive brackets misfire
 // in the daemon. A nonzero slowCallDur replaces callDur from slowFrom until
 // slowTo, modelling a transient run of slow queries. A nonzero stateRefresh
-// exposes pulse-state changes only on that time grid, and edgeCallDur replaces
-// callDur for the one query that first observes each leading edge, modelling a
-// coarse status-delivery bracket around otherwise fast cached queries. calls
-// counts the state queries.
+// exposes pulse-state changes only on that time grid. calls counts the state
+// queries.
 type fakePulse struct {
 	epoch          time.Time
 	width          time.Duration
@@ -65,48 +81,78 @@ type fakePulse struct {
 	lateEvery      int
 	late           time.Duration
 	wakeJitter     time.Duration
+	idleCallDur    time.Duration
+	idle           bool
 	stallAfter     time.Duration
 	stall          time.Duration
 	slowFrom       time.Duration
 	slowTo         time.Duration
 	slowCallDur    time.Duration
 	stateRefresh   time.Duration
-	edgeCallDur    time.Duration
 	stalled        bool
-	haveState      bool
-	lastState      bool
-	lastEnd        time.Time
 	seq            uint32
 	calls          atomic.Int64
 }
 
-func (f *fakePulse) InPulse() (bool, error) {
-	f.calls.Add(1)
-	if f.wakeJitter > 0 && !f.lastEnd.IsZero() && time.Since(f.lastEnd) > 0 {
+// wait models waitUntil on the bubble's clock. waitUntil itself must not run
+// in a bubble: a precise wait finishes in a real clock_nanosleep, which the
+// fake clock cannot fake.
+func (f *fakePulse) wait(ctx context.Context, t time.Time, precise bool) (bool, error) {
+	slept, err := bubbleWait(ctx, t, precise)
+	f.idle = f.idle || slept
+	if slept && f.wakeJitter > 0 {
 		if f.seq++; f.seq%2 == 0 {
 			time.Sleep(f.wakeJitter)
 		} else {
 			time.Sleep(f.wakeJitter / 8)
 		}
 	}
+	return slept, err
+}
+
+// bubbleWait applies waitUntil's rule to the bubble's clock: a precise wait
+// ends at the deadline however short it is, and any other ends where the
+// timer's resolution leaves it, which for a short enough wait is at once.
+func bubbleWait(ctx context.Context, t time.Time, precise bool) (bool, error) {
+	d := time.Until(t)
+	if !precise {
+		d = sleepDuration(d)
+	}
+	if d <= 0 {
+		select {
+		case <-ctx.Done():
+			return false, ctx.Err()
+		default:
+			return false, nil
+		}
+	}
+	timer := time.NewTimer(d)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
+	}
+}
+
+func (f *fakePulse) InPulse() (bool, error) {
+	f.calls.Add(1)
 	if f.stall > 0 && !f.stalled && time.Since(f.epoch) >= f.stallAfter {
 		f.stalled = true
 		time.Sleep(f.stall)
 	}
-	defer func() { f.lastEnd = time.Now() }()
 	callDur := f.callDur
 	since := time.Since(f.epoch)
 	if f.slowCallDur > 0 && since >= f.slowFrom && since < f.slowTo {
 		callDur = f.slowCallDur
 	}
-	if state := f.state(since); f.edgeCallDur > 0 && f.haveState && !f.lastState && state {
-		callDur = f.edgeCallDur
+	if f.idle && f.idleCallDur > 0 {
+		callDur = f.idleCallDur
 	}
+	f.idle = false
 	time.Sleep(callDur)
-	state := f.state(time.Since(f.epoch))
-	f.lastState = state
-	f.haveState = true
-	return state, nil
+	return f.state(time.Since(f.epoch)), nil
 }
 
 func (f *fakePulse) state(since time.Duration) bool {
@@ -133,13 +179,13 @@ func TestPoll(t *testing.T) {
 		expectTol           time.Duration // per-edge timestamp error bound
 	}{
 		{name: "slow query (FT232R class)", epochOffset: 350 * time.Millisecond, callDur: 2 * time.Millisecond,
-			expectFirstPulse: 3, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
+			expectFirstPulse: 1, expectLastPulse: 12, expectTol: 3 * time.Millisecond},
 		{name: "fast query", epochOffset: 350 * time.Millisecond, callDur: 20 * time.Microsecond,
-			expectFirstPulse: 9, expectLastPulse: 18,
-			truncatedFirstPulse: 6, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
+			expectFirstPulse: 3, expectLastPulse: 18,
+			truncatedFirstPulse: 3, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
 		{name: "cold start inside pulse", epochOffset: -20 * time.Millisecond, callDur: 20 * time.Microsecond,
-			expectFirstPulse: 9, expectLastPulse: 18,
-			truncatedFirstPulse: 6, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
+			expectFirstPulse: 3, expectLastPulse: 18,
+			truncatedFirstPulse: 3, truncatedLastPulse: 15, expectTol: 100 * time.Microsecond},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -152,13 +198,13 @@ func TestPoll(t *testing.T) {
 				ctx, cancel := context.WithCancel(context.Background())
 				candidates := make(chan CandidateEdge)
 				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+				go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 				var got []CandidateEdge
-				sawSettling := false
+				sawAcquiring := false
 				for len(got) < 3 {
 					candidate := <-candidates
-					if !candidate.Settled {
-						sawSettling = true
+					if candidate.Reject != "" {
+						sawAcquiring = true
 						continue
 					}
 					got = append(got, candidate)
@@ -167,12 +213,12 @@ func TestPoll(t *testing.T) {
 				if err := <-errCh; err != context.Canceled {
 					t.Fatalf("Poll error = %v, want context.Canceled", err)
 				}
-				if !sawSettling {
-					t.Error("Poll did not report any candidates before settling")
+				if !sawAcquiring {
+					t.Error("Poll did not reject candidates during acquisition")
 				}
 				for i, e := range got {
-					if e.Uncertainty <= 0 {
-						t.Errorf("candidate %d uncertainty = %v, want positive", i, e.Uncertainty)
+					if e.Uncertainty[0] <= 0 || e.Uncertainty[1] <= 0 || e.PollWidths[0] <= 0 || e.PollWidths[1] <= 0 {
+						t.Errorf("candidate %d uncertainty = %v poll widths = %v, want all positive", i, e.Uncertainty, e.PollWidths)
 					}
 					if !e.TRead.After(e.Timestamp) {
 						t.Errorf("candidate %d read time %v is not after timestamp %v", i, e.TRead, e.Timestamp)
@@ -183,7 +229,7 @@ func TestPoll(t *testing.T) {
 						t.Errorf("edge %d at %v: error %v from pulse %d, want within %v", i, e.Timestamp, err, pulse, tc.expectTol)
 					}
 					if i == 0 && (pulse < expectFirstPulse || pulse > expectLastPulse) {
-						t.Errorf("first published edge is pulse %d, want acquisition to end between pulses %d and %d",
+						t.Errorf("first usable edge is pulse %d, want between pulses %d and %d",
 							pulse, expectFirstPulse, expectLastPulse)
 					}
 					if i > 0 {
@@ -204,59 +250,48 @@ func TestPoll(t *testing.T) {
 // read crossing the deadline still counts as a catch, and a miss forwards the
 // previous catch's bracket. The late-opens scenario reproduces the hardware's
 // sporadic oversleep of the window open: an edge arriving before the late
-// open cannot be observed, so the window size that misses is discovered only
-// by missing, and the window must stay above it. The last two scenarios
-// verify that misses at a transiently large window cost at most one
-// shrinkAfter hold there: nothing is remembered, so nothing can be
-// remembered wrongly.
+// open cannot be observed, so the extent that misses is discovered only by
+// missing, and the miss-grow-shrink cycle pays occasional misses for it.
+// Even with prompt opens the jitter sits at the edge of the
+// extent that shrinkStop brackets of the narrowest bracket give, so the
+// cycle shows there too, at a lower rate. The outage scenario is a run of
+// misses shorter than the failure limit; the wide-catch scenario stretches
+// every 30th bracket, which must not widen the extent.
 func TestTrackSimulation(t *testing.T) {
 	const openLate = 900 * time.Microsecond
 	tests := []struct {
-		name             string
-		lateEvery        int           // every lateEvery-th open is openLate late; 0 means none
-		offFrom, offTo   int           // edges suppressed for attempts in [offFrom, offTo)
-		dropAt           int           // one further suppressed attempt (0 means none)
-		flapFrom, flapTo int           // in [flapFrom, flapTo), suppress all but every third edge
-		maxMisses        int           // per minute
-		maxReads         int           // per attempt after the first minute
-		maxMinuteReads   int           // per minute after the first
-		convergeWindow   time.Duration // the window must shrink to this
-		convergeBy       int           // by this attempt
-		recoverWindow    time.Duration // after an outage the window must return to this
-		recoverBy        int           // by this attempt
+		name           string
+		lateEvery      int           // every lateEvery-th open is openLate late; 0 means none
+		offFrom, offTo int           // edges suppressed for attempts in [offFrom, offTo)
+		wideEvery      int           // every wideEvery-th catch has a wide bracket; 0 means none
+		maxMisses      int           // per minute
+		maxReads       int           // per attempt after the first minute
+		maxMinuteReads int           // per minute after the first
+		convergeExtent time.Duration // the extent must shrink to this
+		convergeBy     int           // by this attempt
+		recoverExtent  time.Duration // after an outage the extent must return to this
+		recoverBy      int           // by this attempt
 	}{
-		{name: "prompt opens", maxMisses: 1, maxReads: 11, maxMinuteReads: 390,
-			convergeWindow: 1500 * time.Microsecond, convergeBy: 20},
-		{name: "late opens", lateEvery: 20, maxMisses: 4, maxReads: 17, maxMinuteReads: 600,
-			convergeWindow: 2400 * time.Microsecond, convergeBy: 15},
-		{name: "outage", offFrom: 150, offTo: 158, maxMisses: 9, maxReads: 70, maxMinuteReads: 2500,
-			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
-			recoverWindow: 2 * time.Millisecond, recoverBy: 280},
-		// A single drop during the post-outage descent freezes the window at
-		// the transiently large size it happened to hit, for shrinkAfter
-		// catches; the cost is bounded, and the descent then completes.
-		{name: "outage with drop", offFrom: 150, offTo: 158, dropAt: 170,
-			maxMisses: 9, maxReads: 70, maxMinuteReads: 2100,
-			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
-			recoverWindow: 2 * time.Millisecond, recoverBy: 560},
-		// Flapping ratchets the window up while it lasts (each cycle is a
-		// two-miss run, so the window is frozen, growing but never
-		// shrinking); one shrinkAfter hold later it has fully recovered.
-		{name: "flapping", flapFrom: 150, flapTo: 180,
-			maxMisses: 20, maxReads: 70, maxMinuteReads: 2100,
-			convergeWindow: 1500 * time.Microsecond, convergeBy: 20,
-			recoverWindow: 2 * time.Millisecond, recoverBy: 600},
+		{name: "prompt opens", maxMisses: 2, maxReads: 12, maxMinuteReads: 700,
+			convergeExtent: 1500 * time.Microsecond, convergeBy: 30},
+		{name: "late opens", lateEvery: 20, maxMisses: 4, maxReads: 24, maxMinuteReads: 1000,
+			convergeExtent: 1500 * time.Microsecond, convergeBy: 30},
+		{name: "outage", offFrom: 150, offTo: 156, maxMisses: 8, maxReads: 1200, maxMinuteReads: 6000,
+			convergeExtent: 1500 * time.Microsecond, convergeBy: 30,
+			recoverExtent: 2 * time.Millisecond, recoverBy: 300},
+		{name: "wide catches", wideEvery: 30, maxMisses: 2, maxReads: 12, maxMinuteReads: 700,
+			convergeExtent: 1500 * time.Microsecond, convergeBy: 30},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			type sample struct {
-				window, predictionError time.Duration
-				caught                  bool
+				extent, predictionError time.Duration
+				outcome                 outcome
 				stateReads              int
 			}
 			type minute struct {
 				stateReads, catches, misses, minReads, maxReads int
-				endWindow                                       time.Duration
+				endExtent                                       time.Duration
 			}
 			const minutes = 12
 			jitters := [...]time.Duration{-250 * time.Microsecond, -150 * time.Microsecond,
@@ -268,7 +303,7 @@ func TestTrackSimulation(t *testing.T) {
 			var events []trackEvent
 			nextEdge := time.Duration(0)
 			lastBracket := brackets[0]
-			err := track(initialPolls*minSpacing, func(window time.Duration, _ bool) (trackObservation, error) {
+			err := track(initialPolls*minSpacing, minSpacing, func(extent time.Duration) (trackObservation, error) {
 				i := len(samples)
 				if i == cap(samples) {
 					return trackObservation{}, done
@@ -284,24 +319,27 @@ func TestTrackSimulation(t *testing.T) {
 					late = openLate
 				}
 				bracket := brackets[i%len(brackets)]
-				pace := max(window/initialPolls, bracket)
+				pace := bracket
 				edge := time.Duration(i)*period + jitter
 				predictionError := edge - nextEdge
-				suppressed := tc.offTo > 0 && i >= tc.offFrom && i < tc.offTo ||
-					tc.dropAt > 0 && i == tc.dropAt ||
-					tc.flapTo > 0 && i >= tc.flapFrom && i < tc.flapTo && (i-tc.flapFrom)%3 != 2
-				caught := predictionError > late-window/2 && predictionError < window/2+pace &&
-					!suppressed
-				sweep := max(window-late, 0)
-				if caught {
-					sweep = predictionError + window/2 - late
+				suppressed := tc.offTo > 0 && i >= tc.offFrom && i < tc.offTo
+				o := miss
+				if predictionError > late-extent/2 && predictionError < extent/2+pace && !suppressed {
+					o = caught
+					if tc.wideEvery > 0 && (i+1)%tc.wideEvery == 0 {
+						bracket *= 4
+					}
+				}
+				sweep := max(extent-late, 0)
+				if o != miss {
+					sweep = predictionError + extent/2 - late
 					lastBracket = bracket
 				}
 				stateReads := int((sweep+pace-1)/pace) + 1
-				samples = append(samples, sample{window: window, predictionError: predictionError,
-					caught: caught, stateReads: stateReads})
-				return trackObservation{caught: caught, predictionError: predictionError,
-					lastBracket: lastBracket, stateReads: stateReads}, nil
+				samples = append(samples, sample{extent: extent, predictionError: predictionError,
+					outcome: o, stateReads: stateReads})
+				return trackObservation{outcome: o, predictionError: predictionError,
+					width: 2 * bracket, bracket: lastBracket, stateReads: stateReads}, nil
 			}, func(d time.Duration) {
 				nextEdge += d
 			}, func(e trackEvent) {
@@ -314,20 +352,26 @@ func TestTrackSimulation(t *testing.T) {
 			for i, s := range samples {
 				m := &got[i/60]
 				m.stateReads += s.stateReads
-				if s.caught {
+				switch s.outcome {
+				case caught:
 					m.catches++
-				} else {
+				default:
 					m.misses++
 				}
 				if m.minReads == 0 || s.stateReads < m.minReads {
 					m.minReads = s.stateReads
 				}
 				m.maxReads = max(m.maxReads, s.stateReads)
-				m.endWindow = s.window
+				m.endExtent = s.extent
 			}
 			for i, m := range got {
-				t.Logf("minute %d: stateReads=%d catches=%d misses=%d min=%d max=%d endWindow=%v",
-					i+1, m.stateReads, m.catches, m.misses, m.minReads, m.maxReads, m.endWindow)
+				t.Logf("minute %d: stateReads=%d catches=%d misses=%d min=%d max=%d endExtent=%v",
+					i+1, m.stateReads, m.catches, m.misses, m.minReads, m.maxReads, m.endExtent)
+			}
+			for i := 1; tc.offTo == 0 && i < len(samples); i++ {
+				if samples[i-1].outcome == miss && samples[i].outcome == miss {
+					t.Errorf("attempts %d and %d both missed, want misses isolated", i-1, i)
+				}
 			}
 			for i, m := range got {
 				if m.misses > tc.maxMisses {
@@ -342,32 +386,35 @@ func TestTrackSimulation(t *testing.T) {
 			}
 			convergedAt := -1
 			for i, s := range samples {
-				if s.window <= tc.convergeWindow {
+				if s.extent <= tc.convergeExtent {
 					convergedAt = i
 					break
 				}
 			}
 			if convergedAt < 0 || convergedAt > tc.convergeBy {
-				t.Errorf("window first at or below %v at attempt %d, want by attempt %d",
-					tc.convergeWindow, convergedAt, tc.convergeBy)
+				t.Errorf("extent first at or below %v at attempt %d, want by attempt %d",
+					tc.convergeExtent, convergedAt, tc.convergeBy)
 			}
 			if tc.offTo > 0 {
-				if s := samples[tc.offTo]; !s.caught {
-					t.Errorf("attempt %d after the outage missed at window %v, want the grown window to recapture the pulse immediately",
-						tc.offTo, s.window)
+				if s := samples[tc.offTo]; s.outcome != caught {
+					t.Errorf("attempt %d after the outage missed at extent %v, want the grown extent to recapture the pulse immediately",
+						tc.offTo, s.extent)
 				}
-			}
-			if resume := max(tc.offTo, tc.flapTo); resume > 0 && tc.recoverWindow > 0 {
 				recoveredAt := -1
-				for i, s := range samples[resume:] {
-					if s.window <= tc.recoverWindow {
-						recoveredAt = resume + i
+				for i, s := range samples[tc.offTo:] {
+					if s.extent <= tc.recoverExtent {
+						recoveredAt = tc.offTo + i
 						break
 					}
 				}
 				if recoveredAt < 0 || recoveredAt > tc.recoverBy {
-					t.Errorf("window back at or below %v at attempt %d, want by attempt %d",
-						tc.recoverWindow, recoveredAt, tc.recoverBy)
+					t.Errorf("extent back at or below %v at attempt %d, want by attempt %d",
+						tc.recoverExtent, recoveredAt, tc.recoverBy)
+				}
+			}
+			for i := 1; i < len(samples); i++ {
+				if prev := samples[i-1]; prev.outcome == caught && samples[i].extent > prev.extent {
+					t.Errorf("attempt %d extent = %v after a catch at %v, want no increase", i, samples[i].extent, prev.extent)
 				}
 			}
 			for _, e := range events {
@@ -375,38 +422,40 @@ func TestTrackSimulation(t *testing.T) {
 					t.Errorf("tracking event kind = %v, want no loss events", e.kind)
 				}
 			}
-			if samples[3].window <= 2*samples[3].predictionError.Abs() {
-				t.Errorf("disturbance window = %v for prediction error %v, want the edge retained inside the margin",
-					samples[3].window, samples[3].predictionError)
+			if samples[3].extent <= 2*samples[3].predictionError.Abs() {
+				t.Errorf("disturbance extent = %v for prediction error %v, want the edge retained inside the margin",
+					samples[3].extent, samples[3].predictionError)
 			}
 		})
 	}
 }
 
-// TestTrackFeedback pins the feedback law step by step: shrinking reported
-// only once per halving and growth once per doubling, half of each prediction
-// error advancing the prediction, a first miss growing the window by two
-// brackets, a second miss doubling, the recovery being reported, and the
-// window then holding, frozen, after the short run of misses.
+// TestTrackFeedback pins the feedback law step by step: a catch shrinks
+// the extent by 1/shrinkDivisor but not below shrinkStop brackets, half of
+// a sufficiently precise catch's prediction error advances the prediction,
+// misses grow only below the poll budget, and a wide catch neither widens
+// the extent nor corrects prediction.
 func TestTrackFeedback(t *testing.T) {
 	done := errors.New("simulation complete")
-	var windows, advances []time.Duration
-	var atFloors []bool
+	var extents, advances []time.Duration
 	var events []trackEvent
 	observations := []trackObservation{
-		{caught: true, lastBracket: 100 * time.Microsecond},
-		{caught: true, predictionError: 750 * time.Microsecond, lastBracket: 100 * time.Microsecond},
-		{caught: false, lastBracket: 100 * time.Microsecond},
-		{caught: false, lastBracket: 100 * time.Microsecond},
-		{caught: true, lastBracket: 100 * time.Microsecond},
+		{outcome: caught, width: 200 * time.Microsecond, bracket: 100 * time.Microsecond},
+		{outcome: caught, predictionError: 750 * time.Microsecond, width: 100 * time.Microsecond, bracket: 50 * time.Microsecond},
+		{outcome: caught, predictionError: 2 * time.Millisecond, width: 800 * time.Microsecond, bracket: 400 * time.Microsecond},
+		{outcome: miss, bracket: 400 * time.Microsecond, stateReads: 49},
+		{outcome: miss, bracket: 400 * time.Microsecond, stateReads: 50},
+		{outcome: miss, bracket: 400 * time.Microsecond, stateReads: 51},
+		{outcome: caught, width: 200 * time.Microsecond, bracket: 100 * time.Microsecond},
+		{outcome: caught, width: 2 * time.Millisecond, bracket: time.Millisecond},
+		{outcome: miss, bracket: time.Millisecond, stateReads: 40},
 	}
-	err := track(800*time.Microsecond, func(window time.Duration, atFloor bool) (trackObservation, error) {
-		windows = append(windows, window)
-		atFloors = append(atFloors, atFloor)
-		if len(windows) > len(observations) {
+	err := track(800*time.Microsecond, 10*time.Microsecond, func(extent time.Duration) (trackObservation, error) {
+		extents = append(extents, extent)
+		if len(extents) > len(observations) {
 			return trackObservation{}, done
 		}
-		return observations[len(windows)-1], nil
+		return observations[len(extents)-1], nil
 	}, func(d time.Duration) {
 		advances = append(advances, d)
 	}, func(e trackEvent) {
@@ -415,20 +464,17 @@ func TestTrackFeedback(t *testing.T) {
 	if !errors.Is(err, done) {
 		t.Fatalf("track error = %v, want simulation completion", err)
 	}
-	if want := []time.Duration{800 * time.Microsecond, 750 * time.Microsecond,
-		1700 * time.Microsecond, 1900 * time.Microsecond, 3800 * time.Microsecond,
-		3800 * time.Microsecond}; !reflect.DeepEqual(windows, want) {
-		t.Errorf("tracking windows = %v, want %v", windows, want)
+	if want := []time.Duration{800 * time.Microsecond, 800 * time.Microsecond, 775 * time.Microsecond,
+		775 * time.Microsecond, 968750 * time.Nanosecond, 968750 * time.Nanosecond,
+		968750 * time.Nanosecond, 938477 * time.Nanosecond, 938477 * time.Nanosecond,
+		1173096 * time.Nanosecond}; !reflect.DeepEqual(extents, want) {
+		t.Errorf("tracking extents = %v, want %v", extents, want)
 	}
-	if want := []time.Duration{period, period + 375*time.Microsecond, period, period,
-		period}; !reflect.DeepEqual(advances, want) {
+	if want := []time.Duration{period, period + 375*time.Microsecond, period, period, period,
+		period, period, period, period}; !reflect.DeepEqual(advances, want) {
 		t.Errorf("prediction advances = %v, want %v", advances, want)
 	}
-	if want := []bool{false, false, true, false, false, false}; !reflect.DeepEqual(atFloors, want) {
-		t.Errorf("atFloor per attempt = %v, want %v", atFloors, want)
-	}
-	wantEvents := []trackEventKind{trackStarted, trackChanged, trackMissed,
-		trackMissed, trackRecovered}
+	wantEvents := []trackEventKind{trackStarted, trackMissed, trackMissed, trackMissed, trackMissed}
 	if len(events) != len(wantEvents) {
 		t.Fatalf("tracking events = %v, want kinds %v", events, wantEvents)
 	}
@@ -437,97 +483,324 @@ func TestTrackFeedback(t *testing.T) {
 			t.Errorf("tracking event %d kind = %v, want %v", i, events[i].kind, want)
 		}
 	}
+	for i, want := range []int{1, 2, 3, 1} {
+		if got := events[i+1].failures; got != want {
+			t.Errorf("miss event %d failures = %d, want %d", i, got, want)
+		}
+	}
 }
 
-// TestTrackLoss pins the give-up rule: doubling reaches the full-period
-// window on the 11th consecutive miss, and only missLimit further misses at
-// that window declare the pulse gone.
-func TestTrackLoss(t *testing.T) {
-	var windows []time.Duration
+// TestTrackBudgetCoverage checks that skipped waits cannot stop expansion
+// below the coverage implied by the configured spacing and poll budget.
+func TestTrackBudgetCoverage(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		extent, spacing time.Duration
+		want            time.Duration
+	}{
+		{"below coverage", 2 * time.Millisecond, 50 * time.Microsecond, 2500 * time.Microsecond},
+		{"at coverage", 2500 * time.Microsecond, 50 * time.Microsecond, 2500 * time.Microsecond},
+		{"custom spacing", 2500 * time.Microsecond, 100 * time.Microsecond, 3125 * time.Microsecond},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			done := errors.New("simulation complete")
+			var extents []time.Duration
+			err := track(tc.extent, tc.spacing, func(extent time.Duration) (trackObservation, error) {
+				extents = append(extents, extent)
+				if len(extents) > 1 {
+					return trackObservation{}, done
+				}
+				return trackObservation{outcome: miss, stateReads: 100}, nil
+			}, func(time.Duration) {}, func(trackEvent) {})
+			if !errors.Is(err, done) {
+				t.Fatalf("track error = %v, want simulation completion", err)
+			}
+			if got := extents[1]; got != tc.want {
+				t.Errorf("extent after miss = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestTrackCorrection(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		width   time.Duration
+		advance time.Duration
+	}{
+		{"below half", 500*time.Microsecond - 1, period + 100*time.Microsecond},
+		{"at half", 500 * time.Microsecond, period + 100*time.Microsecond},
+		{"above half", 500*time.Microsecond + 1, period},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			done := errors.New("simulation complete")
+			var advance time.Duration
+			err := track(time.Millisecond, minSpacing, func(time.Duration) (trackObservation, error) {
+				if advance != 0 {
+					return trackObservation{}, done
+				}
+				return trackObservation{outcome: caught, predictionError: 200 * time.Microsecond,
+					width: tc.width, bracket: tc.width / 2}, nil
+			}, func(d time.Duration) { advance = d }, func(trackEvent) {})
+			if !errors.Is(err, done) {
+				t.Fatalf("track error = %v, want simulation completion", err)
+			}
+			if advance != tc.advance {
+				t.Errorf("prediction advance = %v, want %v", advance, tc.advance)
+			}
+		})
+	}
+}
+
+// TestTrackShrinkReported checks that shrinking is reported once per
+// halving: from 3.2 ms, good catches with a 100 us bracket shrink the extent
+// by 1/32 each, and the first report comes when it passes 1.6 ms.
+func TestTrackShrinkReported(t *testing.T) {
+	done := errors.New("simulation complete")
 	var events []trackEvent
-	err := track(time.Millisecond, func(window time.Duration, _ bool) (trackObservation, error) {
-		windows = append(windows, window)
-		return trackObservation{caught: false, lastBracket: 100 * time.Microsecond}, nil
+	attempts := 0
+	err := track(3200*time.Microsecond, minSpacing, func(extent time.Duration) (trackObservation, error) {
+		if attempts++; attempts > 40 {
+			return trackObservation{}, done
+		}
+		return trackObservation{outcome: caught, width: 200 * time.Microsecond, bracket: 100 * time.Microsecond}, nil
 	}, func(time.Duration) {}, func(e trackEvent) {
 		events = append(events, e)
 	})
-	if err != nil {
-		t.Fatalf("track error = %v, want nil after loss", err)
-	}
-	if len(windows) != 11+missLimit {
-		t.Errorf("pulse declared gone after %d attempts, want %d", len(windows), 11+missLimit)
-	}
-	last := events[len(events)-1]
-	if last.kind != trackLost || last.window != maxWindow {
-		t.Errorf("last event = kind %v window %v, want loss at the full-period window", last.kind, last.window)
-	}
-}
-
-// TestTrackAbsenceShrinksAtOnce pins the freeze exception: a run of absentRun
-// consecutive misses means the pulse was absent, so shrinking resumes on the
-// recovery catch instead of holding for shrinkAfter catches.
-func TestTrackAbsenceShrinksAtOnce(t *testing.T) {
-	done := errors.New("simulation complete")
-	var windows []time.Duration
-	observations := []trackObservation{
-		{caught: false, lastBracket: 100 * time.Microsecond},
-		{caught: false, lastBracket: 100 * time.Microsecond},
-		{caught: false, lastBracket: 100 * time.Microsecond},
-		{caught: true, lastBracket: 100 * time.Microsecond},
-		{caught: true, lastBracket: 100 * time.Microsecond},
-	}
-	err := track(800*time.Microsecond, func(window time.Duration, _ bool) (trackObservation, error) {
-		windows = append(windows, window)
-		if len(windows) > len(observations) {
-			return trackObservation{}, done
-		}
-		return observations[len(windows)-1], nil
-	}, func(time.Duration) {}, func(trackEvent) {})
 	if !errors.Is(err, done) {
 		t.Fatalf("track error = %v, want simulation completion", err)
 	}
-	if want := []time.Duration{800 * time.Microsecond, 1000 * time.Microsecond,
-		2000 * time.Microsecond, 4000 * time.Microsecond, 3750 * time.Microsecond,
-		3515625 * time.Nanosecond}; !reflect.DeepEqual(windows, want) {
-		t.Errorf("tracking windows = %v, want %v", windows, want)
+	if len(events) != 2 || events[1].kind != trackChanged {
+		t.Fatalf("events = %v, want start and one shrink report", events)
+	}
+	if e := events[1]; 2*e.nextExtent > 3200*time.Microsecond || 2*e.extent <= 3200*time.Microsecond {
+		t.Errorf("shrink reported at %v -> %v, want the catch that crosses 1.6 ms", e.extent, e.nextExtent)
+	}
+}
+
+// TestTrackLoss checks that only consecutive misses cause reacquisition,
+// even at the former extent limit or after exhausting the polling budget.
+func TestTrackLoss(t *testing.T) {
+	tests := []struct {
+		name       string
+		stateReads int
+		catchAfter int
+	}{
+		{name: "below budget", stateReads: 49},
+		{name: "at budget", stateReads: 50},
+		{name: "above budget", stateReads: 100},
+		{name: "wide catch resets failures", stateReads: 50, catchAfter: 9},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var extents []time.Duration
+			var events []trackEvent
+			err := track(period/8, minSpacing, func(extent time.Duration) (trackObservation, error) {
+				extents = append(extents, extent)
+				o := miss
+				if tc.catchAfter > 0 && len(extents) == tc.catchAfter+1 {
+					o = caught
+				}
+				return trackObservation{outcome: o, width: 100 * time.Millisecond,
+					bracket: 50 * time.Millisecond, stateReads: tc.stateReads}, nil
+			}, func(time.Duration) {}, func(e trackEvent) {
+				events = append(events, e)
+			})
+			if err != nil {
+				t.Fatalf("track error = %v, want nil after loss", err)
+			}
+			wantAttempts := failureLimit
+			if tc.catchAfter > 0 {
+				wantAttempts += tc.catchAfter + 1
+			}
+			if len(extents) != wantAttempts {
+				t.Errorf("pulse declared gone after %d attempts, want %d", len(extents), wantAttempts)
+			}
+			last := events[len(events)-1]
+			if last.kind != trackLost || last.failures != failureLimit {
+				t.Errorf("last event = kind %v failures %d, want loss after %d failures",
+					last.kind, last.failures, failureLimit)
+			}
+		})
+	}
+}
+
+// TestRejectReason checks acquisition rejection and classification against
+// previous tracking widths, including startup and the exact threshold.
+func TestRejectReason(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		history  []time.Duration
+		width    time.Duration
+		tracking bool
+		want     RejectReason
+	}{
+		{name: "precise acquisition catch", width: time.Microsecond, want: RejectAcquiring},
+		{name: "coarse first tracking catch", width: 4 * time.Millisecond, tracking: true},
+		{name: "at threshold", history: []time.Duration{8 * time.Microsecond}, width: 32 * time.Microsecond, tracking: true},
+		{name: "above threshold", history: []time.Duration{8 * time.Microsecond}, width: 32*time.Microsecond + 1, tracking: true, want: RejectAnomalous},
+		{name: "UART upper mode", history: []time.Duration{8 * time.Microsecond}, width: 25 * time.Microsecond, tracking: true},
+		{name: "median tolerates an extreme", history: []time.Duration{8 * time.Microsecond, 9 * time.Microsecond, time.Millisecond}, width: 40 * time.Microsecond, tracking: true, want: RejectAnomalous},
+		{name: "acquisition precedes anomaly", history: []time.Duration{8 * time.Microsecond}, width: time.Millisecond, want: RejectAcquiring},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := poller{widths: median.New[time.Duration](widthHistory)}
+			for _, w := range tc.history {
+				p.widths.Add(w)
+			}
+			if got := p.rejectReason(tc.width, tc.tracking); got != tc.want {
+				t.Errorf("reject = %q, want %q", got, tc.want)
+			}
+			n := len(tc.history)
+			if tc.tracking {
+				n++
+				if p.widths.Last() != tc.width {
+					t.Errorf("last width = %v, want %v even when anomalous", p.widths.Last(), tc.width)
+				}
+			}
+			if p.widths.Len() != n {
+				t.Errorf("history length = %d, want %d", p.widths.Len(), n)
+			}
+		})
+	}
+}
+
+// TestAnomalousAdapts checks that withheld widths can establish a new
+// baseline, while intervening acquisition catches leave the history intact.
+func TestAnomalousAdapts(t *testing.T) {
+	p := poller{widths: median.New[time.Duration](widthHistory)}
+	for range widthHistory {
+		p.widths.Add(8 * time.Microsecond)
+	}
+	for range widthHistory {
+		p.rejectReason(100*time.Millisecond, false)
+	}
+	if p.widths.Median() != 8*time.Microsecond {
+		t.Fatal("acquisition changed the tracking baseline")
+	}
+	for i := range widthHistory + 1 {
+		var want RejectReason
+		if i < 16 {
+			want = RejectAnomalous
+		}
+		if got := p.rejectReason(time.Millisecond, true); got != want {
+			t.Errorf("slow catch %d reject = %q, want %q", i+1, got, want)
+		}
+	}
+	if p.widths.Len() != widthHistory || p.widths.Median() != time.Millisecond {
+		t.Errorf("history = %d widths, median %v, want %d and 1ms", p.widths.Len(), p.widths.Median(), widthHistory)
+	}
+	if p.rejectReason(8*time.Microsecond, true) != "" {
+		t.Error("return to narrow widths flagged as anomalous")
+	}
+}
+
+// TestPollAnomaliesDoNotAffectControl gives identical measurements to two
+// pollers whose histories make tracking catches anomalous in one and ordinary in
+// the other. Acquisition, prediction updates and extent changes must match.
+func TestPollAnomaliesDoNotAffectControl(t *testing.T) {
+	type result struct {
+		candidates []CandidateEdge
+		events     []trackEvent
+		calls      int64
+		nextEdge   time.Time
+	}
+	var results [2]result
+	for i, baseline := range []time.Duration{time.Nanosecond, period / 2} {
+		runBubble(t, func(t *testing.T) {
+			f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+				callDur: 100 * time.Microsecond}
+			ctx, cancel := context.WithTimeout(context.Background(), 40*period)
+			defer cancel()
+			candidates := make(chan CandidateEdge, 40)
+			p := poller{ctx: ctx, lg: testLog, r: f, ceCh: candidates,
+				params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+				widths: median.New[time.Duration](widthHistory)}
+			for range widthHistory {
+				p.widths.Add(baseline)
+			}
+			if err := p.init(); err != nil {
+				t.Fatal(err)
+			}
+			extent, acquired, err := p.acquire()
+			if err != nil || !acquired {
+				t.Fatalf("acquisition = %v, %v, want success regardless of anomaly flags", acquired, err)
+			}
+			if p.widths.Median() != baseline {
+				t.Fatal("acquisition changed tracking history")
+			}
+			acquiring := len(candidates)
+			done := errors.New("tracking complete")
+			attempts := 0
+			err = track(extent, p.params.MinSpacing, func(extent time.Duration) (trackObservation, error) {
+				if attempts == 12 {
+					return trackObservation{}, done
+				}
+				attempts++
+				o, e, w, err := p.pollWindow(extent, minSpacing, true)
+				return trackObservation{outcome: o, predictionError: e, width: w,
+					bracket: p.lastBracket, stateReads: p.stateReads}, err
+			}, func(d time.Duration) {
+				p.nextEdge = p.nextEdge.Add(d)
+			}, func(e trackEvent) {
+				results[i].events = append(results[i].events, e)
+			})
+			if err != done {
+				t.Fatalf("tracking ended with %v, want completion after more than failureLimit catches", err)
+			}
+			close(candidates)
+			for ce := range candidates {
+				var want RejectReason
+				if len(results[i].candidates) < acquiring {
+					want = RejectAcquiring
+				} else if i == 0 {
+					want = RejectAnomalous
+				}
+				if ce.Reject != want {
+					t.Errorf("Reject = %q, want %q", ce.Reject, want)
+				}
+				ce.Reject = ""
+				results[i].candidates = append(results[i].candidates, ce)
+			}
+			results[i].calls, results[i].nextEdge = f.calls.Load(), p.nextEdge
+		})
+	}
+	if !reflect.DeepEqual(results[0], results[1]) {
+		t.Error("anomaly flags changed candidates, controller events, read count or prediction")
 	}
 }
 
 // TestPollShortOutageKeepsTracking checks that an outage shorter than the
-// give-up horizon does not discard the phase: the grown window recaptures the
-// pulse on its first reappearance, publishing it unsettled while the window
-// is still shrinking back, and candidates settle again once it has.
+// give-up horizon does not discard the phase: the grown extent recaptures
+// the pulse on its first reappearance, and since tracking polls at query
+// resolution whatever the extent, the recapture is usable at once.
 func TestPollShortOutageKeepsTracking(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
-			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 31}
+			callDur: 20 * time.Microsecond, offFrom: 16, offTo: 19}
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var first CandidateEdge
 		for pulseIndex(first.Timestamp, f.epoch) <= 15 || first.Timestamp.IsZero() {
 			first = <-candidates
 		}
-		resettled := pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
 		cancel()
 		<-errCh
 		if p := pulseIndex(first.Timestamp, f.epoch); p != f.offTo {
 			t.Errorf("first edge after outage is pulse %d, want recapture at pulse %d", p, f.offTo)
 		}
-		if first.Settled {
-			t.Error("recapture candidate at the outage-grown window is settled, want unsettled while the window shrinks back")
-		}
-		if resettled > f.offTo+110 {
-			t.Errorf("candidates settled again at pulse %d, want within ~100 pulses of the recapture", resettled)
+		if first.Reject != "" {
+			t.Errorf("recapture candidate reject=%q uncertainty=%v, want a usable catch at query resolution", first.Reject, first.Uncertainty)
 		}
 	})
 }
 
-// TestPollAcquiresWithCoarseStateRefresh exercises the former fixed point: the
-// ordinary cached query takes only 5 us, but a state refresh stretches each
-// catching bracket to about 2 ms. The old window-driven acquisition stalled
-// above minSpacing while every caught window remained sleep-paced.
+// TestPollAcquiresWithCoarseStateRefresh models a driver that refreshes the
+// pin state on a 2 ms grid behind 5 us cached queries: each edge becomes
+// visible up to 2 ms late, but the bracket around it is two cached queries,
+// so acquisition must complete and the edges must be usable.
 func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{
@@ -535,20 +808,19 @@ func TestPollAcquiresWithCoarseStateRefresh(t *testing.T) {
 			width:        100 * time.Millisecond,
 			callDur:      5 * time.Microsecond,
 			stateRefresh: 2 * time.Millisecond,
-			edgeCallDur:  4 * time.Millisecond,
 		}
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		deadline := time.After(20 * period)
-		settled := 0
+		usable := 0
 		timedOut := false
-		for settled < 3 && !timedOut {
+		for usable < 3 && !timedOut {
 			select {
 			case candidate := <-candidates:
-				if candidate.Settled {
-					settled++
+				if candidate.Reject == "" {
+					usable++
 				}
 			case <-deadline:
 				timedOut = true
@@ -573,10 +845,10 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		errCh := make(chan error, 1)
 		var logs bytes.Buffer
 		lg := slog.New(slog.NewTextHandler(&logs, &slog.HandlerOptions{Level: slog.LevelInfo}))
-		go func() { errCh <- Poll(ctx, lg, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, lg, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for pulse := 0; pulse < 18; {
-			pulse = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
+			pulse = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
 			seen[pulse] = true
 		}
 		cancel()
@@ -591,7 +863,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 		if !strings.Contains(status, `msg="serial PPS track status" reason=miss`) {
 			t.Errorf("logs %q do not report the missed pulse at info level", status)
 		}
-		for _, field := range []string{"window=", "nextWindow=", "stateReads=", "bracket=", "misses=1"} {
+		for _, field := range []string{"extent=", "nextExtent=", "stateReads=", "bracket=", "failures=1"} {
 			if !strings.Contains(status, field) {
 				t.Errorf("track status %q does not contain %q", status, field)
 			}
@@ -606,16 +878,16 @@ func TestPollOutageReacquires(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var first int
 		for first <= 15 {
-			first = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
+			first = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
 		}
 		cancel()
 		<-errCh
-		firstOffset, lastOffset := 9, 18
+		firstOffset, lastOffset := 2, 18
 		if truncatesSubMillisecondSleeps {
-			firstOffset, lastOffset = 6, 15
+			firstOffset, lastOffset = 2, 15
 		}
 		if first < f.offTo+firstOffset || first > f.offTo+lastOffset {
 			t.Errorf("first edge after outage is pulse %d, want a fresh acquisition between pulses %d and %d",
@@ -624,9 +896,8 @@ func TestPollOutageReacquires(t *testing.T) {
 	})
 }
 
-// TestPollTrackingConverges checks that tracking shrinks the acquired window
-// to a handful of state queries per pulse within a small fraction of the time
-// the former additive controller needed.
+// TestPollTrackingConverges checks that tracking shrinks the acquired extent
+// to shrinkStop brackets plus a few state queries per pulse.
 func TestPollTrackingConverges(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
@@ -634,37 +905,38 @@ func TestPollTrackingConverges(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
-		for pulseIndex(nextSettled(candidates).Timestamp, f.epoch) < 100 {
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
+		for pulseIndex(nextUsable(candidates).Timestamp, f.epoch) < 100 {
 		}
 		start := f.calls.Load()
 		for range 50 {
-			nextSettled(candidates)
+			nextUsable(candidates)
 		}
 		perPulse := (f.calls.Load() - start) / 50
 		cancel()
 		<-errCh
-		if perPulse > 6 {
-			t.Errorf("steady state costs %d queries per pulse, want at most 6", perPulse)
+		if perPulse > shrinkStop+4 {
+			t.Errorf("steady state costs %d queries per pulse, want at most %d", perPulse, shrinkStop+4)
 		}
 	})
 }
 
-// TestPollLearnsDeliveryTail checks that a recurring 1 ms delivery delay,
-// which the acquired window is initially shrunk too far to cover, is learned
-// as equilibrium growth: after the window has grown back, nearly every pulse
-// is caught again.
-func TestPollLearnsDeliveryTail(t *testing.T) {
+// TestPollDeliveryTailCostsIsolatedMisses checks that a recurring 1 ms
+// delivery delay, beyond the extent that shrinkStop brackets give, is paid
+// for with isolated misses only: each miss grows the extent, which then
+// shrinks back until the boundary is found again, so no two consecutive
+// pulses are lost.
+func TestPollDeliveryTailCostsIsolatedMisses(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 100 * time.Microsecond, lateEvery: 5, late: time.Millisecond}
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		seen := make(map[int]bool)
 		for last := 0; last < 500; {
-			last = pulseIndex(nextSettled(candidates).Timestamp, f.epoch)
+			last = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
 			seen[last] = true
 		}
 		cancel()
@@ -673,50 +945,84 @@ func TestPollLearnsDeliveryTail(t *testing.T) {
 		for p := 400; p < 500; p++ {
 			if !seen[p] {
 				missed++
+				if !seen[p-1] {
+					t.Errorf("pulses %d and %d both missed, want misses isolated", p-1, p)
+				}
 			}
 		}
-		if missed > 5 {
-			t.Errorf("%d of pulses 400-499 missed, want the window grown to cover the delivery tail", missed)
+		if missed > 25 {
+			t.Errorf("%d of pulses 400-499 missed, want at most one per delivery-tail cycle", missed)
+		}
+	})
+}
+
+// TestPollLeadCoversSlowOpen reproduces the Mac's slow window opens: the
+// timer wakes up to half a millisecond late and the first query after the idle
+// wait takes four times a warm one, so an uncompensated first query samples
+// the pulse already on. The lead must move the first query ahead of the
+// open so that the shrunk extent still catches the edge, leaving only
+// isolated misses.
+func TestPollLeadCoversSlowOpen(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 100 * time.Microsecond, idleCallDur: 400 * time.Microsecond, wakeJitter: 500 * time.Microsecond}
+		ctx, cancel := context.WithCancel(context.Background())
+		candidates := make(chan CandidateEdge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
+		seen := make(map[int]bool)
+		for last := 0; last < 300; {
+			last = pulseIndex(nextUsable(candidates).Timestamp, f.epoch)
+			seen[last] = true
+		}
+		cancel()
+		<-errCh
+		missed := 0
+		for p := 100; p < 300; p++ {
+			if !seen[p] {
+				missed++
+				if !seen[p-1] {
+					t.Errorf("pulses %d and %d both missed, want misses isolated", p-1, p)
+				}
+			}
+		}
+		if missed > 4 {
+			t.Errorf("%d of pulses 100-299 missed, want the lead to cover the slow open", missed)
 		}
 	})
 }
 
 // TestPollAcquiresDespiteSleepJitter reproduces the daemon's sleep-overshoot
-// regime: wakeups after an idle gap run up to ~0.9 ms late, and one poll
+// regime: wakeups after a timer sleep run up to ~0.9 ms late, and one poll
 // mid-acquisition stalls outright, stretching its bracket -- the noise the
 // former bracket-comparison latch latched on, publishing millisecond-class
 // samples from a still-wide window. Acquisition must ignore bracket noise and
 // wait until the queries pace the loop, where the jitter vanishes and
 // edges are located to the query time. The stall is timed to hit the
-// bracket of the pulse-4 catch, mid-halving.
+// bracket of the pulse-2 catch, during refinement; the catch still advances
+// acquisition normally.
 func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
 		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
 			callDur: 100 * time.Microsecond, wakeJitter: 900 * time.Microsecond,
-			stallAfter: 3999 * time.Millisecond, stall: 3 * time.Millisecond}
+			stallAfter: 1999 * time.Millisecond, stall: 3 * time.Millisecond}
 		capture := &acquireCapture{Handler: slog.DiscardHandler}
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 20 {
-			got = append(got, nextSettled(candidates))
+			got = append(got, nextUsable(candidates))
 		}
 		cancel()
 		<-errCh
 		if first := pulseIndex(got[0].Timestamp, f.epoch); first > 15 {
 			t.Errorf("first edge published at pulse %d, want acquisition despite the jitter plateau", first)
 		}
-		if truncatesSubMillisecondSleeps {
-			// Once the spacing falls below Linux's sleep resolution, the reads
-			// pace the loop. Two catches confirm that at the 31.25 ms window.
-			if capture.window <= 16*time.Millisecond || capture.window > 32*time.Millisecond {
-				t.Errorf("acquired at window %v, want two caught windows after sub-millisecond sleeps are truncated", capture.window)
-			}
-		} else {
+		{
 			// Acquiring in the jitter plateau leaves the window at 15.625ms or
-			// wider; the query-paced floor is reached at 3.9ms.
+			// wider; reaching the spacing floor hands over 3.2ms.
 			if capture.window == 0 || capture.window > 8*time.Millisecond {
 				t.Errorf("acquired at window %v, want the latch to hold out until the queries pace the loop", capture.window)
 			}
@@ -729,63 +1035,385 @@ func TestPollAcquiresDespiteSleepJitter(t *testing.T) {
 					t.Errorf("edge %d is pulse %d after pulse %d, want convergence misses to be isolated", i, pulse, prev)
 				}
 			}
-			if err := e.Timestamp.Sub(f.epoch) - time.Duration(pulse)*period; err < -500*time.Microsecond || err > 500*time.Microsecond {
-				t.Errorf("edge %d at pulse %d: error %v, want within 500µs of the query-time floor", i, pulse, err)
+			// Usable candidates from the timer-paced stages carry the
+			// overshoot inside their bracket; once the queries pace the loop
+			// the edge is located to the query time.
+			tol := time.Millisecond
+			if i >= 10 {
+				tol = 500 * time.Microsecond
+			}
+			if err := e.Timestamp.Sub(f.epoch) - time.Duration(pulse)*period; err < -tol || err > tol {
+				t.Errorf("edge %d at pulse %d: error %v, want within %v", i, pulse, err, tol)
 			}
 		}
 	})
 }
 
-// TestPollConfirmsQueryPacing checks that a single query slowdown does not
-// open the publishing gate. On platforms with sub-millisecond sleeps, the
-// slowdown covers the catch at the 15.625 ms window, where its 400 us queries
-// outlast the 244 us target. On platforms that truncate those sleeps, it
-// instead covers the 250 ms window, where a 5 ms query outlasts the 3.9 ms
-// target but the following 1.95 ms spacing is still sleep-paced. Normal
-// queries resume at the next pulse, so that catch resets the confirmation.
-func TestPollConfirmsQueryPacing(t *testing.T) {
+// TestPollAcquisition checks both handoffs and the confirmation held after a
+// query-paced catch. A temporary slowdown at pulse 2 must not finish
+// acquisition: its sleep-paced confirmation halves the spacing, then either
+// ordinary refinement resumes or query pacing needs a fresh confirmation.
+func TestPollAcquisition(t *testing.T) {
+	const fine = 15624960 * time.Nanosecond
+	const narrowed = fine / 2
+	for _, tc := range []struct {
+		name        string
+		callDur     time.Duration
+		slowCallDur time.Duration
+		windows     []time.Duration
+		extent      time.Duration
+	}{
+		{"spacing floor", 20 * time.Microsecond, 0,
+			[]time.Duration{period, period / 8, fine}, initialPolls * minSpacing},
+		{"query-paced confirmation", 2 * time.Millisecond, 0,
+			[]time.Duration{period, period / 8, period / 8}, period / 8},
+		{"failed confirmation then floor", 20 * time.Microsecond, 400 * time.Microsecond,
+			[]time.Duration{period, period / 8, fine, fine, narrowed}, initialPolls * minSpacing},
+		{"failed confirmation then fresh confirmation", 200 * time.Microsecond, 400 * time.Microsecond,
+			[]time.Duration{period, period / 8, fine, fine, narrowed, narrowed}, narrowed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
+				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+					callDur: tc.callDur, slowFrom: 1990 * time.Millisecond, slowTo: 2010 * time.Millisecond,
+					slowCallDur: tc.slowCallDur}
+				capture := &acquireCapture{Handler: slog.DiscardHandler}
+				ctx, cancel := context.WithTimeout(context.Background(), 10*period)
+				defer cancel()
+				candidates := make(chan CandidateEdge, 16)
+				p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: candidates,
+					params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+					widths: median.New[time.Duration](widthHistory)}
+				if err := p.init(); err != nil {
+					t.Fatal(err)
+				}
+				if p.lead != tc.callDur {
+					t.Errorf("initial lead = %v, want first query duration %v", p.lead, tc.callDur)
+				}
+				extent, acquired, err := p.acquire()
+				if err != nil || !acquired {
+					t.Fatalf("acquisition = %v, %v, want success", acquired, err)
+				}
+				if !reflect.DeepEqual(capture.windows, tc.windows) {
+					t.Errorf("acquisition windows = %v, want %v", capture.windows, tc.windows)
+				}
+				if extent != tc.extent || capture.window != extent {
+					t.Errorf("handoff extent = %v, logged %v, want %v", extent, capture.window, tc.extent)
+				}
+				for len(candidates) > 0 {
+					if ce := <-candidates; ce.Reject != RejectAcquiring {
+						t.Errorf("acquisition catch reject = %q, want acquiring including the final catch", ce.Reject)
+					}
+				}
+				if o, _, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
+					t.Fatalf("first tracking window = %v, %v, want a catch", o, err)
+				}
+				if ce := <-candidates; ce.Reject != "" {
+					t.Errorf("first tracking catch reject = %q, want usable even with slow queries", ce.Reject)
+				}
+			})
+		})
+	}
+}
+
+// TestPollAcquisitionMiss restarts on the first refinement or confirmation
+// miss, without shifting the phase, then finds the returning pulse in a
+// fresh full-period sweep.
+func TestPollAcquisitionMiss(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		callDur time.Duration
+		offFrom int
+		windows []time.Duration
+	}{
+		{"refinement", 20 * time.Microsecond, 1, []time.Duration{period, period / 8}},
+		{"confirmation", 2 * time.Millisecond, 2, []time.Duration{period, period / 8, period / 8}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
+				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+					callDur: tc.callDur, offFrom: tc.offFrom, offTo: tc.offFrom + 1}
+				capture := &acquireCapture{Handler: slog.DiscardHandler}
+				ctx, cancel := context.WithTimeout(context.Background(), 15*period)
+				defer cancel()
+				candidates := make(chan CandidateEdge, 16)
+				p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: candidates,
+					params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+					widths: median.New[time.Duration](widthHistory)}
+				if err := p.init(); err != nil {
+					t.Fatal(err)
+				}
+				if _, acquired, err := p.acquire(); acquired || err != nil {
+					t.Fatalf("acquisition = %v, %v, want restart", acquired, err)
+				}
+				if !reflect.DeepEqual(capture.windows, tc.windows) {
+					t.Fatalf("acquisition windows = %v, want %v", capture.windows, tc.windows)
+				}
+				var last CandidateEdge
+				for len(candidates) > 0 {
+					last = <-candidates
+				}
+				if want := last.Timestamp.Add(2 * period); !p.nextEdge.Equal(want) {
+					t.Errorf("prediction after miss = %v, want %v without a phase shift", p.nextEdge, want)
+				}
+				capture.windows = nil
+				if _, acquired, err := p.acquire(); !acquired || err != nil {
+					t.Fatalf("reacquisition = %v, %v, want success", acquired, err)
+				}
+				if capture.windows[0] != period {
+					t.Errorf("restart window = %v, want a full period", capture.windows[0])
+				}
+			})
+		})
+	}
+}
+
+// TestPollAcquisitionSweep keeps searching without a pulse, tries the fine
+// sweep only once, and retains the coarse phase step on completed misses.
+func TestPollAcquisitionSweep(t *testing.T) {
+	for _, n := range []int{64, 1024} {
+		t.Run(strconv.Itoa(n), func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
+				f := &fakePulse{epoch: time.Now(), callDur: 20 * time.Microsecond}
+				capture := &acquireCapture{Handler: slog.DiscardHandler}
+				ctx, cancel := context.WithTimeout(context.Background(), 12500*time.Millisecond)
+				defer cancel()
+				p := poller{ctx: ctx, lg: slog.New(capture), r: f,
+					params: PollParams{InitialPolls: n, MinSpacing: minSpacing, Wait: f.wait},
+					widths: median.New[time.Duration](widthHistory)}
+				if err := p.init(); err != nil {
+					t.Fatal(err)
+				}
+				start := p.nextEdge
+				if _, acquired, err := p.acquire(); acquired || err != context.DeadlineExceeded {
+					t.Fatalf("acquisition = %v, %v, want to keep sweeping until cancelled", acquired, err)
+				}
+				if len(capture.windows) != 12 {
+					t.Fatalf("swept %d windows, want 12", len(capture.windows))
+				}
+				spacing := period / time.Duration(n)
+				for i, window := range capture.windows {
+					want, wantSpacing := spacing*time.Duration(n), spacing
+					if i == 1 {
+						want, wantSpacing = period, period/startupPolls
+					}
+					if window != want {
+						t.Errorf("sweep window = %v, want %v", window, want)
+					}
+					if capture.spacings[i] != wantSpacing {
+						t.Errorf("sweep %d spacing = %v, want %v", i, capture.spacings[i], wantSpacing)
+					}
+				}
+				step := period + spacing*618/1000
+				if want := start.Add(time.Duration(len(capture.windows)) * step); !p.nextEdge.Equal(want) {
+					t.Errorf("sweep prediction = %v, want %v including phase shifts", p.nextEdge, want)
+				}
+			})
+		})
+	}
+}
+
+// TestPollStartupFineSweep checks discovery of a 1 ms pulse and both pacing
+// paths back to normal-sized refinement, followed by a usable tracking catch.
+func TestPollStartupFineSweep(t *testing.T) {
+	const spacing = period / startupPolls
+	const refined = initialPolls * (spacing / 8)
+	const held = initialPolls * spacing
+	for _, tc := range []struct {
+		name    string
+		callDur time.Duration
+		windows []time.Duration
+		extent  time.Duration
+	}{
+		{"spacing floor", 20 * time.Microsecond, []time.Duration{period, period, refined}, initialPolls * minSpacing},
+		{"USB confirmation", 130 * time.Microsecond, []time.Duration{period, period, refined, refined}, refined},
+		{"query-paced discovery", 600 * time.Microsecond, []time.Duration{period, period, held, held}, held},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			runBubble(t, func(t *testing.T) {
+				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: time.Millisecond, callDur: tc.callDur}
+				capture := &acquireCapture{Handler: slog.DiscardHandler}
+				ctx, cancel := context.WithTimeout(context.Background(), 8*period)
+				defer cancel()
+				candidates := make(chan CandidateEdge, 16)
+				p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: candidates,
+					params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+					widths: median.New[time.Duration](widthHistory)}
+				if err := p.init(); err != nil {
+					t.Fatal(err)
+				}
+				extent, acquired, err := p.acquire()
+				if !acquired || err != nil {
+					t.Fatalf("acquisition = %v, %v, want success", acquired, err)
+				}
+				if !reflect.DeepEqual(capture.windows, tc.windows) {
+					t.Errorf("acquisition windows = %v, want %v", capture.windows, tc.windows)
+				}
+				if extent != tc.extent {
+					t.Errorf("handoff extent = %v, want %v", extent, tc.extent)
+				}
+				if len(capture.spacings) < 2 || capture.spacings[1] != spacing {
+					t.Fatalf("acquisition spacings = %v, want a fine second sweep", capture.spacings)
+				}
+				for len(candidates) > 0 {
+					if ce := <-candidates; ce.Reject != RejectAcquiring {
+						t.Errorf("acquisition reject = %q, want acquiring", ce.Reject)
+					}
+				}
+				if o, _, _, err := p.pollWindow(extent, minSpacing, true); o != caught || err != nil {
+					t.Fatalf("first tracking window = %v, %v, want a catch", o, err)
+				}
+				if ce := <-candidates; ce.Reject != "" {
+					t.Errorf("first tracking reject = %q, want usable", ce.Reject)
+				}
+			})
+		})
+	}
+}
+
+// TestPollStartupFineSweepOnce checks that neither a refinement failure nor
+// tracking loss can enable a fine sweep after the first coarse outcome.
+func TestPollStartupFineSweepOnce(t *testing.T) {
+	for _, width := range []time.Duration{time.Millisecond, 100 * time.Millisecond} {
+		for _, fail := range []bool{false, true} {
+			t.Run(width.String()+"/fail="+strconv.FormatBool(fail), func(t *testing.T) {
+				runBubble(t, func(t *testing.T) {
+					f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: width, callDur: 130 * time.Microsecond}
+					if fail {
+						f.offFrom, f.offTo = 2, 100
+					}
+					capture := &acquireCapture{Handler: slog.DiscardHandler}
+					ctx, cancel := context.WithTimeout(context.Background(), 20*period)
+					defer cancel()
+					p := poller{ctx: ctx, lg: slog.New(capture), r: f, ceCh: make(chan CandidateEdge, 16),
+						params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+						widths: median.New[time.Duration](widthHistory)}
+					if err := p.init(); err != nil {
+						t.Fatal(err)
+					}
+					extent, acquired, err := p.acquire()
+					if acquired == fail || err != nil {
+						t.Fatalf("acquisition = %v, %v, want success %v", acquired, err, !fail)
+					}
+					f.width = 0
+					if acquired {
+						if err := p.track(extent); err != nil {
+							t.Fatal(err)
+						}
+					}
+					capture.windows, capture.spacings = nil, nil
+					if _, acquired, err := p.acquire(); acquired || err != context.DeadlineExceeded {
+						t.Fatalf("reacquisition = %v, %v, want continued coarse sweeping", acquired, err)
+					}
+					if len(capture.spacings) < 3 {
+						t.Fatalf("only %d reacquisition sweeps", len(capture.spacings))
+					}
+					for i, spacing := range capture.spacings {
+						if spacing != period/initialPolls || capture.windows[i] != period {
+							t.Errorf("reacquisition window %d = %v at %v spacing, want coarse", i, capture.windows[i], spacing)
+						}
+					}
+				})
+			})
+		}
+	}
+}
+
+// TestPollStartupPhases checks prompt usable samples across a full period of
+// start phases, and coarse discovery when a narrow pulse starts later.
+func TestPollStartupPhases(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		width  time.Duration
+		offTo  int
+		phases int
+	}{
+		{"narrow", time.Millisecond, 0, 37},
+		{"wide", 100 * time.Millisecond, 0, 37},
+		{"delayed", time.Millisecond, 4, 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for k := range tc.phases {
+				t.Run(strconv.Itoa(k), func(t *testing.T) {
+					runBubble(t, func(t *testing.T) {
+						start := time.Now()
+						f := &fakePulse{epoch: start.Add(time.Duration(k)*period/time.Duration(tc.phases) + 350*time.Microsecond),
+							width: tc.width, callDur: 130 * time.Microsecond, offTo: tc.offTo}
+						capture := &acquireCapture{Handler: slog.DiscardHandler}
+						limit := 6 * period
+						if tc.offTo > 0 {
+							limit = 40 * period
+						}
+						ctx, cancel := context.WithTimeout(context.Background(), limit)
+						defer cancel()
+						candidates := make(chan CandidateEdge)
+						errCh := make(chan error, 1)
+						go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{Wait: f.wait}, candidates, nil) }()
+						for {
+							select {
+							case ce := <-candidates:
+								if ce.Reject != "" {
+									continue
+								}
+								cancel()
+							case err := <-errCh:
+								if err != context.Canceled {
+									t.Fatalf("Poll ended with %v before a usable sample", err)
+								}
+								for i, window := range capture.windows {
+									if window == period && capture.spacings[i] == period/startupPolls {
+										if i != 1 || tc.width == 100*time.Millisecond {
+											t.Errorf("unexpected fine sweep at window %d", i)
+										}
+									}
+								}
+								return
+							}
+						}
+					})
+				})
+			}
+		})
+	}
+}
+
+// TestPollAcquisitionPreservesPhase catches a 300 us pulse 20 us before its
+// trailing edge. A grid centred on the edge estimate shifts the next query
+// half a query later, missing the pulse despite having already found it.
+func TestPollAcquisitionPreservesPhase(t *testing.T) {
 	runBubble(t, func(t *testing.T) {
-		slowAt := 6 * time.Second
-		slowCallDur := 400 * time.Microsecond
-		if truncatesSubMillisecondSleeps {
-			slowAt = 2 * time.Second
-			slowCallDur = 5 * time.Millisecond
+		f := &fakePulse{epoch: time.Now().Add(312415 * time.Microsecond), width: 300 * time.Microsecond,
+			callDur: 130 * time.Microsecond}
+		ctx, cancel := context.WithTimeout(context.Background(), 10*period)
+		defer cancel()
+		candidates := make(chan CandidateEdge, 16)
+		stats := &PollStats{}
+		p := poller{ctx: ctx, lg: testLog, r: f, ceCh: candidates, stats: stats,
+			params: PollParams{InitialPolls: initialPolls, MinSpacing: minSpacing, Wait: f.wait},
+			widths: median.New[time.Duration](widthHistory)}
+		if err := p.init(); err != nil {
+			t.Fatal(err)
 		}
-		f := &fakePulse{
-			epoch:       time.Now().Add(350 * time.Millisecond),
-			width:       100 * time.Millisecond,
-			callDur:     20 * time.Microsecond,
-			slowFrom:    slowAt - 10*time.Millisecond,
-			slowTo:      slowAt + 10*time.Millisecond,
-			slowCallDur: slowCallDur,
+		_, acquired, err := p.acquire()
+		if err != nil || !acquired {
+			t.Fatalf("acquisition = %v, %v, want success without losing the caught phase", acquired, err)
 		}
-		capture := &acquireCapture{Handler: slog.DiscardHandler}
-		ctx, cancel := context.WithCancel(context.Background())
-		candidates := make(chan CandidateEdge)
-		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, slog.New(capture), f, PollParams{}, candidates, nil) }()
-		for range 3 {
-			nextSettled(candidates)
+		if stats.acquire.windows != stats.acquire.edges {
+			t.Errorf("acquisition caught %d of %d windows, want every refinement to catch", stats.acquire.edges, stats.acquire.windows)
 		}
-		cancel()
-		<-errCh
-		if truncatesSubMillisecondSleeps {
-			if capture.window <= 16*time.Millisecond || capture.window > 32*time.Millisecond {
-				t.Errorf("acquired at window %v, want the one-window query slowdown suppressed before truncated sleeps pace the loop", capture.window)
+		close(candidates)
+		for ce := range candidates {
+			edge := f.epoch.Add(time.Duration(pulseIndex(ce.Timestamp, f.epoch)) * period)
+			if edge.Before(ce.Timestamp.Add(-ce.Uncertainty[0])) || edge.After(ce.Timestamp.Add(ce.Uncertainty[1])) {
+				t.Errorf("edge %v outside candidate uncertainty: %+v", edge, ce)
 			}
-		} else if capture.window == 0 || capture.window >= 15*time.Millisecond {
-			t.Errorf("acquired at window %v, want the one-window query slowdown suppressed", capture.window)
 		}
 	})
 }
 
-// TestPollNarrowPulse sweeps the pulse phase across the 7.8125 ms spacing of
-// the second acquisition stage. The 2 ms pulse fits between the polls of the
-// second and third stages at most phases, and a miss repeats the
-// pulse-relative poll positions, so acquisition depends on the per-miss grid
-// sweep finding the pulse. Tracking then holds lock normally, since the
-// acquired spacing is below the pulse width; recovery from loss can widen
-// the spacing beyond the width again and falls back to swept acquisition.
+// TestPollNarrowPulse varies the start phase of a 2 ms pulse observed through
+// 2 ms queries. Acquisition must find it in the coarse sweep and hand off
+// to tracking, which continues catching at query resolution.
 func TestPollNarrowPulse(t *testing.T) {
 	for k := range 6 {
 		t.Run(strconv.Itoa(k), func(t *testing.T) {
@@ -801,10 +1429,10 @@ func testPollNarrowPulse(t *testing.T, epochOffset time.Duration) {
 		ctx, cancel := context.WithCancel(context.Background())
 		candidates := make(chan CandidateEdge)
 		errCh := make(chan error, 1)
-		go func() { errCh <- Poll(ctx, testLog, f, PollParams{}, candidates, nil) }()
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
 		var got []CandidateEdge
 		for len(got) < 3 {
-			got = append(got, nextSettled(candidates))
+			got = append(got, nextUsable(candidates))
 		}
 		cancel()
 		<-errCh
@@ -828,6 +1456,8 @@ func TestClassify(t *testing.T) {
 		name       string
 		curInPulse bool
 		curAt      time.Duration
+		prevWidth  time.Duration
+		curWidth   time.Duration
 		deadline   time.Duration
 		wantEdgeAt time.Duration
 		wantMissed bool
@@ -870,6 +1500,44 @@ func TestClassify(t *testing.T) {
 			deadline:   5 * time.Millisecond,
 			wantMissed: true,
 		},
+		{
+			name:       "outer interval reaching a period",
+			curInPulse: true,
+			prevWidth:  200 * time.Millisecond,
+			curAt:      800 * time.Millisecond,
+			curWidth:   200 * time.Millisecond,
+			wantMissed: true,
+		},
+		{
+			name:       "outer interval shorter than a period",
+			curInPulse: true,
+			prevWidth:  200 * time.Millisecond,
+			curAt:      800 * time.Millisecond,
+			curWidth:   199 * time.Millisecond,
+			wantEdgeAt: 499750 * time.Microsecond,
+		},
+		{
+			name:       "clock stepped backward inside off query",
+			curInPulse: true,
+			prevWidth:  -time.Millisecond,
+			curAt:      4 * time.Millisecond,
+			wantMissed: true,
+		},
+		{
+			name:       "clock stepped backward between queries",
+			curInPulse: true,
+			prevWidth:  2 * time.Millisecond,
+			curAt:      time.Millisecond,
+			curWidth:   2 * time.Millisecond,
+			wantMissed: true,
+		},
+		{
+			name:       "clock stepped backward inside on query",
+			curInPulse: true,
+			curAt:      4 * time.Millisecond,
+			curWidth:   -time.Millisecond,
+			wantMissed: true,
+		},
 	}
 	// The mono readings are skewed from the stamp readings so a midpoint or a
 	// deadline comparison taken from the wrong clock is caught. deadline is
@@ -881,8 +1549,10 @@ func TestClassify(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			prevAt := clockReading{stamp: base, mono: base.Add(monoSkew)}
 			curAt := clockReading{stamp: base.Add(tc.curAt), mono: base.Add(tc.curAt + monoSkew)}
-			prev := reading{poll: poll{start: prevAt, end: prevAt}}
-			cur := reading{inPulse: tc.curInPulse, poll: poll{start: curAt, end: curAt}}
+			prevEnd := clockReading{stamp: base.Add(tc.prevWidth), mono: base.Add(tc.prevWidth + monoSkew)}
+			curEnd := clockReading{stamp: base.Add(tc.curAt + tc.curWidth), mono: base.Add(tc.curAt + tc.curWidth + monoSkew)}
+			prev := reading{poll: poll{start: prevAt, end: prevEnd}}
+			cur := reading{inPulse: tc.curInPulse, poll: poll{start: curAt, end: curEnd}}
 			edge, missed := classify(prev, cur, base.Add(tc.deadline+monoSkew))
 			if missed != tc.wantMissed {
 				t.Errorf("missed = %v, want %v", missed, tc.wantMissed)
@@ -900,14 +1570,90 @@ func TestClassify(t *testing.T) {
 	}
 }
 
-func TestHalfCeil(t *testing.T) {
-	for d, want := range map[time.Duration]time.Duration{
-		4 * time.Nanosecond: 2 * time.Nanosecond,
-		5 * time.Nanosecond: 3 * time.Nanosecond,
+type pulseReaderFunc func() (bool, error)
+
+func (f pulseReaderFunc) InPulse() (bool, error) { return f() }
+
+// TestPollWindowUncertainty checks the published interval against the actual
+// query endpoints, including unequal query widths and nanosecond rounding.
+func TestPollWindowUncertainty(t *testing.T) {
+	base := time.Unix(1_000, 0)
+	for _, tc := range []struct {
+		name        string
+		offEnd      time.Duration
+		onStart     time.Duration
+		onEnd       time.Duration
+		timestamp   time.Duration
+		uncertainty [2]time.Duration
+	}{
+		{"equal queries", 20 * time.Microsecond, 30 * time.Microsecond, 50 * time.Microsecond,
+			25 * time.Microsecond, [2]time.Duration{25 * time.Microsecond, 25 * time.Microsecond}},
+		{"long off query", 80 * time.Microsecond, 100 * time.Microsecond, 120 * time.Microsecond,
+			75 * time.Microsecond, [2]time.Duration{75 * time.Microsecond, 45 * time.Microsecond}},
+		{"long on query", 20 * time.Microsecond, 40 * time.Microsecond, 120 * time.Microsecond,
+			45 * time.Microsecond, [2]time.Duration{45 * time.Microsecond, 75 * time.Microsecond}},
+		{"long gap", 20 * time.Microsecond, 100 * time.Microsecond, 120 * time.Microsecond,
+			60 * time.Microsecond, [2]time.Duration{60 * time.Microsecond, 60 * time.Microsecond}},
+		{"odd nanoseconds", 5, 8, 15, 6, [2]time.Duration{6, 9}},
 	} {
-		if got := halfCeil(d); got != want {
-			t.Errorf("halfCeil(%v) = %v, want %v", d, got, want)
+		t.Run(tc.name, func(t *testing.T) {
+			reads := []time.Time{base, base.Add(tc.offEnd), base.Add(tc.onStart), base.Add(tc.onEnd)}
+			calls := 0
+			candidates := make(chan CandidateEdge, 1)
+			p := poller{
+				widths: median.New[time.Duration](widthHistory),
+				ctx:    context.Background(), lg: testLog, ceCh: candidates, nextEdge: base,
+				r: pulseReaderFunc(func() (bool, error) {
+					calls++
+					return calls == 2, nil
+				}),
+				params: PollParams{
+					MinSpacing: minSpacing,
+					Now: func() time.Time {
+						now := reads[0]
+						reads = reads[1:]
+						return now
+					},
+					Wait: func(context.Context, time.Time, bool) (bool, error) { return false, nil },
+				},
+			}
+			if o, _, _, err := p.pollWindow(time.Millisecond, minSpacing, true); err != nil || o == miss {
+				t.Fatalf("pollWindow = %v, %v, want a catch", o, err)
+			}
+			ce := <-candidates
+			if want := base.Add(tc.timestamp); !ce.Timestamp.Equal(want) {
+				t.Errorf("timestamp = %v, want midpoint of poll midpoints %v", ce.Timestamp, want)
+			}
+			if ce.Uncertainty != tc.uncertainty {
+				t.Errorf("uncertainty = %v, want %v", ce.Uncertainty, tc.uncertainty)
+			}
+			if want := [2]time.Duration{tc.offEnd, tc.onEnd - tc.onStart}; ce.PollWidths != want {
+				t.Errorf("poll widths = %v, want %v", ce.PollWidths, want)
+			}
+			if !ce.Timestamp.Add(-ce.Uncertainty[0]).Equal(base) || !ce.Timestamp.Add(ce.Uncertainty[1]).Equal(ce.TRead) {
+				t.Errorf("uncertainty does not reach the outer query endpoints: %+v", ce)
+			}
+		})
+	}
+}
+
+func TestReconciledStampIgnoresCoarseMono(t *testing.T) {
+	// Model Windows FILETIME stamps paired with time.Now readings quantized
+	// to 0.5 ms. Only the closing read crosses a tick; reconciling against
+	// mono would move the midpoint from 495 us to 610 us.
+	wallBase := time.Unix(1_700_000_000, 0)
+	monoBase := time.Now()
+	at := func(d time.Duration) clockReading {
+		return clockReading{
+			stamp: wallBase.Add(d),
+			mono:  monoBase.Add(d.Truncate(500 * time.Microsecond)),
 		}
+	}
+	prev := poll{start: at(480 * time.Microsecond), end: at(490 * time.Microsecond)}
+	cur := poll{start: at(495 * time.Microsecond), end: at(515 * time.Microsecond)}
+	want := wallBase.Add(495 * time.Microsecond)
+	if got, ok := reconciledStamp(prev, cur); !ok || !got.Equal(want) {
+		t.Errorf("reconciled stamp = %v, %v; want precise midpoint %v, true", got, ok, want)
 	}
 }
 
@@ -936,68 +1682,53 @@ func pulseIndex(t, epoch time.Time) int {
 	return int((t.Sub(epoch) + period/2) / period)
 }
 
-func nextSettled(candidates <-chan CandidateEdge) CandidateEdge {
+func nextUsable(candidates <-chan CandidateEdge) CandidateEdge {
 	for {
 		candidate := <-candidates
-		if candidate.Settled {
+		if candidate.Reject == "" {
 			return candidate
 		}
 	}
 }
 
-// TestPollOutlier checks that a tracking catch whose bracket is far wider
-// than the recent settled brackets is marked an outlier, and nothing else is.
-// The fake stalls the query that catches pulse 60 by 2 ms, well after the
-// reference history has filled; the read that starts in the last 100 us
+// TestPollFlagsStalledCatch checks that a tracking catch whose catching
+// query stalled is flagged as anomalous, and nothing else is. The fake stalls the query
+// that catches pulse 60 by 2 ms; the read that starts in the last 100 us
 // before the edge is the catching one, so the stall is timed there.
-func TestPollOutlier(t *testing.T) {
-	for _, tc := range []struct {
-		name  string
-		ratio float64
-		want  bool
-	}{
-		{name: "ratio 3", ratio: 3, want: true},
-		{name: "disabled", ratio: 0, want: false},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			runBubble(t, func(t *testing.T) {
-				const stallPulse = 60
-				f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
-					callDur: 100 * time.Microsecond, stallAfter: stallPulse*period - 100*time.Microsecond, stall: 2 * time.Millisecond}
-				ctx, cancel := context.WithCancel(context.Background())
-				candidates := make(chan CandidateEdge)
-				errCh := make(chan error, 1)
-				go func() { errCh <- Poll(ctx, testLog, f, PollParams{OutlierRatio: tc.ratio}, candidates, nil) }()
-				var got []CandidateEdge
-				for len(got) == 0 || pulseIndex(got[len(got)-1].Timestamp, f.epoch) < stallPulse+2 {
-					got = append(got, <-candidates)
+func TestPollFlagsStalledCatch(t *testing.T) {
+	runBubble(t, func(t *testing.T) {
+		const stallPulse = 60
+		f := &fakePulse{epoch: time.Now().Add(350 * time.Millisecond), width: 100 * time.Millisecond,
+			callDur: 100 * time.Microsecond, stallAfter: stallPulse*period - 100*time.Microsecond, stall: 2 * time.Millisecond}
+		ctx, cancel := context.WithCancel(context.Background())
+		candidates := make(chan CandidateEdge)
+		errCh := make(chan error, 1)
+		go func() { errCh <- Poll(ctx, testLog, f, PollParams{Wait: f.wait}, candidates, nil) }()
+		var got []CandidateEdge
+		for len(got) == 0 || pulseIndex(got[len(got)-1].Timestamp, f.epoch) < stallPulse+2 {
+			got = append(got, <-candidates)
+		}
+		cancel()
+		if err := <-errCh; err != context.Canceled {
+			t.Fatalf("Poll error = %v, want context.Canceled", err)
+		}
+		anomalous := 0
+		for _, e := range got {
+			pulse := pulseIndex(e.Timestamp, f.epoch)
+			if pulse < 20 {
+				continue
+			}
+			if e.Reject == RejectAnomalous {
+				anomalous++
+				if pulse != stallPulse || max(e.Uncertainty[0], e.Uncertainty[1]) < 500*time.Microsecond {
+					t.Errorf("anomalous catch at pulse %d with uncertainty %v, want only the stalled catch at pulse %d", pulse, e.Uncertainty, stallPulse)
 				}
-				cancel()
-				if err := <-errCh; err != context.Canceled {
-					t.Fatalf("Poll error = %v, want context.Canceled", err)
-				}
-				stalled := 0
-				for _, e := range got {
-					if !e.Settled {
-						continue
-					}
-					pulse := pulseIndex(e.Timestamp, f.epoch)
-					if e.Uncertainty > 500*time.Microsecond {
-						stalled++
-						if pulse != stallPulse {
-							t.Errorf("wide bracket (uncertainty %v) at pulse %d, want only pulse %d", e.Uncertainty, pulse, stallPulse)
-						}
-						if e.Outlier != tc.want {
-							t.Errorf("stalled catch outlier = %v, want %v", e.Outlier, tc.want)
-						}
-					} else if e.Outlier {
-						t.Errorf("pulse %d with uncertainty %v marked an outlier", pulse, e.Uncertainty)
-					}
-				}
-				if stalled != 1 {
-					t.Errorf("%d catches with a wide bracket, want 1", stalled)
-				}
-			})
-		})
-	}
+			} else if max(e.Uncertainty[0], e.Uncertainty[1]) > 500*time.Microsecond {
+				t.Errorf("pulse %d with uncertainty %v not anomalous", pulse, e.Uncertainty)
+			}
+		}
+		if anomalous != 1 {
+			t.Errorf("%d anomalous catches, want 1", anomalous)
+		}
+	})
 }

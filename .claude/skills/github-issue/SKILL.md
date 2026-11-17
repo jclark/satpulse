@@ -38,6 +38,12 @@ Do not use markdown headings (`#`, `##`, etc.) in the body. Keep formatting ligh
 
 Do not hard-wrap body prose into fixed-width lines. Write each paragraph as a single long line and let GitHub wrap it for display. Hard line breaks inside a paragraph render as awkward wrapping in the GitHub UI. (This does not apply to code blocks, which are preformatted.)
 
+## Privacy
+
+Issues are public. Never put anything from the private lab into an issue: no host names (lab machine names or any `.lan` name), no NTRIP mountpoint names, caster addresses, IP addresses, network or location details, people, credentials, or anything else recorded in the private `satpulse-systest` repo. The same applies to issue comments, PR descriptions and commit messages.
+
+Describe the setup in terms that any reader could reproduce: the receiver model and firmware, the message types and rates, the relevant satpulse config fragment, the OS and board family, and the observed data. "Observed with `[stream.pull]` from a UM980 base sending MSM4 for five GNSS" is right; "observed on <lab host> pulling <lab caster>'s mountpoint" with the real names is not. Before running `gh issue create`, `gh issue edit` or `gh issue comment`, reread the text for these.
+
 ## Labels
 
 Add labels when they clearly apply. Common labels:

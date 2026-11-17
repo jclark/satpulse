@@ -23,39 +23,42 @@ const oneYearSecs = 365 * 24 * 3600
 func TestSSEObserver_Events(t *testing.T) {
 	tests := []struct {
 		name         string
-		action       func(*SSEObserver)
+		action       func(obs *SSEObserver, tRead time.Time)
+		skipTime     bool // the test sends the event itself, so its time means nothing
 		eventType    string
 		expectedJSON string
 	}{
 		{
 			name: "init",
-			action: func(obs *SSEObserver) {
+			action: func(obs *SSEObserver, tRead time.Time) {
 				events := obs.InitEvents()
 				if len(events) != 1 {
 					panic("expected single init event before any ModeChanged")
 				}
-				obs.sseCh <- events[0]
+				obs.sseCh <- TimedEvent{Event: events[0]}
 			},
+			skipTime:     true,
 			eventType:    "init",
 			expectedJSON: `{"receiver":{"vendor":"u-blox","firmware":"HPG 1.32 PROTVER 27.31","hardware":"ZED-F9P","supportedGNSS":["GPS","GLO"]}}`,
 		},
 		{
 			name: "mode_changed",
-			action: func(obs *SSEObserver) {
-				obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
+			action: func(obs *SSEObserver, tRead time.Time) {
+				obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking, tRead)
 			},
 			eventType:    "mode",
 			expectedJSON: `{"mode":"tracking"}`,
 		},
 		{
 			name: "sample_ok",
-			action: func(obs *SSEObserver) {
+			action: func(obs *SSEObserver, tRead time.Time) {
 				obs.Sample(phcsync.Sample{
 					Kind:   phcsync.SampleOK,
 					Offset: 123 * time.Nanosecond,
 					Freq:   1.5,
 					Mode:   phcsync.ModeTracking,
 					Era:    phctime.Era(0),
+					Sys:    tRead,
 				})
 			},
 			eventType:    "phc",
@@ -63,13 +66,14 @@ func TestSSEObserver_Events(t *testing.T) {
 		},
 		{
 			name: "sample_outlier",
-			action: func(obs *SSEObserver) {
+			action: func(obs *SSEObserver, tRead time.Time) {
 				obs.Sample(phcsync.Sample{
 					Kind:   phcsync.SampleOutlier,
 					Offset: -456 * time.Nanosecond,
 					Freq:   -2.3,
 					Mode:   phcsync.ModeReset,
 					Era:    phctime.Era(0),
+					Sys:    tRead,
 				})
 			},
 			eventType:    "phc",
@@ -77,18 +81,18 @@ func TestSSEObserver_Events(t *testing.T) {
 		},
 		{
 			name: "time",
-			action: func(obs *SSEObserver) {
+			action: func(obs *SSEObserver, tRead time.Time) {
 				obs.Tick(&gpsprot.TimeMsg{
 					Ref:     gpsprot.PostPulse,
 					TAITime: ptime.Time(oneYearSecs * 1e9),
-				}, time.Now())
+				}, tRead)
 			},
 			eventType:    "time",
 			expectedJSON: fmt.Sprintf(`{"utc":"1971-01-01T00:00:00Z","tai":%d}`, oneYearSecs),
 		},
 		{
 			name: "survey",
-			action: func(obs *SSEObserver) {
+			action: func(obs *SSEObserver, tRead time.Time) {
 				obs.Survey(&gpsprot.SurveyMsg{
 					Position:   gpsprot.Point3D{gpsprot.Meters(1000), gpsprot.Meters(2000), gpsprot.Meters(3000)},
 					Accuracy:   gpsprot.Meters(5.5),
@@ -96,28 +100,28 @@ func TestSSEObserver_Events(t *testing.T) {
 					ObsCount:   150,
 					InProgress: true,
 					Valid:      true,
-				}, time.Now())
+				}, tRead)
 			},
 			eventType:    "survey",
 			expectedJSON: `{"x":1000,"y":2000,"z":3000,"accuracy":5.5,"obsTime":30,"obsCount":150,"inProgress":true,"valid":true}`,
 		},
 		{
 			name: "survey_no_position",
-			action: func(obs *SSEObserver) {
+			action: func(obs *SSEObserver, tRead time.Time) {
 				obs.Survey(&gpsprot.SurveyMsg{
 					Accuracy:   gpsprot.Meters(5.5),
 					ObsTime:    60 * gpsprot.Second,
 					ObsCount:   60,
 					InProgress: true,
 					Valid:      false,
-				}, time.Now())
+				}, tRead)
 			},
 			eventType:    "survey",
 			expectedJSON: `{"accuracy":5.5,"obsTime":60,"obsCount":60,"inProgress":true,"valid":false}`,
 		},
 		{
 			name: "satellites",
-			action: func(obs *SSEObserver) {
+			action: func(obs *SSEObserver, tRead time.Time) {
 				obs.Satellites(&gpsprot.SatellitesMsg{
 					SVs: []gpsprot.SVInfo{
 						{
@@ -130,7 +134,7 @@ func TestSSEObserver_Events(t *testing.T) {
 							Used:    true,
 						},
 					},
-				}, time.Now())
+				}, tRead)
 			},
 			eventType:    "satellites",
 			expectedJSON: `{"svs":[{"id":"G01","lookAngles":{"azimuth":45,"elevation":30},"signals":[{"id":"L1","cn0":0}],"used":true}]}`,
@@ -139,7 +143,7 @@ func TestSSEObserver_Events(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ch := make(chan sse.Event, 1)
+			ch := make(chan TimedEvent, 1)
 			cfgResult := &gpscfg.Result{
 				ReceiverInfo: &gpsprot.ReceiverInfo{
 					Vendor:        "u-blox",
@@ -150,9 +154,13 @@ func TestSSEObserver_Events(t *testing.T) {
 			}
 			obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)
 
-			tt.action(obs)
+			tRead := time.Unix(1000, 0)
+			tt.action(obs, tRead)
 
 			event := <-ch
+			if !tt.skipTime && !event.T.Equal(tRead) {
+				t.Errorf("event time %v, want %v", event.T, tRead)
+			}
 			wireFormat := event.Format()
 
 			// Check event type
@@ -376,7 +384,7 @@ func TestBuildQualitySSE(t *testing.T) {
 }
 
 func TestNavEpochPVSSE(t *testing.T) {
-	ch := make(chan sse.Event, 4)
+	ch := make(chan TimedEvent, 4)
 	cfgResult := &gpscfg.Result{
 		ReceiverInfo: &gpsprot.ReceiverInfo{Vendor: "test"},
 	}
@@ -388,18 +396,25 @@ func TestNavEpochPVSSE(t *testing.T) {
 		}),
 	}
 	// Fire NavEpochPV
+	tRead := time.Unix(1000, 0)
 	obs.NavEpochPV(&gpsprot.NavEpochMsg{
 		FixLevel:    gpsprot.FixLevelCode,
 		SolutionDim: gpsprot.SolutionDim3D,
-	}, pv, time.Now())
+	}, pv, tRead)
 	// Should produce posvel then quality
 	posvel := <-ch
 	if !strings.Contains(posvel.Format(), "event: posvel\n") {
 		t.Errorf("expected posvel event, got: %s", posvel.Format())
 	}
+	if !posvel.T.Equal(tRead) {
+		t.Errorf("posvel time %v, want %v", posvel.T, tRead)
+	}
 	quality := <-ch
 	if !strings.Contains(quality.Format(), "event: quality\n") {
 		t.Errorf("expected quality event, got: %s", quality.Format())
+	}
+	if !quality.T.Equal(tRead) {
+		t.Errorf("quality time %v, want %v", quality.T, tRead)
 	}
 }
 
@@ -407,13 +422,13 @@ func TestNavEpochPVSSE(t *testing.T) {
 // observed, InitEvents includes the cached mode event so a fresh client
 // learns the current mode at connect time.
 func TestInitEventsAfterModeChanged(t *testing.T) {
-	ch := make(chan sse.Event, 1)
+	ch := make(chan TimedEvent, 1)
 	cfgResult := &gpscfg.Result{ReceiverInfo: &gpsprot.ReceiverInfo{Vendor: "test"}}
 	obs := New(ch, ptime.LeapSecond{}, slog.Default(), cfgResult)
 	if got := obs.InitEvents(); len(got) != 1 {
 		t.Fatalf("expected 1 init event before ModeChanged, got %d", len(got))
 	}
-	obs.ModeChanged(phcsync.ModeInvalid, phcsync.ModeReset)
+	obs.ModeChanged(phcsync.ModeInvalid, phcsync.ModeReset, time.Time{})
 	<-ch // drain the broadcast emit
 	events := obs.InitEvents()
 	if len(events) != 2 {
@@ -430,7 +445,7 @@ func TestInitEventsAfterModeChanged(t *testing.T) {
 		t.Errorf("mode event payload should be {\"mode\":\"reset\"}, got: %s", wire)
 	}
 	// A subsequent transition replaces the cached mode.
-	obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
+	obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking, time.Time{})
 	<-ch
 	events = obs.InitEvents()
 	if len(events) != 2 {
@@ -507,7 +522,7 @@ func TestSSEObserverCorReportLatch(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ch := make(chan sse.Event, len(tc.events))
+			ch := make(chan TimedEvent, len(tc.events))
 			obs := New(ch, ptime.LeapSecond{}, slog.Default(), &gpscfg.Result{})
 			for _, ev := range tc.events {
 				obs.CorReport(&gpsprot.CorReportMsg{
@@ -519,7 +534,7 @@ func TestSSEObserverCorReportLatch(t *testing.T) {
 			close(ch)
 			var got []string
 			for ev := range ch {
-				got = append(got, parseCorReportSource(t, ev))
+				got = append(got, parseCorReportSource(t, ev.Event))
 			}
 			if !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %v\nwant %v", got, tc.expect)
@@ -552,7 +567,7 @@ func parseCorReportSource(t *testing.T, ev sse.Event) string {
 // when GPS detection fails but the daemon continues running because no
 // PHC is configured.
 func TestNewNilCfgResult(t *testing.T) {
-	ch := make(chan sse.Event, 1)
+	ch := make(chan TimedEvent, 1)
 	obs := New(ch, ptime.LeapSecond{}, slog.Default(), nil)
 	if got := obs.InitEvents(); len(got) != 0 {
 		t.Fatalf("expected 0 init events with nil cfgResult, got %d", len(got))
