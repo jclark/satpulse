@@ -109,11 +109,10 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 			return nil, err
 		}
 	}
-	clk, err := OpenDeviceClock(phc.ClockPath(phcIndex), pinDesc)
+	clk, err := openPath(phc.ClockPath(phcIndex), ifName, pinDesc)
 	if err != nil {
 		return nil, err
 	}
-	clk.ifName = ifName
 	clk.DriverFlags = flags
 	if flags&phc.DriverCarrier != 0 {
 		clk.w = w
@@ -126,12 +125,19 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 // that is not named by a network interface. Nothing is derived from an
 // interface: there are no driver flags and no carrier handling.
 func OpenDeviceClock(path string, pinDesc PinDesc) (*Clock, error) {
+	return openPath(path, "", pinDesc)
+}
+
+// openPath opens the PHC with the given device path; ifName is the
+// interface through which it was named, or empty.
+func openPath(path, ifName string, pinDesc PinDesc) (*Clock, error) {
 	pc, err := phc.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	clk := Clock{
 		Clock:     *pc,
+		ifName:    ifName,
 		chanIndex: pinDesc.ChanIndex,
 	}
 	if pinDesc.PinIndex != nil {
