@@ -63,16 +63,17 @@ func (s sReqState) isFinal() bool {
 
 // sReq is a single command request.
 type sReq struct {
-	state    sReqState
-	cmd      string       // command text, without CR LF
-	nakOK    bool         // a "$R?" refusal is an acceptable outcome, not a failure
-	optional bool         // giving up after retries is success, not failure
-	needs    *sReq        // earlier request that must succeed, or this one is skipped
-	onReply  func(*Reply) // records achieved values from the matching reply
-	onLst    func(string) // lst commands: called with the joined block contents
-	blocks   []string     // block units collected so far (lst commands)
-	tBase    time.Time    // send time, for the reply deadline
-	err      error
+	state      sReqState
+	cmd        string       // command text, without CR LF
+	nakOK      bool         // a "$R?" refusal is an acceptable outcome, not a failure
+	optional   bool         // giving up after retries is success, not failure
+	needs      *sReq        // earlier request that must succeed, or this one is skipped
+	needsAllOK bool         // skipped if any earlier request failed
+	onReply    func(*Reply) // records achieved values from the matching reply
+	onLst      func(string) // lst commands: called with the joined block contents
+	blocks     []string     // block units collected so far (lst commands)
+	tBase      time.Time    // send time, for the reply deadline
+	err        error
 }
 
 var _ gpsprot.Configurator = (*Configurator)(nil)
@@ -192,14 +193,17 @@ func (c *Configurator) anyFailed() bool {
 
 // promote moves the first non-final request from NotReady to Ready when
 // everything before it is final: the single-flight rule. A request whose
-// needed predecessor did not succeed is skipped instead of promoted.
+// needed predecessor did not succeed, or that needs every earlier request
+// to have succeeded when one failed, is skipped instead of promoted. Every
+// request after it is still NotReady, so anyFailed sees only earlier ones.
 func (c *Configurator) promote() {
 	for i := c.nFinished; i < len(c.reqs); i++ {
 		req := c.reqs[i]
 		if req.state.isFinal() {
 			continue
 		}
-		if req.needs != nil && req.needs.state.isFinal() && req.needs.state != sStateSucceeded {
+		if req.needs != nil && req.needs.state.isFinal() && req.needs.state != sStateSucceeded ||
+			req.needsAllOK && c.anyFailed() {
 			req.state = sStateSkipped
 			continue
 		}

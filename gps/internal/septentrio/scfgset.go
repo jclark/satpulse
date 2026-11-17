@@ -240,7 +240,10 @@ func (c *Configurator) generateSaveResetReqs() {
 	o := &c.target.Opts
 	var save *sReq
 	if o.Save != gpsprot.SaveNone {
-		save = &sReq{cmd: "exeCopyConfigFile, Current, Boot"}
+		// NVM is written only by an invocation in which everything
+		// succeeded (SEMANTICS.md): after any failed request the save is
+		// skipped, and so is its paired reset.
+		save = &sReq{cmd: "exeCopyConfigFile, Current, Boot", needsAllOK: true}
 		c.append(save)
 	}
 	var reset string

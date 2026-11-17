@@ -549,6 +549,47 @@ func TestConfigureSaveResetGate(t *testing.T) {
 	}
 }
 
+// TestConfigureFailureGatesSave checks the SEMANTICS.md rule that NVM is
+// written only by an invocation in which everything succeeded: after a
+// refused set, a requested save is skipped and so is its paired reset, while
+// a reset with no save requested still runs.
+func TestConfigureFailureGatesSave(t *testing.T) {
+	tests := []struct {
+		name       string
+		save       gpsprot.SaveType
+		expectSent []string
+	}{
+		{"save and reload", gpsprot.SaveAll, nil},
+		{"reload alone", gpsprot.SaveNone, []string{"exeCopyConfigFile, Boot, Current"}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			replies := make(map[string]string, len(asFoundReplies))
+			maps.Copy(replies, asFoundReplies)
+			replies["setCalibCommonDelay, 42"] = "!setCalibCommonDelay: Argument 'CommonDelay' is invalid!"
+			replies["exeCopyConfigFile, Current, Boot"] = "CopyConfigFile, Current, Boot"
+			replies["exeCopyConfigFile, Boot, Current"] = "CopyConfigFile, Boot, Current"
+			target := &gpsprot.ConfigTarget{}
+			target.Props.SetAntennaCableDelay(42 * time.Nanosecond)
+			target.Opts.Save = tc.save
+			target.Opts.Reset = gpsprot.ResetReload
+			_, sent, errs := runConfig(t, target, replies)
+			if len(errs) != 1 {
+				t.Fatalf("errors: got %v; want the refusal alone", errs)
+			}
+			var got []string
+			for _, cmd := range sent {
+				if strings.HasPrefix(cmd, "exe") {
+					got = append(got, cmd)
+				}
+			}
+			if !reflect.DeepEqual(got, tc.expectSent) {
+				t.Errorf("NVM commands sent: got %v want %v", got, tc.expectSent)
+			}
+		})
+	}
+}
+
 // TestConfigureQueryFailureSkipsSets checks that a failed query skips the
 // whole set phase: realizing the target without the current state would be
 // guesswork (an add-only PVT request would wipe the stream's other blocks).
