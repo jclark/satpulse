@@ -383,10 +383,10 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
-			name: "device only - show mode",
+			name: "device only - show pins mode",
 			args: []string{"/dev/ptp_tic"},
 			expected: &FlagConfig{
-				Mode:    ModeShowAuto,
+				Mode:    ModeShowPins,
 				Device:  "/dev/ptp_tic",
 				Timeout: 2 * time.Second,
 			},

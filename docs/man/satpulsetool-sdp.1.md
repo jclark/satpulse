@@ -33,7 +33,7 @@ The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-
 **\-\-show\-ifaces** and **\-\-show\-pins** options.
 At most one of these options can be specified.
 If none of them are specified, the command behaves as if **\-\-show\-ifaces** was specified.
-However, if *phc* is specified and the PHC has pins, it behaves as if **\-\-show\-pins** was specified.
+However, if *phc* is specified, and the PHC has pins or *phc* is a path, it behaves as if **\-\-show\-pins** was specified.
 In **\-\-show\-ifaces** mode, the *phc* argument is optional.
 In other modes, it is required.
 Root privileges are required except in **\-\-show\-ifaces** mode.

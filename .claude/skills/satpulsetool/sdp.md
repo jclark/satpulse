@@ -27,7 +27,7 @@ satpulsetool sdp enp4s0
 Without an argument, lists every interface whose PHC has pins or channels; a PHC
 with no interface is not listed. With an interface, shows its PHC's pins, or the
 interface record if the PHC has no pins; with a device path, shows the pins, and
-fails if the PHC has none, since showing interfaces needs an interface.
+fails if the PHC has none.
 
 ## Is PPS arriving on a pin?
 

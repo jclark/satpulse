@@ -1,7 +1,6 @@
 package sdpcmd
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -54,8 +53,6 @@ const summary = `[-h|--help] [-j|--jsonl]
             [phc]`
 
 const defaultTimeout = 2 * time.Second
-
-var errShowIfacesDevice = errors.New("showing interfaces is not supported with a device path")
 
 func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usageFunc func(string) string, err error) {
 	cfg = &FlagConfig{
@@ -116,7 +113,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 
 	// Validate positional arguments
 	if flags.NArg() > 1 {
-		err = fmt.Errorf("too many arguments: expected at most 1 interface name or device path, got %d arguments", flags.NArg())
+		err = fmt.Errorf("too many arguments: expected at most one argument, got %d arguments", flags.NArg())
 		return
 	}
 
@@ -166,9 +163,9 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 
 	// Resolve the default mode where no PHC inspection is needed.
 	if cfg.Mode == ModeShowAuto {
-		if cfg.Pin != "" {
+		if cfg.Pin != "" || cfg.Device != "" {
 			cfg.Mode = ModeShowPins
-		} else if cfg.Interface == "" && cfg.Device == "" {
+		} else if cfg.Interface == "" {
 			cfg.Mode = ModeShowIfaces
 		}
 	}
@@ -186,7 +183,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 			return
 		}
 		if cfg.Device != "" {
-			err = errShowIfacesDevice
+			err = fmt.Errorf("showing interfaces is not supported with a device path")
 			return
 		}
 	}
