@@ -1,0 +1,6 @@
+@import "tailwindcss" source(none);
+@source "..";
+
+body {
+	@apply bg-gray-100 dark:bg-gray-900 font-sans m-0 p-0;
+}

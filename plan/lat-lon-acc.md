@@ -10,6 +10,12 @@ The most obvious vendor-neutral meaning is latitude and longitude 1-sigma
 position error in meters. That wording is used directly by standard NMEA and by
 several binary protocols we implement.
 
+Concretely, add `Lat` and `Lon` as `opt.Val[Length]` fields. Like the existing
+`Pos`, `Hor`, and `Vert` fields, these are linear distances represented by
+`gpsprot.Length`; handlers construct them with `gpsprot.Meters`, and their JSON
+representation is in metres. They are not angles, variances, or covariance
+terms. Add both fields to `Accuracy.Fill` and the generated TypeScript type.
+
 Where this information is documented in implemented protocols:
 
 - NMEA `GST`: `stdLat`, `stdLon`, `stdAlt` (but GST not parsed yet)
@@ -47,3 +53,55 @@ Comparison to current code:
 So the missing piece is mostly model plumbing: the data already exists in
 multiple implemented protocol families, and in some cases we are already
 parsing it but discarding the axis split by reducing it to `Acc.Hor`.
+
+## Implementation
+
+1. Add `Accuracy.Lat` and `Accuracy.Lon`, including fill behavior, JSON and
+   TypeScript generation, and model tests.
+2. Preserve the already-decoded values from Quectel, NovAtel/Bynav/SinoGNSS,
+   and Unicore messages instead of retaining only their aggregate `Hor` value.
+3. Parse NMEA GST latitude, longitude, and altitude standard deviations into
+   `Acc.Lat`, `Acc.Lon`, and the existing `Acc.Vert`. Test missing fields,
+   invalid input, talker variants, and epoch association.
+4. Add `NMEAMsgGST`, `--nmea-out GST`, and receiver-specific NMEA
+   enable/disable mappings. GST is enabled only in NMEA mode; proprietary mode
+   continues to use the native messages selected by each backend.
+5. Map `Acc.Lon` to gpsd `epx` and `Acc.Lat` to gpsd `epy` without rescaling.
+
+Workbench can use the two values for north/south and east/west error bars. A
+rotated error ellipse requires the additional information described below.
+
+## Future work: horizontal error ellipse
+
+A complete horizontal error ellipse is a natural extension of `Accuracy`, but
+is not required for the latitude/longitude fields in this issue. Represent it
+using the existing unit-bearing types rather than exposing covariance terms in
+square metres:
+
+```go
+type ErrorEllipse struct {
+	Major       Length // one-sigma semi-major axis
+	Minor       Length // one-sigma semi-minor axis
+	Orientation Angle  // clockwise from true north
+}
+
+type Accuracy struct {
+	// existing scalar fields, including Lat and Lon
+	ErrorEllipse opt.Val[ErrorEllipse]
+}
+```
+
+This is equivalent to horizontal north/east covariance, but uses the existing
+`Length` and `Angle` types. Keep the value atomic and one-sigma; require
+non-negative axes with `Major >= Minor`, and normalize orientation modulo 180
+degrees. `Lat` and `Lon` remain independently optional because many receivers
+do not provide an ellipse.
+
+Populate it directly from complete GST fields in NMEA mode. In proprietary
+mode, convert u-blox `NAV-COV` and Septentrio `PosCovGeodetic` horizontal
+covariance to this representation. Axis-only native messages such as NovAtel
+`BESTPOS` and Unicore `BESTNAV` cannot populate it.
+
+Workbench can render a labelled one-sigma ellipse, or a 95% Gaussian contour
+by scaling both axes by approximately 2.4477. Clear it when the matching epoch
+has no valid position or ellipse.

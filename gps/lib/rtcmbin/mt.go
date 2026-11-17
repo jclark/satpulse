@@ -1,6 +1,7 @@
 package rtcmbin
 
 import (
+	"bytes"
 	"encoding/json"
 	"iter"
 	"math/bits"
@@ -57,46 +58,56 @@ func (m *MT1230) SizeSlices() {
 	m.CodePhaseBias = make([]int16, bits.OnesCount8(m.SignalMask))
 }
 
-// ASCIIString is a variable-length char8 field as defined in RTCM
-// SC-104 (e.g. DF030 antenna descriptor).  It shares the wire layout of
-// []byte but marshals as a JSON string, not base64.
-type ASCIIString []byte
+// Char8 is a variable-length char8(n) field as defined in RTCM SC-104
+// (e.g. DF030 antenna descriptor).  Per Table 3.3-1 char8 is the ISO
+// 8859-1 character set, not limited to ASCII, with 0x00 as the reserved
+// or unused character.  It shares the wire layout of []byte but marshals
+// as a JSON string, not base64.
+type Char8 []byte
 
-// MarshalJSON encodes the bytes as a JSON string.
-func (s ASCIIString) MarshalJSON() ([]byte, error) {
-	return json.Marshal(string(s))
+// StripNul returns the used characters of c, dropping the unused ones.
+func (c Char8) StripNul() Char8 {
+	if bytes.IndexByte(c, 0) < 0 {
+		return c
+	}
+	return bytes.ReplaceAll(c, []byte{0}, nil)
 }
 
-// UnmarshalJSON decodes a JSON string into the underlying bytes.
-func (s *ASCIIString) UnmarshalJSON(data []byte) error {
-	var str string
-	if err := json.Unmarshal(data, &str); err != nil {
-		return err
+// String decodes the characters as a UTF-8 encoded string, mapping each
+// to the code point with the same numeric value.
+func (c Char8) String() string {
+	r := make([]rune, len(c))
+	for i, v := range c {
+		r[i] = rune(v)
 	}
-	*s = []byte(str)
-	return nil
+	return string(r)
+}
+
+// MarshalJSON encodes the used characters as a JSON string.
+func (c Char8) MarshalJSON() ([]byte, error) {
+	return json.Marshal(c.StripNul().String())
 }
 
 // MT1007 is an RTCM 1007 Antenna Descriptor message.
 type MT1007 struct {
 	MsgHdrStationID
-	DescriptorCounterN uint8       `bits:"8" json:"descriptorCounterN"`
-	AntennaDescriptor  ASCIIString `bits:"8" json:"antennaDescriptor"`
-	AntennaSetupID     uint8       `bits:"8" json:"antennaSetupID"`
+	DescriptorCounterN uint8 `bits:"8" json:"descriptorCounterN"`
+	AntennaDescriptor  Char8 `bits:"8" json:"antennaDescriptor"`
+	AntennaSetupID     uint8 `bits:"8" json:"antennaSetupID"`
 }
 
 // SizeSlices allocates AntennaDescriptor from its length prefix.
 func (m *MT1007) SizeSlices() {
 	if m.AntennaDescriptor == nil {
-		m.AntennaDescriptor = make(ASCIIString, m.DescriptorCounterN)
+		m.AntennaDescriptor = make(Char8, m.DescriptorCounterN)
 	}
 }
 
 // MT1008 is an RTCM 1008 Antenna Descriptor with Serial Number message.
 type MT1008 struct {
 	MT1007
-	SerialNumberCounterM uint8       `bits:"8" json:"serialNumberCounterM"`
-	AntennaSerialNumber  ASCIIString `bits:"8" json:"antennaSerialNumber"`
+	SerialNumberCounterM uint8 `bits:"8" json:"serialNumberCounterM"`
+	AntennaSerialNumber  Char8 `bits:"8" json:"antennaSerialNumber"`
 }
 
 // SizeSlices allocates the next currently-nil string slice using its
@@ -105,21 +116,21 @@ type MT1008 struct {
 func (m *MT1008) SizeSlices() {
 	switch {
 	case m.AntennaDescriptor == nil:
-		m.AntennaDescriptor = make(ASCIIString, m.DescriptorCounterN)
+		m.AntennaDescriptor = make(Char8, m.DescriptorCounterN)
 	case m.AntennaSerialNumber == nil:
-		m.AntennaSerialNumber = make(ASCIIString, m.SerialNumberCounterM)
+		m.AntennaSerialNumber = make(Char8, m.SerialNumberCounterM)
 	}
 }
 
 // MT1033 is an RTCM 1033 Receiver and Antenna Descriptors message.
 type MT1033 struct {
 	MT1008
-	ReceiverTypeCounterI    uint8       `bits:"8" json:"receiverTypeCounterI"`
-	ReceiverTypeDescriptor  ASCIIString `bits:"8" json:"receiverTypeDescriptor"`
-	FirmwareCounterJ        uint8       `bits:"8" json:"firmwareCounterJ"`
-	ReceiverFirmwareVersion ASCIIString `bits:"8" json:"receiverFirmwareVersion"`
-	ReceiverSerialCounterK  uint8       `bits:"8" json:"receiverSerialCounterK"`
-	ReceiverSerialNumber    ASCIIString `bits:"8" json:"receiverSerialNumber"`
+	ReceiverTypeCounterI    uint8 `bits:"8" json:"receiverTypeCounterI"`
+	ReceiverTypeDescriptor  Char8 `bits:"8" json:"receiverTypeDescriptor"`
+	FirmwareCounterJ        uint8 `bits:"8" json:"firmwareCounterJ"`
+	ReceiverFirmwareVersion Char8 `bits:"8" json:"receiverFirmwareVersion"`
+	ReceiverSerialCounterK  uint8 `bits:"8" json:"receiverSerialCounterK"`
+	ReceiverSerialNumber    Char8 `bits:"8" json:"receiverSerialNumber"`
 }
 
 // SizeSlices allocates the next currently-nil string slice using its
@@ -127,15 +138,15 @@ type MT1033 struct {
 func (m *MT1033) SizeSlices() {
 	switch {
 	case m.AntennaDescriptor == nil:
-		m.AntennaDescriptor = make(ASCIIString, m.DescriptorCounterN)
+		m.AntennaDescriptor = make(Char8, m.DescriptorCounterN)
 	case m.AntennaSerialNumber == nil:
-		m.AntennaSerialNumber = make(ASCIIString, m.SerialNumberCounterM)
+		m.AntennaSerialNumber = make(Char8, m.SerialNumberCounterM)
 	case m.ReceiverTypeDescriptor == nil:
-		m.ReceiverTypeDescriptor = make(ASCIIString, m.ReceiverTypeCounterI)
+		m.ReceiverTypeDescriptor = make(Char8, m.ReceiverTypeCounterI)
 	case m.ReceiverFirmwareVersion == nil:
-		m.ReceiverFirmwareVersion = make(ASCIIString, m.FirmwareCounterJ)
+		m.ReceiverFirmwareVersion = make(Char8, m.FirmwareCounterJ)
 	case m.ReceiverSerialNumber == nil:
-		m.ReceiverSerialNumber = make(ASCIIString, m.ReceiverSerialCounterK)
+		m.ReceiverSerialNumber = make(Char8, m.ReceiverSerialCounterK)
 	}
 }
 

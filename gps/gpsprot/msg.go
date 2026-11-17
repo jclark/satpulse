@@ -580,31 +580,28 @@ const (
 )
 
 type SatellitesMsg struct {
-	Tag          Tag                   `json:"tag,omitempty"`
-	NativeMsgID  string                `json:"nativeMsgID,omitempty"`
-	SVs          []SVInfo              `json:"info"`                   // satellites being tracked
-	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"` // says whether Used fields in SVInfo and SignalInfo are valid
+	Tag         Tag      `json:"tag,omitempty"`
+	NativeMsgID string   `json:"nativeMsgID,omitempty"`
+	SVs         []SVInfo `json:"info,omitempty"` // satellites being tracked
+	// UsedValidity says whether Used fields in SVInfo and SignalInfo are valid.
+	// Whenever it is not SatelliteUsedInvalid, SVInfo.Used is authoritative: a used SV
+	// need not carry any SignalInfo entry saying so, because signal detail can be
+	// incomplete or absent (e.g. UBX-NAV-SAT reports a used SV whose L1 signal is below
+	// the quality threshold). SatelliteUsedSignal adds per-signal Used on top of
+	// SVInfo.Used; it does not narrow it.
+	UsedValidity SatelliteUsedValidity `json:"usedValidity,omitempty"`
 }
 
 // GNSSUsed returns the set of GNSS constellations used in the solution.
 // Returns zero when UsedValidity is SatelliteUsedInvalid.
 func (msg *SatellitesMsg) GNSSUsed() GNSSSet {
 	var gs GNSSSet
-	switch msg.UsedValidity {
-	case SatelliteUsedSignal:
-		for _, sv := range msg.SVs {
-			for _, sig := range sv.Signals {
-				if sig.Used {
-					gs |= GNSSSetOf(sv.ID.GNSS)
-					break
-				}
-			}
-		}
-	case SatelliteUsedSV:
-		for _, sv := range msg.SVs {
-			if sv.Used {
-				gs |= GNSSSetOf(sv.ID.GNSS)
-			}
+	if msg.UsedValidity == SatelliteUsedInvalid {
+		return gs
+	}
+	for _, sv := range msg.SVs {
+		if sv.Used {
+			gs |= GNSSSetOf(sv.ID.GNSS)
 		}
 	}
 	return gs
@@ -612,6 +609,8 @@ func (msg *SatellitesMsg) GNSSUsed() GNSSSet {
 
 // BandsUsed returns the set of frequency bands used in the solution.
 // Returns zero when UsedValidity is SatelliteUsedInvalid.
+// Unlike GNSSUsed, this stays signal-level under SatelliteUsedSignal: a used SV
+// with no signal detail contributes no band rather than all the bands it tracks.
 func (msg *SatellitesMsg) BandsUsed() Band {
 	var b Band
 	switch msg.UsedValidity {
@@ -1012,7 +1011,7 @@ var corrKindClosure = func() [16]CorrKind {
 }()
 
 func bitIndex(mask CorrKind) int {
-	for i := 0; i < 16; i++ {
+	for i := range 16 {
 		if mask == 1<<i {
 			return i
 		}
@@ -1248,6 +1247,14 @@ func (a *Accuracy) Fill(other *Accuracy) {
 	a.Course.Fill(other.Course)
 }
 
+// FillDerived sets Pos from Hor and Vert when Pos is unset and both are set.
+func (a *Accuracy) FillDerived() {
+	if !a.Pos.IsSet() && a.Hor.IsSet() && a.Vert.IsSet() {
+		h, v := a.Hor.Get().Meters(), a.Vert.Get().Meters()
+		a.Pos.Set(Meters(math.Sqrt(h*h + v*v)))
+	}
+}
+
 // MergeNavEpoch merges multiple NavEpochMsg values. Priority is implicit in
 // argument order: the first non-nil message wins for scalar fields (Tag,
 // FixLevel, SolutionDim); optional fields use fill-if-unset semantics; bitmask
@@ -1304,7 +1311,11 @@ type EpochFlusher interface {
 // shared manager in its constructor instead of directly calling
 // MsgHandler.NavEpoch.
 type NavEpochManager struct {
-	active map[EpochFlusher]struct{}
+	active                map[EpochFlusher]struct{}
+	protocolEpochFlushers map[EpochFlusher]struct{}
+	// lastEpochSingleProtocol is the sole EndOfProtocolEpoch processor in the
+	// last logical epoch, or nil if its participation was unknown or multiple.
+	lastEpochSingleProtocol EpochFlusher
 }
 
 // NewNavEpochManager creates a new NavEpochManager.
@@ -1313,12 +1324,17 @@ func NewNavEpochManager() *NavEpochManager {
 }
 
 // EpochStarted is called by a processor when it detects the start of a new
-// epoch. If the caller is already in the active set, the manager flushes
-// all active processors and emits the merged NavEpochMsg. The caller is
-// then added to the (possibly cleared) active set.
+// epoch. If the caller is already in the active set, the manager flushes all
+// active processors and emits the merged NavEpochMsg. It also flushes a late
+// contribution that followed a single-protocol EndOfProtocolEpoch flush. The
+// caller is then added to the (possibly cleared) active set.
 func (m *NavEpochManager) EpochStarted(f EpochFlusher, tRead time.Time) {
 	if _, ok := m.active[f]; ok {
 		m.flush(tRead)
+	} else if len(m.active) > 0 && m.lastEpochSingleProtocol == f {
+		m.flush(tRead)
+		// Both processors participated in the logical epoch split by the flushes.
+		m.lastEpochSingleProtocol = nil
 	}
 	if m.active == nil {
 		m.active = make(map[EpochFlusher]struct{})
@@ -1334,7 +1350,31 @@ func (m *NavEpochManager) EndOfEpoch(tRead time.Time) {
 	m.flush(tRead)
 }
 
+// EndOfProtocolEpoch is called by a processor whose own epoch has ended but
+// which cannot assert the epoch is over for the whole receiver (e.g.
+// Septentrio's EndOfPVT). It flushes only when f is the sole active processor
+// and was the sole participant in the last logical epoch. Otherwise it defers
+// to the next whole-receiver boundary, allowing a trailing protocol to join.
+func (m *NavEpochManager) EndOfProtocolEpoch(f EpochFlusher, tRead time.Time) {
+	if m.protocolEpochFlushers == nil {
+		m.protocolEpochFlushers = make(map[EpochFlusher]struct{})
+	}
+	m.protocolEpochFlushers[f] = struct{}{}
+	if _, ok := m.active[f]; !ok || len(m.active) != 1 || m.lastEpochSingleProtocol != f {
+		return
+	}
+	m.flush(tRead)
+}
+
 func (m *NavEpochManager) flush(tRead time.Time) {
+	m.lastEpochSingleProtocol = nil
+	if len(m.active) == 1 {
+		for f := range m.active {
+			if _, ok := m.protocolEpochFlushers[f]; ok {
+				m.lastEpochSingleProtocol = f
+			}
+		}
+	}
 	type flushed struct {
 		msg *NavEpochMsg
 		pri MsgPriority
@@ -1582,26 +1622,27 @@ type CorReportMsg struct {
 
 	NBytes     opt.Val[int]  `json:"nBytes,omitzero"`
 	ChecksumOK opt.Val[bool] `json:"checksumOK,omitzero"`
-	// FinalFragment reports whether this packet is the final fragment of a
-	// logical correction message that may be split across multiple consecutive
-	// packets with the same Tag.
+	// FinalInEpoch reports whether this packet is the last correction message
+	// of its epoch. For RTCM MSM it is the negation of the Multiple Message Bit
+	// (DF393), which is 1 while more MSMs follow for the same time and
+	// reference station, for the same or another GNSS, and 0 on the last MSM
+	// of the epoch. The bit says nothing about splitting: a message split
+	// across packets (same type, same epoch time) has it set on every part
+	// except the last of the epoch.
 	//
-	// Absent -- the report carries no information about fragmentation. This is
-	// the case for every receiver-source report (the receiver does not report
-	// on-the-wire fragmentation), and for every pull-source report whose message
-	// type cannot be fragmented across consecutive same-Tag packets.
+	// Absent -- the report carries no epoch information. This is the case for
+	// every receiver-source report and for every pull-source report of a
+	// message type without an epoch marker (non-MSM RTCM, SPARTN).
 	//
-	// false -- a producer that can observe fragmentation determined this is a
-	// non-final fragment; more packets follow for this logical message.
+	// false -- more messages of this epoch follow.
 	//
-	// true -- this is the final fragment. A logical message carried in a single
-	// packet is true, not absent.
+	// true -- this is the last message of the epoch.
 	//
-	// The three states are deliberately chosen so a consumer can decide
-	// statelessly: a logical message is complete iff FinalFragment is true;
-	// incomplete iff false; and absent means the consumer has no fragmentation
-	// information and must fall back to its own policy.
-	FinalFragment opt.Val[bool]   `json:"finalFragment,omitzero"`
+	// A consumer that wants to count messages rather than packets can advance
+	// an epoch counter after each true and count each message type once per
+	// epoch; further packets of a type within one epoch are parts of a split
+	// message.
+	FinalInEpoch  opt.Val[bool]   `json:"finalInEpoch,omitzero"`
 	Used          opt.Val[bool]   `json:"used,omitzero"`
 	RTCMRefBaseID opt.Val[uint16] `json:"rtcmRefBaseID,omitzero"`
 }

@@ -22,7 +22,7 @@ python3 gpshwtest --restore-from LOGDIR         restore a receiver after a crash
 - `--keep-logdir` - keep the log directory even on a clean exit. By default a clean run removes its log directory; a run that exits nonzero always keeps it, since the verdicts refer to its contents.
 - `--baseline FILE` - compare the characterization against a checked-in one (default: no comparison). Checked-in baselines live in `baselines/<hardware>-<firmware>.json`. When the run was not `--disruptive`, the disruptive-only entries are stripped from the baseline before comparing.
 - `--disruptive` - also run the probes that write NVM, reboot the receiver, or change its speed (`--save`, `--save-all`, `--reset`, `--factory-reset`, `--speed`), with recovery.
-- `--sudo` / `--phc IFACE:PIN[:CHAN]` - verify the time pulse electrically through a PHC pin (requires root via passwordless `sudo -n`; the pin defaults to the `[phc]` table of the config file or `/etc/satpulse.toml`). Without root or wiring, physical checks are skipped.
+- `--sudo` / `--phc IFACE:PIN[:CHAN]` - verify the time pulse electrically through a PHC pin (requires root via passwordless `sudo -n`; the pin defaults to the `[phc]` table of the config file or `/etc/satpulse.toml`). Independently, an FT232R serial adapter with a USB serial number is treated as having PPS wired to CTS and checked automatically. Without recognized wiring, physical checks are skipped.
 - `--analyze LOGDIR` - re-derive failures and the characterization from a recorded log directory, without touching hardware. Improving the analysis never requires re-running receivers.
 - `--restore-from LOGDIR` - run only the restore tail derived from a crashed run's records, then verify the receiver state. For runs that died without their in-process restore (kill -9, power loss); a run that aborts normally restores the receiver itself.
 
@@ -45,3 +45,7 @@ A log directory is self-contained: `--analyze` re-derives all verdicts from it o
 ## Concurrency
 
 One receiver per invocation. Sweeps over different receivers run in parallel from the caller; log directory names include the device so concurrent starts do not collide. satpulsetool itself locks the serial device per invocation.
+
+## Vendor plugins
+
+A few probes need what high-level configuration has no vocabulary for: the message-rate probe sets the fix rate, and a session on a backend without speed support raises the link speed. Both use the receiver's shipped low-level message file, found in the gpsmsg directory next to the satpulsetool being run (`../share/satpulse/gpsmsg` for an installed binary, `configs/gpsmsg` for a repo build). Which file fits a receiver, and how to read the replies to its tags, comes from the vendor's plugin, `vendors/<vendor>.py`, named by the reported vendor lower-cased with everything but letters and digits removed (`vendors/ublox.py` for u-blox). A vendor without a plugin, or a receiver its plugin does not know, skips those probes.

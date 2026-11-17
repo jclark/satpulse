@@ -13,7 +13,9 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -95,8 +97,8 @@ func TestCorReportFromPacket(t *testing.T) {
 	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
 		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
 	}
-	if msg.FinalFragment.IsSet() {
-		t.Errorf("FinalFragment set for non-MSM packet: %v", msg.FinalFragment.Get())
+	if msg.FinalInEpoch.IsSet() {
+		t.Errorf("FinalInEpoch set for non-MSM packet: %v", msg.FinalInEpoch.Get())
 	}
 	wantBaseID, ok := rtcmbin.ReferenceStationID(testRTCM1005)
 	if !ok {
@@ -141,7 +143,7 @@ func TestCorReportFromPacketInvalidChecksum(t *testing.T) {
 	}
 }
 
-func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
+func TestCorReportFromPacketMSMFinalInEpoch(t *testing.T) {
 	tests := []struct {
 		name string
 		mmb  bool
@@ -164,9 +166,9 @@ func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
 			if msg == nil {
 				t.Fatal("CorReportFromPacket returned nil")
 			}
-			if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() != tt.want {
-				t.Errorf("FinalFragment = (%v, %v), want set %v",
-					msg.FinalFragment.Get(), msg.FinalFragment.IsSet(), tt.want)
+			if !msg.FinalInEpoch.IsSet() || msg.FinalInEpoch.Get() != tt.want {
+				t.Errorf("FinalInEpoch = (%v, %v), want set %v",
+					msg.FinalInEpoch.Get(), msg.FinalInEpoch.IsSet(), tt.want)
 			}
 		})
 	}
@@ -197,8 +199,8 @@ func TestCorReportFromPacketSPARTN(t *testing.T) {
 	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
 		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
 	}
-	if msg.FinalFragment.IsSet() {
-		t.Errorf("FinalFragment set for SPARTN packet: %v", msg.FinalFragment.Get())
+	if msg.FinalInEpoch.IsSet() {
+		t.Errorf("FinalInEpoch set for SPARTN packet: %v", msg.FinalInEpoch.Get())
 	}
 	if msg.RTCMRefBaseID.IsSet() {
 		t.Errorf("RTCMRefBaseID set for SPARTN packet: %d", msg.RTCMRefBaseID.Get())
@@ -227,6 +229,15 @@ func TestCorReportFromPacketNonCorrection(t *testing.T) {
 type pipeSource struct {
 	mu   sync.Mutex
 	conn net.Conn
+}
+
+type fatalSource struct {
+	calls atomic.Int32
+}
+
+func (s *fatalSource) Connect(context.Context) (ReadWriteDeadlineCloser, error) {
+	s.calls.Add(1)
+	return nil, &fatalConnectError{errors.New("Ntrip: HTTP/1.1 401 Unauthorized")}
 }
 
 func newPipeSource() (*pipeSource, net.Conn) {
@@ -782,6 +793,60 @@ func TestWriteErrorTriggersShutdown(t *testing.T) {
 	}
 }
 
+func TestWriteErrorEmitsFailed(t *testing.T) {
+	src, client := newPipeSource()
+	defer src.close()
+	defer client.Close()
+	writeErr := errors.New("device is not writable")
+	mw := &mockWriter{}
+	portLock := gpsio.NewOutPortLock(mockOutPort{})
+	sink := newTestPull(src, mw, portLock)
+	connected := make(chan struct{})
+	var once sync.Once
+	var mu sync.Mutex
+	var gotFailed bool
+	var gotErr string
+	onState := func(st State, err error) {
+		if st == Connected {
+			once.Do(func() { close(connected) })
+		}
+		if st == Failed {
+			mu.Lock()
+			gotFailed = true
+			if err != nil {
+				gotErr = err.Error()
+			}
+			mu.Unlock()
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- sink.Run(t.Context(), nil, onState)
+	}()
+	<-connected
+	primeSink(t, client, mw)
+	mw.setError(writeErr)
+	if _, err := client.Write(makeRTCM(1005, 10)); err != nil {
+		t.Fatalf("failed to write packet: %v", err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, writeErr) {
+			t.Errorf("Run = %v, want %v", err, writeErr)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run did not shut down after write error")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if !gotFailed {
+		t.Error("onState was not called with Failed after write error")
+	}
+	if gotErr != writeErr.Error() {
+		t.Errorf("Failed error = %q, want %q", gotErr, writeErr.Error())
+	}
+}
+
 func TestPortLockAcquiredPerWrite(t *testing.T) {
 	src, client := newPipeSource()
 	defer src.close()
@@ -821,55 +886,86 @@ func TestPortLockAcquiredPerWrite(t *testing.T) {
 }
 
 func TestReconnectOnNetworkError(t *testing.T) {
-	// use a reconnectable source that provides a new pipe each time
-	rs := &reconnectSource{}
-	mw := &mockWriter{}
-	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(rs, mw, portLock)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var states []State
-	var mu sync.Mutex
-	onState := func(st State, _ error) {
+	// The bubble's fake clock skips the real backoff delay before reconnecting.
+	synctest.Test(t, func(t *testing.T) {
+		// use a reconnectable source that provides a new pipe each time
+		rs := &reconnectSource{}
+		mw := &mockWriter{}
+		portLock := gpsio.NewOutPortLock(mockOutPort{})
+		sink := newTestPull(rs, mw, portLock)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var states []State
+		var mu sync.Mutex
+		onState := func(st State, _ error) {
+			mu.Lock()
+			states = append(states, st)
+			mu.Unlock()
+		}
+		done := make(chan error, 1)
+		go func() {
+			done <- sink.Run(ctx, nil, onState)
+		}()
+		// write a packet on the first connection, then close it
+		conn1 := rs.waitConn(t)
+		primeSink(t, conn1, mw)
+		if _, err := conn1.Write(makeRTCM(1005, 10)); err != nil {
+			t.Fatalf("failed to write first connection packet: %v", err)
+		}
+		waitPackets(t, mw, 1)
+		conn1.Close()
+		// wait for reconnect and second connection
+		conn2 := rs.waitConn(t)
+		if _, err := conn2.Write(makeRTCM(1077, 10)); err != nil {
+			t.Fatalf("failed to write second connection packet: %v", err)
+		}
+		waitPackets(t, mw, 2)
+		conn2.Close()
+		cancel()
+		err := <-done
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("unexpected Run error: %v", err)
+		}
+		// check state transitions include reconnecting
 		mu.Lock()
-		states = append(states, st)
-		mu.Unlock()
-	}
+		defer mu.Unlock()
+		hasReconnecting := false
+		for _, st := range states {
+			if st == Reconnecting {
+				hasReconnecting = true
+			}
+		}
+		if !hasReconnecting {
+			t.Errorf("expected Reconnecting state, got %v", states)
+		}
+	})
+}
+
+func TestPullStopsOnFatalConnect(t *testing.T) {
+	src := &fatalSource{}
+	sink := newTestPull(src, &mockWriter{}, gpsio.NewOutPortLock(mockOutPort{}))
+	var gotFailed atomic.Bool
 	done := make(chan error, 1)
 	go func() {
-		done <- sink.Run(ctx, nil, onState)
+		done <- sink.Run(context.Background(), nil, func(st State, _ error) {
+			if st == Failed {
+				gotFailed.Store(true)
+			}
+		})
 	}()
-	// write a packet on the first connection, then close it
-	conn1 := rs.waitConn(t)
-	primeSink(t, conn1, mw)
-	if _, err := conn1.Write(makeRTCM(1005, 10)); err != nil {
-		t.Fatalf("failed to write first connection packet: %v", err)
-	}
-	waitPackets(t, mw, 1)
-	conn1.Close()
-	// wait for reconnect and second connection
-	conn2 := rs.waitConn(t)
-	if _, err := conn2.Write(makeRTCM(1077, 10)); err != nil {
-		t.Fatalf("failed to write second connection packet: %v", err)
-	}
-	waitPackets(t, mw, 2)
-	conn2.Close()
-	cancel()
-	err := <-done
-	if err != nil && !errors.Is(err, context.Canceled) {
-		t.Errorf("unexpected Run error: %v", err)
-	}
-	// check state transitions include reconnecting
-	mu.Lock()
-	defer mu.Unlock()
-	hasReconnecting := false
-	for _, st := range states {
-		if st == Reconnecting {
-			hasReconnecting = true
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("Run = %v, want context.Canceled", err)
 		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Pull.Run did not return after fatal connect error")
 	}
-	if !hasReconnecting {
-		t.Errorf("expected Reconnecting state, got %v", states)
+	if !gotFailed.Load() {
+		t.Error("onState was not called with Failed")
+	}
+	if n := src.calls.Load(); n != 1 {
+		t.Errorf("Connect called %d times, want 1", n)
 	}
 }
 
@@ -1154,8 +1250,7 @@ func TestNtripNoAuthHeaderWhenNoUsername(t *testing.T) {
 }
 
 func TestGGASenderRejectsQualityZero(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,0,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
@@ -1178,8 +1273,7 @@ func TestGGASenderRejectsQualityZero(t *testing.T) {
 // A GGA with empty position fields is not usable even with a nonzero quality,
 // so a synthesized no-fix GGA (empty lat/lon) never starts an NMEA upload.
 func TestGGASenderRejectsNoPosition(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	ch := make(chan scan.Packet, 1)
 	ch <- nmeaPacket("GPGGA,123519,,,,,1,08,0.9,545.4,M,46.9,M,,")
 	close(ch)
@@ -1316,8 +1410,7 @@ func TestGGASenderTimeoutTolerance(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctx, cancel := context.WithCancel(context.Background())
-			defer cancel()
+			ctx := t.Context()
 			ch := make(chan scan.Packet, 1)
 			ch <- nmeaPacket("GPGGA,123519,4807.038,N,01131.000,E,1,08,0.9,545.4,M,46.9,M,,")
 			gs := NewGGASender(ch, 5*time.Millisecond)
@@ -1341,6 +1434,23 @@ func TestGGASenderTimeoutTolerance(t *testing.T) {
 			}
 			t.Fatalf("connection not dropped after repeated upload failures (%d writes)", conn.writeCount())
 		})
+	}
+}
+
+func TestGGASenderCancelSuppressesWriteError(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	var logBuf bytes.Buffer
+	conn := &failWriteConn{err: net.ErrClosed}
+	got, nTimeouts := sendGGA(ctx, slog.New(slog.NewTextHandler(&logBuf, nil)), conn, "GGA", 1)
+	if got != nil || nTimeouts != 0 {
+		t.Errorf("sendGGA() = (%v, %d), want (nil, 0)", got, nTimeouts)
+	}
+	if !conn.isClosed() {
+		t.Error("connection not closed")
+	}
+	if logBuf.Len() != 0 {
+		t.Errorf("unexpected log: %s", &logBuf)
 	}
 }
 
@@ -1406,17 +1516,25 @@ func TestNtripErrorResponse(t *testing.T) {
 }
 
 func TestNtripHTTPErrorResponse(t *testing.T) {
-	ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
-		conn.Write([]byte("HTTP/1.1 401 Unauthorized\r\nContent-Length: 0\r\n\r\n"))
-	})
-	defer ln.close()
-	src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
-	_, err := src.Connect(context.Background())
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "HTTP/1.1 401 Unauthorized") {
-		t.Errorf("error did not contain status: %v", err)
+	for _, version := range []string{"HTTP/1.0", "HTTP/1.1"} {
+		t.Run(version, func(t *testing.T) {
+			resp := version + " 401 Unauthorized"
+			ln := newNtripListener(t, func(conn net.Conn, _ []byte) {
+				conn.Write([]byte(resp + "\r\nContent-Length: 0\r\n\r\n"))
+			})
+			defer ln.close()
+			src := &NtripSource{Addr: ln.addr(), Mountpoint: "MNT"}
+			_, err := src.Connect(context.Background())
+			if err == nil {
+				t.Fatal("expected error, got nil")
+			}
+			if !strings.Contains(err.Error(), resp) {
+				t.Errorf("error did not contain status: %v", err)
+			}
+			if !isFatalConnect(err) {
+				t.Errorf("error is not fatal: %v", err)
+			}
+		})
 	}
 }
 

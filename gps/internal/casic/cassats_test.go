@@ -1,6 +1,8 @@
 package casic
 
 import (
+	"encoding/hex"
+	"reflect"
 	"testing"
 	"time"
 
@@ -400,9 +402,9 @@ func TestSatsNav2Sig(t *testing.T) {
 	m := &casbin.Nav2Sig{
 		Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: 4, NumFixTot: 3},
 		Sigs: []casbin.Nav2SigInfo{
-			{GNSSID: 0, SVID: 5, SigID: casbin.SigGPSL1CA, CNO: 40, Elev: 45, Azim: 180, SolFlags: 0x01},
-			{GNSSID: 0, SVID: 5, SigID: casbin.SigGPSL5, CNO: 35, Elev: 45, Azim: 180, SolFlags: 0x01},
-			{GNSSID: 3, SVID: 12, SigID: casbin.SigGALE1, CNO: 38, Elev: 60, Azim: 270, SolFlags: 0x01},
+			{GNSSID: 0, SVID: 5, SigID: casbin.SigGPSL1CA, CNO: 40, Elev: 45, Azim: 180, SolFlags: casbin.Nav2SigSolPRUsed},
+			{GNSSID: 0, SVID: 5, SigID: casbin.SigGPSL5, CNO: 35, Elev: 45, Azim: 180, SolFlags: casbin.Nav2SigSolPRUsed},
+			{GNSSID: 3, SVID: 12, SigID: casbin.SigGALE1, CNO: 38, Elev: 60, Azim: 270, SolFlags: casbin.Nav2SigSolPRUsed},
 			{GNSSID: 1, SVID: 10, SigID: casbin.SigBDSB1IMEO, CNO: 30, Elev: 30, Azim: 90, SolFlags: 0x00},
 		},
 	}
@@ -447,6 +449,52 @@ func TestSatsNav2Sig(t *testing.T) {
 	}
 }
 
+// TestSatsNav2SigSVIDs checks satellite numbering in real NAV2-SIG
+// packets. The SBAS svid is a 1-based index: svid 1 is PRN 120 (PCAS15),
+// and the same receiver reports svid 9 and 10 in NMEA GSV as SVs 41 and 42
+// (PRN 128 and 129) at the same elevation and azimuth.
+func TestSatsNav2SigSVIDs(t *testing.T) {
+	tests := []struct {
+		name   string
+		hex    string
+		expect []gpsprot.SVID
+	}{
+		{
+			name: "ATGM332D-F8N GPS L1 and SBAS L1",
+			hex:  "baceb800110668045110000b0900000200022b0018f12875250f0d019700000a000ae3ff2ff758752b359400630000100010cfff27ff58751019c700990000170017b4ff22f758751b129400be0000190019680016f92875290f2900b200001a001ad9ff2ef75875003ec0005900001c001c00002bf728751f2d00005b00001f001ff9ff30ff2875033438014e0000200020040024f7287501292a005a00050903090000307300401940e9000000050a030a000031730040203874000000c5898e50",
+			expect: []gpsprot.SVID{
+				{GNSS: gpsprot.GPS, Num: 2}, {GNSS: gpsprot.GPS, Num: 10}, {GNSS: gpsprot.GPS, Num: 16},
+				{GNSS: gpsprot.GPS, Num: 23}, {GNSS: gpsprot.GPS, Num: 25}, {GNSS: gpsprot.GPS, Num: 26},
+				{GNSS: gpsprot.GPS, Num: 28}, {GNSS: gpsprot.GPS, Num: 31}, {GNSS: gpsprot.GPS, Num: 32},
+				{GNSS: gpsprot.SBAS, Num: 28}, {GNSS: gpsprot.SBAS, Num: 29},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := hex.DecodeString(tc.hex)
+			if err != nil {
+				t.Fatalf("bad hex: %v", err)
+			}
+			msg, err := casbin.ParseMsg(string(b))
+			if err != nil {
+				t.Fatalf("ParseMsg: %v", err)
+			}
+			m, ok := msg.(*casbin.Nav2Sig)
+			if !ok {
+				t.Fatalf("unexpected type %T", msg)
+			}
+			var got []gpsprot.SVID
+			for _, sv := range satsNav2Sig(m).SVs {
+				got = append(got, sv.ID)
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}
+
 func TestSatsNav2SigEmpty(t *testing.T) {
 	m := &casbin.Nav2Sig{
 		Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: 1},
@@ -461,22 +509,22 @@ func TestSatsNav2SigEmpty(t *testing.T) {
 func TestCorrFromNav2Sig(t *testing.T) {
 	tests := []struct {
 		name     string
-		corFlags uint8
+		corFlags casbin.Nav2SigCorFlags
 		want     gpsprot.CorrKind
 	}{
-		{"NULL", 0x00, 0},
-		{"SBAS", 0x01, gpsprot.CorrSBAS | gpsprot.CorrUsed},
-		{"BDS_PPP", 0x02, gpsprot.CorrSSR | gpsprot.CorrUsed},
-		{"RTCM2", 0x03, gpsprot.CorrRTCM | gpsprot.CorrUsed},
-		{"OSR", 0x04, gpsprot.CorrOSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
-		{"SSR", 0x05, gpsprot.CorrSSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
+		{"NULL", casbin.Nav2SigCorSrcNone, 0},
+		{"SBAS", casbin.Nav2SigCorSrcSBAS, gpsprot.CorrSBAS | gpsprot.CorrUsed},
+		{"BDS_PPP", casbin.Nav2SigCorSrcBDS, gpsprot.CorrSSR | gpsprot.CorrUsed},
+		{"RTCM2", casbin.Nav2SigCorSrcRTCM2, gpsprot.CorrRTCM | gpsprot.CorrUsed},
+		{"OSR", casbin.Nav2SigCorSrcOSR, gpsprot.CorrOSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
+		{"SSR", casbin.Nav2SigCorSrcSSR, gpsprot.CorrSSR | gpsprot.CorrRTCM | gpsprot.CorrUsed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			var ne gpsprot.NavEpochMsg
 			m := &casbin.Nav2Sig{
 				Sigs: []casbin.Nav2SigInfo{{
-					SolFlags: 0x01, // used
+					SolFlags: casbin.Nav2SigSolPRUsed, // used
 					CorFlags: tt.corFlags,
 					SigID:    casbin.SigGPSL1CA,
 				}},
@@ -493,8 +541,8 @@ func TestCorrFromNav2SigNotUsed(t *testing.T) {
 	var ne gpsprot.NavEpochMsg
 	m := &casbin.Nav2Sig{
 		Sigs: []casbin.Nav2SigInfo{{
-			SolFlags: 0x00, // NOT used in solution
-			CorFlags: 0x01, // SBAS
+			SolFlags: 0, // NOT used in solution
+			CorFlags: casbin.Nav2SigCorSrcSBAS,
 		}},
 	}
 	corrFromNav2Sig(&ne, m)
@@ -505,7 +553,7 @@ func TestCorrFromNav2SigNotUsed(t *testing.T) {
 
 func TestCorrFromNav2SigNilNe(t *testing.T) {
 	m := &casbin.Nav2Sig{
-		Sigs: []casbin.Nav2SigInfo{{SolFlags: 0x01, CorFlags: 0x01}},
+		Sigs: []casbin.Nav2SigInfo{{SolFlags: casbin.Nav2SigSolPRUsed, CorFlags: casbin.Nav2SigCorSrcSBAS}},
 	}
 	corrFromNav2Sig(nil, m) // should not panic
 }
@@ -513,8 +561,8 @@ func TestCorrFromNav2SigNilNe(t *testing.T) {
 func TestNav2SigGNSSUsedBandsUsed(t *testing.T) {
 	m := &casbin.Nav2Sig{
 		Sigs: []casbin.Nav2SigInfo{
-			{GNSSID: 0, SVID: 1, SolFlags: 0x01, SigID: casbin.SigGPSL1CA, CNO: 30},
-			{GNSSID: 3, SVID: 1, SolFlags: 0x01, SigID: casbin.SigGALE1, CNO: 30},
+			{GNSSID: 0, SVID: 1, SolFlags: casbin.Nav2SigSolPRUsed, SigID: casbin.SigGPSL1CA, CNO: 30},
+			{GNSSID: 3, SVID: 1, SolFlags: casbin.Nav2SigSolPRUsed, SigID: casbin.SigGALE1, CNO: 30},
 			{GNSSID: 4, SVID: 1, SolFlags: 0x00, SigID: casbin.SigBDSB1IMEO, CNO: 30}, // not used
 		},
 	}
@@ -535,6 +583,40 @@ func TestNav2SigGNSSUsedBandsUsed(t *testing.T) {
 	bands := msg.BandsUsed()
 	if bands&gpsprot.BandL1 == 0 {
 		t.Error("BandsUsed missing L1")
+	}
+}
+
+// TestSatsNav2SigDualFreqL5 verifies that a dual-band satellite's L5 signal,
+// which the receiver reports with no solution bit but a DualFreq iono model,
+// counts as used: the L5 measurement feeds the ionosphere-free combination.
+func TestSatsNav2SigDualFreqL5(t *testing.T) {
+	m := &casbin.Nav2Sig{
+		Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: 3},
+		Sigs: []casbin.Nav2SigInfo{
+			{GNSSID: 0, SVID: 3, SigID: casbin.SigGPSL1CA, CNO: 40,
+				SolFlags: casbin.Nav2SigSolPRUsed, CorFlags: casbin.Nav2SigIonoDualFreq},
+			{GNSSID: 0, SVID: 3, SigID: casbin.SigGPSL5, CNO: 39,
+				CorFlags: casbin.Nav2SigIonoDualFreq},
+			// Tracked but not in the solution: no solution bit, single-frequency.
+			{GNSSID: 3, SVID: 18, SigID: casbin.SigGALE5a, CNO: 25},
+		},
+	}
+	msg := satsNav2Sig(m)
+	if msg == nil {
+		t.Fatal("satsNav2Sig returned nil")
+	}
+	gps3 := msg.SVs[0]
+	if len(gps3.Signals) != 2 {
+		t.Fatalf("GPS:3 signals = %d, want 2", len(gps3.Signals))
+	}
+	if !gps3.Signals[1].Used {
+		t.Error("GPS:3 L5 Used = false, want true (dual-frequency)")
+	}
+	if msg.BandsUsed()&gpsprot.BandL5 == 0 {
+		t.Error("BandsUsed missing L5")
+	}
+	if msg.SVs[1].Signals[0].Used {
+		t.Error("GAL:18 E5a Used = true, want false (tracked, not in solution)")
 	}
 }
 

@@ -48,19 +48,19 @@ const (
 
 // Tim2Tpx is TIM2-TPX (0x12 0x00) - timing pulse information (24 bytes)
 type Tim2Tpx struct {
-	TOW      uint32       // ms, GNSS system time integer ms
-	TOWSubms int32        // scaled 2^-30 ms, fractional ms
-	Wn       uint16       // week number
-	PPSFlag  Tim2PPSFlag  // PPS reliability flags
-	TBase    Tim2TimeBase // 0=GNSS, 1=UTC
-	TSrc     Tim2TSrc     // timing source
+	TOW      uint32       `json:"tow"`      // ms, GNSS system time integer ms
+	TOWSubms int32        `json:"towSubms"` // scaled 2^-30 ms, fractional ms
+	Wn       uint16       `json:"wn"`       // week number
+	PPSFlag  Tim2PPSFlag  `json:"ppsFlagx"` // PPS reliability flags
+	TBase    Tim2TimeBase `json:"tBase"`    // 0=GNSS, 1=UTC
+	TSrc     Tim2TSrc     `json:"tSrc"`     // timing source
 	_        uint8
 	_        uint16
 	_        uint16
-	LeapSec  int8  // s, current leap seconds
-	QuanErr  int8  // 0.1 ns, PPS quantization error
-	TAcc     int16 // 0.1 ns, time error estimate
-	Dt2Utc   int16 // 0.1 ns, satellite time offset to UTC
+	LeapSec  int8  `json:"leapSec"` // s, current leap seconds
+	QuanErr  int8  `json:"quanErr"` // 0.1 ns, PPS quantization error
+	TAcc     int16 `json:"tAcc"`    // 0.1 ns, time error estimate
+	Dt2Utc   int16 `json:"dt2Utc"`  // 0.1 ns, satellite time offset to UTC
 }
 
 func (m *Tim2Tpx) ID() MsgID { return Tim2TpxID }
@@ -110,21 +110,21 @@ const (
 // (0x12 0x01-0x05) - GNSS system time information (36 bytes)
 type Tim2TimeGNSS struct {
 	Nav2TOW                  // ms, integer TOW
-	TOWSubms int32           // scaled 2^-30 ms, fractional TOW
-	Wn       uint16          // week number
-	TOWFlag  PVTValid        // TOW valid flag
-	WnFlag   Tim2WnValid     // week number valid flag
-	TotSec   uint32          // s, total seconds
-	TAcc     float32         // ns, time error estimate
-	Dt2Utc   float32         // ns, offset to UTC
-	DtLsfUtc int32           // s, time until leap second event
-	Ls       int8            // s, current GNSS-UTC offset
-	Lsf      int8            // s, forecast GNSS-UTC offset
-	TFlag    Tim2TimeFlag    // time status flags
-	TSrc     Tim2TSrc        // timing source
-	UtcFlag  Tim2UtcFlag     // UTC parameter valid flag
-	LsFlag   Tim2LsEventFlag // leap second event status
-	LsYear   uint16          // BIT[15:1]=year, BIT0=0(Jun30)/1(Dec31); zero when no event date is reported
+	TOWSubms int32           `json:"towSubms"` // scaled 2^-30 ms, fractional TOW
+	Wn       uint16          `json:"wn"`       // week number
+	TOWFlag  PVTValid        `json:"towFlag"`  // TOW valid flag
+	WnFlag   Tim2WnValid     `json:"wnFlag"`   // week number valid flag
+	TotSec   uint32          `json:"totSec"`   // s, total seconds
+	TAcc     float32         `json:"tAcc"`     // ns, time error estimate
+	Dt2Utc   float32         `json:"dt2Utc"`   // ns, offset to UTC
+	DtLsfUtc int32           `json:"dtLsfUtc"` // s, time until leap second event
+	Ls       int8            `json:"ls"`       // s, current GNSS-UTC offset
+	Lsf      int8            `json:"lsf"`      // s, forecast GNSS-UTC offset
+	TFlag    Tim2TimeFlag    `json:"tFlagx"`   // time status flags
+	TSrc     Tim2TSrc        `json:"tSrc"`     // timing source
+	UtcFlag  Tim2UtcFlag     `json:"utcFlag"`  // UTC parameter valid flag
+	LsFlag   Tim2LsEventFlag `json:"lsFlag"`   // leap second event status
+	LsYear   uint16          `json:"lsYear"`   // BIT[15:1]=year, BIT0=0(Jun30)/1(Dec31); zero when no event date is reported
 }
 
 // Tim2TimeGPS is TIM2-TIMEGPS (0x12 0x01)
@@ -163,19 +163,19 @@ const (
 
 // Tim2TimePos is TIM2-TIMEPOS (0x12 0x06) - timing engine position status (64 bytes)
 type Tim2TimePos struct {
-	XTim       float64     // m, timing engine fixed position X
-	YTim       float64     // m, timing engine fixed position Y
-	ZTim       float64     // m, timing engine fixed position Z
-	XFix       float64     // m, positioning engine real-time position X
-	YFix       float64     // m, positioning engine real-time position Y
-	ZFix       float64     // m, positioning engine real-time position Z
-	SurTimer   uint32      // s, survey-in running time
-	SurPacc    float32     // m, survey-in position accuracy
-	FixFlag    PVTValid    // position validity flag
-	TimFixMode Tim2FixMode // how timing position was determined
-	PRResiRms  uint16      // m, pseudorange residual RMS
-	PosBias    uint16      // m, deviation between timing and real-time position
-	PDOP       uint8       // scaled 0.1
+	XTim       float64     `json:"xTim"`       // m, timing engine fixed position X
+	YTim       float64     `json:"yTim"`       // m, timing engine fixed position Y
+	ZTim       float64     `json:"zTim"`       // m, timing engine fixed position Z
+	XFix       float64     `json:"xFix"`       // m, positioning engine real-time position X
+	YFix       float64     `json:"yFix"`       // m, positioning engine real-time position Y
+	ZFix       float64     `json:"zFix"`       // m, positioning engine real-time position Z
+	SurTimer   uint32      `json:"surTimer"`   // s, survey-in running time
+	SurPacc    float32     `json:"surPacc"`    // m, survey-in position accuracy
+	FixFlag    PVTValid    `json:"fixFlag"`    // position validity flag
+	TimFixMode Tim2FixMode `json:"timFixMode"` // how timing position was determined
+	PRResiRms  uint16      `json:"prResiRms"`  // m, pseudorange residual RMS
+	PosBias    uint16      `json:"posBias"`    // m, deviation between timing and real-time position
+	PDOP       uint8       `json:"pdop"`       // scaled 0.1
 	_          uint8
 }
 
@@ -197,27 +197,27 @@ const (
 
 // Tim2Ls is TIM2-LS (0x12 0x07) - leap second exception alarm (16 bytes)
 type Tim2Ls struct {
-	UtcExpPrnMask uint64       // PRN mask (BIT0=PRN1, etc.)
-	GNSSID        GNSSID       // system ID (section 1.4)
-	SigID         uint8        // signal ID (section 1.4)
-	SVID          uint8        // satellite ID
-	RaimType      Tim2RaimType // alarm type
-	Wnlsf         uint8        // low 8 bits of GNSS week number for the leap second reference/event
-	Dn            uint8        // GNSS day number of leap second reference/event
-	Dtls          int8         // s, GNSS-UTC offset before a future event; same as Dtlsf for a past event
-	Dtlsf         int8         // s, GNSS-UTC offset after the leap second reference/event
+	UtcExpPrnMask uint64       `json:"utcExpPrnMask"` // PRN mask (BIT0=PRN1, etc.)
+	GNSSID        GNSSID       `json:"gnssid"`        // system ID (section 1.4)
+	SigID         uint8        `json:"sigid"`         // signal ID (section 1.4)
+	SVID          uint8        `json:"svid"`          // satellite ID
+	RaimType      Tim2RaimType `json:"raimType"`      // alarm type
+	Wnlsf         uint8        `json:"wnlsf"`         // low 8 bits of GNSS week number for the leap second reference/event
+	Dn            uint8        `json:"dn"`            // GNSS day number of leap second reference/event
+	Dtls          int8         `json:"dtls"`          // s, GNSS-UTC offset before a future event; same as Dtlsf for a past event
+	Dtlsf         int8         `json:"dtlsf"`         // s, GNSS-UTC offset after the leap second reference/event
 }
 
 func (m *Tim2Ls) ID() MsgID { return Tim2LsID }
 
 // Tim2Ly is TIM2-LY (0x12 0x08) - week number exception alarm (16 bytes)
 type Tim2Ly struct {
-	WntExpPrnMask uint64       // PRN mask (BIT0=PRN1, etc.)
-	GNSSID        GNSSID       // system ID (section 1.4)
-	SigID         uint8        // signal ID (section 1.4)
-	SVID          uint8        // satellite ID
-	RaimType      Tim2RaimType // alarm type
-	WnBias        int16        // bias between wrong and correct week number
+	WntExpPrnMask uint64       `json:"wntExpPrnMask"` // PRN mask (BIT0=PRN1, etc.)
+	GNSSID        GNSSID       `json:"gnssid"`        // system ID (section 1.4)
+	SigID         uint8        `json:"sigid"`         // signal ID (section 1.4)
+	SVID          uint8        `json:"svid"`          // satellite ID
+	RaimType      Tim2RaimType `json:"raimType"`      // alarm type
+	WnBias        int16        `json:"wnBias"`        // bias between wrong and correct week number
 	_             uint16
 }
 
@@ -225,12 +225,12 @@ func (m *Tim2Ly) ID() MsgID { return Tim2LyID }
 
 // Tim2Tcxo is TIM2-TCXO (0x12 0x09) - TCXO frequency offset info (20 bytes)
 type Tim2Tcxo struct {
-	DfuRatio  float32  // relative frequency offset of sampling clock
-	Dfu2Tcxo  float32  // difference between sampling clock and TCXO offset
-	DfxRatio  float32  // TCXO frequency offset (DfuRatio + Dfu2Tcxo)
-	VcBias    int32    // scaled 2^-28, VCTCXO voltage control offset
-	FrqFlag   PVTValid // frequency valid flag
-	TcxoDoCnt uint8    // VCTCXO taming convergence count
+	DfuRatio  float32  `json:"dfu_ratio"`   // relative frequency offset of sampling clock
+	Dfu2Tcxo  float32  `json:"dfu2tcxo"`    // difference between sampling clock and TCXO offset
+	DfxRatio  float32  `json:"dfx_ratio"`   // TCXO frequency offset (DfuRatio + Dfu2Tcxo)
+	VcBias    int32    `json:"vcBias"`      // scaled 2^-28, VCTCXO voltage control offset
+	FrqFlag   PVTValid `json:"frqFlag"`     // frequency valid flag
+	TcxoDoCnt uint8    `json:"Tcxo_do_cnt"` // VCTCXO taming convergence count
 	_         uint16
 }
 

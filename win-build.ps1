@@ -1,4 +1,4 @@
-# Build satpulsetool and satpulsed for Windows. Analogous to bsd-build.sh.
+# Build satpulsetool and satpulsed for Windows. Analogous to Makefile.unix.
 
 $ErrorActionPreference = 'Stop'
 
@@ -16,7 +16,7 @@ if ($env:GOARCH -notin @('amd64', 'arm64')) {
     throw "Unsupported GOARCH $env:GOARCH"
 }
 
-# Force UTC so git date formatting matches bsd-build.sh.
+# Force UTC so git date formatting matches Makefile.unix.
 $env:TZ = 'UTC'
 
 # Build info
@@ -56,10 +56,10 @@ $ldflags = "-X `"github.com/jclark/satpulse/gps/app/cmd.version=$cmd_version`" -
 $go_ldflags = "'-ldflags=$ldflags'"
 try {
     $env:GOFLAGS = (@($old_go_flags, $go_ldflags) | Where-Object { $_ }) -join ' '
-    & go build -tags 'netgo,osusergo' -o $outdir ./cmd/satpulsetool ./cmd/satpulsed
+    & go build -tags 'netgo,osusergo' -o $outdir ./cmd/satpulsetool ./cmd/satpulsed ./cmd/satpulsewb
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 } finally {
     $env:GOFLAGS = $old_go_flags
 }
 
-Write-Output "Built satpulsetool and satpulsed in $outdir"
+Write-Output "Built satpulsetool, satpulsed and satpulsewb in $outdir"

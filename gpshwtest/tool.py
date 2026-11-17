@@ -8,6 +8,7 @@ everything offline analysis needs (see analyze.py).
 """
 
 import json
+import os
 import subprocess
 import time
 from dataclasses import dataclass
@@ -15,6 +16,21 @@ from pathlib import Path
 from typing import Any
 
 from model import transient
+
+# The harness discovers rather than asserts a vendor, and probing every
+# config protocol the build has - experimental included - is its job, so
+# every spawned satpulsetool sees SATPULSE_VENDORS=all.
+_ENV = {**os.environ, "SATPULSE_VENDORS": "all"}
+
+
+def message_response_error(s: str) -> str | None:
+    """The first failure reported by message-file response handling."""
+    for line in s.splitlines():
+        if "receiver rejected message:" in line \
+                or line.endswith(": no response received") \
+                or line.endswith(": no data response received"):
+            return line
+    return None
 
 
 class ToolFailure(Exception):
@@ -29,6 +45,7 @@ class Invocation:
     argv: list[str]
     exit_code: int
     out: dict[str, Any]
+    stdout: str
     stderr: str
     packet_log: Path
 
@@ -37,6 +54,9 @@ class Invocation:
         """The reported configuration error, or None on success."""
         err = self.out.get("error")
         if isinstance(err, str):
+            return err
+        err = message_response_error(self.stdout)
+        if err is not None:
             return err
         if self.exit_code != 0:
             return self.stderr.strip() or f"exit code {self.exit_code}"
@@ -91,7 +111,7 @@ class Tool:
         if not json_out:
             entry["nojson"] = True
         try:
-            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=_ENV)
         except subprocess.TimeoutExpired:
             self.record({**entry, "timeout": timeout})
             raise ToolFailure(f"{name}: no response within {timeout}s: {' '.join(argv)}")
@@ -103,9 +123,11 @@ class Tool:
                     out = v
             except ValueError:
                 pass
-        inv = Invocation(name, argv, p.returncode, out, p.stderr, log)
-        self.record({**entry, "exit": p.returncode, "json": out if out else p.stdout,
-                     "stderr": p.stderr})
+        inv = Invocation(name, argv, p.returncode, out, p.stdout, p.stderr, log)
+        rec = {**entry, "exit": p.returncode, "stdout": p.stdout, "stderr": p.stderr}
+        if out:
+            rec["json"] = out
+        self.record(rec)
         if json_out and p.returncode == 0 and not out:
             raise ToolFailure(f"{name}: exit 0 but no JSON output")
         return inv
@@ -120,7 +142,7 @@ class Tool:
             [str(self.exe), "sdp", "--extts", "--jsonl", "-p", str(pin),
              "--chan", str(chan), "-t", str(seconds), iface]
         try:
-            p = subprocess.run(argv, capture_output=True, text=True, timeout=seconds + 30)
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=seconds + 30, env=_ENV)
         except subprocess.TimeoutExpired:
             raise ToolFailure(f"{name}: sdp did not finish within {seconds + 30}s")
         events = []
@@ -134,6 +156,78 @@ class Tool:
         self.record({"seq": self.seq, "name": name, "intent": intent, "argv": argv,
                      "exit": p.returncode, "events": events, "stderr": p.stderr})
         return events if p.returncode == 0 else None
+
+    def serial_info(self, device: str) -> dict[str, Any] | None:
+        """Return satpulsetool's enumerated metadata for device.
+
+        Discovery is optional: a port that cannot be enumerated simply has no
+        inferred PPS wiring. The invocation is still recorded so an archived
+        run says why serial PPS was or was not selected.
+        """
+        self.seq += 1
+        argv = [str(self.exe), "serial", "--info", "--jsonl", "-d", device]
+        try:
+            p = subprocess.run(argv, capture_output=True, text=True, timeout=30,
+                               env=_ENV)
+        except subprocess.TimeoutExpired:
+            self.record({"seq": self.seq, "name": "serial-info",
+                         "intent": {"op": "serial-info", "device": device},
+                         "argv": argv, "exit": 1,
+                         "stderr": "serial port information timed out",
+                         "nojson": True})
+            return None
+        info: dict[str, Any] | None = None
+        for line in p.stdout.splitlines():
+            try:
+                v = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(v, dict):
+                info = v
+                break
+        entry: dict[str, Any] = {
+            "seq": self.seq, "name": "serial-info",
+            "intent": {"op": "serial-info", "device": device},
+            "argv": argv, "exit": p.returncode, "stdout": p.stdout,
+            "stderr": p.stderr, "nojson": info is None,
+        }
+        if info is not None:
+            entry["json"] = info
+        self.record(entry)
+        return info if p.returncode == 0 else None
+
+    def serial_pps(self, name: str, device: str, pin: str, seconds: float,
+                   intent: dict[str, Any]) -> list[dict[str, Any]] | None:
+        """Detect PPS edges on a serial modem-control input.
+
+        Exit 2 is satpulsetool's successful observation of no edges, which is
+        the expected result while PPS is disabled. Both it and an edge-bearing
+        exit 0 therefore return an event list for offline analysis.
+        """
+        self.seq += 1
+        argv = [str(self.exe), "serial", "--pps-pin", pin, "--jsonl",
+                "--device-speed", str(self.speed() or 0),
+                "--timeout", str(seconds), "-d", device]
+        try:
+            p = subprocess.run(argv, capture_output=True, text=True,
+                               timeout=seconds + 30, env=_ENV)
+        except subprocess.TimeoutExpired:
+            self.record({"seq": self.seq, "name": name, "intent": intent,
+                         "argv": argv, "timeout": seconds + 30, "events": []})
+            raise ToolFailure(
+                f"{name}: serial PPS monitor did not finish within {seconds + 30}s")
+        events = []
+        for line in p.stdout.splitlines():
+            try:
+                v = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(v, dict):
+                events.append(v)
+        self.record({"seq": self.seq, "name": name, "intent": intent,
+                     "argv": argv, "exit": p.returncode, "events": events,
+                     "stdout": p.stdout, "stderr": p.stderr})
+        return events if p.returncode in (0, 2) else None
 
     def speed(self) -> int | None:
         """The currently pinned connection speed, None when unpinned."""
@@ -161,7 +255,7 @@ def replay(exe: Path, log: Path, timeout: float = 60.0) -> list[dict[str, Any]]:
     """Convert a packet log offline into the typed gpsprot event stream."""
     argv = [str(exe), "replay", str(log)]
     try:
-        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout)
+        p = subprocess.run(argv, capture_output=True, text=True, timeout=timeout, env=_ENV)
     except subprocess.TimeoutExpired:
         raise ToolFailure(f"replay {log.name}: no response within {timeout}s")
     if p.returncode != 0:

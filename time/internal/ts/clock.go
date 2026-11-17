@@ -37,7 +37,7 @@ type EventKind int
 const (
 	_ EventKind = iota
 	EdgeEvent
-	PauseEvent
+	PauseEvent // only TReadMono.Sys is set: when carrier loss was seen
 	ResumeEvent
 )
 
@@ -45,8 +45,11 @@ const exttsTimeout = 100 * time.Millisecond // if we hit this timeout, then the 
 const existTimeout = 30 * time.Second
 const logWaitTimeout = time.Second / 2 // log if we have to wait more than this for an interface
 
+// PinDesc selects the external timestamp channel and, on a PHC with
+// pins, the pin to route to it. A nil PinIndex means pin 0 on a
+// PHC with pins and no pin on a PHC without; a non-nil one is an error there.
 type PinDesc struct {
-	PinIndex  uint32
+	PinIndex  *uint32
 	ChanIndex uint32
 }
 
@@ -74,7 +77,7 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 			return nil, err
 		}
 	}
-	phcIndex, err := phc.IfPhcIndex(ifName)
+	phcIndex, err := phc.IfPHCIndex(ifName)
 	if err != nil {
 		return nil, err
 	}
@@ -106,28 +109,47 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 			return nil, err
 		}
 	}
-	pc, err := phc.Open(phc.ClockPath(phcIndex))
+	clk, err := openPath(phc.ClockPath(phcIndex), ifName, pinDesc)
+	if err != nil {
+		return nil, err
+	}
+	clk.DriverFlags = flags
+	if flags&phc.DriverCarrier != 0 {
+		clk.w = w
+		w = nil
+	}
+	return clk, nil
+}
+
+// OpenDeviceClock opens the PHC with the given device path, for a PHC
+// that is not named by a network interface. Nothing is derived from an
+// interface: there are no driver flags and no carrier handling.
+func OpenDeviceClock(path string, pinDesc PinDesc) (*Clock, error) {
+	return openPath(path, "", pinDesc)
+}
+
+// openPath opens the PHC with the given device path; ifName is the
+// interface through which it was named, or empty.
+func openPath(path, ifName string, pinDesc PinDesc) (*Clock, error) {
+	pc, err := phc.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	clk := Clock{
-		Clock:       *pc,
-		ifName:      ifName,
-		pinIndex:    pinDesc.PinIndex,
-		chanIndex:   pinDesc.ChanIndex,
-		DriverFlags: flags,
+		Clock:     *pc,
+		ifName:    ifName,
+		chanIndex: pinDesc.ChanIndex,
+	}
+	if pinDesc.PinIndex != nil {
+		clk.pinIndex = *pinDesc.PinIndex
 	}
 	// We start off with an era that is certain.
 	// Zero era represent stale PHC clock readings.
 	clk.eraCounter.inc()
-	err = clk.validatePinDesc()
+	err = clk.validatePinDesc(pinDesc.PinIndex != nil)
 	if err != nil {
 		clk.Close()
 		return nil, err
-	}
-	if flags&phc.DriverCarrier != 0 {
-		clk.w = w
-		w = nil
 	}
 	return &clk, nil
 }
@@ -140,8 +162,13 @@ func Close(c *Clock) error {
 	return errors.Join(c.Close(), err)
 }
 
-func (clk *Clock) IfName() string {
-	return clk.ifName
+// Name returns the name of the interface through which the PHC was
+// opened, or its device path if it was opened by path.
+func (clk *Clock) Name() string {
+	if clk.ifName != "" {
+		return clk.ifName
+	}
+	return clk.Path()
 }
 
 func waitIface(ctx context.Context, lg *slog.Logger, w *ifwait.IfWaiter, f func(net.Flags) bool, status string, timeout time.Duration) error {
@@ -182,14 +209,23 @@ type ConfigError struct {
 
 func (e *ConfigError) Error() string { return e.msg }
 
-func (clk *Clock) validatePinDesc() error {
+func (clk *Clock) validatePinDesc(pinGiven bool) error {
 	var msg string
-	if clk.ExttsChanCount() == 0 || clk.PinCount() == 0 {
+	if clk.ExttsChanCount() == 0 {
 		msg = fmt.Sprintf("PTP clock %s does not support external timestamping", clk.Path())
-	} else if clk.pinIndex >= uint32(clk.PinCount()) {
-		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", clk.pinIndex, clk.Path(), clk.PinCount()-1)
 	} else if clk.chanIndex >= uint32(clk.ExttsChanCount()) {
 		msg = fmt.Sprintf("channel index %d is out of range for PTP clock %s: maximum index is %d", clk.chanIndex, clk.Path(), clk.ExttsChanCount()-1)
+	} else if !clk.HasPins() {
+		if !pinGiven {
+			return nil
+		}
+		if clk.ifName != "" {
+			msg = fmt.Sprintf("the PTP hardware clock of interface %s has no pins; pin must not be specified", clk.ifName)
+		} else {
+			msg = fmt.Sprintf("PTP clock %s has no pins; pin must not be specified", clk.Path())
+		}
+	} else if clk.pinIndex >= uint32(clk.PinCount()) {
+		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", clk.pinIndex, clk.Path(), clk.PinCount()-1)
 	} else {
 		return nil
 	}
@@ -197,15 +233,19 @@ func (clk *Clock) validatePinDesc() error {
 }
 
 func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, error) {
-	err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
-	if err != nil {
-		return nil, err
+	attrs := []any{"device", clk.Path()}
+	if clk.HasPins() {
+		err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
+		if err != nil {
+			return nil, err
+		}
+		attrs = append(attrs, "pin", clk.pinIndex)
 	}
 	edges, err := clk.ExttsEnable(clk.chanIndex, true)
 	if err != nil {
 		return nil, err
 	}
-	lg.Info("enabled external timestamping on the PTP hardware clock", "device", clk.Path(), "pin", clk.pinIndex, "channel", clk.chanIndex, "edgesPerPulse", edges)
+	lg.Info("enabled external timestamping on the PTP hardware clock", append(attrs, "channel", clk.chanIndex, "edgesPerPulse", edges)...)
 	clk.DriverFlags = clk.DriverFlags.SetEdges(edges)
 	ch := make(chan Event, 1)
 	go clk.readWorker(ctx, lg, ch)
@@ -223,7 +263,7 @@ func noCarrier(flags net.Flags) bool {
 }
 
 func (clk *Clock) handleNoCarrier(ctx context.Context, lg *slog.Logger, tsCh chan<- Event, _ net.Flags) <-chan net.Flags {
-	tsCh <- Event{Kind: PauseEvent}
+	tsCh <- Event{Kind: PauseEvent, TReadMono: phctime.Sample{Sys: time.Now()}}
 	lg.Info("carrier lost; waiting for it to return", "interface", clk.ifName)
 	clk.logExttsEnable(lg, false)
 	wCh := clk.w.SetCond(hasCarrier)

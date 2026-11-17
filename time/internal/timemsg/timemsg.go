@@ -106,7 +106,10 @@ func (buf *Buffer) SetMsgUTCTimer(t MsgUTCTimer) {
 }
 
 func (buf *Buffer) msgUTCTime(msg *gpsprot.TimeMsg, tRead time.Time) {
-	if buf.msgUTCTimer == nil || !msg.UTCTime.IsSet() {
+	// A PrePulse message describes the upcoming pulse, so its UTC is ahead
+	// of its read time by most of a second and must not serve as a
+	// (utc, tRead) pair.
+	if buf.msgUTCTimer == nil || !msg.UTCTime.IsSet() || msg.Ref == gpsprot.PrePulse {
 		return
 	}
 	ut := msg.UTCTime.Get()

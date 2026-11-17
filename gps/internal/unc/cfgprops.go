@@ -781,7 +781,8 @@ func (p *modeProp) convertToProps(props *gpsprot.ConfigProps) {
 		}
 	}
 
-	// XXX need to decide what to do about FixedPosAcc
+	// The receiver stores no fixed position accuracy, so FixedPosAcc
+	// stays 0: no accuracy stated (see the Mode field comment).
 	props.SetMode(mode)
 }
 

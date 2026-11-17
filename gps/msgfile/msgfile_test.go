@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/pelletier/go-toml/v2"
@@ -845,6 +846,44 @@ tag = "b"
 	}
 }
 
+func TestLoadFSIncludeChain(t *testing.T) {
+	fsys := fstest.MapFS{
+		"vendor/main.toml": &fstest.MapFile{Data: []byte(`
+[[line]]
+text = "MAIN"
+tag = "main"
+
+[[include]]
+src = "base/first.toml"
+`)},
+		"vendor/base/first.toml": &fstest.MapFile{Data: []byte(`
+[[line]]
+text = "FIRST"
+tag = "first"
+
+[[include]]
+src = "second.toml"
+`)},
+		"vendor/base/second.toml": &fstest.MapFile{Data: []byte(`
+[[line]]
+text = "SECOND"
+tag = "second"
+`)},
+	}
+	mf, err := LoadFS(fsys, "vendor/main.toml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(mf.Line) != 3 {
+		t.Fatalf("expected 3 line messages, got %d", len(mf.Line))
+	}
+	for i, text := range []string{"MAIN", "FIRST", "SECOND"} {
+		if mf.Line[i].Text != text {
+			t.Errorf("line[%d]: got %q want %q", i, mf.Line[i].Text, text)
+		}
+	}
+}
+
 func TestIncludeTagOverride(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, dir, "main.toml", `
@@ -1140,7 +1179,7 @@ tag = "greet"
 		t.Fatal(err)
 	}
 	var files []loadedFile
-	if err := processFile(mf, "", &files); err != nil {
+	if err := processFile(mf, "", osFileLoader, &files); err != nil {
 		t.Fatal(err)
 	}
 	p, err := mergeFiles(files)
@@ -1172,7 +1211,7 @@ src = "inc.toml"
 		t.Fatal(err)
 	}
 	var files []loadedFile
-	if err := processFile(mf, "", &files); err != nil {
+	if err := processFile(mf, "", osFileLoader, &files); err != nil {
 		t.Fatal(err)
 	}
 	p, err := mergeFiles(files)

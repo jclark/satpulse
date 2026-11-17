@@ -1,7 +1,9 @@
 package gpscmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -47,6 +49,7 @@ type flagVars struct {
 	configOpts     gpsprot.ConfigOptions
 	configSupport  configSupportReq
 	configGet      gpsprot.PropIDs
+	targetJSON     *gpsprot.ConfigTarget
 	msgFilePath    string
 	msgTags        []string
 	msgSave        bool
@@ -134,6 +137,9 @@ const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20 * gpsprot.Meter
 const defaultFixedPosAcc = 20 * gpsprot.Meter
 
+// minAccuracyMm is gpsprot.MinAccuracy in mm, for error messages.
+const minAccuracyMm = float64(gpsprot.MinAccuracy) / float64(gpsprot.Millimeter)
+
 // TODO: add PropIDBaudRate to showProps so --show-config reports the current configured speed.
 // Would need regeneration of the *-noop replay-test traces.
 const showProps = gpsprot.PropIDSignalsEnabled |
@@ -181,6 +187,7 @@ type flagParser struct {
 	satsOut        satsOutOpt
 	msgTags        string
 	vendorStr      string
+	targetJSON     string
 	baudRate       uint32
 	addSignals     signalList
 	exceptSignals  signalList
@@ -229,6 +236,8 @@ func newFlagParser(cmdName string) *flagParser {
 	flags.StringVarP(&vars.serialDevice, "serial-device", "d", "", "serial device connected to GPS receiver")
 	flags.StringVar(&vars.socketPath, "socket", "", "`path` of socket to connect to GPS receiver")
 	flags.StringVarP(&vars.configFile, "config-file", "f", "", "`path` to satpulse TOML configuration file")
+	flags.StringVar(&p.targetJSON, "target-json", "", "JSON configuration target or - to read from stdin")
+	flags.MarkHidden("target-json")
 	flags.StringVar(&vars.packetLogPath, "packet-log", "", "log packets to `path`")
 	flags.StringVarP(&vars.msgFilePath, "msg-file", "m", "", "`path` to TOML file containing message definitions")
 	flags.StringVarP(&p.msgTags, "tag", "t", "", "comma-separated `list` of tags to send (in order)")
@@ -272,6 +281,22 @@ func newFlagParser(cmdName string) *flagParser {
 
 func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVars, func(string) string, error) {
 	vars := &p.vars
+	if p.targetJSON != "" {
+		allowed := map[string]bool{
+			"target-json": true, "serial-device": true, "device-speed": true, "socket": true, "config-file": true,
+			"packet-log": true, "test-log": true, "capture": true, "vendor": true, "json": true,
+			"show-receiver": true, "show-config": true, "show-port": true,
+		}
+		var bad string
+		p.flags.Visit(func(f *pflag.Flag) {
+			if bad == "" && !allowed[f.Name] {
+				bad = f.Name
+			}
+		})
+		if bad != "" {
+			return nil, nil, fmt.Errorf("--target-json cannot be combined with --%s", bad)
+		}
+	}
 	if vars.jsonOut && vars.msgFilePath != "" {
 		return nil, nil, fmt.Errorf("--json cannot be combined with --msg-file")
 	}
@@ -285,6 +310,15 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 	configChanged, u, err := p.resolveConn(cmdName, usage)
 	if err != nil {
 		return nil, u, err
+	}
+	if p.targetJSON != "" {
+		// JSON targets bypass flag-layer configuration policy. Display
+		// requests retain their capability requirements.
+		if err := p.resolveTargetJSON(); err != nil {
+			return nil, nil, err
+		}
+		p.resolveShow()
+		return vars, nil, nil
 	}
 	changed, err := p.resolveSignals(cmdName)
 	if err != nil {
@@ -315,11 +349,10 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 	if err := p.resolveSave(cmdName, configChanged); err != nil {
 		return nil, nil, err
 	}
-	doConfigure, err := p.resolveConfigure(cmdName, configChanged)
-	if err != nil {
+	if err := p.resolveConfigure(cmdName, configChanged); err != nil {
 		return nil, nil, err
 	}
-	if err := p.resolveMsgFile(configChanged, doConfigure); err != nil {
+	if err := p.resolveMsgFile(configChanged); err != nil {
 		return nil, nil, err
 	}
 	return vars, nil, nil
@@ -380,6 +413,37 @@ func (p *flagParser) resolveConn(cmdName string, usage func(string) string) (boo
 		vars.configSupport.require(gpsprot.ConfigSupportSpeed, "--speed")
 	}
 	return configChanged, nil, nil
+}
+
+// resolveTargetJSON decodes the --target-json argument, or stdin if it
+// is "-", into vars.jsonTarget and validates it. Read-only properties
+// are cleared: they describe the receiver, not a request. The input
+// must be exactly one JSON value with no unknown fields: a target is
+// the raw model, so a misspelled name must not read as a silently
+// omitted one.
+func (p *flagParser) resolveTargetJSON() error {
+	target := gpsprot.NewConfigTarget()
+	var r io.Reader = strings.NewReader(p.targetJSON)
+	if p.targetJSON == "-" {
+		r = os.Stdin
+	}
+	dec := json.NewDecoder(r)
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(target); err != nil {
+		return fmt.Errorf("invalid --target-json: %w", err)
+	}
+	if err := dec.Decode(new(any)); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("multiple JSON values")
+		}
+		return fmt.Errorf("invalid --target-json: %w", err)
+	}
+	target.Props.ClearReadOnlyProps()
+	if err := validateTarget(target); err != nil {
+		return fmt.Errorf("invalid --target-json: %w", err)
+	}
+	p.vars.targetJSON = target
+	return nil
 }
 
 func (p *flagParser) resolveSignals(cmdName string) (bool, error) {
@@ -477,8 +541,8 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 	if p.survey || vars.configOpts.SetStatic {
 		configChanged = true
 		vars.configOpts.Survey.MinDur = time.Duration(p.surveyTime) * time.Second
-		if gpsprot.Length(p.surveyAcc) < gpsprot.Millimeter {
-			return false, fmt.Errorf("--survey-acc must be at least 0.001 (1 mm)")
+		if gpsprot.Length(p.surveyAcc) < gpsprot.MinAccuracy {
+			return false, fmt.Errorf("--survey-acc must be at least %v (%v mm)", gpsprot.MinAccuracy, minAccuracyMm)
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Length(p.surveyAcc)
 		if p.survey {
@@ -526,8 +590,8 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 
 func (p *flagParser) resolveFixedPos(cmdName, flagName string, mode gpsprot.Mode) error {
 	vars := &p.vars
-	if gpsprot.Length(p.fixedPosAcc) < gpsprot.Millimeter {
-		return fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
+	if gpsprot.Length(p.fixedPosAcc) < gpsprot.MinAccuracy {
+		return fmt.Errorf("--fixed-pos-acc must be at least %v (%v mm)", gpsprot.MinAccuracy, minAccuracyMm)
 	}
 	vars.configSupport.require(gpsprot.ConfigSupportFixedPos, flagName)
 	if p.flags.Lookup("fixed-pos-acc").Changed {
@@ -642,39 +706,38 @@ func (p *flagParser) resolveSave(cmdName string, configChanged bool) error {
 	return nil
 }
 
-func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) (bool, error) {
+func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) error {
 	vars := &p.vars
-	// tests whether configurator needs to run
-	doConfigure := p.save || p.saveAll || p.reset || p.reload || p.showConfig || p.showPort || configChanged
+	action := p.save || p.saveAll || p.reset || p.reload || p.showConfig || p.showPort || configChanged
 	if p.factoryReset {
-		if doConfigure {
-			return false, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
+		if action {
+			return fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
 		}
-		doConfigure = true
 		vars.configOpts.Reset = gpsprot.ResetFactory
 	} else if p.reset || p.reload {
 		if configChanged && !p.save && !p.saveAll {
-			return false, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
+			return fmt.Errorf("--reset or --reload without saving would lose configuration changes")
 		}
 		if p.showConfig || p.showPort {
-			return false, fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
+			return fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
 		}
 		if p.reset && p.reload {
-			return false, fmt.Errorf("cannot use both --reset and --reload")
+			return fmt.Errorf("cannot use both --reset and --reload")
 		}
 		if p.reload {
+			vars.configSupport.require(gpsprot.ConfigSupportReload, "--reload")
 			vars.configOpts.Reset = gpsprot.ResetReload
 		} else {
 			vars.configOpts.Reset = gpsprot.ResetCold
 		}
-		doConfigure = true
-	} else if vars.showReceiver {
-		doConfigure = true
 	}
-	return doConfigure, nil
+	if !action && !p.factoryReset && vars.msgFilePath == "" {
+		vars.showReceiver = true
+	}
+	return nil
 }
 
-func (p *flagParser) resolveMsgFile(configChanged, doConfigure bool) error {
+func (p *flagParser) resolveMsgFile(configChanged bool) error {
 	vars := &p.vars
 	flags := p.flags
 	if vars.msgFilePath != "" {
@@ -703,12 +766,59 @@ func (p *flagParser) resolveMsgFile(configChanged, doConfigure bool) error {
 		if flags.Lookup("port").Changed {
 			return fmt.Errorf("--port requires --msg-file")
 		}
-		if !doConfigure && !vars.capture.IsSet() {
-			vars.showReceiver = true
+	}
+	return nil
+}
+
+// maxTimePulsePeriod bounds the time pulse period a JSON target may
+// request. The bound is policy: well above any period anyone could
+// reasonably set, but a round number that keeps every backend's wire
+// encoding (uint32 microseconds) free of numeric overflow.
+const maxTimePulsePeriod = time.Hour
+
+// validateTarget applies to a target decoded from JSON (--target-json,
+// which bypasses the flag-level checks) the semantic checks the
+// resolve functions apply as they build a target, adapted to the
+// model's full range (the flag syntax fixes the pulse period at one
+// second; a JSON target can set any period). Receiver-dependent
+// restrictions are not checked here: the backends realize and report
+// those.
+func validateTarget(target *gpsprot.ConfigTarget) error {
+	props := &target.Props
+	ss, hasSigs := props.GetSignalsEnabled()
+	if hasSigs && ss&gpsprot.SigSetMajor&^gpsprot.SigSetAugment == 0 {
+		return fmt.Errorf("at least one non-augmentation signal from a major GNSS must be enabled")
+	}
+	if g, ok := props.GetTimeGNSS(); ok && hasSigs && ss.GNSSSet()&gpsprot.GNSSSetOf(g) == 0 {
+		return fmt.Errorf("%s is the time GNSS but none of its signals are enabled", g)
+	}
+	width, hasWidth := props.GetTimePulseWidth()
+	if hasWidth && width < 0 {
+		return fmt.Errorf("time pulse width must not be negative (zero disables the pulse)")
+	}
+	period, hasPeriod := props.GetTimePulsePeriod()
+	if hasPeriod && (period <= 0 || period > maxTimePulsePeriod) {
+		return fmt.Errorf("time pulse period must be positive and at most one hour")
+	}
+	if hasWidth && hasPeriod && width >= period {
+		return fmt.Errorf("time pulse width must be less than the period")
+	}
+	if elev, ok := props.GetMinElevation(); ok && (elev.Degrees() < -90 || elev.Degrees() > 90) {
+		return fmt.Errorf("minimum elevation must be between -90 and 90 degrees")
+	}
+	if s := target.Opts.Survey; s != (gpsprot.Survey{}) {
+		if s.MinDur < 0 {
+			return fmt.Errorf("survey minimum duration must not be negative")
 		}
-		if vars.jsonOut && !doConfigure && !vars.showReceiver {
-			return fmt.Errorf("--json cannot be used with passive packet capture")
+		if s.AccLimit < gpsprot.MinAccuracy {
+			return fmt.Errorf("survey accuracy limit must be at least %v mm", minAccuracyMm)
 		}
+	}
+	// FixedPosAcc 0 means no accuracy stated - the value a readback
+	// reports on receivers that store no accuracy - and must round-trip.
+	if m, ok := props.GetMode(); ok && m.PosType != gpsprot.PosTypeNone &&
+		m.FixedPosAcc != 0 && m.FixedPosAcc < gpsprot.MinAccuracy {
+		return fmt.Errorf("fixed position accuracy must be at least %v mm", minAccuracyMm)
 	}
 	return nil
 }

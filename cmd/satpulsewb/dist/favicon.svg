@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="SatPulse">
+  <title>SatPulse</title>
+  <style>
+    .mark { fill: #1846a0; }
+    @media (prefers-color-scheme: dark) { .mark { fill: #dbe8ff; } }
+  </style>
+  <!-- Abstract satellite: body + two angled solar panels, viewed at an angle -->
+  <g class="mark" transform="translate(28 28.4) rotate(-48) scale(1.36)">
+    <rect x="-6" y="-11" width="12" height="22" rx="3"/>
+    <polygon points="-8,-7 -24,-3 -24,11 -8,7"/>
+    <polygon points="8,-7 24,-3 24,11 8,7"/>
+  </g>
+</svg>

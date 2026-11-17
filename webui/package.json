@@ -1,0 +1,25 @@
+{
+  "name": "satpulse-webui",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/dashboard",
+    "packages/workbench",
+    "packages/workbench-http",
+    "packages/e2e"
+  ],
+  "dependencies": {
+    "@satpulse/gps": "file:../gps/ts"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  },
+  "scripts": {
+    "dev": "npm run dev --workspace=packages/dashboard",
+    "build": "npm run build --workspace=packages/dashboard && npm run build --workspace=packages/workbench-http",
+    "embed": "npm run build --workspace=packages/dashboard -- --outDir ../../../time/internal/web/dist --emptyOutDir",
+    "embed-workbench": "npm run build --workspace=packages/workbench-http -- --outDir ../../../cmd/satpulsewb/dist --emptyOutDir",
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  }
+}

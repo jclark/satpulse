@@ -25,8 +25,7 @@ const (
 	Reconnecting
 	// Failed is a terminal state: the stream hit an unrecoverable
 	// error (e.g. a rejected NTRIP password) and gave up rather than
-	// reconnecting.  Push reports it; Pull always retries, so Pull
-	// never reaches Failed today.
+	// reconnecting.
 	Failed
 )
 

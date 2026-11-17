@@ -49,7 +49,7 @@ func (m *PsrDop) Chunks() func(yield func(chunk any) bool) {
 			return
 		}
 		if len(m.PRNs) == 0 {
-			m.PRNs = make([]PsrDopPRN, m.NumPRNs)
+			m.PRNs = make([]PsrDopPRN, ClampLen[PsrDopPRN](m.NumPRNs))
 		}
 		for i := range m.PRNs {
 			if !yield(&m.PRNs[i]) {
@@ -61,10 +61,11 @@ func (m *PsrDop) Chunks() func(yield func(chunk any) bool) {
 
 // BestPos represents geodetic position from a NovAtel-format receiver.
 // Message ID: 42
-// Binary layout is identical across OEM7, ByNav, SinoGNSS, and Unicore;
+// Binary layout is identical across OEM7, Bynav, SinoGNSS, and Unicore;
 // the SolStatus and PosType enum value sets vary by vendor.
 type BestPos struct {
 	Pos[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for BESTPOS
@@ -77,6 +78,7 @@ func (m *BestPos) ID() (MsgID, string) {
 // Same binary layout as BestPos.
 type BestGNSSPos struct {
 	Pos[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for BESTGNSSPOS.
@@ -89,6 +91,7 @@ func (m *BestGNSSPos) ID() (MsgID, string) {
 // Same binary layout as BestPos.
 type PsrPos struct {
 	Pos[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for PSRPOS.
@@ -119,7 +122,7 @@ func (m *PsrVel) ID() (MsgID, string) {
 	return PsrVelID, "PSRVELA"
 }
 
-// BestGNSSVel represents GNSS-only velocity from a NovAtel OEM7/ByNav receiver.
+// BestGNSSVel represents GNSS-only velocity from a NovAtel OEM7/Bynav receiver.
 // Message ID: 1430
 type BestGNSSVel struct {
 	Vel[PosType]
@@ -132,10 +135,11 @@ func (m *BestGNSSVel) ID() (MsgID, string) {
 
 // BestXYZ represents ECEF position and velocity from a NovAtel-format receiver.
 // Message ID: 241
-// Binary layout is identical across OEM7, ByNav, SinoGNSS, and Unicore;
+// Binary layout is identical across OEM7, Bynav, SinoGNSS, and Unicore;
 // the SolStatus and PosType enum value sets vary by vendor.
 type BestXYZ struct {
 	XYZ[SolStatus, PosType]
+	PosFlags
 }
 
 // ID returns the message ID for BESTXYZ
@@ -149,6 +153,7 @@ func (m *BestXYZ) ID() (MsgID, string) {
 // used when the SinoGNSS variant builds its constructor map.
 type SinoBestPos struct {
 	Pos[SolStatus, SinoPosType]
+	SinoPosFlags
 }
 
 // ID returns the message ID for BESTPOS.
@@ -162,6 +167,7 @@ func (m *SinoBestPos) ID() (MsgID, string) {
 // used when the SinoGNSS variant builds its constructor map.
 type SinoPsrPos struct {
 	Pos[SolStatus, SinoPosType]
+	SinoPosFlags
 }
 
 // ID returns the message ID for PSRPOS.
@@ -188,6 +194,7 @@ func (m *SinoPsrVel) ID() (MsgID, string) {
 // used when the SinoGNSS variant builds its constructor map.
 type SinoBestXYZ struct {
 	XYZ[SolStatus, SinoPosType]
+	SinoPosFlags
 }
 
 // ID returns the message ID for BESTXYZ.

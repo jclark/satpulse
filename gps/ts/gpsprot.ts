@@ -45,7 +45,7 @@ export interface SVInfo {
 export interface SatellitesMsg {
     tag?: Tag;
     nativeMsgID?: string;
-    info: SVInfo[];
+    info?: SVInfo[];
     usedValidity?: SatelliteUsedValidity;
 }
 
@@ -150,7 +150,7 @@ export interface CorReportMsg {
     nativeMsg?: unknown;
     nBytes?: number;
     checksumOK?: boolean;
-    finalFragment?: boolean;
+    finalInEpoch?: boolean;
     used?: boolean;
     rtcmRefBaseID?: number;
 }

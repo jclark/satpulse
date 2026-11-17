@@ -8,10 +8,13 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
+	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/phcsync"
@@ -28,6 +31,7 @@ const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
+	Sample     SampleConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
 	Sync       phcsync.Config
@@ -53,11 +57,26 @@ type UserConfig struct {
 type SerialConfig struct {
 	Device string
 	Speed  *int
+	PPS    *SerialPPSConfig `toml:"pps"`
+}
+
+type SerialPPSConfig struct {
+	Pin            gpsio.SerialPin `toml:"pin"`
+	InvertPolarity bool            `toml:"invertPolarity"`
+}
+
+type SampleConfig struct {
+	Serial SerialSampleConfig `toml:"serial"`
+}
+
+type SerialSampleConfig struct {
+	PPS serialpps.Config `toml:"pps"`
 }
 
 type PHCConfig struct {
 	Interface string `toml:"interface"`
-	Pin       uint8  `toml:"pin"`
+	Device    string `toml:"device"`
+	Pin       *uint8 `toml:"pin"` // nil means no pin: 0 on a PHC with pins, none on a PHC without
 	Channel   uint8  `toml:"channel"`
 	Wait      bool   `toml:"wait"`
 }
@@ -96,7 +115,10 @@ type NTPSHMConfig struct {
 	Precision *int8  `toml:"precision"`
 }
 
-const serialSHMPrecision int8 = -1
+const (
+	serialSHMPrecision    int8 = -1
+	serialPPSSHMPrecision int8 = -11
+)
 
 type LogConfig struct {
 	Interval int    `toml:"interval"`
@@ -157,6 +179,7 @@ func readConfig(r io.Reader) (*Config, error) {
 func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
+	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
@@ -167,12 +190,7 @@ func defaultConfig() *Config {
 }
 
 func (cfg *Config) anyHTTP(f func(HTTPConfig) bool) bool {
-	for _, c := range cfg.HTTP {
-		if f(c) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(cfg.HTTP, f)
 }
 
 func (cfg *Config) httpWantsSatellites() bool {
@@ -201,6 +219,25 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 // It is separate from LoadConfig because the config contains logging settings.
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
+	if cfg.Serial.PPS != nil {
+		if cfg.Serial.PPS.Pin == 0 {
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table must be specified")}
+		}
+		if cfg.PHC.specified() {
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface or device in the [phc] table")}
+		}
+	}
+	if cfg.PHC.Interface != "" && cfg.PHC.Device != "" {
+		return &configError{err: fmt.Errorf("interface and device in the [phc] table cannot both be specified")}
+	}
+	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
+		return &configError{err: err}
+	}
+	// An explicitly selected method never falls back, and kernel PPS reports
+	// only DCD changes, so the combination could only fail at startup.
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != gpsio.SerialPinDCD {
+		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = %q in the [serial] table, got %q`, gpsio.SerialPinDCD, cfg.Serial.PPS.Pin)}
+	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
@@ -215,6 +252,15 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	return nil
+}
+
+// wiring is the pulse wiring the table describes.
+func (cfg SerialPPSConfig) wiring() serialpps.Wiring {
+	w := serialpps.Wiring{Pin: cfg.Pin}
+	if cfg.InvertPolarity {
+		w.Polarity = serialpps.PolarityAssert
+	}
+	return w
 }
 
 // userSet checks the top-level [[user]] table for empty or duplicate
@@ -236,10 +282,16 @@ func (cfg *Config) userSet() (map[string]struct{}, error) {
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
-	if cfg.Interface == "" {
+	if !cfg.specified() {
 		return nil, nil
 	}
-	clk, err := ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	var clk *ts.Clock
+	var err error
+	if cfg.Device != "" {
+		clk, err = ts.OpenDeviceClock(cfg.Device, cfg.PinDesc())
+	} else {
+		clk, err = ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	}
 	if err != nil {
 		var cfgErr *ts.ConfigError
 		if errors.As(err, &cfgErr) {
@@ -250,11 +302,18 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 	return clk, nil
 }
 
+// specified reports whether the configuration names a PHC.
+func (cfg PHCConfig) specified() bool {
+	return cfg.Interface != "" || cfg.Device != ""
+}
+
 func (cff PHCConfig) PinDesc() ts.PinDesc {
-	return ts.PinDesc{
-		PinIndex:  uint32(cff.Pin),
-		ChanIndex: uint32(cff.Channel),
+	pd := ts.PinDesc{ChanIndex: uint32(cff.Channel)}
+	if cff.Pin != nil {
+		pin := uint32(*cff.Pin)
+		pd.PinIndex = &pin
 	}
+	return pd
 }
 
 func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
@@ -290,7 +349,11 @@ func (cfg *Config) shmFixedPrecision() *int8 {
 	if cfg.NTP.SHM != nil && cfg.NTP.SHM.Precision != nil {
 		return cfg.NTP.SHM.Precision
 	}
-	if cfg.PHC.Interface == "" {
+	if cfg.Serial.PPS != nil {
+		p := serialPPSSHMPrecision
+		return &p
+	}
+	if !cfg.PHC.specified() {
 		p := serialSHMPrecision
 		return &p
 	}

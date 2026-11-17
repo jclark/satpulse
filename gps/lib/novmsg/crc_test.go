@@ -41,7 +41,7 @@ const testCRC32Polynomial uint32 = 0xEDB88320
 // testCRC32Value computes a CRC value for a single byte, used by the reference implementation.
 func testCRC32Value(i uint32) uint32 {
 	crc := i
-	for j := 0; j < 8; j++ {
+	for range 8 {
 		if crc&1 != 0 {
 			crc = (crc >> 1) ^ testCRC32Polynomial
 		} else {

@@ -32,18 +32,18 @@ func (e *ExttsEvent) Print(f *os.File) {
 // extts implements --extts/-i mode
 func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 	return func(yield func(Printer) bool) {
-		lg.Debug("extts mode", "interface", cfg.Interface, "timeout", cfg.Timeout, "pin", cfg.Pin, "chan", cfg.Chan)
+		lg.Debug("extts mode", append(cfg.logAttrs(), "timeout", cfg.Timeout, "pin", cfg.Pin, "chan", cfg.Chan)...)
 		
-		clk, pinIndex, err := phcOpen(cfg.Interface, cfg.Pin)
+		clk, pinIndex, err := phcOpen(cfg)
 		if err != nil {
 			*errp = err
 			return
 		}
 		defer clk.Close()
 
-		iface, err := net.InterfaceByName(cfg.Interface)
-		if err == nil {
-			if iface.Flags&net.FlagUp == 0 {
+		if cfg.Interface != "" {
+			iface, err := net.InterfaceByName(cfg.Interface)
+			if err == nil && iface.Flags&net.FlagUp == 0 {
 				lg.Warn("interface is not up, external timestamps may not work",
 					"interface", cfg.Interface)
 			}
@@ -55,10 +55,14 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 			return
 		}
 
-		err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
-		if err != nil {
-			*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
-			return
+		attrs := cfg.logAttrs()
+		if clk.HasPins() {
+			err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
+			if err != nil {
+				*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
+				return
+			}
+			attrs = append(attrs, "pin", pinIndex)
 		}
 
 		_, err = clk.ExttsEnable(chanIndex, true)
@@ -76,12 +80,10 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 
 		// Log configuration
-		lg.Info("checking input", 
-			"interface", cfg.Interface,
-			"pin", pinIndex,
+		lg.Info("checking input", append(attrs,
 			"channel", cfg.Chan,
 			"timeout", cfg.Timeout,
-			"showStale", cfg.ShowStale)
+			"showStale", cfg.ShowStale)...)
 
 		// Start worker goroutine
 		eventCh := make(chan ExttsEvent, 10)
