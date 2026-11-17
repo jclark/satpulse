@@ -18,7 +18,7 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 
 The **satpulsetool** **sdp** command manages software-defined pins (SDP) on PTP hardware clocks (PHC).
 A pin can be configured for input, allowing timestamps of pulses received by the pin to be read,
-for example when the pin is connected the the PPS output of a GNSS receiver.
+for example when the pin is connected to the PPS output of a GNSS receiver.
 This is called external timestamping (extts).
 A pin can alternatively be configured for output, allowing periodic pulses aligned to the PHC
 to be generated, for example when the pin is connected to an oscilloscope.
@@ -43,8 +43,8 @@ Root privileges are required except in **\-\-show\-ifaces** mode.
 This reads timestamp events from the channel.
 If the PHC has pins, it first sets the function of the pin to external timestamping on the channel.
 It will show each timestamp as it is received.
-It will read timestamp events for the length of time specified by the **\-\-t** option; default is 2 seconds.
-if this is 0, it will read until interrupted.
+It will read timestamp events for the length of time specified by the **\-t** option; default is 2 seconds.
+If this is 0, it will read until interrupted.
 The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
 
@@ -55,7 +55,7 @@ If the PHC has pins, it first sets the function of the pin to periodic output on
 The period can be specified with **\-\-period**; it defaults to 1 second, resulting in a PPS signal.
 Some Ethernet drivers allow the width of the pulses to be specified using the **\-\-width** option.
 If **\-\-width** is not specified, the pulse width is chosen by the ethernet driver.
-For Intel igb and igc drivers, the width cannnot be specified, and is always half the period,
+For Intel igb and igc drivers, the width cannot be specified, and is always half the period,
 i.e. a duty cycle of 50%.
 The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
@@ -76,7 +76,7 @@ If **\-\-pin** is specified, shows information about that pin only.
 
 **\-t**, **\-\-timeout** *seconds*  
 : Length of time in seconds for which to read timestamp events. 
-Applies only when **\-\-extts** options is specified.
+Applies only when **\-\-extts** option is specified.
 The default is 2.
 
 **\-w**, **\-\-width** *seconds*  
@@ -102,7 +102,7 @@ The default is 0 when a pin is required.
 : Select the channel to be used by **\-\-extts** or **\-\-perout**. The default is 0.
 
 **\-\-show\-stale**  
-: Include stale timestamps in the output. By default, timestamps that were buffered before reading timestamp events started are not displayed. Applies only when **\-\-extts** options is specified.
+: Include stale timestamps in the output. By default, timestamps that were buffered before reading timestamp events started are not displayed. Applies only when **\-\-extts** option is specified.
 
 **\-j**, **\-\-jsonl**  
 : Output in JSON lines format instead of human-readable text.
