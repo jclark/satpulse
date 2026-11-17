@@ -222,7 +222,7 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		if cfg.Serial.PPS.Pin == 0 {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table must be specified")}
 		}
-		if cfg.PHC.Interface != "" {
+		if cfg.PHC.specified() {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
 		}
 	}
@@ -278,7 +278,7 @@ func (cfg *Config) userSet() (map[string]struct{}, error) {
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
-	if cfg.Interface == "" {
+	if !cfg.specified() {
 		return nil, nil
 	}
 	clk, err := ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
@@ -290,6 +290,11 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 		return nil, err
 	}
 	return clk, nil
+}
+
+// specified reports whether the configuration names a PHC.
+func (cfg PHCConfig) specified() bool {
+	return cfg.Interface != ""
 }
 
 func (cff PHCConfig) PinDesc() ts.PinDesc {
@@ -338,7 +343,7 @@ func (cfg *Config) shmFixedPrecision() *int8 {
 		p := serialPPSSHMPrecision
 		return &p
 	}
-	if cfg.PHC.Interface == "" {
+	if !cfg.PHC.specified() {
 		p := serialSHMPrecision
 		return &p
 	}
