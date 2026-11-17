@@ -324,7 +324,7 @@ func TestReorderedResponses(t *testing.T) {
 
 func TestConfigSupport(t *testing.T) {
 	base := gpsprot.ConfigSupportRaw |
-		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc | gpsprot.ConfigSupportSurveyDur |
 		gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
 		gpsprot.ConfigSupportSignal | gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportReload
