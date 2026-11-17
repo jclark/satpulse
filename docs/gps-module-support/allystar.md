@@ -15,7 +15,7 @@ For these modules, SatPulse supports:
 
 - decoding of the Allystar binary packet format (packet format tag is `ASBIN`)
 - conversion of messages into the SatPulse device-independent data model
-- high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified {% include new-in-03.html %}
+- high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified {% include new-in.html version="0.4" %}
 - low-level configuration
   - message files for configuration of TAU1201, TAU13xx and TAU951M modules
   - an `asbin` message type in message files, with correlation of responses
@@ -73,7 +73,7 @@ The last column says whether high-level configuration can automatically enable o
 | NAV-SVINFO | 0x01 0x30 | satellites | yes |
 | NAV-SVIN | 0x01 0x31 | survey | yes |
 | NAV-AUTO | 0x01 0xC0 | geodetic position, geodetic velocity, solution quality | yes |
-| RXM-DUMPRAW | 0x02 0x01 | raw message configuration | - |
+| RXM-DUMPRAW | 0x02 0x01 | message configuration | - |
 | ACK-NAK | 0x05 0x00 | configuration acknowledgement | - |
 | ACK-ACK | 0x05 0x01 | configuration acknowledgement | - |
 | CFG-PRT | 0x06 0x00 | serial port configuration | - |
@@ -83,7 +83,7 @@ The last column says whether high-level configuration can automatically enable o
 | CFG-ELEV | 0x06 0x0B | navigation model configuration | - |
 | CFG-NAVSAT | 0x06 0x0C | signal configuration | - |
 | CFG-SURVEY | 0x06 0x12 | time mode configuration | - |
-| CFG-FIXEDLLA | 0x06 0x13 | time mode configuration | - |
+| CFG-FIXEDLLA | 0x06 0x13 | decode only | - |
 | CFG-FIXEDECEF | 0x06 0x14 | time mode configuration | - |
 | CFG-SIMPLERST | 0x06 0x40 | receiver reset | - |
 | CFG-NMEAVER | 0x06 0x43 | decode only | - |

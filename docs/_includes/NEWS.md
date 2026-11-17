@@ -1,5 +1,6 @@
 ## Changes in 0.4 (not yet released)
 
+- High-level configuration now supports Allystar receivers using the Allystar binary protocol. `satpulsetool gps` and `satpulsed` can now configure receivers such as the TAU1201, TAU1302, TAU1312 and TAU951M-P200. (#344)
 - The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
 
 ## Changes in 0.3
@@ -44,7 +45,6 @@ _Released 2026-10-28_
 ### GPS high-level configuration
 
 - High-level configuration now supports Zhongke Microelectronics receivers using CASIC, covering both the V5 (URANUS5) and V6 (URANUS6) firmware families. `satpulsetool gps` and `satpulsed` can now configure receivers such as the ATGM332D and ATGM336H. (#229)
-- High-level configuration has been implemented for the Allystar binary protocol (tested on the TAU1201, TAU1302, and TAU951M-P200). (#344)
 - `satpulsetool gps` has new `--signal` and `--except-signal` options for controlling individual GNSS signals. `--signal` enables individual signals, in addition to the constellations enabled by `--gnss`; `--except-signal` excludes individual signals from those constellations. `--band` does not affect what signals are enabled by `--signal`. Signals are named by the constellation name followed by the signal name (`GPSL1C`, `QZSSL1S`); the constellation name is not required for Galileo and BeiDou signal names (`E5b`, `B1C`). (#97)
 - `satpulsetool gps` has a new `--fixed-pos-llh` option for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#146)
 - The `[gps]` table in `satpulse.toml` has a new `fixedPosLLH` key for configuring fixed antenna position with latitude, longitude, and WGS84 ellipsoid height, instead of requiring ECEF coordinates. (#147)
