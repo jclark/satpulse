@@ -360,6 +360,43 @@ func TestLstBlockContinuity(t *testing.T) {
 	}
 }
 
+// TestLstDeadlineExtends checks that a multi-block reply restarts the
+// reply window with each accepted unit, so a reply taking longer than
+// maxReplyDelay in total (a slow serial link) still completes, while a
+// stale block does not extend it.
+func TestLstDeadlineExtends(t *testing.T) {
+	cmd := "lstInternalFile, Identification"
+	req := &sReq{state: sStateReady, cmd: cmd, onLst: func(string) {}}
+	c := &Configurator{reqs: []*sReq{req}}
+	t0 := time.Date(2026, 11, 17, 0, 0, 0, 0, time.UTC)
+	req.SetSentTime(t0)
+	tests := []struct {
+		name   string
+		reply  *Reply
+		at     time.Duration
+		expect time.Duration
+	}{
+		{"opener", &Reply{Kind: ReplyLst, Echo: cmd}, 1 * time.Second, 1*time.Second + maxReplyDelay},
+		{"stale block", &Reply{Kind: ReplyBlock, BlockNum: 3, Block: "stale"}, 1200 * time.Millisecond, 1*time.Second + maxReplyDelay},
+		{"first block", &Reply{Kind: ReplyBlock, BlockNum: 1, Block: "b1"}, 2 * time.Second, 2*time.Second + maxReplyDelay},
+		{"second block", &Reply{Kind: ReplyBlock, BlockNum: 2, Block: "b2"}, 3 * time.Second, 3*time.Second + maxReplyDelay},
+	}
+	for _, tc := range tests {
+		if err := c.reply(tc.reply, t0.Add(tc.at)); err != nil {
+			t.Fatalf("%s: reply: %v", tc.name, err)
+		}
+		if got, want := req.GetDeadline(), t0.Add(tc.expect); !got.Equal(want) {
+			t.Errorf("%s: deadline got %v want %v", tc.name, got.Sub(t0), want.Sub(t0))
+		}
+	}
+	if err := c.reply(&Reply{Kind: ReplyBlock, BlockNum: 3, Block: "b3", Prompt: "COM1"}, t0.Add(4*time.Second)); err != nil {
+		t.Fatalf("final block: %v", err)
+	}
+	if req.state != sStateSucceeded {
+		t.Errorf("state: got %v want %v", req.state, sStateSucceeded)
+	}
+}
+
 // TestPromote checks the single-flight rule: only the first non-final
 // request is ever promoted to ReadyToSend.
 func TestPromote(t *testing.T) {

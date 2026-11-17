@@ -243,7 +243,8 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 			return nil // not ours: e.g. a late reply to a repeated probe
 		}
 		if r.Kind == ReplyLst && req.onLst != nil {
-			break // accepted; the block units follow
+			req.tBase = tRead // accepted; the block units follow
+			break
 		}
 		req.state = sStateSucceeded
 		if req.onReply != nil {
@@ -259,6 +260,9 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 			break // a stale continuation of an abandoned attempt, not this reply
 		}
 		req.blocks = append(req.blocks, r.Block)
+		// Each block restarts the reply window, so a long reply on a slow
+		// link completes while its blocks keep arriving.
+		req.tBase = tRead
 		if r.Prompt != "" {
 			req.state = sStateSucceeded
 			req.onLst(strings.Join(req.blocks, "\n"))
