@@ -19,7 +19,7 @@ import (
 // option enabled a block.
 //
 // The block choices are fixed against the conversion layer's decode set
-// (gps/internal/septentrio on the septentrio-msg branch): PVTGeodetic/
+// (the sbf*.go files in this package): PVTGeodetic/
 // PVTCartesian (position, velocity, solution time; PVTCartesian is also the
 // SurveyMsg source), xPPSOffset (time-pulse time), GPS/GAL/BDSUtc (leap
 // seconds), DOP + DiffCorrIn + BaseStation (quality and corrections),
