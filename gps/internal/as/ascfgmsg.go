@@ -262,7 +262,7 @@ func (c *Configurator) generateRatePoll() {
 		return
 	}
 	c.add(&asReq{mid: asbin.CfgMsgID, packet: asbin.PollCfgMsg(mid),
-		onData: func(asbin.Msg) {}, optional: true})
+		onData: func(asbin.Msg) {}, optional: true, nakOK: true})
 	c.ratePollSent = true
 }
 
@@ -376,7 +376,7 @@ func (c *Configurator) maybeLazyPoll() {
 		return
 	}
 	c.add(&asReq{mid: asbin.CfgMsgID, packet: asbin.PollCfgMsg(mid),
-		onData: func(asbin.Msg) {}, optional: true})
+		onData: func(asbin.Msg) {}, optional: true, nakOK: true})
 	c.ratePollSent = true
 }
 
@@ -432,12 +432,16 @@ func (c *Configurator) sendDeferred(hz uint8) {
 }
 
 // sendDeferredAtRate1 enables each deferred message at rate=1 to create
-// the evidence a silent receiver needs, and marks each self-set so a
-// clean interval on it is the native period directly. The deferred list
-// is kept so the enables can be corrected if the unit proves faster.
+// the evidence a silent receiver needs, and on its ACK marks it self-set
+// so a clean interval on it is the native period directly. Marking waits
+// for the ACK because arrivals before it are still at the old divisor.
+// The deferred list is kept so the enables can be corrected if the unit
+// proves faster.
 func (c *Configurator) sendDeferredAtRate1() {
 	for _, d := range c.deferred {
-		c.sendMsgRate(d.mid, 1, d.nakOK)
-		c.est.markSelfSet(d.mid)
+		mid := d.mid
+		cls, id := mid.Unpack()
+		m := &asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{MsgClass: cls, MsgID: id, Rate: 1}}
+		c.addMsg(m, asReq{nakOK: d.nakOK, onAck: func() { c.est.markSelfSet(mid) }})
 	}
 }

@@ -292,6 +292,12 @@ func todMillis(s string) (float64, bool) {
 // response. It is not a periodic arrival.
 func (e *rateEstimator) cfgMsgReadback(m *asbin.CfgMsg) {
 	tr := e.track(asbin.MakeMsgID(m.MsgClass, m.MsgID))
+	if tr.selfSet {
+		// Rule 2 covers a self-set id; a readback of an off-grid
+		// self-set stream (a fixless unit) could yield a spurious rule-1
+		// divisor instead of letting the cap conclude 1Hz.
+		return
+	}
 	tr.polledRate = m.Rate
 	tr.hasPoll = true
 	e.tryResolve()
@@ -485,13 +491,15 @@ func (e *rateEstimator) lazyPollID() (asbin.MsgID, bool) {
 	return 0, false
 }
 
-// markSelfSet records that we have set mid to rate=1, so a clean interval
-// on it is the native period directly. Any polled rate predates the set
-// and is dropped: paired with an interval measured after it, rule 1
-// would compute a too-fast native rate.
+// markSelfSet records that the receiver has acknowledged setting mid to
+// rate=1, so a clean interval on it is the native period directly. A
+// polled rate or an interval from before the set was measured at the old
+// divisor, and either rule would turn it into a wrong native rate, so
+// both are dropped. The last arrival's content time is kept: the next
+// delta spans the change, so it is a whole number of native periods,
+// and rule 2 accepts it only when the following delta agrees.
 func (e *rateEstimator) markSelfSet(mid asbin.MsgID) {
 	tr := e.track(mid)
-	tr.selfSet = true
-	tr.hasPoll = false
-	tr.polledRate = 0
+	*tr = rateTrack{count: tr.count, lastContent: tr.lastContent,
+		lastRead: tr.lastRead, hasContent: tr.hasContent, selfSet: true}
 }

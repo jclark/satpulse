@@ -243,6 +243,11 @@ func TestRateFlowingWatchFallback(t *testing.T) {
 	if !hasCfgMsgSet(cfg, asbin.NavTimeID, 1) {
 		t.Fatal("flowing->silent must enable NAV-TIME at rate=1")
 	}
+	for _, req := range cfg.reqs {
+		if req.onAck != nil {
+			req.onAck() // the receiver acknowledges the rate=1 enable
+		}
+	}
 
 	// NAV-TIME (now self-set) betrays a 5Hz native rate.
 	t0 := time.Date(2026, 1, 1, 0, 2, 0, 0, time.UTC)

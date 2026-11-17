@@ -82,12 +82,23 @@ func (c *Configurator) generateTModeSet() {
 		c.setFixedEcef(asbin.CfgFixedECEF{})
 		c.setSurvey(asbin.CfgSurvey{
 			MinDur:   uint32(survey.MinDur.Round(time.Second) / time.Second),
-			AccLimit: uint32(math.Round(survey.AccLimit.Meters() * 1000)),
+			AccLimit: surveyAcc(survey.AccLimit.Meters()),
 		})
 		return
 	}
 	c.setSurvey(asbin.CfgSurvey{})
 	c.setFixedEcef(fixedEcefFromMode(mode))
+}
+
+// surveyAcc converts an accuracy limit in meters to CFG-SURVEY
+// millimetres, rounding to nearest but not to 0, which would turn a
+// stated accuracy into none.
+func surveyAcc(meters float64) uint32 {
+	acc := uint32(math.Round(meters * 1000))
+	if meters > 0 {
+		acc = max(acc, 1)
+	}
+	return acc
 }
 
 // haveFixedPos reports whether the readback shows a fixed position.

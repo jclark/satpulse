@@ -284,6 +284,24 @@ func feedNav2(e *rateEstimator, itows ...uint32) {
 	}
 }
 
+func TestEstimatorSelfSetDropsOldDivisor(t *testing.T) {
+	// A 10Hz unit with NAV-POSLLH at stored rate 2 (consistent 200ms
+	// deltas). Once rate=1 is acknowledged, neither those intervals nor a
+	// readback of the old rate may resolve the native rate.
+	e := newRateEstimator()
+	feedNav(e, 1000, 1200, 1400)
+	e.markSelfSet(asbin.NavPosLlhID)
+	e.cfgMsgReadback(&asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{MsgClass: 0x01, MsgID: 0x02, Rate: 2}})
+	feedNav(e, 1500)
+	if e.nativeHz != 0 {
+		t.Fatalf("nativeHz = %d after one post-set arrival, want 0", e.nativeHz)
+	}
+	feedNav(e, 1600)
+	if e.nativeHz != 10 {
+		t.Errorf("nativeHz = %d, want 10", e.nativeHz)
+	}
+}
+
 func TestEstimatorSilentCap(t *testing.T) {
 	// No arrivals at all: the cap concludes 1Hz and flags that the rate
 	// could not be verified.
