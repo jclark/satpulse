@@ -291,7 +291,8 @@ func todMillis(s string) (float64, bool) {
 // cfgMsgReadback records the polled rate of a CFG-MSG target from a poll
 // response. It is not a periodic arrival.
 func (e *rateEstimator) cfgMsgReadback(m *asbin.CfgMsg) {
-	tr := e.track(asbin.MakeMsgID(m.MsgClass, m.MsgID))
+	mid := asbin.MakeMsgID(m.MsgClass, m.MsgID)
+	tr := e.track(mid)
 	if tr.selfSet {
 		// Rule 2 covers a self-set id; a readback of an off-grid
 		// self-set stream (a fixless unit) could yield a spurious rule-1
@@ -300,7 +301,7 @@ func (e *rateEstimator) cfgMsgReadback(m *asbin.CfgMsg) {
 	}
 	tr.polledRate = m.Rate
 	tr.hasPoll = true
-	e.tryResolve()
+	e.tryResolve(mid, tr)
 }
 
 // arrival records one periodic arrival of mid. When hasContent is true,
@@ -332,7 +333,7 @@ func (e *rateEstimator) arrival(mid asbin.MsgID, content float64, hasContent boo
 		tr.lastContent = content
 		tr.hasContent = true
 	}
-	e.tryResolve()
+	e.tryResolve(mid, tr)
 }
 
 // closeEnough reports whether two intervals agree closely enough to be
@@ -347,8 +348,8 @@ func closeEnough(a, b float64) bool {
 }
 
 // sortedMids returns the track ids in ascending order. Iteration over the
-// tracks map is otherwise random, which would make the query-phase poll id
-// and the resolution choice differ run to run (replay traces must not).
+// tracks map is otherwise random, which would make the chosen poll ids
+// differ run to run (replay traces must not).
 func (e *rateEstimator) sortedMids() []asbin.MsgID {
 	mids := make([]asbin.MsgID, 0, len(e.tracks))
 	for mid := range e.tracks {
@@ -358,34 +359,27 @@ func (e *rateEstimator) sortedMids() []asbin.MsgID {
 	return mids
 }
 
-// tryResolve computes nativeHz from present evidence, by the first rule
-// that fires: poll+interval (exact, any value), then a self-set interval
-// confirmed by two consistent deltas (step immunity). Both rules use only
-// content-time evidence (hasContent): a wall-clock interval could be short
-// enough to set a too-fast divisor. Ids are visited in a defined order so
-// the choice is deterministic. The 1Hz-from-absence rules live in the
-// resolve phase's timeout, not here.
-func (e *rateEstimator) tryResolve() {
-	if e.nativeHz != 0 {
+// tryResolve computes nativeHz from the evidence for mid, by the first
+// rule that fires: poll+interval (exact, any value), then a self-set
+// interval confirmed by two consistent deltas (step immunity). Only mid's
+// track has changed since the last call, so no other track can newly
+// qualify. Both rules use only content-time evidence (hasContent): a
+// wall-clock interval could be short enough to set a too-fast divisor.
+// The 1Hz-from-absence rules live in the resolve phase's timeout, not
+// here.
+func (e *rateEstimator) tryResolve(mid asbin.MsgID, tr *rateTrack) {
+	if e.nativeHz != 0 || !tr.hasContent {
 		return
 	}
-	mids := e.sortedMids()
-	for _, mid := range mids {
-		tr := e.tracks[mid]
-		if tr.hasContent && tr.hasPoll && tr.polledRate >= 1 && tr.minInterval > 0 {
-			if hz := hzFromInterval(tr.minInterval, int(tr.polledRate)); hz >= 1 {
-				e.set(hz, mid, "poll+interval")
-				return
-			}
+	if tr.hasPoll && tr.polledRate >= 1 && tr.minInterval > 0 {
+		if hz := hzFromInterval(tr.minInterval, int(tr.polledRate)); hz >= 1 {
+			e.set(hz, mid, "poll+interval")
+			return
 		}
 	}
-	for _, mid := range mids {
-		tr := e.tracks[mid]
-		if tr.hasContent && tr.selfSet && tr.consistent {
-			if hz := hzFromInterval(tr.lastDelta, 1); hz >= 1 {
-				e.set(hz, mid, "self-set interval")
-				return
-			}
+	if tr.selfSet && tr.consistent {
+		if hz := hzFromInterval(tr.lastDelta, 1); hz >= 1 {
+			e.set(hz, mid, "self-set interval")
 		}
 	}
 }
