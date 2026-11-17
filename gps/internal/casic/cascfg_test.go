@@ -502,6 +502,7 @@ func TestConfigSupport(t *testing.T) {
 	v6NoVer := newConfigurator(gpsprot.NewConfigTarget(), v6rate)
 	base := gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportSurveyDur |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 	v6base := base | gpsprot.ConfigSupportSignal
 	tests := []struct {
