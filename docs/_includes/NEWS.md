@@ -1,8 +1,6 @@
 ## Changes in 0.4 (not yet released)
 
-### PHC and PTP support
-
-- The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that does not belong to a network interface, such as a time interval counter in an FPGA; `satpulsetool sdp` has a matching `--device` option. (#539)
+- The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
 
 ## Changes in 0.3
 

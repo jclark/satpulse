@@ -12,7 +12,7 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-device** *path*\|*interface*]
+&nbsp;&nbsp;&nbsp;&nbsp;[*phc*]
 
 # DESCRIPTION
 
@@ -24,14 +24,18 @@ A pin can alternatively be configured for output, allowing periodic pulses align
 to be generated, for example when the pin is connected to an oscilloscope.
 This is called periodic output (perout).
 
+The *phc* argument selects the PHC. Usually, it should be an interface name, e.g. **eth0**,
+which selects the PHC associated with that interface.
+For a PHC that is not associated with an interface,
+*phc* can be the path of the PHC device, e.g. **/dev/ptp1**.
+
 The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable**,
 **\-\-show\-ifaces** and **\-\-show\-pins** options.
 At most one of these options can be specified.
-If none of them are specified, the command behaves as if **\-\-show\-pins** was specified
-when **\-\-device** is specified or the *interface* argument is specified and its PHC has pins,
-and otherwise as if **\-\-show\-ifaces** was specified.
-In **\-\-show\-ifaces** mode, the *interface* is optional.
-In other modes, the *interface* or **\-\-device** is required.
+If none of them are specified, the command behaves as if **\-\-show\-ifaces** was specified.
+However, if *phc* is specified and the PHC has pins, it behaves as if **\-\-show\-pins** was specified.
+In **\-\-show\-ifaces** mode, the *phc* argument is optional.
+In other modes, it is required.
 Root privileges are required except in **\-\-show\-ifaces** mode.
 
 # OPTIONS
@@ -68,11 +72,11 @@ The pin to disable is specified with the **\-\-pin** option; the default is pin 
 
 **\-\-show\-ifaces**  
 : Show information about interfaces with a PHC.
-If the *interface* argument is specified, shows information about that interface.
+If the *phc* argument is specified, shows information about its interface.
 Otherwise, shows information about all interfaces with a PHC that has pins or channels.
 
 **\-\-show\-pins**  
-: Show the pins of the PHC of the *interface*, or of the PHC specified by **\-\-device**.
+: Show the pins of *phc*.
 If **\-\-pin** is specified, shows information about that pin only.
 
 **\-t**, **\-\-timeout** *seconds*  
@@ -94,11 +98,6 @@ The default is 1.0 second, resulting in a PPS signal.
 A period of 0 disables the output signal.
 Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
 Applies only when **\-\-perout** option is specified.
-
-**\-\-device** *path*  
-: Select the PHC by its device path instead of by an *interface*.
-This is for a PHC that cannot be named with an *interface*.
-Cannot be combined with *interface* or **\-\-show\-ifaces**.
 
 **\-p**, **\-\-pin** *index*\|*name*
 : Select the pin to be used by **\-\-extts**, **\-\-perout**, or **\-\-disable**, or shown by **\-\-show\-pins**.
@@ -130,10 +129,6 @@ Check input on eth0, showing timestamp events received for 2 seconds, with pin d
 Check input on channel 1 of eth0:
 
     satpulsetool sdp -i --chan 1 eth0
-
-Check input on channel 1 of the PHC /dev/ptp0, named by its device path:
-
-    satpulsetool sdp -i --chan 1 --device /dev/ptp0
 
 Output a PPS signal on eth0, with pin defaulting to pin 0:
 

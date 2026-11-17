@@ -213,7 +213,11 @@ func (clk *Clock) validatePinDesc(pinGiven bool) error {
 		if !pinGiven {
 			return nil
 		}
-		msg = fmt.Sprintf("PTP clock %s has no pins; pin must not be specified", clk.Path())
+		if clk.ifName != "" {
+			msg = fmt.Sprintf("the PTP hardware clock of interface %s has no pins; pin must not be specified", clk.ifName)
+		} else {
+			msg = fmt.Sprintf("PTP clock %s has no pins; pin must not be specified", clk.Path())
+		}
 	} else if clk.pinIndex >= uint32(clk.PinCount()) {
 		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", clk.pinIndex, clk.Path(), clk.PinCount()-1)
 	} else {

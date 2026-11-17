@@ -30,9 +30,12 @@ func (p *PinDesc) Print(f *os.File) {
 	}
 }
 
-// showAuto implements the default mode with an interface: the pins of its
-// PHC, or the interface record if the PHC has none
+// showAuto implements the default mode with an interface or device: the
+// pins of the PHC, or the interface record if the PHC has none
 func showAuto(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
+	if cfg.Device != "" {
+		return showDevice(cfg)
+	}
 	phcIndex, err := ifPHCIndex(cfg.Interface)
 	if err != nil {
 		return nil, err
@@ -41,6 +44,21 @@ func showAuto(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		return showPinsByPath(cfg, phc.ClockPath(phcIndex))
 	}
 	return showIface(lg, cfg.Interface, phcIndex)
+}
+
+// showDevice shows the pins of the PHC given by its device path. For a PHC
+// without pins, the default mode shows interfaces, which is not supported
+// with a device.
+func showDevice(cfg *FlagConfig) ([]Printer, error) {
+	clk, err := phc.Open(cfg.Device)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open PHC device: %w", err)
+	}
+	defer clk.Close()
+	if !clk.HasPins() {
+		return nil, errShowIfacesDevice
+	}
+	return listPins(cfg, clk)
 }
 
 // showPins implements --show-pins mode
@@ -55,18 +73,20 @@ func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 // showPinsByPath shows the pins of the PHC that cfg selects, whose device
 // path has already been looked up
 func showPinsByPath(cfg *FlagConfig, path string) ([]Printer, error) {
-	var result []Printer
-
 	clk, err := phc.Open(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open PHC device: %w", err)
 	}
 	defer clk.Close()
-
 	if !clk.HasPins() {
 		return nil, noPinsError(cfg)
 	}
+	return listPins(cfg, clk)
+}
 
+// listPins shows the pins of clk, which has pins
+func listPins(cfg *FlagConfig, clk *phc.Clock) ([]Printer, error) {
+	var result []Printer
 	for i := range uint32(clk.PinCount()) {
 		pinDesc, err := clk.PinGetFunc(i)
 		if err != nil {

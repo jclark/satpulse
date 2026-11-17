@@ -383,42 +383,30 @@ func TestParseFlags(t *testing.T) {
 			},
 		},
 		{
-			name: "device only - show pins mode",
-			args: []string{"--device", "/dev/ptp_tic"},
+			name: "device only - show mode",
+			args: []string{"/dev/ptp_tic"},
 			expected: &FlagConfig{
-				Mode:    ModeShowPins,
+				Mode:    ModeShowAuto,
 				Device:  "/dev/ptp_tic",
 				Timeout: 2 * time.Second,
 			},
 		},
 		{
-			name: "extts mode with device",
-			args: []string{"-i", "--device", "/dev/ptp_tic", "--chan", "1"},
+			name: "extts mode with relative device path",
+			args: []string{"-i", "--chan", "1", "./ptp0"},
 			expected: &FlagConfig{
 				Mode:    ModeExtts,
-				Device:  "/dev/ptp_tic",
+				Device:  "./ptp0",
 				Timeout: 2 * time.Second,
 				Chan:    1,
 			},
 		},
 		// Error cases
 		{
-			name:         "device with interface",
-			args:         []string{"-i", "--device", "/dev/ptp_tic", "eth0"},
-			expectError:  true,
-			errorMessage: "--device cannot be used with an interface name",
-		},
-		{
-			name:         "empty device",
-			args:         []string{"-i", "--device", ""},
-			expectError:  true,
-			errorMessage: "--device requires a device path",
-		},
-		{
 			name:         "show-ifaces with device",
-			args:         []string{"--show-ifaces", "--device", "/dev/ptp_tic"},
+			args:         []string{"--show-ifaces", "/dev/ptp_tic"},
 			expectError:  true,
-			errorMessage: "--device cannot be used when showing interfaces",
+			errorMessage: "showing interfaces is not supported with a device path",
 		},
 		{
 			name:        "show-pins without interface",
@@ -434,7 +422,7 @@ func TestParseFlags(t *testing.T) {
 			name:         "pin without interface",
 			args:         []string{"--pin", "1"},
 			expectError:  true,
-			errorMessage: "interface name or --device required for this mode",
+			errorMessage: "interface name or device path required for this mode",
 		},
 		{
 			name:         "empty pin",
