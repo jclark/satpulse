@@ -75,6 +75,7 @@ type SerialSampleConfig struct {
 
 type PHCConfig struct {
 	Interface string `toml:"interface"`
+	Device    string `toml:"device"`
 	Pin       *uint8 `toml:"pin"` // nil means no pin: 0 on a PHC with pins, none on a PHC without
 	Channel   uint8  `toml:"channel"`
 	Wait      bool   `toml:"wait"`
@@ -223,8 +224,11 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table must be specified")}
 		}
 		if cfg.PHC.specified() {
-			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface or device in the [phc] table")}
 		}
+	}
+	if cfg.PHC.Interface != "" && cfg.PHC.Device != "" {
+		return &configError{err: fmt.Errorf("interface and device in the [phc] table cannot both be specified")}
 	}
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
@@ -281,7 +285,13 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 	if !cfg.specified() {
 		return nil, nil
 	}
-	clk, err := ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	var clk *ts.Clock
+	var err error
+	if cfg.Device != "" {
+		clk, err = ts.OpenDeviceClock(cfg.Device, cfg.PinDesc())
+	} else {
+		clk, err = ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	}
 	if err != nil {
 		var cfgErr *ts.ConfigError
 		if errors.As(err, &cfgErr) {
@@ -294,7 +304,7 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 
 // specified reports whether the configuration names a PHC.
 func (cfg PHCConfig) specified() bool {
-	return cfg.Interface != ""
+	return cfg.Interface != "" || cfg.Device != ""
 }
 
 func (cff PHCConfig) PinDesc() ts.PinDesc {

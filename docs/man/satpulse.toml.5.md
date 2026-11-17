@@ -55,6 +55,7 @@ to tell the extension which schema to use.
 The `phc` table is about the PTP hardware clock. It can have following keys:
 
 * `interface` - a string giving the name of an ethernet interface with the pin that the GPS's PPS output is attached to
+* `device` - a string giving the device path of the PHC; use this only for a PHC that is not associated with an interface
 * `pin` - an integer giving the index of the pin; when the PHC has pins, the default is 0 (which is the only pin on the Raspberry Pi CM4);
   must not be specified if the PHC has no pins
 * `channel` - an integer giving the timestamping channel to use; the default is 0; this needs changing only if
@@ -81,7 +82,7 @@ It can have the following keys:
 * `pps.pin` - a string giving the modem-control input pin on which to detect the receiver's PPS pulses;
   one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`, naming the pins of the computer's own serial port or
   adapter; CTS is recommended; requires `device` to be a real TTY rather than a FIFO or socket;
-  cannot be used when `interface` in the `[phc]` table is configured;
+  cannot be used when `interface` or `device` in the `[phc]` table is configured;
   with the `poll` method the pulse must be at least a few milliseconds wide,
   and narrow pulses can take longer to detect;
   the common receiver default of 100 ms works well, and microsecond-width pulses are not supported
