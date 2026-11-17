@@ -242,14 +242,16 @@ func TestRTCMMessages(t *testing.T) {
 	}
 }
 
-// TestConfigureRTCMOut checks the RTCM message-list command and the separate
-// RTCMv3 output protocol mask on this connection.
+// TestConfigureRTCMOut checks the RTCM message-list command, the 1 Hz MSM
+// interval, and the separate RTCMv3 output protocol mask on this connection.
 func TestConfigureRTCMOut(t *testing.T) {
 	rtcmCmd := "setRTCMv3Output, USB1, MSM4+RTCM1230+RTCM1005"
+	intervalCmd := "setRTCMv3Interval, MSM4, 1"
 	protoOn := "setDataInOut, USB1, , +RTCMv3"
 	replies := map[string]string{
-		rtcmCmd: "RTCMv3Output, USB1, RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134+RTCM1230",
-		protoOn: "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
+		intervalCmd: "RTCMv3Interval, MSM4, 1.0",
+		rtcmCmd:     "RTCMv3Output, USB1, RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134+RTCM1230",
+		protoOn:     "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgAuto)
@@ -257,7 +259,7 @@ func TestConfigureRTCMOut(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	for _, cmd := range []string{rtcmCmd, protoOn} {
+	for _, cmd := range []string{intervalCmd, rtcmCmd, protoOn} {
 		if !slices.Contains(sent, cmd) {
 			t.Errorf("command %q not sent; sent: %v", cmd, sent)
 		}
@@ -303,6 +305,7 @@ func TestConfigureRTCMOut(t *testing.T) {
 	rtcmCmd = "setRTCMv3Output, USB1, RTCM1006+MSM4+RTCM1230+RTCM1005"
 	replies = map[string]string{
 		"getRTCMv3Output, USB1": "RTCMv3Output, USB1, RTCM1006+RTCM1077+RTCM1087",
+		intervalCmd:             "RTCMv3Interval, MSM4, 1.0",
 		rtcmCmd:                 "RTCMv3Output, USB1, RTCM1006+RTCM1005+RTCM1074+RTCM1084+RTCM1094+RTCM1104+RTCM1114+RTCM1124+RTCM1134+RTCM1230",
 		protoOn:                 "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
 	}

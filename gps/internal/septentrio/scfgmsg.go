@@ -313,6 +313,17 @@ func (c *Configurator) generateOutputReqs() {
 			if f&gpsprot.RTCMMsgOther != 0 {
 				list = outputList(np.rtcmOutput, list, rtcmMessageClass)
 			}
+			// setRTCMv3Output selects messages but not their rate, which
+			// setRTCMv3Interval sets for the whole receiver; enabled MSM
+			// output is 1 Hz (SEMANTICS.md).
+			for _, m := range []struct {
+				flag gpsprot.RTCMMsgFlags
+				name string
+			}{{gpsprot.RTCMMsgMSM4, "MSM4"}, {gpsprot.RTCMMsgMSM7, "MSM7"}} {
+				if f&m.flag != 0 {
+					c.addReq("setRTCMv3Interval, "+m.name+", 1", nil)
+				}
+			}
 			c.addReq("setRTCMv3Output, "+c.port+", "+strings.Join(list, "+"), np.parseRTCMv3Output)
 		}
 		c.addOutputProtoReq("RTCMv3", enable)
