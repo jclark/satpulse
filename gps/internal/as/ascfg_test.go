@@ -518,6 +518,27 @@ func TestNVMSaveGatesReset(t *testing.T) {
 			t.Errorf("resets = %v, want none: a failed save must suppress the reset", rcvr.resets)
 		}
 	})
+	t.Run("failed_request_suppresses_save", func(t *testing.T) {
+		// Any failed request in the invocation means no save is attempted,
+		// and the reset paired with it is not sent either.
+		rcvr := &testReceiver{monVer: tau1201Ver(),
+			naks: map[asbin.MsgID]bool{asbin.CfgElevID: true}}
+		cp := probe(t, rcvr)
+		target := &gpsprot.ConfigTarget{}
+		target.Props.SetMinElevation(gpsprot.DegreesFromFloat(10))
+		target.Opts.Save = gpsprot.SaveAll
+		target.Opts.Reset = gpsprot.ResetReload
+		_, errCount := configure(t, cp, rcvr, target)
+		if errCount == 0 {
+			t.Error("ErrorCount = 0, want the refused CFG-ELEV reported")
+		}
+		if len(rcvr.saves) != 0 {
+			t.Errorf("saves = %v, want none after a failed request", rcvr.saves)
+		}
+		if len(rcvr.resets) != 0 {
+			t.Errorf("resets = %v, want none: the skipped save gates the reset", rcvr.resets)
+		}
+	})
 }
 
 func TestSilentRequestFails(t *testing.T) {

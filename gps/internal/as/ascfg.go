@@ -235,8 +235,13 @@ func (c *Configurator) generateSetReqs() {
 // generateNVMReqs generates the CFG-CFG save request. The save runs in
 // its own phase before the reset so that a paired reset waits for the
 // save's ACK; the request pointer is kept so the reset phase can suppress
-// the reset if the save is refused.
+// the reset if the save is refused. NVM is written only by an invocation
+// in which everything succeeded: after any failed request no save is
+// attempted, so NVM keeps its last saved state.
 func (c *Configurator) generateNVMReqs() {
+	if c.anyFailed() {
+		return
+	}
 	switch c.target.Opts.Save {
 	case gpsprot.SaveAll:
 		c.saveReq = c.addMsg(&asbin.CfgCfg{Action: asbin.CfgCfgActionSave, Mask: cfgCfgMaskAll}, asReq{})
@@ -258,8 +263,14 @@ func (c *Configurator) generateNVMReqs() {
 // nor the factory clear are acknowledged (the clear was observed silent
 // for 12 s), so all succeed on send. The factory path (clear then cold
 // start) has its own hardware-verified serialization and is not gated on
-// a save.
+// a save. A save skipped because a request failed gates its paired
+// reset, factory included, the same way as a failed save; a reset with
+// no save requested proceeds even after failures, since it discards
+// running changes by design.
 func (c *Configurator) generateResetReqs() {
+	if c.target.Opts.Save != gpsprot.SaveNone && c.anyFailed() {
+		return
+	}
 	switch c.target.Opts.Reset {
 	case gpsprot.ResetReload:
 		if !c.saveFailed() {
@@ -281,6 +292,15 @@ func (c *Configurator) generateResetReqs() {
 // reset that discards the unsaved changes.
 func (c *Configurator) saveFailed() bool {
 	return c.saveReq != nil && c.saveReq.state == reqFailed
+}
+
+func (c *Configurator) anyFailed() bool {
+	for _, req := range c.reqs {
+		if req.state == reqFailed {
+			return true
+		}
+	}
+	return false
 }
 
 // cfgCfgMaskAll covers every section the save mask selects: baud, NMEA
