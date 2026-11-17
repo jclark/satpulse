@@ -221,6 +221,36 @@ jitter = 10.0`
 	t.Logf("correctly rejected unknown field: %v", err)
 }
 
+// TestValidateArrayEntries checks that Validate enforces the check tags on
+// the entries of the config's arrays of tables.
+func TestValidateArrayEntries(t *testing.T) {
+	tests := []struct {
+		name   string
+		modify func(*Config)
+		expect string
+	}{
+		{
+			name:   "outage duration",
+			modify: func(c *Config) { c.Fault.Outage = []OutageConfig{{Duration: -1}} },
+			expect: "fault.outage[0].duration: must be >= 0, got -1",
+		},
+		{
+			name:   "second outlier time",
+			modify: func(c *Config) { c.Fault.Outlier = []OutlierConfig{{}, {Time: -5}} },
+			expect: "fault.outlier[1].time: must be >= 0, got -5",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			tc.modify(&cfg)
+			if err := cfg.Validate(); err == nil || err.Error() != tc.expect {
+				t.Errorf("Validate() = %v, want %q", err, tc.expect)
+			}
+		})
+	}
+}
+
 func TestLoadConfigMergesDefaults(t *testing.T) {
 	// Test that LoadConfig() merges TOML values with DefaultConfig()
 	// User specifies only sawtooth.amp, should get defaults for other fields

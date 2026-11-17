@@ -1,5 +1,5 @@
 #:schema ../gpsmsg-schema.json
-# Bynav M2 configuration messages
+# Bynav M10 and M2 series (M20/M21/M22) configuration messages
 # NovAtel-compatible GNSS receiver
 # Default baud rate: 115200
 
@@ -12,7 +12,7 @@ responsePattern = "novatel"
 # Query firmware and hardware version
 # The reply is a $BDVER sentence (UG017 4.3.20).
 # On an M10 (V7.82_AB1AD3_T), LOG VERSIONA and LOG VERSIONB are accepted but output nothing.
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "get-version"
 text = "LOG VERSION"
@@ -25,30 +25,47 @@ tag = "get-loglist"
 description = "Query active log list"
 text = "LOG LOGLIST"
 
+# Query the licence: authorization mode, INS, licensed frequencies and
+# systems (UG017 4.3.1). The reply is plain text.
+# LOG AUTHORIZATIONA is rejected.
+# Verified OK received on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-authorization"
+description = "Query licensed features"
+text = "LOG AUTHORIZATION ONCE"
+
+# Query the tracking configuration: active systems and excluded satellites.
+# The reply is plain text.
+# Verified on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-trackconfig"
+description = "Query tracking configuration"
+text = "LOG TRACKCONFIG ONCE"
+
 # Disable all logging
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "msg-all-off"
 description = "Disable all message output"
 text = "UNLOGALL"
 
 # BESTPOS (NovAtel format geodetic position, msg 42)
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestposb"
 description = "Enable BESTPOS binary at 1Hz"
 text = "LOG BESTPOSB ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestposb-off"
 description = "Disable BESTPOS binary"
 text = "UNLOG BESTPOSB"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestposa"
 description = "Enable BESTPOS ASCII at 1Hz"
 text = "LOG BESTPOSA ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestposa-off"
 description = "Disable BESTPOS ASCII"
@@ -74,7 +91,7 @@ text = "UNLOG BESTGNSSPOSA"
 
 # BESTVEL (velocity, msg 99)
 # Not documented in Bynav UG017 but works correctly
-# Verified OK received and valid binary frames on Bynav M2 (V7.84_250E94_T)
+# Verified OK received and valid binary frames on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestvelb"
 description = "Enable BESTVEL binary at 1Hz"
@@ -111,32 +128,32 @@ description = "Disable PSRVEL ASCII"
 text = "UNLOG PSRVELA"
 
 # BESTGNSSVEL (velocity, msg 1430)
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestgnssvelb"
 description = "Enable BESTGNSSVEL binary at 1Hz"
 text = "LOG BESTGNSSVELB ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestgnssvelb-off"
 description = "Disable BESTGNSSVEL binary"
 text = "UNLOG BESTGNSSVELB"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestgnssvela"
 description = "Enable BESTGNSSVEL ASCII at 1Hz"
 text = "LOG BESTGNSSVELA ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-bestgnssvela-off"
 description = "Disable BESTGNSSVEL ASCII"
 text = "UNLOG BESTGNSSVELA"
 
 # BESTXYZ (ECEF position and velocity, msg 241)
-# Not a documented ByNav log: UG017 names it only under OUTPUTSOURCE.
+# Not a documented Bynav log: UG017 names it only under OUTPUTSOURCE.
 # On an M10 (V7.82_AB1AD3_T), every BESTXYZ is SOL_COMPUTED with type NONE and
 # all fields zero, even while BESTPOS has a fix, so it is of no use there and
-# satpulse does not decode it from ByNav receivers.
+# satpulse does not decode it from Bynav receivers.
 #[[line]]
 #tag = "nov-bestxyzb"
 #description = "Enable BESTXYZ binary at 1Hz"
@@ -156,23 +173,23 @@ text = "UNLOG BESTGNSSVELA"
 
 # NMEA Output Control
 
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-gga"
 description = "Enable NMEA GGA at 1Hz"
 text = "LOG GPGGA ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-gga-off"
 description = "Disable NMEA GGA"
 text = "UNLOG GPGGA"
 
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-rmc"
 description = "Enable NMEA RMC at 1Hz"
 text = "LOG GPRMC ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-rmc-off"
 description = "Disable NMEA RMC"
@@ -181,42 +198,60 @@ text = "UNLOG GPRMC"
 # With the factory NMEA talker (GP), an M10 (V7.82_AB1AD3_T) outputs only the
 # GPS GSA, so satellites used from other systems are not reported;
 # nmea-talker-auto makes it output a GSA for each system.
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-gsa"
 description = "Enable NMEA GSA at 1Hz"
 text = "LOG GPGSA ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-gsa-off"
 description = "Disable NMEA GSA"
 text = "UNLOG GPGSA"
 
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-gsv"
 description = "Enable NMEA GSV at 1Hz"
 text = "LOG GPGSV ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-gsv-off"
 description = "Disable NMEA GSV"
 text = "UNLOG GPGSV"
 
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-zda"
 description = "Enable NMEA ZDA at 1Hz"
 text = "LOG GPZDA ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-zda-off"
 description = "Disable NMEA ZDA"
 text = "UNLOG GPZDA"
 
+[[line]]
+tag = "nmea-gst"
+description = "Enable NMEA GST at 1Hz"
+text = "LOG GPGST ONTIME 1"
+[[line]]
+tag = "nmea-gst-off"
+description = "Disable NMEA GST"
+text = "UNLOG GPGST"
+
+[[line]]
+tag = "nmea-vtg"
+description = "Enable NMEA VTG at 1Hz"
+text = "LOG GPVTG ONTIME 1"
+[[line]]
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG"
+text = "UNLOG GPVTG"
+
 # Convenience: enable RMC, GGA, GSV, GSA (messages used by satpulse daemon)
 # See nmea-gsa about the NMEA talker.
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-daemon"
 description = "Enable NMEA messages used by satpulse daemon"
@@ -241,22 +276,22 @@ text = "RESET"
 delay = 3
 
 # TIME (NovAtel format receiver clock and UTC time, msg 101)
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-timeb"
 description = "Enable TIME binary at 1Hz"
 text = "LOG TIMEB ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-timeb-off"
 description = "Disable TIME binary"
 text = "UNLOG TIMEB"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-timea"
 description = "Enable TIME ASCII at 1Hz"
 text = "LOG TIMEA ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-timea-off"
 description = "Disable TIME ASCII"
@@ -281,30 +316,70 @@ description = "Disable PSRDOP ASCII"
 text = "UNLOG PSRDOPA"
 
 # IONUTC (NovAtel format ionospheric and UTC parameters, msg 8)
-# Note: ONCHANGED is broken on Bynav M2 (spams at ~10Hz); use ONTIME instead
-# Verified OK received with ONTIME 1 on Bynav M2 (V7.84_250E94_T)
+# Note: ONCHANGED is broken on M20 (spams at ~10Hz); use ONTIME instead
+# Verified OK received with ONTIME 1 on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-ionutcb"
 description = "Enable IONUTC binary at 1Hz"
 text = "LOG IONUTCB ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-ionutcb-off"
 description = "Disable IONUTC binary"
 text = "UNLOG IONUTCB"
-# Verified OK received with ONTIME 1 on Bynav M2 (V7.84_250E94_T)
+# Verified OK received with ONTIME 1 on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-ionutca"
 description = "Enable IONUTC ASCII at 1Hz"
 text = "LOG IONUTCA ONTIME 1"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-ionutca-off"
 description = "Disable IONUTC ASCII"
 text = "UNLOG IONUTCA"
 
+# BYCHECK (Bynav GNSS self-check, msg 42272)
+[[line]]
+tag = "nov-bycheckb"
+description = "Enable BYCHECK binary at 1Hz"
+text = "LOG BYCHECKB ONTIME 1"
+[[line]]
+tag = "nov-bycheckb-off"
+description = "Disable BYCHECK binary"
+text = "UNLOG BYCHECKB"
+[[line]]
+tag = "nov-bychecka"
+description = "Enable BYCHECK ASCII at 1Hz"
+text = "LOG BYCHECKA ONTIME 1"
+[[line]]
+tag = "nov-bychecka-off"
+description = "Disable BYCHECK ASCII"
+text = "UNLOG BYCHECKA"
+
+# Fix Rate (SET OBSFREQ)
+# UG017 says SET OBSFREQ sets the observation frequency, that the PVT
+# frequency follows it, and that it takes effect after SAVECONFIG and a reboot.
+# On an M20 (V7.84_250E94_T), SET OBSFREQ n took effect at once and was kept
+# across RESET without SAVECONFIG. It also limits the log output rate: logs
+# are output at most n times a second, each with a different solution. Before
+# OBSFREQ was first set, the M20 output logs at most once a second, and an
+# ONTIME period below 1 s was accepted but gave one log a second. It accepts
+# 2 to 10 and rejects 0, 1 and 20. There is no query.
+[[line]]
+tag = "fix-rate-2"
+description = "Set fix rate to 2 Hz"
+text = "SET OBSFREQ 2"
+[[line]]
+tag = "fix-rate-5"
+description = "Set fix rate to 5 Hz"
+text = "SET OBSFREQ 5"
+[[line]]
+tag = "fix-rate-10"
+description = "Set fix rate to 10 Hz"
+text = "SET OBSFREQ 10"
+
 # Elevation Mask
-# Verified OK received for 0/5/10/45 on Bynav M2 (V7.84_250E94_T)
+# Verified OK received for 0/5/10/45 on M20 (V7.84_250E94_T)
 
 [[line]]
 tag = "min-elev-0"
@@ -349,8 +424,22 @@ text = "ECUTOFF 45"
 
 # GNSS Constellation Selection (WORKFREQS)
 # Takes effect after saveconfig and reset
-# ASSIGNALL is accepted but has no effect on Bynav M2 (V7.84_250E94_T)
+# ASSIGNALL is accepted but has no effect on M20 (V7.84_250E94_T)
 # WORKFREQS NONE BEIDOU is silently ignored (BeiDou cannot be disabled)
+# WORKFREQS ALL <system> gives no reply: enabling one system needs its
+# frequencies listed (for example WORKFREQS L1L2CL5 GPS). WORKFREQS alone
+# shows the current setting; system names are as it shows them (GLONASS,
+# GALILEO, BEIDOU, IRNSS), not GLO, GAL, BDS or NavIC.
+
+# WORKFREQS with no parameters is a query; its plain-text reply follows the
+# <OK. The novatel response pattern expects output only after LOG commands,
+# so this line uses none.
+# Verified on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-gnss"
+description = "Query constellation and frequency configuration"
+text = "WORKFREQS"
+responsePattern = "none"
 
 [[line]]
 tag = "gnss-gps-bds"
@@ -436,13 +525,13 @@ text = "WORKFREQS ALL ALL"
 # with AUTO it outputs a GNGSA for each system (GNSS ID 1 to 4), so the
 # satellites used from every system are reported. GGA and other sentences
 # then use the GN talker when several systems are used.
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-talker-auto"
 description = "Set NMEA talker ID to AUTO (GP/BD/GN based on constellation)"
 text = "NMEATALKER AUTO"
 # GP is the factory setting.
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nmea-talker-gp"
 description = "Set NMEA talker ID to GP"
@@ -450,27 +539,91 @@ text = "NMEATALKER GP"
 
 # Raw Observations
 
-# Verified RANGECMP binary frames appear in capture on Bynav M2 (V7.84_250E94_T)
+# Verified RANGECMP binary frames appear in capture on M20 (V7.84_250E94_T)
+# The M20 tracks these RANGECMP signal types: GPS and QZSS 0, 14, 17;
+# GLONASS 0, 1; Galileo 1, 12, 17; BDS 0, 1, 2, 4, 6, 9. Galileo type 1 is
+# in neither UG017 nor the OEM7 manual (both give 2 for E1C), but its
+# Doppler puts it on E1, and MSM7 labels it 1B. UG017 gives BDS B2b as 10,
+# where OEM7 gives 11. L1C, B1C, B2b, E6, NavIC and SBAS are licensed
+# (LOG AUTHORIZATION) and listed by WORKFREQS, but are not tracked.
 [[line]]
 tag = "nov-rangecmpb"
+description = "Enable RANGECMP binary at 1Hz"
+text = "LOG RANGECMPB ONTIME 1"
+[[line]]
+tag = "nov-rangecmpb-30"
 description = "Enable RANGECMP binary every 30s"
 text = "LOG RANGECMPB ONTIME 30"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "nov-rangecmpb-off"
 description = "Disable RANGECMP binary"
 text = "UNLOG RANGECMPB"
 
+# TRACKSTAT (channel tracking status, msg 83)
+[[line]]
+tag = "nov-trackstatb"
+description = "Enable TRACKSTAT binary at 1Hz"
+text = "LOG TRACKSTATB ONTIME 1"
+[[line]]
+tag = "nov-trackstatb-off"
+description = "Disable TRACKSTAT binary"
+text = "UNLOG TRACKSTATB"
+[[line]]
+tag = "nov-trackstata"
+description = "Enable TRACKSTAT ASCII at 1Hz"
+text = "LOG TRACKSTATA ONTIME 1"
+[[line]]
+tag = "nov-trackstata-off"
+description = "Disable TRACKSTAT ASCII"
+text = "UNLOG TRACKSTATA"
+
+# Decoded ephemerides for GPS, GLONASS, Galileo, BDS and QZSS
+# With ONTIME, each log gives one satellite per period, cycling through the
+# satellites.
+[[line]]
+tag = "nov-eph"
+description = "Enable binary ephemeris logs at 1Hz"
+text = "LOG GPSEPHEMB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG GLOEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG GALEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG BDSEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph"
+text = "LOG QZSSEPHEMERISB ONTIME 1"
+[[line]]
+tag = "nov-eph-off"
+description = "Disable binary ephemeris logs"
+text = "UNLOG GPSEPHEMB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG GLOEPHEMERISB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG GALEPHEMERISB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG BDSEPHEMERISB"
+[[line]]
+tag = "nov-eph-off"
+text = "UNLOG QZSSEPHEMERISB"
+
 # PPS Configuration
 # PPSCONTROL: Switch Edge Period(s) PulseWidth(us)
 # Only on firmware 0704 and above
 
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "pps"
 description = "Enable PPS with 0.1s pulse width, rising edge"
 text = "PPSCONTROL ENABLE POSITIVE 1 100000"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "pps-off"
 description = "Disable PPS output"
@@ -492,12 +645,12 @@ delay = 3
 # Survey-in (FIX BASE)
 # FIX BASE TIME DISTANCE - auto-converge and fix base position
 
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "survey"
 description = "Start survey-in (60s, 3m accuracy)"
 text = "FIX BASE 60 3"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "survey-off"
 description = "Stop survey-in, return to rover mode"
@@ -505,48 +658,72 @@ text = "FIX NONE"
 
 # Fixed Position
 
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "fixed-pos-current"
 description = "Fix position to current solution"
 text = "FIX AUTO"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "fixed-pos-example"
 description = "Set fixed position (example coordinates - replace with yours)"
 text = "FIX POSITION 13.7305 100.6405 50.0"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "fixed-pos-off"
 description = "Clear fixed position"
 text = "FIX NONE"
 
 # RTK Mode (RTKTYPE)
-# RTCM output requires base mode; set mode-base before enabling RTCM
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
-# Verified RTCM 1074 frames appear after mode-base + fixed position
+# RTCM output requires base mode; set mode-base before enabling RTCM.
+# On an M20 (V7.84_250E94_T), RTKTYPE BASE alone is enough: with no FIX, the
+# base position is the receiver's own single-point solution (LOG REFSTATION),
+# and RTCM output starts without SAVECONFIG or a reset.
+# RTKTYPE is kept across RESET without SAVECONFIG, so send mode-rover
+# afterwards to return to rover mode.
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "mode-base"
 description = "Set base station mode"
 text = "RTKTYPE BASE"
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "mode-rover"
 description = "Set rover mode"
 text = "RTKTYPE ROVER"
 
-# RTCM Output
-# Note: requires mode-base and a fixed position (FIX POSITION or FIX BASE)
+# RTKTYPE with no parameters is a query. The reply, such as RTKTYPE ROVER,
+# follows the <OK and ends with LF only, so this line uses no response
+# pattern and an LF terminator, which the receiver accepts.
+# Verified on M20 (V7.84_250E94_T)
+[[line]]
+tag = "get-mode"
+description = "Query RTK mode (base or rover)"
+text = "RTKTYPE"
+responsePattern = "none"
+eol = "\n"
 
-# ARP (antenna reference point, message 1006)
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Query the base position; REFSTATIONB is rejected.
+[[line]]
+tag = "get-refstation"
+description = "Query base station position"
+text = "LOG REFSTATIONA ONCE"
+
+# RTCM Output
+# Note: requires mode-base. In rover mode, an M20 (V7.84_250E94_T) accepts
+# LOG RTCMnnnn but outputs nothing.
+# An M20 outputs one observation message per system on a port: requesting
+# another (for example 1077 or 1004 after 1074) replaces the earlier one.
+
+# ARP (antenna reference point, message 1005)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "rtcm-arp"
-description = "Enable RTCM ARP message (1006) at 5s"
-text = "LOG RTCM1006 ONTIME 5"
+description = "Enable RTCM ARP message (1005) at 5s"
+text = "LOG RTCM1005 ONTIME 5"
 
 # MSM4 messages for all constellations
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "rtcm-msm4"
 description = "Enable RTCM MSM4 for all constellations at 1Hz"
@@ -559,10 +736,15 @@ tag = "rtcm-msm4"
 text = "LOG RTCM1094 ONTIME 1"
 [[line]]
 tag = "rtcm-msm4"
+text = "LOG RTCM1114 ONTIME 1"
+[[line]]
+tag = "rtcm-msm4"
 text = "LOG RTCM1124 ONTIME 1"
 
 # MSM7 messages for all constellations
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# On an M20 (V7.84_250E94_T) in base mode, each of 1077 (GPS), 1087 (GLONASS),
+# 1097 (Galileo), 1117 (QZSS) and 1127 (BDS) is output every second, and
+# satpulsetool convobs --from rtcm converts all five.
 [[line]]
 tag = "rtcm-msm7"
 description = "Enable RTCM MSM7 for all constellations at 1Hz"
@@ -575,14 +757,89 @@ tag = "rtcm-msm7"
 text = "LOG RTCM1097 ONTIME 1"
 [[line]]
 tag = "rtcm-msm7"
+text = "LOG RTCM1117 ONTIME 1"
+[[line]]
+tag = "rtcm-msm7"
 text = "LOG RTCM1127 ONTIME 1"
 
+# RTCM ephemerides: GPS (1019), GLONASS (1020), BDS (1042), QZSS (1044) and
+# Galileo I/NAV (1046); 1045 (Galileo F/NAV) is rejected.
+[[line]]
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages (1019/1020/1042/1044/1046)"
+text = "LOG RTCM1019 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1020 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1042 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1044 ONTIME 1"
+[[line]]
+tag = "rtcm-eph"
+text = "LOG RTCM1046 ONTIME 1"
+[[line]]
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+text = "UNLOG RTCM1019"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1020"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1042"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1044"
+[[line]]
+tag = "rtcm-eph-off"
+text = "UNLOG RTCM1046"
+
+# Legacy observables: GPS 1004 and GLONASS 1012; 1001, 1002, 1009 and 1010
+# are rejected. Each replaces MSM for its system (see above).
+[[line]]
+tag = "rtcm-legacy"
+description = "Enable legacy RTCM observables (1004/1012) at 1Hz"
+text = "LOG RTCM1004 ONTIME 1"
+[[line]]
+tag = "rtcm-legacy"
+text = "LOG RTCM1012 ONTIME 1"
+[[line]]
+tag = "rtcm-legacy-off"
+description = "Disable legacy RTCM observables"
+text = "UNLOG RTCM1004"
+[[line]]
+tag = "rtcm-legacy-off"
+text = "UNLOG RTCM1012"
+
+# Receiver and antenna descriptors (1033)
+[[line]]
+tag = "rtcm-1033"
+description = "Enable RTCM 1033 at 5s"
+text = "LOG RTCM1033 ONTIME 5"
+[[line]]
+tag = "rtcm-1033-off"
+description = "Disable RTCM 1033"
+text = "UNLOG RTCM1033"
+
+# GLONASS code-phase biases (1230)
+[[line]]
+tag = "rtcm-1230"
+description = "Enable RTCM 1230 at 5s"
+text = "LOG RTCM1230 ONTIME 5"
+[[line]]
+tag = "rtcm-1230-off"
+description = "Disable RTCM 1230"
+text = "UNLOG RTCM1230"
+
 # Disable all RTCM output
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "rtcm-off"
 description = "Disable all RTCM output"
-text = "UNLOG RTCM1006"
+text = "UNLOG RTCM1005"
 [[line]]
 tag = "rtcm-off"
 text = "UNLOG RTCM1074"
@@ -592,6 +849,9 @@ text = "UNLOG RTCM1084"
 [[line]]
 tag = "rtcm-off"
 text = "UNLOG RTCM1094"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1114"
 [[line]]
 tag = "rtcm-off"
 text = "UNLOG RTCM1124"
@@ -606,13 +866,43 @@ tag = "rtcm-off"
 text = "UNLOG RTCM1097"
 [[line]]
 tag = "rtcm-off"
+text = "UNLOG RTCM1117"
+[[line]]
+tag = "rtcm-off"
 text = "UNLOG RTCM1127"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1019"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1020"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1042"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1044"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1046"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1004"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1012"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1033"
+[[line]]
+tag = "rtcm-off"
+text = "UNLOG RTCM1230"
 
 # Port Configuration (SERIALCONFIG)
 
 # The reply is plain text (UG017 4.3.5), not a packet;
 # LOG COMCONFIGA ONCE outputs the same information as a #COMCONFIGA log.
-# Verified OK received on Bynav M2 (V7.84_250E94_T)
+# Verified OK received on M20 (V7.84_250E94_T)
 [[line]]
 tag = "get-port"
 description = "Query serial port configuration"

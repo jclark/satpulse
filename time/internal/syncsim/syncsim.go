@@ -387,7 +387,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 					timeMsgBuf.Time(timeMsg, msgTRead)
-					ctrl.TimeMessage()
+					ctrl.TimeMessage(msgTRead)
 					lg.Debug("delivering PrePulse message",
 						"second", int(data.PPS),
 						"taiTime", tMsg,
@@ -417,7 +417,7 @@ func Simulate(observers []obs.Observer, cfg Config, tsLog io.Writer, curTime *ti
 					}
 					msgTRead := time.Unix(0, 0).Add(time.Duration(event.Time * 1e9))
 					timeMsgBuf.Time(timeMsg, msgTRead)
-					ctrl.TimeMessage()
+					ctrl.TimeMessage(msgTRead)
 					lg.Debug("delivering PostPulse message",
 						"second", int(data.PPS),
 						"taiTime", tMsg,
@@ -684,7 +684,7 @@ func handleNavSolutionMsgEvent(
 		"second", int(data.PPS),
 		"taiTime", tMsg,
 		"msgTRead", msgTRead)
-	ctrl.TimeMessage()
+	ctrl.TimeMessage(msgTRead)
 }
 
 // handleTickEvent processes a tick event

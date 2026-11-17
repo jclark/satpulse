@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,14 +40,6 @@ const (
 )
 
 const maxDWORD = 0xffffffff
-
-// baudRates is used by IsValidSpeed so the set of accepted speeds matches
-// Unix. Windows accepts the baud rate value directly in DCB.BaudRate.
-var baudRates = []int{
-	50, 75, 110, 134, 150, 200, 300, 600, 1200, 1800,
-	2400, 4800, 9600, 19200, 38400, 57600, 115200,
-	230400, 460800, 921600,
-}
 
 type windowsTerm struct {
 	handle        windows.Handle
@@ -685,9 +676,4 @@ func ReadTimeout(timeout time.Duration) AttrSetter {
 		a.timeouts.WriteTotalTimeoutConstant = 0
 		return nil
 	}
-}
-
-func IsValidSpeed(speed int) bool {
-	i := sort.SearchInts(baudRates, speed)
-	return i < len(baudRates) && baudRates[i] == speed
 }

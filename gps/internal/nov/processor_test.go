@@ -227,8 +227,8 @@ func TestDispatchEpochRTCMBaseIDNonOSR(t *testing.T) {
 	t.Fatal("no NavEpoch emitted")
 }
 
-func TestByNavBestXYZNotDecoded(t *testing.T) {
-	// BESTXYZA and BESTXYZB from a ByNav M10 in the same epoch.
+func TestBynavBestXYZNotDecoded(t *testing.T) {
+	// BESTXYZA and BESTXYZB from a Bynav M10 in the same epoch.
 	const ascii = "#BESTXYZA,COM1,0,99.9,FINESTEERING,2437,420882.000,00000000,0000,782;SOL_COMPUTED,NONE,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,SOL_COMPUTED,NONE,0.0000,0.0000,0.0000,0.0000,0.0000,0.0000,\"\",0.000,0.000,0.000,0,0,0,0,0,00,00,00*6f907c54\r\n"
 	bin, err := hex.DecodeString("aa44121cf100002070000000c7b48509502616190000000000000e03000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000008fd3ee5a")
 	if err != nil {
@@ -239,7 +239,7 @@ func TestByNavBestXYZNotDecoded(t *testing.T) {
 		expect  int // position and velocity messages published
 	}{
 		{VariantOEM7, 4},
-		{VariantByNav, 0},
+		{VariantBynav, 0},
 	}
 	for _, tc := range tests {
 		h := &testMsgHandler{}
@@ -311,7 +311,7 @@ func (h *testNativeHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tR
 	return nil
 }
 
-func TestByCheckOnlyForByNav(t *testing.T) {
+func TestByCheckOnlyForBynav(t *testing.T) {
 	const ascii = "#BYCHECKA,COM1,0,99.9,FINESTEERING,2437,429495.000,00000000,0000,782;7843,2437,429495.000,1,1,1,1,1,1,1,1,1,1,1,1*8c0596c3\r\n"
 	bin, err := hex.DecodeString("aa44121c20a500203c000000c7b48509d89299190000000000000e03a31e000085090000e0b6d148010000000100000001000000010000000100000001000000010000000100000001000000010000000100000001000000689c42f5")
 	if err != nil {
@@ -324,7 +324,7 @@ func TestByCheckOnlyForByNav(t *testing.T) {
 		{VariantOEM7, false},
 		{VariantSinoGNSS, false},
 		{VariantUnicore, false},
-		{VariantByNav, true},
+		{VariantBynav, true},
 	}
 	for _, tc := range tests {
 		ap := NewAsciiPacketProcessor(gpsprot.NewNavEpochManager())

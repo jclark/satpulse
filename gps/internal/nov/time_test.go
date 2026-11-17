@@ -135,8 +135,8 @@ func TestTimeMsgFromTime(t *testing.T) {
 			},
 		},
 		{
-			name:    "invalid clock gives no time (ByNav M10 after reset)",
-			variant: VariantByNav,
+			name:    "invalid clock gives no time (Bynav M10 after reset)",
+			variant: VariantBynav,
 			packet: "#TIMEA,COM1,0,99.9,FREEWHEELING,2437,421648.000,00000000,0000,782;INVALID,1.443906866e-04,0.000000000e+00,0.00000000000,0,0,0,0,0,0,INVALID*25f87482\r\n",
 			expect: &gpsprot.TimeMsg{
 				Tag:         TagAscii,

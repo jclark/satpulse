@@ -281,11 +281,11 @@ func fixupUnicoreIonUTCValueForAscii(msg MsgBody) MsgBody {
 }
 
 // fixupBynavIonUTCValueForAscii handles the specific precision formatting
-// used by ByNav M20 receivers in their ASCII output.
+// used by Bynav M20 receivers in their ASCII output.
 func fixupBynavIonUTCValueForAscii(msg MsgBody) MsgBody {
 	r := msg.(*IonUTC)
 	result := *r
-	// ByNav M20 has a rounding quirk where Alpha2/Alpha3 ASCII output shows ...813
+	// Bynav M20 has a rounding quirk where Alpha2/Alpha3 ASCII output shows ...813
 	// but the binary value formats to ...812.
 	const epsilon = 5e-23
 	result.Alpha2 -= epsilon

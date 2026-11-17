@@ -15,6 +15,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -96,8 +97,8 @@ func TestCorReportFromPacket(t *testing.T) {
 	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
 		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
 	}
-	if msg.FinalFragment.IsSet() {
-		t.Errorf("FinalFragment set for non-MSM packet: %v", msg.FinalFragment.Get())
+	if msg.FinalInEpoch.IsSet() {
+		t.Errorf("FinalInEpoch set for non-MSM packet: %v", msg.FinalInEpoch.Get())
 	}
 	wantBaseID, ok := rtcmbin.ReferenceStationID(testRTCM1005)
 	if !ok {
@@ -142,7 +143,7 @@ func TestCorReportFromPacketInvalidChecksum(t *testing.T) {
 	}
 }
 
-func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
+func TestCorReportFromPacketMSMFinalInEpoch(t *testing.T) {
 	tests := []struct {
 		name string
 		mmb  bool
@@ -165,9 +166,9 @@ func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
 			if msg == nil {
 				t.Fatal("CorReportFromPacket returned nil")
 			}
-			if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() != tt.want {
-				t.Errorf("FinalFragment = (%v, %v), want set %v",
-					msg.FinalFragment.Get(), msg.FinalFragment.IsSet(), tt.want)
+			if !msg.FinalInEpoch.IsSet() || msg.FinalInEpoch.Get() != tt.want {
+				t.Errorf("FinalInEpoch = (%v, %v), want set %v",
+					msg.FinalInEpoch.Get(), msg.FinalInEpoch.IsSet(), tt.want)
 			}
 		})
 	}
@@ -198,8 +199,8 @@ func TestCorReportFromPacketSPARTN(t *testing.T) {
 	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
 		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
 	}
-	if msg.FinalFragment.IsSet() {
-		t.Errorf("FinalFragment set for SPARTN packet: %v", msg.FinalFragment.Get())
+	if msg.FinalInEpoch.IsSet() {
+		t.Errorf("FinalInEpoch set for SPARTN packet: %v", msg.FinalInEpoch.Get())
 	}
 	if msg.RTCMRefBaseID.IsSet() {
 		t.Errorf("RTCMRefBaseID set for SPARTN packet: %d", msg.RTCMRefBaseID.Get())
@@ -885,56 +886,59 @@ func TestPortLockAcquiredPerWrite(t *testing.T) {
 }
 
 func TestReconnectOnNetworkError(t *testing.T) {
-	// use a reconnectable source that provides a new pipe each time
-	rs := &reconnectSource{}
-	mw := &mockWriter{}
-	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(rs, mw, portLock)
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	var states []State
-	var mu sync.Mutex
-	onState := func(st State, _ error) {
-		mu.Lock()
-		states = append(states, st)
-		mu.Unlock()
-	}
-	done := make(chan error, 1)
-	go func() {
-		done <- sink.Run(ctx, nil, onState)
-	}()
-	// write a packet on the first connection, then close it
-	conn1 := rs.waitConn(t)
-	primeSink(t, conn1, mw)
-	if _, err := conn1.Write(makeRTCM(1005, 10)); err != nil {
-		t.Fatalf("failed to write first connection packet: %v", err)
-	}
-	waitPackets(t, mw, 1)
-	conn1.Close()
-	// wait for reconnect and second connection
-	conn2 := rs.waitConn(t)
-	if _, err := conn2.Write(makeRTCM(1077, 10)); err != nil {
-		t.Fatalf("failed to write second connection packet: %v", err)
-	}
-	waitPackets(t, mw, 2)
-	conn2.Close()
-	cancel()
-	err := <-done
-	if err != nil && !errors.Is(err, context.Canceled) {
-		t.Errorf("unexpected Run error: %v", err)
-	}
-	// check state transitions include reconnecting
-	mu.Lock()
-	defer mu.Unlock()
-	hasReconnecting := false
-	for _, st := range states {
-		if st == Reconnecting {
-			hasReconnecting = true
+	// The bubble's fake clock skips the real backoff delay before reconnecting.
+	synctest.Test(t, func(t *testing.T) {
+		// use a reconnectable source that provides a new pipe each time
+		rs := &reconnectSource{}
+		mw := &mockWriter{}
+		portLock := gpsio.NewOutPortLock(mockOutPort{})
+		sink := newTestPull(rs, mw, portLock)
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		var states []State
+		var mu sync.Mutex
+		onState := func(st State, _ error) {
+			mu.Lock()
+			states = append(states, st)
+			mu.Unlock()
 		}
-	}
-	if !hasReconnecting {
-		t.Errorf("expected Reconnecting state, got %v", states)
-	}
+		done := make(chan error, 1)
+		go func() {
+			done <- sink.Run(ctx, nil, onState)
+		}()
+		// write a packet on the first connection, then close it
+		conn1 := rs.waitConn(t)
+		primeSink(t, conn1, mw)
+		if _, err := conn1.Write(makeRTCM(1005, 10)); err != nil {
+			t.Fatalf("failed to write first connection packet: %v", err)
+		}
+		waitPackets(t, mw, 1)
+		conn1.Close()
+		// wait for reconnect and second connection
+		conn2 := rs.waitConn(t)
+		if _, err := conn2.Write(makeRTCM(1077, 10)); err != nil {
+			t.Fatalf("failed to write second connection packet: %v", err)
+		}
+		waitPackets(t, mw, 2)
+		conn2.Close()
+		cancel()
+		err := <-done
+		if err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("unexpected Run error: %v", err)
+		}
+		// check state transitions include reconnecting
+		mu.Lock()
+		defer mu.Unlock()
+		hasReconnecting := false
+		for _, st := range states {
+			if st == Reconnecting {
+				hasReconnecting = true
+			}
+		}
+		if !hasReconnecting {
+			t.Errorf("expected Reconnecting state, got %v", states)
+		}
+	})
 }
 
 func TestPullStopsOnFatalConnect(t *testing.T) {

@@ -1,0 +1,37 @@
+vendor = "sinognss"
+model = "K902"
+firmware = "650EY-00000-1"
+default-baud = 115200
+
+# From LOG VERSIONA:
+# #VERSIONA,COM1,0,60.0,FINESTEERING,2438,098931.650,00000000,0000,1114;1,GNSSCARD,"S32352K902","0003916600000000","CRDK-902AA-TTT-1","650EY-00000-1","8.2.4","2025/Jun/ 6","17:36:55"*a53774e6
+# (model, PSN, hardware version, software version, boot version, compile date and time)
+# Captured on COM1 through the 6-pin connector and an FT232R USB/UART bridge,
+# with a single-point fix, on the same antenna as the K901 set.
+# The K902's onboard USB port (COM3, a WCH CH9102) lost 100 to 120 bytes from
+# the middle of about half of the binary RANGE logs, at 115200 and at 460800,
+# so it was not used. Each capture replaced the saved output with the same
+# logs as the K901 capture of the same name, at 1 Hz unless noted.
+# The receiver behaviour recorded in the K901 HW.toml was seen here too:
+# - A port holds one format per log (TIMEA after TIMEB leaves only TIMEA).
+# - HEADING, IRNEPHEM and B2BRAWNAVSUBFRAME are accepted but produce nothing;
+#   DCBINFO, IONOSCIN, METEMESS and TECINFO are rejected.
+# - SBASRAWFRAME and HASMESS with ONCE give continuing output.
+# - RTCM MSM3-7 are output for GPS, GLONASS, Galileo, QZSS and BDS, and MSM4
+#   only for SBAS (1104); 1001-1003, 1009, 1011, 1013, 1041, NavIC MSM, MSM1
+#   and MSM2 are rejected; 1010, 1081, 1111 and 1121 are accepted but produce
+#   nothing.
+# - RTCM 1005 is output in base mode (rtcm-base.jsonl, with FIX position at
+#   the antenna position).
+# - POSAVE ON 0.01 completes after about 35 s, when BESTPOS changes from
+#   SINGLE to FIXEDPOS (survey.jsonl).
+# - Abbreviated ASCII TIME and PSRDOP have only the header line, followed by
+#   a blank line (abbrev.jsonl).
+# coldstart.jsonl starts with FRESET, which clears the configuration as well
+# as the satellite data, then enables TIMEB, BESTPOSB, BESTVELB, PSRDOPB,
+# IONUTCB, GPGSA, GPGSV and GPRMC. The boot banner follows FRESET after about
+# 2 s; TIME has an unknown time status and invalid clock until a single-point
+# fix 27 s after FRESET, with UTC valid after 36 s. Before the fix GPRMC is
+# void with a date one or two days before the real one (260926, then 270926,
+# on 280926), where the K901 gave the default 311216. No IONUTC is output
+# during the capture.

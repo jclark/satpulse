@@ -1,6 +1,6 @@
 ---
 name: satpulsetool
-description: Work with GPS/GNSS receivers (modules), serial ports, and PPS signals using satpulsetool - find what is plugged into which port, detect a receiver's speed, capture and decode what it sends, check PPS on a serial modem-control pin or a PHC SDP, and query or change receiver configuration. Load when a task involves a GNSS receiver, or a serial port or PPS signal that may be connected to one.
+description: Work with GPS/GNSS receivers (modules), serial ports, PPS signals, and JSONL packet logs using satpulsetool - find what is plugged into which port, detect a receiver's speed, capture and decode what it sends, check PPS on a serial modem-control pin or a PHC SDP, query or change receiver configuration, and decode, annotate, replay, or convert a packet log captured by satpulsetool or satpulsed. Load when a task involves a GNSS receiver, a serial port or PPS signal that may be connected to one, or a packet log.
 allowed-tools: Read, Bash, Glob, Grep
 ---
 
@@ -17,11 +17,11 @@ kind of task. Read only the file for the task at hand.
 | Which serial ports exist, what is plugged into each, what speed a receiver runs at, what it is sending, whether PPS arrives on a modem-control pin (CTS, DCD, DSR, RI) | `serial.md` |
 | Whether PPS arrives on a PHC software-defined pin (SDP), or generating a pulse on one | `sdp.md` |
 | Show receiver info, query or change receiver configuration, send a command to a receiver | `gps.md` (which routes to `gps-highlevel.md`, `gps-msgfile.md`, or `gps-adhoc.md`) |
-| Decode one packet, or annotate a packet log with decoded fields | `decode.md` |
+| Decode one packet | `decode.md` |
+| Anything with a JSONL packet log: see it decoded, see the events it produces, check a decoding change against captures, filter it, or turn it into a byte stream or back | `packetlog.md` |
 
-Other subcommands (`pack`, `scan`, `replay`, `convobs`, `syncsim`, `ubxsim`,
-`ntrip`, `pmc`) do not touch hardware and are not covered here; see
-satpulsetool(1) and their `--help`.
+Other subcommands (`convobs`, `syncsim`, `ubxsim`, `ntrip`, `pmc`) do not touch
+hardware and are not covered here; see satpulsetool(1) and their `--help`.
 
 ## Rules for every subcommand
 
@@ -82,4 +82,4 @@ agreeing to that specific action:
 ## Reference
 
 Man pages: satpulsetool(1), satpulsetool-serial(1), satpulsetool-gps(1),
-satpulsetool-sdp(1). Message files live in `/usr/share/satpulse/gpsmsg`.
+satpulsetool-sdp(1), satpulsetool-pack(1), satpulsetool-scan(1). Message files live in `/usr/share/satpulse/gpsmsg`.

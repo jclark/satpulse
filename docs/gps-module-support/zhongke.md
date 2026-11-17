@@ -20,7 +20,7 @@ For these modules, SatPulse supports:
 
 - decoding of the CASIC packet format (packet format tag is `CASBIN`)
 - conversion of messages into the SatPulse device-independent data model
-- high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified {% include new-in-03.html %}
+- high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified
 - low-level configuration
   - message files for configuration that high-level configuration does not cover
   - a `casbin` message type in message files, with correlation of responses

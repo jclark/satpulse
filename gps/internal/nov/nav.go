@@ -158,7 +158,7 @@ func quality(ne *gpsprot.NavEpochMsg, solStatus novmsg.SolStatus, posType novmsg
 		ne.FixLevel = gpsprot.FixLevelNone
 		return
 	}
-	// OEM7/ByNav-specific pos type values first.
+	// OEM7/Bynav-specific pos type values first.
 	switch posType {
 	case novmsg.PosFixedPos:
 		ne.FixLevel = gpsprot.FixLevelCode

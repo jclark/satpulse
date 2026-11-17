@@ -5,6 +5,8 @@ toc: false
 
 This section describes how to set up SatPulse and the software that works with it.
 
+For setup on macOS, see [Setup on macOS]({% link setup/macos.md %}).
+
 Before installing SatPulse, you obviously need a working OS.
 SatPulse runs on Linux, macOS and Windows,
 although not all features are available on every OS.
@@ -16,6 +18,8 @@ I recommend [installing Raspberry Pi OS]({% link setup/rpi-os.md %})
 It is also possible to [install Fedora]({% link setup/fedora-rpi.md %}).
 On a CM4 or CM5, if you are connecting the TX/RX pins on the GPS board to the 40-pin HAT connector on the carrier board,
 then you also need to [configure the UARTs]({% link setup/rpi-uart.md %}).
+
+On a BeagleY-AI, I recommend [installing Debian]({% link setup/bb-debian.md %}).
 
 The first two preliminary steps are:
 

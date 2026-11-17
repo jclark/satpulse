@@ -1,8 +1,8 @@
 package novmsg
 
 // ByCheckID is the binary message ID of the BYCHECK log.
-// ByNav's manual does not give it; this is the ID used by the M10.
-// BYCHECK is ByNav's own log, so it is not registered: only the ByNav
+// Bynav's manual does not give it; this is the ID used by the M10.
+// BYCHECK is Bynav's own log, so it is not registered: only the Bynav
 // variant of the NovAtel packet processors decodes it.
 const ByCheckID MsgID = 42272 // Bynav
 
@@ -15,10 +15,10 @@ const (
 	ByCheckUnknown ByCheckFlag = 2
 )
 
-// ByCheck represents the ByNav BYCHECK (GNSS self-check) log.
+// ByCheck represents the Bynav BYCHECK (GNSS self-check) log.
 // Message ID: 42272
 // The self-check items are mostly about antenna and RTK base/rover health.
-// ByNav's manual gives the offset of BaseStationPosition as H+38, but the
+// Bynav's manual gives the offset of BaseStationPosition as H+38, but the
 // items are contiguous 4-byte fields, as M10 output confirms.
 // The manual lists two further items, Valid Baseline and Differential Input,
 // which only the X2 series outputs; those are not supported.
