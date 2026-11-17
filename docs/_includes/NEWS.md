@@ -1,4 +1,6 @@
-## Changes in 0.4 (not yet released)
+## Changes in 0.4
+
+_Not yet released_
 
 - The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
 
