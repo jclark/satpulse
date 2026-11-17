@@ -1,6 +1,7 @@
 ## Changes in 0.4 (not yet released)
 
 - The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
+- Septentrio receivers now support high-level configuration: probing and `--show-receiver`/`--show-config`, GNSS and signal selection, time pulse, minimum elevation, antenna cable delay, OSNMA navigation-message authentication, survey, static and fixed-position modes, NMEA/binary/raw/RTCM output control, and save/reload/reset/factory-reset, through both `satpulsetool gps` and `satpulsed` auto-configuration. (#341)
 
 ## Changes in 0.3
 
@@ -25,7 +26,6 @@ _Released 2026-10-28_
 - SatPulse now supports Septentrio receivers (such as the mosaic-G5): `satpulsed` recognizes them and scans and decodes their Septentrio Binary Format (SBF) binary output stream. (#340)
 - Decoded SBF blocks are translated into the device-independent GPS model: time, leap-second, position, velocity, per-epoch solution quality, satellite, survey, and correction-report information is extracted and exposed in the JSONL event log, the web dashboard, and the NTP/PPS timing path. (#340)
 - `satpulsetool gps` can configure Septentrio receivers from a message file: it frames the receiver's ASCII command-line replies and reports whether each command succeeded or was rejected. Message files for the mosaic-G5 (and the shared mosaic entries) are included. (#340)
-- Septentrio receivers now support high-level configuration: probing and `--show-receiver`/`--show-config`, GNSS and signal selection, time pulse, minimum elevation, antenna cable delay, OSNMA navigation-message authentication, survey, static and fixed-position modes, NMEA/binary/raw/RTCM output control, and save/reload/reset/factory-reset, through both `satpulsetool gps` and `satpulsed` auto-configuration. (#341)
 - `satpulsetool convobs` converts Septentrio SBF raw observations (MeasEpoch/MeasExtra) to RINEX, from raw SBF streams or packet logs, with a new `sbf` input format. (#342)
 
 ### u-blox protocol-specific support
