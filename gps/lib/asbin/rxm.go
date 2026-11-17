@@ -11,7 +11,7 @@ const (
 // Enabling is acknowledged like a CFG set; the TAU951M NAKs the
 // disable yet applies it.
 type RxmDumpRaw struct {
-	Enable uint8 // 0=disable, 1=enable
+	Enable uint8 `json:"type"` // 0=disable, 1=enable
 }
 
 func (m *RxmDumpRaw) ID() MsgID { return RxmDumpRawID }

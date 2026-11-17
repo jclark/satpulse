@@ -176,6 +176,26 @@ func TestRateSilentThenFlowing(t *testing.T) {
 	}
 }
 
+func TestRateSilentWatchAnchor(t *testing.T) {
+	// Nothing read before the resolve phase (a silent receiver and a
+	// request with nothing to query or disable): the silent watch must be
+	// anchored at the enables' send, not at the zero time, or it would
+	// conclude 1Hz before their ACK could arrive.
+	cfg := newConfigurator(&gpsprot.ConfigTarget{}, tau1201Ver(), newRateEstimator())
+	cfg.deferred = []deferredEnable{{mid: asbin.NavSvInfoID}}
+	cfg.generateResolveReqs()
+	tSent := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)
+	for _, req := range cfg.reqs {
+		if !req.watch {
+			req.state = reqReady
+			req.SetSentTime(tSent)
+		}
+	}
+	if got, want := cfg.watch.GetDeadline(), tSent.Add(resolveSilentDelay); !got.Equal(want) {
+		t.Errorf("watch deadline = %v, want %v", got, want)
+	}
+}
+
 // hasCfgMsgSet reports whether cfg has queued a CFG-MSG set of mid to rate.
 func hasCfgMsgSet(cfg *Configurator, mid asbin.MsgID, rate uint8) bool {
 	cls, id := mid.Unpack()

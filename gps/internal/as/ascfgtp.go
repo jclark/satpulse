@@ -69,10 +69,17 @@ func (c *Configurator) generateTPSet() {
 	}
 	pps := *c.pps
 	props := &c.target.Props
-	if p, ok := props.GetTimePulsePeriod(); ok {
-		pps.Period = uint32(p / time.Microsecond)
-	}
-	if w, ok := props.GetTimePulseWidth(); ok {
+	p, setP := props.GetTimePulsePeriod()
+	w, setW := props.GetTimePulseWidth()
+	if setP || setW {
+		// The duty cycle is a fraction of the period, so a period change
+		// alone must recompute it to keep the current width.
+		if !setW {
+			w = ppsWidth(c.pps)
+		}
+		if setP {
+			pps.Period = uint32(p / time.Microsecond)
+		}
 		pps.DutyCycle = dutyCycle(w, pps.Period)
 	}
 	if r, ok := props.GetTimePulsePolarityRising(); ok {
@@ -101,6 +108,11 @@ func dutyCycle(width time.Duration, periodUs uint32) uint32 {
 	return uint32(math.Round(float64(width/time.Microsecond) / float64(periodUs) * 1e6))
 }
 
+// ppsWidth returns the pulse width a CFG-PPS readback configures.
+func ppsWidth(pps *asbin.CfgPps) time.Duration {
+	return time.Duration(pps.Period) * time.Microsecond * time.Duration(pps.DutyCycle) / 1e6
+}
+
 // tpConfigProps reports the time pulse properties from the latest
 // CFG-PPS readback. AlignToGNSS is always true: the Allystar time pulse
 // is aligned to GNSS time (it would be useless otherwise), and reporting
@@ -116,7 +128,7 @@ func (c *Configurator) tpConfigProps(props *gpsprot.ConfigProps) {
 	}
 	period := time.Duration(c.pps.Period) * time.Microsecond
 	props.SetTimePulsePeriod(period)
-	props.SetTimePulseWidth(period * time.Duration(c.pps.DutyCycle) / 1e6)
+	props.SetTimePulseWidth(ppsWidth(c.pps))
 	props.SetTimePulsePolarityRising(c.pps.Polarity == asbin.CfgPpsPolarityRisingEdge)
 	props.SetTimePulseOnlyWhenLocked(c.pps.Sync == asbin.CfgPpsSyncOnlyWithFix)
 	props.SetTimePulseAlignToGNSS(true)

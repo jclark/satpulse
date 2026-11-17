@@ -440,30 +440,28 @@ func (e *rateEstimator) sawPeriodic() bool {
 	return false
 }
 
-// flowingPollID returns a flowing id to poll for its stored rate,
-// preferring one in keep (ids the request will not disable, so they
-// keep producing the second arrival that turns the polled rate into a
-// native rate). Returns false if nothing is flowing.
+// flowingPollID returns a flowing content-bearing id to poll for its
+// stored rate, preferring one in keep (ids the request will not disable,
+// so they keep producing the second arrival that turns the polled rate
+// into a native rate), then the most-arrived. Only a content-bearing id
+// qualifies: only its interval can turn the polled rate into a native
+// rate, and the poll is sent once, so polling anything else would block
+// the lazy poll. Returns false if no such id is flowing.
 func (e *rateEstimator) flowingPollID(keep map[asbin.MsgID]bool) (asbin.MsgID, bool) {
 	var best asbin.MsgID
 	bestCount := 0
 	bestKept := false
-	bestContent := false
 	for _, mid := range e.sortedMids() {
 		tr := e.tracks[mid]
-		if tr.count < 1 {
+		if tr.count < 1 || !tr.hasContent {
 			continue
 		}
 		kept := keep[mid]
-		// Prefer a content-bearing id (only its interval turns the polled
-		// rate into a native rate), then a kept id, then the most-arrived.
 		// Sorted iteration makes the tie-break deterministic.
-		better := best == 0 ||
-			(tr.hasContent && !bestContent) ||
-			(tr.hasContent == bestContent && kept && !bestKept) ||
-			(tr.hasContent == bestContent && kept == bestKept && tr.count > bestCount)
+		better := best == 0 || (kept && !bestKept) ||
+			(kept == bestKept && tr.count > bestCount)
 		if better {
-			best, bestCount, bestKept, bestContent = mid, tr.count, kept, tr.hasContent
+			best, bestCount, bestKept = mid, tr.count, kept
 		}
 	}
 	return best, best != 0
@@ -488,7 +486,12 @@ func (e *rateEstimator) lazyPollID() (asbin.MsgID, bool) {
 }
 
 // markSelfSet records that we have set mid to rate=1, so a clean interval
-// on it is the native period directly.
+// on it is the native period directly. Any polled rate predates the set
+// and is dropped: paired with an interval measured after it, rule 1
+// would compute a too-fast native rate.
 func (e *rateEstimator) markSelfSet(mid asbin.MsgID) {
-	e.track(mid).selfSet = true
+	tr := e.track(mid)
+	tr.selfSet = true
+	tr.hasPoll = false
+	tr.polledRate = 0
 }

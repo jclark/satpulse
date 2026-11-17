@@ -526,9 +526,27 @@ func (req *asReq) GetDeadline() time.Time {
 		// traffic - otherwise continuous non-resolving packets (ACKs,
 		// GSV, off-grid fixless NAV of an unwatched id) would postpone the
 		// anchored-negative/cap forever and the invocation would hang.
+		if req.watchAnchor.IsZero() {
+			// No packet preceded the watch (a silent receiver and a
+			// request with nothing to query or disable), so anchor at the
+			// send of the rate=1 enables it follows; a zero anchor would
+			// conclude 1Hz before their ACK could even arrive.
+			req.watchAnchor = req.cfg.lastSentTime()
+		}
 		return req.watchAnchor.Add(req.watchDur)
 	}
 	return req.tBase.Add(maxResponseDelay)
+}
+
+// lastSentTime returns the latest send time of any request.
+func (c *Configurator) lastSentTime() time.Time {
+	var t time.Time
+	for _, req := range c.reqs {
+		if req.tBase.After(t) {
+			t = req.tBase
+		}
+	}
+	return t
 }
 
 // GetError returns why the request failed.

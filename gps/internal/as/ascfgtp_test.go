@@ -70,6 +70,25 @@ func TestTimePulseSet(t *testing.T) {
 	}
 }
 
+func TestTimePulsePeriodKeepsWidth(t *testing.T) {
+	// The duty cycle is a fraction of the period, so a period-only set
+	// must rescale it to keep the as-found 10ms width.
+	rcvr := &testReceiver{monVer: tau1201Ver(), pps: tau951mPps()}
+	cp := probe(t, rcvr)
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetTimePulsePeriod(2 * time.Second)
+	cfg, errCount := configure(t, cp, rcvr, target)
+	if errCount != 0 {
+		t.Errorf("ErrorCount = %d, want 0", errCount)
+	}
+	if rcvr.pps.Period != 2000000 || rcvr.pps.DutyCycle != 5000 {
+		t.Errorf("receiver period/duty = %d/%d, want 2000000/5000", rcvr.pps.Period, rcvr.pps.DutyCycle)
+	}
+	if w, ok := cfg.ConfigProps().GetTimePulseWidth(); !ok || w != 10*time.Millisecond {
+		t.Errorf("achieved width = %v/%v, want 10ms", w, ok)
+	}
+}
+
 func TestTimePulseZeroDutyIgnored(t *testing.T) {
 	// TAU1302 defect: a zero duty cycle can be acknowledged without
 	// being stored. Per the semantics the achieved value is what the

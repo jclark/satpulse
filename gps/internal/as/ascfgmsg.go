@@ -294,8 +294,9 @@ func (c *Configurator) generateResolveReqs() {
 // response that it never sent, so the director never transmits it. It
 // resolves when the estimator computes the rate (onObserve) or when its
 // deadline passes (watchTimeout). The deadline is anchored at creation
-// time (the estimator's current notion of now) and advances only on
-// waited-on arrivals (see onObserve and GetDeadline).
+// time (the estimator's current notion of now, or the enables' send
+// time when nothing has been read yet) and advances only on waited-on
+// arrivals (see onObserve and GetDeadline).
 func (c *Configurator) addWatchReq(dur time.Duration) *asReq {
 	req := &asReq{state: reqAwaitingAck, watch: true, watchDur: dur,
 		watchAnchor: c.est.lastRead, cfg: c}

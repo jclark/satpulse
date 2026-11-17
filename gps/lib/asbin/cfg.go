@@ -94,9 +94,9 @@ func (m *CfgSurvey) ID() MsgID { return CfgSurveyID }
 
 // CFG-FIXEDLLA (0x06 0x13)
 type CfgFixedLLA struct {
-	Lat int32 // 1e-7 degrees, Latitude
-	Lon int32 // 1e-7 degrees, Longitude
-	Alt int32 // cm, Altitude
+	Lat int32 `json:"lat"` // 1e-7 degrees, Latitude
+	Lon int32 `json:"lon"` // 1e-7 degrees, Longitude
+	Alt int32 `json:"alt"` // cm, Altitude
 }
 
 func (m *CfgFixedLLA) ID() MsgID { return CfgFixedLLAID }
@@ -142,7 +142,7 @@ type CfgMsgFixed struct {
 // a 4-byte readback is parsed, so the round trip of a set is unchanged.
 type CfgMsg struct {
 	CfgMsgFixed
-	PortMask []byte // the readback-only 4th byte; empty on a 3-byte form
+	PortMask []byte `json:"portMask,omitempty"` // the readback-only 4th byte; empty on a 3-byte form
 }
 
 func (m *CfgMsg) ID() MsgID { return CfgMsgID }
