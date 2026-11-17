@@ -2,6 +2,7 @@ package sdpcmd
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
@@ -14,7 +15,7 @@ type Mode int
 const (
 	ModeShowAuto   Mode = iota // Show pins if available, otherwise show interface information
 	ModeShowIfaces             // List interfaces with a PHC (--show-ifaces)
-	ModeShowPins               // Show the pins of a specific interface's PHC (--show-pins)
+	ModeShowPins               // Show the pins of a PHC (--show-pins)
 	ModeExtts                  // External timestamp input (-i)
 	ModePerout                 // Periodic output (-o)
 	ModeDisable                // Disable pin (--disable)
@@ -31,6 +32,7 @@ type FlagConfig struct {
 	Mode      Mode
 	JSONL     bool
 	Interface string
+	Device    string // device path of the PHC, given instead of Interface
 
 	// Extts mode flags
 	Timeout   time.Duration
@@ -48,7 +50,7 @@ const summary = `[-h|--help] [-j|--jsonl]
             [-i|--extts] [-o|--perout] [--disable] [--show-ifaces] [--show-pins]
             [-t|--timeout seconds] [-w|--width seconds] [--period seconds]
             [-p|--pin index|name] [--chan index] [--show-stale]
-            [interface]`
+            [phc]`
 
 const defaultTimeout = 2 * time.Second
 
@@ -82,7 +84,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 
 	flags.BoolVar(&disable, "disable", false, "disable the pin function")
 	flags.BoolVar(&showIfaces, "show-ifaces", false, "show interfaces with a PTP hardware clock")
-	flags.BoolVar(&showPins, "show-pins", false, "show the pins of the PHC of an interface")
+	flags.BoolVar(&showPins, "show-pins", false, "show the pins of a PHC")
 
 	// Common pin selection
 	flags.StringVarP(&cfg.Pin, "pin", "p", "", "select the pin to be used (index or name)")
@@ -111,13 +113,18 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 
 	// Validate positional arguments
 	if flags.NArg() > 1 {
-		err = fmt.Errorf("too many arguments: expected at most 1 interface name, got %d arguments", flags.NArg())
+		err = fmt.Errorf("too many arguments: expected at most one argument, got %d arguments", flags.NArg())
 		return
 	}
 
-	// Check for positional argument (interface name)
+	// The positional argument is a device path if it contains a slash,
+	// which an interface name cannot.
 	if flags.NArg() > 0 {
-		cfg.Interface = flags.Arg(0)
+		if arg := flags.Arg(0); strings.Contains(arg, "/") {
+			cfg.Device = arg
+		} else {
+			cfg.Interface = arg
+		}
 	}
 
 	// Determine mode based on flags
@@ -156,7 +163,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 
 	// Resolve the default mode where no PHC inspection is needed.
 	if cfg.Mode == ModeShowAuto {
-		if cfg.Pin != "" {
+		if cfg.Pin != "" || cfg.Device != "" {
 			cfg.Mode = ModeShowPins
 		} else if cfg.Interface == "" {
 			cfg.Mode = ModeShowIfaces
@@ -166,13 +173,17 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	// Validate mode-specific requirements
 	switch cfg.Mode {
 	case ModeExtts, ModePerout, ModeDisable, ModeShowPins:
-		if cfg.Interface == "" {
-			err = fmt.Errorf("interface name required for this mode")
+		if cfg.Interface == "" && cfg.Device == "" {
+			err = fmt.Errorf("interface name or device path required for this mode")
 			return
 		}
 	case ModeShowIfaces:
 		if cfg.Pin != "" {
 			err = fmt.Errorf("--pin cannot be used when showing interfaces")
+			return
+		}
+		if cfg.Device != "" {
+			err = fmt.Errorf("showing interfaces is not supported with a device path")
 			return
 		}
 	}

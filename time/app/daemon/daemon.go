@@ -123,7 +123,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			"poll4Hz", phcFlags&phc.DriverPoll4Hz != 0)
 		defer func() {
 			clk.Close()
-			lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
+			lg.Debug("closed the PHC", "path", clk.Path())
 		}()
 	}
 	cfgSpeed := 0
@@ -474,7 +474,7 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 	if clk == nil {
 		return nil, nil
 	}
-	clockLogPath := cfg.Log.ClockPath(clk.IfName(), logobs.ClockLogExtension)
+	clockLogPath := cfg.Log.ClockPath(clk.Name(), logobs.ClockLogExtension)
 	if clockLogPath == "" {
 		return nil, nil
 	}

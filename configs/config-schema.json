@@ -261,6 +261,9 @@
         "interface": {
           "type": "string"
         },
+        "device": {
+          "type": "string"
+        },
         "pin": {
           "type": "integer",
           "minimum": 0
