@@ -204,7 +204,7 @@ semantics make unnecessary.
 
 | `PropID` | Septentrio command(s) | Notes |
 |---|---|---|
-| `SignalsEnabled` | `setSatelliteTracking` (`sst`) + `setSignalTracking` (`snt`) + `setSignalUsage` (`snu`) | See below. |
+| `SignalsEnabled` | `setSatelliteTracking` (`sst`) + `setSignalTracking` (`snt`) | See below. |
 | `TimeGNSS` | `setPPSParameters` `TimeScale` arg | GPS/Galileo/BeiDou/GLONASS all verified; `UTC`/`RxClock` have no device-independent analogue. |
 | `TimePulseWidth`/`Period`/`AlignToGNSS`/`OnlyWhenLocked`/`PolarityRising` | `setPPSParameters` (`Interval`, `PulseWidth`, `Polarity`, `MaxHoldover`) | PPS1 only. OnlyWhenLocked ~ MaxHoldover 1; !OnlyWhenLocked = 0 (never time out). Interval is an enum (off/msec10..sec10/...); non-representable periods are clamped to the nearest supported value and reported truthfully. |
 | `Mode` (static/rover, fixed pos) | `setPVTMode` (`spm`) + `setStaticPosGeodetic`/`setStaticPosCartesian` | `Static==false` -> `setPVTMode, Rover` (RoverMode arg OMITTED - keeps the receiver's current rover-mode list; verified default includes DGNSS). `Static==true, PosTypeNone` -> `setPVTMode, Static, , auto`, skipped when the queried mode is already `Static, , auto` and no fresh survey is requested (`SurveyAgain`) - an existing self-determined position is left untouched (SEMANTICS.md). `Static==true` + LLH/ECEF -> write Geodetic1/Cartesian1, then `setPVTMode, Static, , Geodetic1`/`Cartesian1`. `Opts.SetStatic` without a Mode property leaves any static mode (fixed or auto) as it is and moves a rover to `Static, , auto`. |
@@ -232,17 +232,22 @@ request) forces a new determination. The configurator still sends the
 re-issue on `SurveyAgain` (harmless, ensures the mode); the fresh
 determination itself is a receiver limitation.
 
-**SignalsEnabled realization.** Three commands realize one property:
-`sst` gates by constellation, `snt` by signal (tracking), `snu` by
-signal (usage: PVT + NavData). Because `snt` has no `-` removal
-(verified), a set is read-modify-write: query `gnt`/`gnu` in the query
-phase, then write explicit full lists = (requested signals mapped
+**SignalsEnabled realization.** Enabled means tracked. Two commands
+realize the property: `sst` gates by satellite or constellation, `snt`
+by signal; a signal is tracked only if both allow it. Signal usage
+(`snu`: PVT + NavData) is left as the receiver has it. Its defaults
+allow every signal except Galileo E6, SBAS and NavIC L5 in the PVT, and
+SBAS signals can never be in the PVT list, so "enabled" cannot mean
+"used in the PVT". Because `snt` has no `-` removal
+(verified), a set is read-modify-write: query `gnt` in the query
+phase, then write an explicit full list = (requested signals mapped
 through the table) UNION (unmapped signals currently present - GALE5,
 GLOL2P, QZSL1CB stay as found). `sst` gets the constellation list
 derived from the target signal set (`all` when every constellation has
-signals). Achieved value: the set's own readback state line names the
-achieved list (verified immediate and exact), reported through the
-table in reverse. Requested signals with no Septentrio carrier are
+signals). Achieved value: the signals in the `snt` list whose
+constellation has at least one satellite in the `sst` list, both from
+the set's own readback state lines (verified immediate and exact) or
+from `gnt`/`gst`; `sst` reads back per satellite. Requested signals with no Septentrio carrier are
 absence; requested signals outside grc's supported list are dropped
 before the wire (see capability gating below) and the achieved set
 omits them.
@@ -276,7 +281,7 @@ omits them.
   API change, out of scope).
 
 - **Signals** - requested signals are intersected with the probe's
-  supported-signal list before the `sst`/`snt`/`snu` commands are
+  supported-signal list before the `sst`/`snt` commands are
   built (the SEMANTICS.md best-effort pipeline: absence is knowable
   in advance, dropped silently, visible in the achieved set - the
   ubx precedent). The intersection also protects against partial

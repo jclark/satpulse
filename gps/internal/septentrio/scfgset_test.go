@@ -152,14 +152,11 @@ func TestMinElevationCmd(t *testing.T) {
 func TestConfigureSignalsCapabilityGate(t *testing.T) {
 	sstCmd := "setSatelliteTracking, GPS+GALILEO"
 	sntCmd := "setSignalTracking, GALE1BC+GPSL1CA+GALE5"
-	snuCmd := "setSignalUsage, GALE1BC+GPSL1CA+GALE5, GALE1BC+GPSL1CA"
 	replies := map[string]string{
 		"getSatelliteTracking": allSatsTracking,
 		"getSignalTracking":    "SignalTracking, GPSL1CA+GALE1BC+GALE5",
-		"getSignalUsage":       "SignalUsage, GPSL1CA+GALE5, GPSL1CA",
 		sstCmd:                 "SatelliteTracking, G01+E01",
 		sntCmd:                 "SignalTracking, GPSL1CA+GALE1BC+GALE5",
-		snuCmd:                 "SignalUsage, GPSL1CA+GALE1BC+GALE5, GPSL1CA+GALE1BC",
 	}
 	target := &gpsprot.ConfigTarget{}
 	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(
@@ -169,36 +166,16 @@ func TestConfigureSignalsCapabilityGate(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	for _, cmd := range []string{sstCmd, sntCmd, snuCmd} {
+	for _, cmd := range []string{sstCmd, sntCmd} {
 		if !slices.Contains(sent, cmd) {
 			t.Errorf("command %q not sent; sent: %v", cmd, sent)
 		}
 	}
+	if slices.ContainsFunc(sent, func(cmd string) bool { return strings.Contains(cmd, "SignalUsage") }) {
+		t.Errorf("signal usage touched; sent: %v", sent)
+	}
 	expect := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1)
 	if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || ss != expect {
 		t.Errorf("SignalsEnabled: got %v, %v; want the supported subset %v", ss, ok, expect)
-	}
-}
-
-// TestSignalUsageExcludesGEO pins the hardware finding that the PVT usage
-// argument's enum has no GEO entries: requesting SBAS signals must put
-// GEOL1/GEOL5 in the tracking list and the NavData usage list, never in the
-// PVT usage list (the receiver refuses it with "Argument 'PVT' is invalid").
-func TestSignalUsageExcludesGEO(t *testing.T) {
-	c := &Configurator{target: &gpsprot.ConfigTarget{}}
-	requested := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigSBASL1CA, gpsprot.SigSBASL5)
-	c.caps = &rxCaps{sigSet: requested}
-	c.target.Props.SetSignalsEnabled(requested)
-	c.np.usage = &signalUsage{pvt: []string{"GPSL1CA", "GLOL2P"}, navData: []string{"GPSL1CA"}}
-	c.generateSignalReqs()
-	var snu string
-	for _, req := range c.reqs {
-		if strings.HasPrefix(req.cmd, "setSignalUsage") {
-			snu = req.cmd
-		}
-	}
-	want := "setSignalUsage, GPSL1CA+GLOL2P, GEOL1+GEOL5+GPSL1CA"
-	if snu != want {
-		t.Errorf("got  %q\nwant %q", snu, want)
 	}
 }

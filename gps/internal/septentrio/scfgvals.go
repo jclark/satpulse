@@ -21,7 +21,6 @@ type nativeProps struct {
 	tracking     []string // snt signal list
 	haveTracking bool
 	satGNSS      *gpsprot.GNSSSet // constellations with a satellite allowed by sst
-	usage        *signalUsage
 	pvtMode      *pvtMode
 	staticPos    *staticPos
 	osnma        *osnmaUsage
@@ -42,12 +41,6 @@ type ppsParams struct {
 	timeScale   string  // GPS/Galileo/BeiDou/GLONASS/UTC/RxClock
 	maxHoldover int     // seconds; 0 = pulses continue indefinitely
 	widthMs     float64 // PulseWidth
-}
-
-// signalUsage is the SignalUsage state line: two lists (PVT, NavData).
-type signalUsage struct {
-	pvt     []string
-	navData []string
 }
 
 // pvtMode is the PVTMode state line:
@@ -168,14 +161,6 @@ func (np *nativeProps) parseSatelliteTracking(r *Reply) {
 		}
 	}
 	np.satGNSS = &gs
-}
-
-func (np *nativeProps) parseSignalUsage(r *Reply) {
-	f := findState(r, "SignalUsage")
-	if len(f) < 3 {
-		return
-	}
-	np.usage = &signalUsage{pvt: signalList(f[1]), navData: signalList(f[2])}
 }
 
 func (np *nativeProps) parsePVTMode(r *Reply) {
@@ -365,11 +350,6 @@ func (c *Configurator) generateQueryReqs() {
 	if t.UsesAny(gpsprot.PropIDSignalsEnabled) {
 		c.addReq("getSatelliteTracking", np.parseSatelliteTracking)
 		c.addReq("getSignalTracking", np.parseSignalTracking)
-	}
-	if t.Props.SetsAny(gpsprot.PropIDSignalsEnabled) {
-		// The usage lists feed only the set path's read-modify-write; the
-		// property reads back from the tracking list alone.
-		c.addReq("getSignalUsage", np.parseSignalUsage)
 	}
 	if t.UsesAny(gpsprot.PropIDTimePulse | gpsprot.PropIDTimeGNSS) {
 		c.addReq("getPPSParameters", np.parsePPSParameters)

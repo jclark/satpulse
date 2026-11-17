@@ -32,7 +32,6 @@ const allSatsTracking = "SatelliteTracking, G01+G02+G03+G04+G05+G06+G07+G08+G09+
 var asFoundReplies = map[string]string{
 	"getSatelliteTracking":            allSatsTracking,
 	"getSignalTracking":               "SignalTracking, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GLOL1CA+GLOL2CA+GALE1BC+GALE6BC+GALE5a+GALE5b+GALE5+GEOL1+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+QZSL1CA+QZSL2C+QZSL5+NAVICL5",
-	"getSignalUsage":                  "SignalUsage, GPSL1CA+GPSL2PY+GLOL1CA+GALE5, GPSL1CA+GALE6BC",
 	"getPPSParameters":                "PPSParameters, sec1, Low2High, 0.00, GPS, 1, 100.000000",
 	"getPVTMode":                      "PVTMode, Rover, StandAlone+DGNSS+RTKFixed, auto",
 	"getElevationMask, PVT":           "ElevationMask, PVT, 5",
@@ -472,16 +471,15 @@ func TestConfigureSetRefused(t *testing.T) {
 	}
 }
 
-// TestConfigureSignalsAndMode drives the SignalsEnabled three-command
+// TestConfigureSignalsAndMode drives the SignalsEnabled two-command
 // realization (constellation gate, explicit tracking list preserving the
-// receiver-only GALE5, usage lists) and a fixed-position static mode.
+// receiver-only GALE5) and a fixed-position static mode.
 func TestConfigureSignalsAndMode(t *testing.T) {
 	replies := make(map[string]string, len(asFoundReplies))
 	maps.Copy(replies, asFoundReplies)
 	sntCmd := "setSignalTracking, GALE1BC+GALE6BC+GPSL1CA+GPSL5+GALE5"
 	replies["setSatelliteTracking, GPS+GALILEO"] = "SatelliteTracking, G01+G02+E01+E02"
 	replies[sntCmd] = "SignalTracking, GPSL1CA+GPSL5+GALE1BC+GALE6BC+GALE5"
-	replies["setSignalUsage, GALE1BC+GALE6BC+GPSL1CA+GPSL5+GALE5, GALE1BC+GALE6BC+GPSL1CA+GPSL5"] = "SignalUsage, GPSL1CA+GPSL5+GALE1BC+GALE6BC+GALE5, GPSL1CA+GPSL5+GALE1BC+GALE6BC"
 	replies["setStaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400"] = "StaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400, WGS84"
 	replies["setPVTMode, Static, , Geodetic1"] = "PVTMode, Static, , Geodetic1"
 
