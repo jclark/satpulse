@@ -68,7 +68,7 @@ func TestSBFOutputList(t *testing.T) {
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.RawMsg.Set(gpsprot.RawMsgNavData)
 			},
-			expect: []string{"BDSIon", "BDSNav", "GALIon", "GALNav", "GEONav", "GLONav",
+			expect: []string{"BDSCNav1", "BDSCNav2", "BDSCNav3", "BDSIon", "BDSNav", "GALIon", "GALNav", "GEONav", "GLONav",
 				"GLOTime", "GPSCNav", "GPSIon", "GPSNav", "NavICLNav", "QZSNav"},
 		},
 		{

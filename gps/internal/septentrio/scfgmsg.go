@@ -136,7 +136,7 @@ func rawBlocks(f gpsprot.RawMsgFlags) []string {
 	}
 	if f&gpsprot.RawMsgNavData != 0 {
 		b = append(b, "GPSNav", "GPSCNav", "GPSIon", "GLONav", "GLOTime",
-			"GALNav", "GALIon", "GEONav", "BDSNav", "BDSIon",
+			"GALNav", "GALIon", "GEONav", "BDSNav", "BDSCNav1", "BDSCNav2", "BDSCNav3", "BDSIon",
 			"QZSNav", "NavICLNav")
 	}
 	return b
