@@ -122,7 +122,7 @@ func TestEstimatorGLONASSNoPoison(t *testing.T) {
 func TestEstimatorRTCM1005OnlyNoResolve(t *testing.T) {
 	// A stream of ARP (1005) frames only: it counts as periodic traffic
 	// but carries no epoch, so nothing resolves and the deadline concludes
-	// 1Hz (not the silent cap, because traffic was seen).
+	// 1Hz.
 	e := newRateEstimator()
 	t0 := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	arp := &rtcmbin.MT1005{MsgHdrStationID: rtcmbin.MsgHdrStationID{
@@ -138,8 +138,8 @@ func TestEstimatorRTCM1005OnlyNoResolve(t *testing.T) {
 		t.Error("1005 arrivals should count as periodic traffic")
 	}
 	e.concludeSilent()
-	if e.nativeHz != 1 || e.capped {
-		t.Errorf("nativeHz = %d capped = %v, want 1 and false", e.nativeHz, e.capped)
+	if e.nativeHz != 1 {
+		t.Errorf("nativeHz = %d, want 1", e.nativeHz)
 	}
 }
 
@@ -303,19 +303,17 @@ func TestEstimatorSelfSetDropsOldDivisor(t *testing.T) {
 }
 
 func TestEstimatorSilentCap(t *testing.T) {
-	// No arrivals at all: the cap concludes 1Hz and flags that the rate
-	// could not be verified.
+	// No arrivals at all: the cap concludes 1Hz.
 	e := newRateEstimator()
 	e.concludeSilent()
-	if e.nativeHz != 1 || !e.capped {
-		t.Errorf("nativeHz = %d capped = %v, want 1 and true", e.nativeHz, e.capped)
+	if e.nativeHz != 1 {
+		t.Errorf("nativeHz = %d, want 1", e.nativeHz)
 	}
 }
 
 func TestEstimatorAnchoredNegative(t *testing.T) {
 	// Traffic flowed but only at 1Hz (one 1s delta, not two): the
-	// resolve deadline concludes 1Hz, and it is not the silent cap
-	// because traffic was seen.
+	// resolve deadline concludes 1Hz.
 	e := newRateEstimator()
 	e.markSelfSet(asbin.NavPosLlhID)
 	feedNav(e, 1000, 2000)
@@ -323,8 +321,8 @@ func TestEstimatorAnchoredNegative(t *testing.T) {
 		t.Fatalf("nativeHz = %d, want 0 before the deadline", e.nativeHz)
 	}
 	e.concludeSilent()
-	if e.nativeHz != 1 || e.capped {
-		t.Errorf("nativeHz = %d capped = %v, want 1 and false", e.nativeHz, e.capped)
+	if e.nativeHz != 1 {
+		t.Errorf("nativeHz = %d, want 1", e.nativeHz)
 	}
 }
 

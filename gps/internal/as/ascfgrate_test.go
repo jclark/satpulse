@@ -316,7 +316,7 @@ func TestRateChattyUnresolvable(t *testing.T) {
 
 func TestRateDeadSilentCap(t *testing.T) {
 	// A receiver that never emits (no fix): the enable goes out at rate=1
-	// and the cap concludes 1Hz, flagged as unverified.
+	// and the cap concludes 1Hz.
 	rcvr := &testReceiver{monVer: tau1201Ver()}
 	cp := probe(t, rcvr)
 	em := &navEmitter{rcvr: rcvr, periodMs: 200, baseTOW: 100000, silent: true}
@@ -324,8 +324,8 @@ func TestRateDeadSilentCap(t *testing.T) {
 	if errCount != 0 {
 		t.Errorf("ErrorCount = %d, want 0", errCount)
 	}
-	if cp.est.nativeHz != 1 || !cp.est.capped {
-		t.Errorf("nativeHz = %d capped = %v, want 1 and true", cp.est.nativeHz, cp.est.capped)
+	if cp.est.nativeHz != 1 {
+		t.Errorf("nativeHz = %d, want 1", cp.est.nativeHz)
 	}
 	if rcvr.rates[asbin.NavTimeID] != 1 {
 		t.Errorf("NAV-TIME rate = %d, want 1 (optimistic)", rcvr.rates[asbin.NavTimeID])

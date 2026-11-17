@@ -1,7 +1,6 @@
 package as
 
 import (
-	"log"
 	"math"
 	"sort"
 	"time"
@@ -39,13 +38,6 @@ import (
 // values are 800ms and 1200ms).
 const oneHzTolMs = 100
 
-// plausibleHz is the set of native rates seen in the field. It is a
-// sanity check only: a computed rate outside it is logged as a surprise
-// and then used anyway (10Hz is documented Allystar capability, and a
-// future faster firmware must degrade to a log line plus a correct
-// measurement, never a wrong divisor).
-var plausibleHz = map[int]bool{1: true, 2: true, 5: true, 10: true}
-
 // rateEstimator observes message arrivals and computes the receiver's
 // native measurement rate (Hz) from the spacing of same-id messages. It
 // is fed from both native channels (the messages the data path consumed
@@ -55,8 +47,6 @@ var plausibleHz = map[int]bool{1: true, 2: true, 5: true, 10: true}
 type rateEstimator struct {
 	tracks         map[asbin.MsgID]*rateTrack
 	nativeHz       int         // 0 until resolved
-	capped         bool        // resolved by the silent cap: rate could not be verified
-	anyRead        bool        // any periodic arrival has been seen
 	lastRead       time.Time   // wall clock of the latest message of any kind, for the watch deadline
 	lastWasArrival bool        // the most recent observe was a periodic arrival
 	lastArrivalMid asbin.MsgID // the id of that arrival, for the watch deadline extension
@@ -312,7 +302,6 @@ func (e *rateEstimator) cfgMsgReadback(m *asbin.CfgMsg) {
 // may yield a divisor. A zero or negative content delta (a repeat within
 // one epoch, or an iTOW step backwards at fix acquisition) is discarded.
 func (e *rateEstimator) arrival(mid asbin.MsgID, content float64, hasContent bool, tRead time.Time) {
-	e.anyRead = true
 	e.lastWasArrival = true
 	e.lastArrivalMid = mid
 	tr := e.track(mid)
@@ -373,13 +362,13 @@ func (e *rateEstimator) tryResolve(mid asbin.MsgID, tr *rateTrack) {
 	}
 	if tr.hasPoll && tr.polledRate >= 1 && tr.minInterval > 0 {
 		if hz := hzFromInterval(tr.minInterval, int(tr.polledRate)); hz >= 1 {
-			e.set(hz, mid, "poll+interval")
+			e.nativeHz = hz
 			return
 		}
 	}
 	if tr.selfSet && tr.consistent {
 		if hz := hzFromInterval(tr.lastDelta, 1); hz >= 1 {
-			e.set(hz, mid, "self-set interval")
+			e.nativeHz = hz
 		}
 	}
 }
@@ -390,27 +379,12 @@ func hzFromInterval(intervalMs float64, r int) int {
 	return int(math.Round(float64(r) * 1000 / intervalMs))
 }
 
-// set records the resolved native rate, logging a rate outside the
-// plausible set as a surprise (but using it anyway).
-func (e *rateEstimator) set(hz int, mid asbin.MsgID, how string) {
-	e.nativeHz = hz
-	if !plausibleHz[hz] {
-		log.Printf("as: computed native rate %dHz from %v (%s) is outside the expected set {1,2,5,10}; using it anyway", hz, mid, how)
-	}
-}
-
 // concludeSilent resolves the rate when no computation was possible: the
 // receiver produced no fast traffic, so it is 1Hz. It is called at the
-// resolve-phase deadline. capped records that the rate could not be
-// verified (the receiver was silent - likely no fix).
+// resolve-phase deadline.
 func (e *rateEstimator) concludeSilent() {
-	if e.nativeHz != 0 {
-		return
-	}
-	e.nativeHz = 1
-	if !e.anyRead {
-		e.capped = true
-		log.Printf("as: receiver silent during configuration; assuming 1Hz native rate (could not verify - likely no fix)")
+	if e.nativeHz == 0 {
+		e.nativeHz = 1
 	}
 }
 
