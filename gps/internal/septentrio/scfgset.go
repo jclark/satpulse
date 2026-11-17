@@ -207,9 +207,10 @@ func (c *Configurator) addStaticReqs(posCmd, slot string) {
 // (getReceiverCapabilities) carries no identity, so - unlike backends whose
 // probe is their identity message - this is a separate request on every run
 // (see the "no way to say whether identity is wanted" model mismatch in the
-// plan). Identity stays best-effort: give-up is success, with identity absent.
+// plan). Identity stays best-effort: a give-up or a refusal is success, with
+// identity absent.
 func (c *Configurator) generateIdentReqs() {
-	c.append(&sReq{cmd: "lstInternalFile, Identification", optional: true, onLst: func(content string) {
+	c.append(&sReq{cmd: "lstInternalFile, Identification", optional: true, nakOK: true, onLst: func(content string) {
 		if id, err := parseIdent(content); err == nil {
 			c.ident = id
 		}

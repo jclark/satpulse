@@ -570,6 +570,28 @@ func TestConfigureSaveResetGate(t *testing.T) {
 	}
 }
 
+// TestConfigureIdentityRefused checks that a refused identity fetch is not a
+// failure: identity is best-effort, so the invocation reports no error and a
+// requested save still runs.
+func TestConfigureIdentityRefused(t *testing.T) {
+	replies := map[string]string{
+		"lstInternalFile, Identification":  "!InternalFile: Not authorized!",
+		"exeCopyConfigFile, Current, Boot": "CopyConfigFile, Current, Boot",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.Save = gpsprot.SaveAll
+	cfg, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	if !slices.Contains(sent, "exeCopyConfigFile, Current, Boot") {
+		t.Errorf("save not sent after a refused identity fetch; sent: %v", sent)
+	}
+	if info := cfg.ReceiverInfo(); info.Hardware != "" || info.Firmware != "" {
+		t.Errorf("identity reported after a refusal: %+v", info)
+	}
+}
+
 // TestConfigureFailureGatesSave checks the SEMANTICS.md rule that NVM is
 // written only by an invocation in which everything succeeded: after a
 // refused set, a requested save is skipped and so is its paired reset, while
