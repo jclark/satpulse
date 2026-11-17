@@ -83,6 +83,11 @@ func pvtBlocks(f gpsprot.PVTMsgFlags) []string {
 		b = append(b, "PVTCartesian")
 	}
 	if f&gpsprot.PVTMsgQuality != 0 {
+		// Fix level, solution dimension and accuracy come only from a PVT
+		// block; either one serves.
+		if !slices.Contains(b, "PVTGeodetic") && !slices.Contains(b, "PVTCartesian") {
+			b = append(b, pvt)
+		}
 		b = append(b, "DOP", "DiffCorrIn", "BaseStation")
 	}
 	if f&gpsprot.PVTMsgEpoch != 0 {

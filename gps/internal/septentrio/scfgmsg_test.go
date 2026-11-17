@@ -80,6 +80,30 @@ func TestSBFOutputList(t *testing.T) {
 			expect: []string{"AttEuler", "EndOfPVT"},
 		},
 		{
+			name:    "quality alone adds a pvt block",
+			current: nil,
+			opts: func(o *gpsprot.ConfigOptions) {
+				o.PVTMsg = gpsprot.PVTMsgQuality | gpsprot.PVTMsgOff
+			},
+			expect: []string{"BaseStation", "DOP", "DiffCorrIn", "PVTGeodetic"},
+		},
+		{
+			name:    "quality with ecef adds PVTCartesian",
+			current: nil,
+			opts: func(o *gpsprot.ConfigOptions) {
+				o.PVTMsg = gpsprot.PVTMsgQuality | gpsprot.PVTMsgECEF | gpsprot.PVTMsgOff
+			},
+			expect: []string{"BaseStation", "DOP", "DiffCorrIn", "PVTCartesian"},
+		},
+		{
+			name:    "quality with survey uses the survey's PVTCartesian",
+			current: nil,
+			opts: func(o *gpsprot.ConfigOptions) {
+				o.PVTMsg = gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff
+			},
+			expect: []string{"BDSUtc", "BaseStation", "DOP", "DiffCorrIn", "EndOfPVT", "GALUtc", "GPSUtc", "PVTCartesian", "xPPSOffset"},
+		},
+		{
 			name:    "survey and ecef pick PVTCartesian",
 			current: nil,
 			opts: func(o *gpsprot.ConfigOptions) {
