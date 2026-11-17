@@ -31,6 +31,7 @@
     "fixedPos",
     "port",
     "raw",
+    "reload",
     "rtcmBaseID",
     "rtcmMSM4",
     "rtcmMSM7",
