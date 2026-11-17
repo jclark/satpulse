@@ -285,6 +285,12 @@ func (c *Configurator) generateOutputReqs() {
 		list := listOrNone(strings.Join(c.sbfOutputList(), "+"))
 		c.addReq("setSBFOutput, "+ownStream+", "+c.port+", "+list+", sec1",
 			np.parseSBFOutput)
+		// A stream emits nothing on a port whose output excludes SBF. An
+		// empty stream says nothing about other SBF streams on the port, so
+		// SBF is only ever turned on here, never off.
+		if list != "none" {
+			c.addOutputProtoReq("SBF", true)
+		}
 	}
 	if c.target.Opts.NMEAMsg.IsSet() {
 		f := c.target.Opts.NMEAMsg.Get()

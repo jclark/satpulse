@@ -133,7 +133,9 @@ func TestConfigureOutputs(t *testing.T) {
 	sbfCmd := "setSBFOutput, Stream1, USB1, ChannelStatus+EndOfPVT+MeasEpoch+PVTGeodetic+xPPSOffset, sec1"
 	nmeaCmd := "setNMEAOutput, Stream1, USB1, RMC+GGA, sec1"
 	nmeaProtoCmd := "setDataInOut, USB1, , +NMEA"
+	sbfProtoCmd := "setDataInOut, USB1, , +SBF"
 	replies := map[string]string{
+		sbfProtoCmd:              "DataInOut, USB1, auto, SBF+NMEA, (on)",
 		"getSBFOutput, Stream1":  "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
 		"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, none, sec1",
 		sbfCmd:                   "SBFOutput, Stream1, USB1, MeasEpoch+PVTGeodetic+EndOfPVT+xPPSOffset+ChannelStatus, sec1",
@@ -148,7 +150,7 @@ func TestConfigureOutputs(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	for _, cmd := range []string{"getSBFOutput, Stream1", "getNMEAOutput, Stream1", sbfCmd, nmeaCmd, nmeaProtoCmd} {
+	for _, cmd := range []string{"getSBFOutput, Stream1", "getNMEAOutput, Stream1", sbfCmd, sbfProtoCmd, nmeaCmd, nmeaProtoCmd} {
 		if !slices.Contains(sent, cmd) {
 			t.Errorf("command %q not sent; sent: %v", cmd, sent)
 		}
