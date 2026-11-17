@@ -382,7 +382,44 @@ func TestParseFlags(t *testing.T) {
 				Chan:      0,
 			},
 		},
+		{
+			name: "device only - show pins mode",
+			args: []string{"--device", "/dev/ptp_tic"},
+			expected: &FlagConfig{
+				Mode:    ModeShowPins,
+				Device:  "/dev/ptp_tic",
+				Timeout: 2 * time.Second,
+			},
+		},
+		{
+			name: "extts mode with device",
+			args: []string{"-i", "--device", "/dev/ptp_tic", "--chan", "1"},
+			expected: &FlagConfig{
+				Mode:    ModeExtts,
+				Device:  "/dev/ptp_tic",
+				Timeout: 2 * time.Second,
+				Chan:    1,
+			},
+		},
 		// Error cases
+		{
+			name:         "device with interface",
+			args:         []string{"-i", "--device", "/dev/ptp_tic", "eth0"},
+			expectError:  true,
+			errorMessage: "--device cannot be used with an interface name",
+		},
+		{
+			name:         "empty device",
+			args:         []string{"-i", "--device", ""},
+			expectError:  true,
+			errorMessage: "--device requires a device path",
+		},
+		{
+			name:         "show-ifaces with device",
+			args:         []string{"--show-ifaces", "--device", "/dev/ptp_tic"},
+			expectError:  true,
+			errorMessage: "--device cannot be used when showing interfaces",
+		},
 		{
 			name:        "show-pins without interface",
 			args:        []string{"--show-pins"},
@@ -397,7 +434,7 @@ func TestParseFlags(t *testing.T) {
 			name:         "pin without interface",
 			args:         []string{"--pin", "1"},
 			expectError:  true,
-			errorMessage: "interface name required for this mode",
+			errorMessage: "interface name or --device required for this mode",
 		},
 		{
 			name:         "empty pin",
@@ -601,6 +638,9 @@ func TestParseFlags(t *testing.T) {
 			}
 			if cfg.Interface != tt.expected.Interface {
 				t.Errorf("Interface: got %q, want %q", cfg.Interface, tt.expected.Interface)
+			}
+			if cfg.Device != tt.expected.Device {
+				t.Errorf("Device: got %q, want %q", cfg.Device, tt.expected.Device)
 			}
 			if cfg.JSONL != tt.expected.JSONL {
 				t.Errorf("JSONL: got %v, want %v", cfg.JSONL, tt.expected.JSONL)

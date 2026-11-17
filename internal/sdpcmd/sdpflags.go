@@ -31,6 +31,7 @@ type FlagConfig struct {
 	Mode      Mode
 	JSONL     bool
 	Interface string
+	Device    string // device path of the PHC, used instead of Interface
 
 	// Extts mode flags
 	Timeout   time.Duration
@@ -48,7 +49,7 @@ const summary = `[-h|--help] [-j|--jsonl]
             [-i|--extts] [-o|--perout] [--disable] [--show-ifaces] [--show-pins]
             [-t|--timeout seconds] [-w|--width seconds] [--period seconds]
             [-p|--pin index|name] [--chan index] [--show-stale]
-            [interface]`
+            [--device path | interface]`
 
 const defaultTimeout = 2 * time.Second
 
@@ -83,6 +84,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	flags.BoolVar(&disable, "disable", false, "disable the pin function")
 	flags.BoolVar(&showIfaces, "show-ifaces", false, "show interfaces with a PTP hardware clock")
 	flags.BoolVar(&showPins, "show-pins", false, "show the pins of the PHC of an interface")
+	flags.StringVar(&cfg.Device, "device", "", "select the PHC by its device path instead of by an interface")
 
 	// Common pin selection
 	flags.StringVarP(&cfg.Pin, "pin", "p", "", "select the pin to be used (index or name)")
@@ -118,6 +120,16 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	// Check for positional argument (interface name)
 	if flags.NArg() > 0 {
 		cfg.Interface = flags.Arg(0)
+	}
+	if flags.Lookup("device").Changed {
+		if cfg.Device == "" {
+			err = fmt.Errorf("--device requires a device path")
+			return
+		}
+		if cfg.Interface != "" {
+			err = fmt.Errorf("--device cannot be used with an interface name")
+			return
+		}
 	}
 
 	// Determine mode based on flags
@@ -156,7 +168,7 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 
 	// Resolve the default mode where no PHC inspection is needed.
 	if cfg.Mode == ModeShowAuto {
-		if cfg.Pin != "" {
+		if cfg.Pin != "" || cfg.Device != "" {
 			cfg.Mode = ModeShowPins
 		} else if cfg.Interface == "" {
 			cfg.Mode = ModeShowIfaces
@@ -166,13 +178,17 @@ func parseFlags(cmdName string, args []string) (cfg *FlagConfig, help bool, usag
 	// Validate mode-specific requirements
 	switch cfg.Mode {
 	case ModeExtts, ModePerout, ModeDisable, ModeShowPins:
-		if cfg.Interface == "" {
-			err = fmt.Errorf("interface name required for this mode")
+		if cfg.Interface == "" && cfg.Device == "" {
+			err = fmt.Errorf("interface name or --device required for this mode")
 			return
 		}
 	case ModeShowIfaces:
 		if cfg.Pin != "" {
 			err = fmt.Errorf("--pin cannot be used when showing interfaces")
+			return
+		}
+		if cfg.Device != "" {
+			err = fmt.Errorf("--device cannot be used when showing interfaces")
 			return
 		}
 	}
