@@ -180,10 +180,12 @@ func TestConfigureNMEAOutProtocolMask(t *testing.T) {
 			}
 		}
 	})
-	t.Run("other enables protocol only", func(t *testing.T) {
+	t.Run("other alone keeps other sentences and removes named ones", func(t *testing.T) {
+		nmeaCmd := "setNMEAOutput, Stream1, USB1, GGAaux1, sec1"
 		cmd := "setDataInOut, USB1, , +NMEA"
 		replies := map[string]string{
-			"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, GGAaux1, sec1",
+			"getNMEAOutput, Stream1": "NMEAOutput, Stream1, USB1, GGAaux1+RMC, sec1",
+			nmeaCmd:                  "NMEAOutput, Stream1, USB1, GGAaux1, sec1",
 			cmd:                      "DataInOut, USB1, auto, SBF+NMEA, (on)",
 		}
 		target := &gpsprot.ConfigTarget{}
@@ -192,12 +194,9 @@ func TestConfigureNMEAOutProtocolMask(t *testing.T) {
 		if len(errs) > 0 {
 			t.Fatalf("unexpected errors: %v", errs)
 		}
-		if !slices.Contains(sent, cmd) {
-			t.Errorf("NMEA protocol enable not sent; sent: %v", sent)
-		}
-		for _, cmd := range sent {
-			if strings.HasPrefix(cmd, "setNMEAOutput") {
-				t.Errorf("NMEA message list changed for Other-only request: %q", cmd)
+		for _, c := range []string{nmeaCmd, cmd} {
+			if !slices.Contains(sent, c) {
+				t.Errorf("command %q not sent; sent: %v", c, sent)
 			}
 		}
 	})
@@ -284,8 +283,11 @@ func TestConfigureRTCMOut(t *testing.T) {
 		}
 	}
 
+	otherCmd := "setRTCMv3Output, USB1, RTCM1006+RTCM1033"
 	replies = map[string]string{
-		protoOn: "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
+		"getRTCMv3Output, USB1": "RTCMv3Output, USB1, RTCM1006+RTCM1033+RTCM1074+RTCM1084+RTCM1230",
+		otherCmd:                "RTCMv3Output, USB1, RTCM1006+RTCM1033",
+		protoOn:                 "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
 	}
 	target = &gpsprot.ConfigTarget{}
 	target.Opts.RTCMMsg = opt.Make(gpsprot.RTCMMsgOther)
@@ -293,12 +295,9 @@ func TestConfigureRTCMOut(t *testing.T) {
 	if len(errs) > 0 {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
-	if !slices.Contains(sent, protoOn) {
-		t.Errorf("RTCM protocol enable not sent; sent: %v", sent)
-	}
-	for _, cmd := range sent {
-		if strings.HasPrefix(cmd, "setRTCMv3Output") {
-			t.Errorf("RTCM message list changed for Other-only request: %q", cmd)
+	for _, cmd := range []string{otherCmd, protoOn} {
+		if !slices.Contains(sent, cmd) {
+			t.Errorf("command %q not sent; sent: %v", cmd, sent)
 		}
 	}
 

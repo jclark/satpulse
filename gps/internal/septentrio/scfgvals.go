@@ -359,8 +359,7 @@ func (c *Configurator) generateQueryReqs() {
 	if t.Opts.NMEAMsg.IsSet() {
 		c.addReq("getNMEAOutput, "+ownStream, np.parseNMEAOutput)
 	}
-	if t.Opts.RTCMMsg.IsSet() && c.caps.rtcmV3Base() &&
-		t.Opts.RTCMMsg.Get()&gpsprot.RTCMMsgOther != 0 && len(rtcmMessages(t.Opts.RTCMMsg.Get())) > 0 {
+	if t.Opts.RTCMMsg.IsSet() && c.caps.rtcmV3Base() && t.Opts.RTCMMsg.Get()&gpsprot.RTCMMsgOther != 0 {
 		c.addReq("getRTCMv3Output, "+c.port, np.parseRTCMv3Output)
 	}
 }

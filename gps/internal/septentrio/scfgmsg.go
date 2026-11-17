@@ -289,11 +289,13 @@ func (c *Configurator) generateOutputReqs() {
 	if c.target.Opts.NMEAMsg.IsSet() {
 		f := c.target.Opts.NMEAMsg.Get()
 		names := nmeaSentences(f)
-		if len(names) > 0 {
-			if f&gpsprot.NMEAMsgOther != 0 && np.nmeaStream != nil {
-				names = outputList(np.nmeaStream.messages, names, nmeaSentenceClass)
-			}
-			c.addReq("setNMEAOutput, "+ownStream+", "+c.port+", "+strings.Join(names, "+")+", sec1",
+		if f&gpsprot.NMEAMsgOther != 0 && np.nmeaStream != nil {
+			names = outputList(np.nmeaStream.messages, names, nmeaSentenceClass)
+		}
+		// With Other, the named sentences are still controlled exactly, so the
+		// list is written even when it names none of them (SEMANTICS.md).
+		if len(names) > 0 || f&gpsprot.NMEAMsgOther != 0 {
+			c.addReq("setNMEAOutput, "+ownStream+", "+c.port+", "+listOrNone(strings.Join(names, "+"))+", sec1",
 				np.parseNMEAOutput)
 		}
 		c.addOutputProtoReq("NMEA", f&gpsprot.NMEAMsgAny != 0)
@@ -309,10 +311,10 @@ func (c *Configurator) generateOutputReqs() {
 		f := c.target.Opts.RTCMMsg.Get()
 		enable := f&gpsprot.RTCMMsgAny != 0
 		list := rtcmMessages(f)
-		if len(list) > 0 {
-			if f&gpsprot.RTCMMsgOther != 0 {
-				list = outputList(np.rtcmOutput, list, rtcmMessageClass)
-			}
+		if f&gpsprot.RTCMMsgOther != 0 {
+			list = outputList(np.rtcmOutput, list, rtcmMessageClass)
+		}
+		if len(list) > 0 || f&gpsprot.RTCMMsgOther != 0 {
 			// setRTCMv3Output selects messages but not their rate, which
 			// setRTCMv3Interval sets for the whole receiver; enabled MSM
 			// output is 1 Hz (SEMANTICS.md).
@@ -324,7 +326,7 @@ func (c *Configurator) generateOutputReqs() {
 					c.addReq("setRTCMv3Interval, "+m.name+", 1", nil)
 				}
 			}
-			c.addReq("setRTCMv3Output, "+c.port+", "+strings.Join(list, "+"), np.parseRTCMv3Output)
+			c.addReq("setRTCMv3Output, "+c.port+", "+listOrNone(strings.Join(list, "+")), np.parseRTCMv3Output)
 		}
 		c.addOutputProtoReq("RTCMv3", enable)
 	}
