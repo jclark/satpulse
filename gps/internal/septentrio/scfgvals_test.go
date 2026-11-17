@@ -28,6 +28,11 @@ func TestConvertTimePulse(t *testing.T) {
 			expect: gpsprot.TimePulse{Width: 5 * time.Millisecond, Period: time.Second, AlignToGNSS: true, OnlyWhenLocked: false, PolarityRising: true},
 		},
 		{
+			name:   "sub-microsecond width rounds to the nearest nanosecond",
+			pps:    ppsParams{interval: "sec1", polarity: "Low2High", timeScale: "GPS", maxHoldover: 0, widthMs: 0.000249},
+			expect: gpsprot.TimePulse{Width: 249 * time.Nanosecond, Period: time.Second, AlignToGNSS: true, OnlyWhenLocked: false, PolarityRising: true},
+		},
+		{
 			name:   "RxClock ignores holdover limit",
 			pps:    ppsParams{interval: "sec1", polarity: "Low2High", timeScale: "RxClock", maxHoldover: 60, widthMs: 5},
 			expect: gpsprot.TimePulse{Width: 5 * time.Millisecond, Period: time.Second, AlignToGNSS: false, OnlyWhenLocked: false, PolarityRising: true},

@@ -4,6 +4,7 @@ import (
 	"encoding/xml"
 	"fmt"
 	"io"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -310,7 +311,7 @@ func (np *nativeProps) convertTimePulse(props *gpsprot.ConfigProps) {
 			return // unknown enum value; report nothing rather than guess
 		}
 		tp.Period = period
-		tp.Width = time.Duration(pps.widthMs * float64(time.Millisecond))
+		tp.Width = time.Duration(math.Round(pps.widthMs * float64(time.Millisecond)))
 	}
 	props.SetTimePulse(tp)
 	if g, ok := timeScaleGNSS[pps.timeScale]; ok {
