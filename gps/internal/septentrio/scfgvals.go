@@ -278,8 +278,10 @@ func (np *nativeProps) convertToProps(props *gpsprot.ConfigProps) {
 func (np *nativeProps) convertTimePulse(props *gpsprot.ConfigProps) {
 	pps := np.pps
 	tp := gpsprot.TimePulse{
-		AlignToGNSS:    pps.timeScale != "RxClock",
-		OnlyWhenLocked: pps.maxHoldover != 0,
+		AlignToGNSS: pps.timeScale != "RxClock",
+		// The receiver ignores MaxHoldover with RxClock: the pulses then
+		// continue indefinitely.
+		OnlyWhenLocked: pps.maxHoldover != 0 && pps.timeScale != "RxClock",
 		PolarityRising: pps.polarity == "Low2High",
 	}
 	if pps.interval != "off" {
