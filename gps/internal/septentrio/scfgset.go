@@ -45,8 +45,10 @@ func (c *Configurator) generateSetReqs() {
 func (c *Configurator) generateScalarReqs() {
 	props, np := &c.target.Props, &c.np
 	if v, ok := props.GetMinElevation(); ok {
-		// The receiver accepts -90..90 (the mask can be negative).
-		deg := min(max(int(math.Round(float64(v)/float64(gpsprot.Degrees))), -90), 90)
+		// The receiver accepts whole degrees in -90..90 (the mask can be
+		// negative). Round up: a mask is an exclusion threshold, so rounding
+		// down would admit satellites the request excluded.
+		deg := min(max(int(math.Ceil(v.Degrees())), -90), 90)
 		c.addReq(fmt.Sprintf("setElevationMask, PVT, %d", deg), np.parseElevationMask)
 	}
 	if cmd := c.ppsSetCmd(); cmd != "" {

@@ -117,16 +117,19 @@ func TestPPSSetCmd(t *testing.T) {
 	}
 }
 
-// TestMinElevationCmd checks the elevation-mask range: the receiver accepts
-// -90..90, so negative masks pass through (rounded to nearest, not truncated
-// toward zero) and only out-of-range values clamp.
+// TestMinElevationCmd checks the elevation-mask range and rounding: the
+// receiver accepts whole degrees in -90..90, so negative masks pass through,
+// fractions round up (never admitting an excluded satellite), and only
+// out-of-range values clamp.
 func TestMinElevationCmd(t *testing.T) {
 	tests := []struct {
 		v      gpsprot.Angle
 		expect string
 	}{
 		{-5 * gpsprot.Degrees, "setElevationMask, PVT, -5"},
-		{-gpsprot.Degrees * 3 / 2, "setElevationMask, PVT, -2"},
+		{-gpsprot.Degrees * 3 / 2, "setElevationMask, PVT, -1"},
+		{gpsprot.DegreesFromFloat(5.2), "setElevationMask, PVT, 6"},
+		{-gpsprot.Degrees / 2, "setElevationMask, PVT, 0"},
 		{-100 * gpsprot.Degrees, "setElevationMask, PVT, -90"},
 		{100 * gpsprot.Degrees, "setElevationMask, PVT, 90"},
 	}
