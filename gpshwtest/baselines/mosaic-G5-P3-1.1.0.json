@@ -1,7 +1,7 @@
 {
   "limitations": {
     "antennaCableDelay": {"observed": [{"request": 32767, "result": 10000}]},
-    "mode.fixedPosAcc": {"observed": [{"request": 0.12345, "result": 0}, {"request": 1.23456, "result": 0}]},
+    "mode.fixedPosAcc": {"unsupported": true},
     "mode.fixedPosECEF[0]": {"quantum": 0.0001},
     "mode.fixedPosECEF[1]": {"quantum": 0.0001},
     "mode.fixedPosECEF[2]": {"quantum": 0.0001},
