@@ -12,7 +12,7 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[*interface*]
+&nbsp;&nbsp;&nbsp;&nbsp;[*phc*]
 
 # DESCRIPTION
 
@@ -24,12 +24,17 @@ A pin can alternatively be configured for output, allowing periodic pulses align
 to be generated, for example when the pin is connected to an oscilloscope.
 This is called periodic output (perout).
 
+The *phc* argument selects the PHC. Usually, it should be an interface name, e.g. **eth0**,
+which selects the PHC associated with that interface.
+For a PHC that is not associated with an interface,
+*phc* can be the path of the PHC device, e.g. **/dev/ptp1**.
+
 The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable**,
 **\-\-show\-ifaces** and **\-\-show\-pins** options.
 At most one of these options can be specified.
-If none of them are specified, the command behaves as if **\-\-show\-pins** was specified
-when the *interface* argument is specified and its PHC has pins, and otherwise as if **\-\-show\-ifaces** was specified.
-In **\-\-show\-ifaces** mode, the *interface* is optional.
+If none of them are specified, the command behaves as if **\-\-show\-ifaces** was specified.
+However, if *phc* is specified, and the PHC has pins or *phc* is a path, it behaves as if **\-\-show\-pins** was specified.
+In **\-\-show\-ifaces** mode, the *phc* argument is optional.
 In other modes, it is required.
 Root privileges are required except in **\-\-show\-ifaces** mode.
 
@@ -67,11 +72,11 @@ The pin to disable is specified with the **\-\-pin** option; the default is pin 
 
 **\-\-show\-ifaces**  
 : Show information about interfaces with a PHC.
-If the *interface* argument is specified, shows information about that interface.
+If the *phc* argument is specified, shows information about its interface.
 Otherwise, shows information about all interfaces with a PHC that has pins or channels.
 
 **\-\-show\-pins**  
-: Show the pins of the PHC of the *interface*.
+: Show the pins of *phc*.
 If **\-\-pin** is specified, shows information about that pin only.
 
 **\-t**, **\-\-timeout** *seconds*  
