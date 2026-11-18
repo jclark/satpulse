@@ -417,6 +417,31 @@ func TestCreateTmodeConfigs(t *testing.T) {
 			},
 		},
 
+		{
+			name: "SurveyAgain by change tightens an unchanged limit",
+			mode: &gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone},
+			survey: gpsprot.Survey{
+				MinDur:   240 * time.Second,
+				AccLimit: gpsprot.Meter + 500*gpsprot.Millimeter, // 1.5m
+				Flags:    gpsprot.SurveyAgain,
+			},
+			cur:            &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 1.5e4},
+			resurveyMethod: resurveyChange,
+			expectFirst:    &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 1.5e4 - 1},
+		},
+		{
+			name: "SurveyAgain by change loosens the strictest limit",
+			mode: &gpsprot.Mode{Static: true, PosType: gpsprot.PosTypeNone},
+			survey: gpsprot.Survey{
+				MinDur:   240 * time.Second,
+				AccLimit: gpsprot.MinAccuracy,
+				Flags:    gpsprot.SurveyAgain,
+			},
+			cur:            &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 1},
+			resurveyMethod: resurveyChange,
+			expectFirst:    &tmodeConfig{mode: tmodeSurveyIn, svinMinDur: 240, svinAccLimit: 2},
+		},
+
 		// Edge case: Mode.Static=false but SetStatic=true
 		{
 			name:      "Mode mobile but SetStatic true",
@@ -641,9 +666,10 @@ func TestTmodeAccConversion(t *testing.T) {
 		survey gpsprot.Survey
 		expect accs
 	}{
-		{name: "fixed accuracy rounds to nearest", mode: fixed(1600 * gpsprot.Micrometer), expect: accs{16, 2, 4}},
+		{name: "fixed accuracy rounds up", mode: fixed(1010 * gpsprot.Micrometer), expect: accs{11, 2, 4}},
 		{name: "fixed accuracy below a mm", mode: fixed(gpsprot.MinAccuracy), expect: accs{1, 1, 1}},
 		{name: "fixed accuracy not stated", mode: fixed(0), expect: accs{0, 0, 0}},
+		{name: "survey limit rounds down", mode: gpsprot.Mode{Static: true}, survey: survey(1950 * gpsprot.Micrometer), expect: accs{19, 1, 1}},
 		{name: "survey limit below a mm", mode: gpsprot.Mode{Static: true}, survey: survey(gpsprot.MinAccuracy), expect: accs{1, 1, 1}},
 	}
 	for _, tc := range tests {
