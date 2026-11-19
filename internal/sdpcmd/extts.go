@@ -56,6 +56,11 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 
 		attrs := cfg.logAttrs()
+		err = clk.ExttsMaskSingle(chanIndex)
+		if err != nil {
+			*errp = err
+			return
+		}
 		if clk.HasPins() {
 			err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
 			if err != nil {
@@ -142,7 +147,7 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, chanIndex
 			continue
 		}
 		if ch != chanIndex {
-			// Another process may have enabled another channel on this PHC.
+			// Possible without kernel event masks, or if queued before the mask was set.
 			lg.Debug("ignoring timestamp for another channel", "timestamp", t, "channel", ch)
 			continue
 		}
