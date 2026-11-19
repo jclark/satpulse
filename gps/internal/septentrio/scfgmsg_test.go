@@ -452,3 +452,29 @@ func TestConfigureOutputsEmptyList(t *testing.T) {
 		t.Errorf("empty selection not spelled none; sent: %v", sent)
 	}
 }
+
+// TestConfigureOutputsDisableOnly checks that a request that only turns
+// blocks off does not enable SBF output on the port, even when the stream
+// keeps a block the request does not govern.
+func TestConfigureOutputsDisableOnly(t *testing.T) {
+	cmd := "setSBFOutput, Stream1, USB1, ReceiverStatus, sec1"
+	replies := map[string]string{
+		"getSBFOutput, Stream1": "SBFOutput, Stream1, USB1, MeasEpoch+ReceiverStatus, sec1",
+		cmd:                     "SBFOutput, Stream1, USB1, ReceiverStatus, sec1",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.RawMsg.Set(gpsprot.RawMsgNone)
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	var got []string
+	for _, c := range sent {
+		if strings.HasPrefix(c, "set") {
+			got = append(got, c)
+		}
+	}
+	if expect := []string{cmd}; !slices.Equal(got, expect) {
+		t.Errorf("set commands: got %v, want %v", got, expect)
+	}
+}

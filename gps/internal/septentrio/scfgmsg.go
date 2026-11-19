@@ -151,6 +151,23 @@ func (c *Configurator) touchesSBFOutput() bool {
 	return o.PVTMsg.IsSet() || o.SatsMsg.IsSet() || o.RawMsg.IsSet()
 }
 
+// pvtMsg returns the PVT messages the target asks for. Survey progress is
+// delivered only when the request itself puts the receiver into survey mode
+// (SEMANTICS.md).
+func (c *Configurator) pvtMsg() gpsprot.PVTMsgFlags {
+	f := c.target.Opts.PVTMsg
+	if !c.survey {
+		f &^= gpsprot.PVTMsgSurvey
+	}
+	return f
+}
+
+// wantsSBFOutput reports whether the target asks for any SBF block.
+func (c *Configurator) wantsSBFOutput() bool {
+	o := &c.target.Opts
+	return len(pvtBlocks(c.pvtMsg())) > 0 || len(satsBlocks(o.SatsMsg.Get())) > 0 || len(rawBlocks(o.RawMsg.Get())) > 0
+}
+
 // sbfOutputList computes the owned stream's new block list: touched classes
 // contribute their desired blocks, and blocks outside every touched class
 // (user additions, untouched classes) are preserved. A touched class's
@@ -163,13 +180,7 @@ func (c *Configurator) sbfOutputList() []string {
 	if c.np.sbfStream != nil {
 		cur = c.np.sbfStream.messages
 	}
-	pvt := o.PVTMsg
-	if !c.survey {
-		// Survey progress is delivered only when the request itself puts
-		// the receiver into survey mode (SEMANTICS.md).
-		pvt &^= gpsprot.PVTMsgSurvey
-	}
-	pvtDesired := pvtBlocks(pvt)
+	pvtDesired := pvtBlocks(c.pvtMsg())
 	if o.PVTMsg&gpsprot.PVTMsgOff == 0 {
 		// Without the Off flag, PVT messages only get added.
 		pvtDesired = append(pvtDesired, intersect(cur, pvtClass)...)
@@ -294,8 +305,10 @@ func (c *Configurator) generateOutputReqs() {
 		c.append(sel)
 		// A stream emits nothing on a port whose output excludes SBF. An
 		// empty stream says nothing about other SBF streams on the port, so
-		// SBF is only ever turned on here, never off.
-		if list != "none" {
+		// SBF is only ever turned on here, never off; and only for a request
+		// that asks for a block, so that turning blocks off cannot start
+		// output of the blocks it leaves.
+		if c.wantsSBFOutput() {
 			c.addOutputProtoReq("SBF", true, sel)
 		}
 	}
