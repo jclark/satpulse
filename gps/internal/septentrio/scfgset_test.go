@@ -162,7 +162,7 @@ func TestConfigureSignalsCapabilityGate(t *testing.T) {
 	sntCmd := "setSignalTracking, GALE1BC+GPSL1CA+GALE5"
 	replies := map[string]string{
 		"getSatelliteTracking": allSatsTracking,
-		"getSignalTracking":    "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+		"getSignalTracking":    "SignalTracking, GPSL1CA+GLOL1CA+GALE1BC+GALE5",
 		sstCmd:                 "SatelliteTracking, G01+E01",
 		sntCmd:                 "SignalTracking, GPSL1CA+GALE1BC+GALE5",
 	}
@@ -185,5 +185,67 @@ func TestConfigureSignalsCapabilityGate(t *testing.T) {
 	expect := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1)
 	if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || ss != expect {
 		t.Errorf("SignalsEnabled: got %v, %v; want the supported subset %v", ss, ok, expect)
+	}
+}
+
+// TestConfigureSignalsUnchanged checks that a tracking command that would
+// leave the queried state as it is is not sent: setSignalTracking restarts
+// all tracking loops.
+func TestConfigureSignalsUnchanged(t *testing.T) {
+	sstCmd := "setSatelliteTracking, GPS+GALILEO"
+	sntCmd := "setSignalTracking, GALE1BC+GPSL1CA+GALE5"
+	tests := []struct {
+		name     string
+		sats     string
+		tracking string
+		expect   []string
+	}{
+		{
+			name:     "both unchanged",
+			sats:     "SatelliteTracking, G01+G02+E01",
+			tracking: "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+			expect:   nil,
+		},
+		{
+			name:     "constellations differ",
+			sats:     allSatsTracking,
+			tracking: "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+			expect:   []string{sstCmd},
+		},
+		{
+			name:     "signals differ",
+			sats:     "SatelliteTracking, G01+G02+E01",
+			tracking: "SignalTracking, GPSL1CA+GPSL2C+GALE1BC+GALE5",
+			expect:   []string{sntCmd},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			replies := map[string]string{
+				"getSatelliteTracking": tc.sats,
+				"getSignalTracking":    tc.tracking,
+				sstCmd:                 "SatelliteTracking, G01+G02+E01",
+				sntCmd:                 "SignalTracking, GPSL1CA+GALE1BC+GALE5",
+			}
+			target := &gpsprot.ConfigTarget{}
+			target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1))
+			cfg, sent, errs := runConfig(t, target, replies)
+			if len(errs) > 0 {
+				t.Fatalf("unexpected errors: %v", errs)
+			}
+			var got []string
+			for _, cmd := range sent {
+				if strings.HasPrefix(cmd, "set") {
+					got = append(got, cmd)
+				}
+			}
+			if !slices.Equal(got, tc.expect) {
+				t.Errorf("set commands: got %v, want %v", got, tc.expect)
+			}
+			expect := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1)
+			if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || ss != expect {
+				t.Errorf("SignalsEnabled: got %v, %v; want %v", ss, ok, expect)
+			}
+		})
 	}
 }

@@ -94,7 +94,10 @@ var sstGNSSNames = map[gpsprot.GNSS]string{
 // explicit full list: the mapped target signals plus whatever receiver-only
 // signals (GALE5, GLOL2P, QZSL1CB) the query phase found present - those have
 // no device-independent name and are preserved as found. The achieved value
-// comes from the snt ack's own state line.
+// comes from the snt ack's own state line. A command that would leave the
+// queried state as it is is not sent: invoking snt stops and restarts all
+// tracking loops (reference guide), so re-applying the same signals would
+// cost lock.
 func (c *Configurator) generateSignalReqs() {
 	ss, ok := c.target.Props.GetSignalsEnabled()
 	if !ok {
@@ -126,8 +129,21 @@ func (c *Configurator) generateSignalReqs() {
 	if gset == gpsprot.AllGNSSSet {
 		constList = "all"
 	}
-	c.addReq("setSatelliteTracking, "+listOrNone(constList), c.np.parseSatelliteTracking)
-	c.addReq("setSignalTracking, "+listOrNone(strings.Join(tracking, "+")), c.np.parseSignalTracking)
+	np := &c.np
+	if np.satGNSS == nil || *np.satGNSS != gset {
+		c.addReq("setSatelliteTracking, "+listOrNone(constList), np.parseSatelliteTracking)
+	}
+	if !np.haveTracking || !sameSignals(tracking, np.tracking) {
+		c.addReq("setSignalTracking, "+listOrNone(strings.Join(tracking, "+")), np.parseSignalTracking)
+	}
+}
+
+// sameSignals reports whether a and b list the same signals in any order.
+func sameSignals(a, b []string) bool {
+	a, b = slices.Clone(a), slices.Clone(b)
+	slices.Sort(a)
+	slices.Sort(b)
+	return slices.Equal(a, b)
 }
 
 // unmappedSignals returns the signals in names that have no
