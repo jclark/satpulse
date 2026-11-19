@@ -64,6 +64,37 @@ func TestWindow_FillAndWrap(t *testing.T) {
 	}
 }
 
+func TestWindow_ShiftAll(t *testing.T) {
+	// Partially filled window
+	w := New[int64](5)
+	w.Add(10)
+	w.Add(5)
+	w.Add(15)
+	w.ShiftAll(100)
+	if got := w.Median(); got != 110 {
+		t.Errorf("median after shift = %d, want 110", got)
+	}
+	if got := w.Last(); got != 115 {
+		t.Errorf("last after shift = %d, want 115", got)
+	}
+
+	// Full, wrapped window: [2, 3, 4] after wrap
+	w2 := New[int64](3)
+	w2.Add(1)
+	w2.Add(2)
+	w2.Add(3)
+	w2.Add(4)
+	w2.ShiftAll(-10)
+	if got := w2.Median(); got != -7 {
+		t.Errorf("median after negative shift = %d, want -7", got)
+	}
+	// Adds after a shift must keep the sorted index array consistent
+	w2.Add(-6) // evicts -8: [-7, -6, -6]
+	if got := w2.Median(); got != -6 {
+		t.Errorf("median after shift+add = %d, want -6", got)
+	}
+}
+
 func TestWindow_Float64(t *testing.T) {
 	w := New[float64](3)
 
