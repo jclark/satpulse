@@ -53,3 +53,38 @@ func TestConvertTimePulse(t *testing.T) {
 		})
 	}
 }
+
+// TestParseSatelliteTracking checks the constellations read from a
+// per-satellite list, including a malformed list with an empty element.
+func TestParseSatelliteTracking(t *testing.T) {
+	tests := []struct {
+		name   string
+		state  string
+		expect gpsprot.GNSSSet
+	}{
+		{
+			name:   "satellites of two constellations",
+			state:  "SatelliteTracking, G01+G02+E01",
+			expect: gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.GAL),
+		},
+		{
+			name:   "none",
+			state:  "SatelliteTracking, none",
+			expect: 0,
+		},
+		{
+			name:   "empty element",
+			state:  "SatelliteTracking, G01++C03",
+			expect: gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.BDS),
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var np nativeProps
+			np.parseSatelliteTracking(&Reply{States: []string{tc.state}})
+			if np.satGNSS == nil || *np.satGNSS != tc.expect {
+				t.Fatalf("got %v, want %v", np.satGNSS, tc.expect)
+			}
+		})
+	}
+}

@@ -157,6 +157,9 @@ func (np *nativeProps) parseSatelliteTracking(r *Reply) {
 	}
 	var gs gpsprot.GNSSSet
 	for _, s := range signalList(f[1]) {
+		if s == "" {
+			continue
+		}
 		if g, ok := satPrefixGNSS[s[0]]; ok {
 			gs |= gpsprot.GNSSSetOf(g)
 		}
