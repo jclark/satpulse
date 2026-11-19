@@ -30,6 +30,7 @@ type nativeProps struct {
 	sbfStream    *streamState // owned SBF stream (Stream1)
 	nmeaStream   *streamState // owned NMEA stream (Stream1)
 	rtcmOutput   []string     // RTCMv3 output messages on our connection
+	haveRTCMOut  bool
 }
 
 // ppsParams is the PPSParameters state line:
@@ -348,12 +349,14 @@ func (c *Configurator) addReq(cmd string, onReply func(*Reply)) {
 }
 
 // generateQueryReqs generates the get requests for the properties the target
-// reads or sets (sets need the current state for read-modify-write).
+// reads or sets (sets need the current state for read-modify-write). A query
+// whose list a set rewrites fails when its state line cannot be read: taking
+// the list as empty would make the rewrite drop what it was to preserve.
 func (c *Configurator) generateQueryReqs() {
 	t, np := c.target, &c.np
 	if t.UsesAny(gpsprot.PropIDSignalsEnabled) {
 		c.addReq("getSatelliteTracking", np.parseSatelliteTracking)
-		c.addReq("getSignalTracking", np.parseSignalTracking)
+		c.addListQuery("getSignalTracking", np.parseSignalTracking, func() bool { return np.haveTracking })
 	}
 	if t.UsesAny(gpsprot.PropIDTimePulse | gpsprot.PropIDTimeGNSS) {
 		c.addReq("getPPSParameters", np.parsePPSParameters)
@@ -374,14 +377,18 @@ func (c *Configurator) generateQueryReqs() {
 		c.addReq("getCalibCommonDelay", np.parseCalibCommonDelay)
 	}
 	if c.touchesSBFOutput() {
-		c.addReq("getSBFOutput, "+ownStream, np.parseSBFOutput)
+		c.addListQuery("getSBFOutput, "+ownStream, np.parseSBFOutput, func() bool { return np.sbfStream != nil })
 	}
 	if t.Opts.NMEAMsg.IsSet() {
-		c.addReq("getNMEAOutput, "+ownStream, np.parseNMEAOutput)
+		c.addListQuery("getNMEAOutput, "+ownStream, np.parseNMEAOutput, func() bool { return np.nmeaStream != nil })
 	}
 	if t.Opts.RTCMMsg.IsSet() && c.caps.rtcmV3Base() && t.Opts.RTCMMsg.Get()&gpsprot.RTCMMsgOther != 0 {
-		c.addReq("getRTCMv3Output, "+c.port, np.parseRTCMv3Output)
+		c.addListQuery("getRTCMv3Output, "+c.port, np.parseRTCMv3Output, func() bool { return np.haveRTCMOut })
 	}
+}
+
+func (c *Configurator) addListQuery(cmd string, onReply func(*Reply), parsed func() bool) {
+	c.append(&sReq{cmd: cmd, onReply: onReply, parsed: parsed})
 }
 
 // generateFollowupQueries adds the static-position query once the PVTMode

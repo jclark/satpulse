@@ -729,20 +729,43 @@ func TestConfigureStaticPosRefused(t *testing.T) {
 // TestConfigureQueryFailureSkipsSets checks that a failed query skips the
 // whole set phase: realizing the target without the current state would be
 // guesswork (an add-only PVT request would wipe the stream's other blocks).
+// A reply whose state line cannot be read is a failed query too.
 func TestConfigureQueryFailureSkipsSets(t *testing.T) {
-	replies := map[string]string{
-		"getSBFOutput, Stream1": "!SBFOutput: Not authorized!",
+	tests := []struct {
+		name      string
+		state     string
+		expectErr string
+	}{
+		{
+			name:      "refused",
+			state:     "!SBFOutput: Not authorized!",
+			expectErr: "Not authorized!",
+		},
+		{
+			name:      "state line of another stream",
+			state:     "SBFOutput, Stream2, USB1, PVTGeodetic, sec1",
+			expectErr: "no usable state line",
+		},
+		{
+			name:      "truncated state line",
+			state:     "SBFOutput, Stream1",
+			expectErr: "no usable state line",
+		},
 	}
-	target := &gpsprot.ConfigTarget{}
-	target.Opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime
-	_, sent, errs := runConfig(t, target, replies)
-	if len(errs) != 1 || !strings.Contains(errs[0].Error(), "Not authorized!") {
-		t.Fatalf("errors: got %v; want the query refusal alone", errs)
-	}
-	for _, cmd := range sent {
-		if strings.HasPrefix(cmd, "set") || strings.HasPrefix(cmd, "exe") {
-			t.Errorf("set command sent after a failed query: %q", cmd)
-		}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			target := &gpsprot.ConfigTarget{}
+			target.Opts.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgTime
+			_, sent, errs := runConfig(t, target, map[string]string{"getSBFOutput, Stream1": tc.state})
+			if len(errs) != 1 || !strings.Contains(errs[0].Error(), tc.expectErr) {
+				t.Fatalf("errors: got %v; want one containing %q", errs, tc.expectErr)
+			}
+			for _, cmd := range sent {
+				if strings.HasPrefix(cmd, "set") || strings.HasPrefix(cmd, "exe") {
+					t.Errorf("set command sent after a failed query: %q", cmd)
+				}
+			}
+		})
 	}
 }
 

@@ -70,6 +70,7 @@ type sReq struct {
 	needs      *sReq        // earlier request that must succeed, or this one is skipped
 	needsAllOK bool         // skipped if any earlier request failed
 	onReply    func(*Reply) // records achieved values from the matching reply
+	parsed     func() bool  // reports whether onReply read the state; nil if not required
 	onLst      func(string) // lst commands: called with the joined block contents
 	blocks     []string     // block units collected so far (lst commands)
 	tBase      time.Time    // send time, for the reply deadline
@@ -249,6 +250,10 @@ func (c *Configurator) reply(r *Reply, tRead time.Time) error {
 		req.state = sStateSucceeded
 		if req.onReply != nil {
 			req.onReply(r)
+		}
+		if req.parsed != nil && !req.parsed() {
+			req.state = sStateFailed
+			req.err = fmt.Errorf("%s: reply has no usable state line", req.cmd)
 		}
 	case ReplyBlock:
 		if req.onLst == nil {

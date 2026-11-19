@@ -53,6 +53,7 @@ func (np *nativeProps) parseRTCMv3Output(r *Reply) {
 		return
 	}
 	np.rtcmOutput = signalList(f[2])
+	np.haveRTCMOut = true
 }
 
 func parseStreamState(r *Reply, name string) *streamState {
