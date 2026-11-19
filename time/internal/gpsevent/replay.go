@@ -47,7 +47,7 @@ func (r *Replayer) replayEvent(bytes []byte) error {
 				T:   data.T,
 				Era: data.Era,
 			},
-			TRead: phctime.Sample{
+			TReadMono: phctime.Sample{
 				PHC: phctime.Time{
 					T:   data.TRead,
 					Era: data.Era,

@@ -1,5 +1,8 @@
-## Changes in 0.4 (not yet released)
+## Changes in 0.4
 
+_Not yet released_
+
+- `satpulse.toml` has a new `[sample.phc.sync]` table with a `followPulse` key. When it is true, the samples `satpulsed` sends to an NTP daemon follow the PPS edges timestamped by the PHC rather than the synchronized PHC, which helps when the PHC's oscillator wanders more than the pulses jitter. (#536)
 - The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
 
 ## Changes in 0.3

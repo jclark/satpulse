@@ -116,6 +116,21 @@
               }
             }
           }
+        },
+        "phc": {
+          "type": "object",
+          "properties": {
+            "sync": {
+              "type": "object",
+              "properties": {
+                "followPulse": {
+                  "description": "Make samples sent to an NTP daemon follow the PPS edges rather than the synchronized PHC",
+                  "type": "boolean",
+                  "default": false
+                }
+              }
+            }
+          }
         }
       }
     },

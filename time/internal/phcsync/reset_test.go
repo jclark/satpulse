@@ -361,7 +361,7 @@ func setupGenerator(cfg ResetConfig, baseTime time.Time, numEdges int, interval,
 
 			gen.storeEdge(PulseEdge{
 				Timestamp: phctime.Time{T: phcTime, Era: 0},
-				TRead: phctime.Sample{
+				TReadMono: phctime.Sample{
 					PHC: phctime.Time{T: tReadPHC, Era: 0},
 					Sys: tRead,
 				},
@@ -427,7 +427,7 @@ func setupGenerator(cfg ResetConfig, baseTime time.Time, numEdges int, interval,
 		for i, edge := range edges {
 			gen.storeEdge(PulseEdge{
 				Timestamp: phctime.Time{T: edge.phcTime, Era: 0},
-				TRead: phctime.Sample{
+				TReadMono: phctime.Sample{
 					PHC: phctime.Time{T: edge.phcTime.Add(readDelay), Era: 0},
 					Sys: edge.time.Add(readDelay),
 				},
@@ -465,7 +465,7 @@ func setupGeneratorCustomIntervals(cfg ResetConfig, baseTime time.Time, interval
 		readDelay := 1 * time.Millisecond
 		gen.storeEdge(PulseEdge{
 			Timestamp: phctime.Time{T: phcTime, Era: 0},
-			TRead: phctime.Sample{
+			TReadMono: phctime.Sample{
 				PHC: phctime.Time{T: phcTime.Add(readDelay), Era: 0},
 				Sys: realTime.Add(readDelay),
 			},
