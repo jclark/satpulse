@@ -87,7 +87,7 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 
 		// Start worker goroutine
 		eventCh := make(chan ExttsEvent, 10)
-		go exttsWorker(ctx, lg, clk, eventCh)
+		go exttsWorker(ctx, lg, clk, chanIndex, eventCh)
 
 		noEventsReceived := true
 		for {
@@ -113,8 +113,8 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 	}
 }
 
-// exttsWorker reads external timestamps from the PHC device
-func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh chan<- ExttsEvent) {
+// exttsWorker reads external timestamps from the PHC device for channel chanIndex
+func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, chanIndex uint32, eventCh chan<- ExttsEvent) {
 	defer close(eventCh)
 	
 	const pollTimeout = 100 * time.Millisecond
@@ -135,21 +135,26 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 			continue
 		}
 
-		t, chanIndex, err := clk.ReadExtts()
+		t, ch, err := clk.ReadExtts()
 		tRead := time.Now()
 		if err != nil {
 			lg.Debug("failed to read external timestamp", "error", err)
+			continue
+		}
+		if ch != chanIndex {
+			// Another process may have enabled another channel on this PHC.
+			lg.Debug("ignoring timestamp for another channel", "timestamp", t, "channel", ch)
 			continue
 		}
 
 		event := ExttsEvent{
 			Timestamp: t,
 			TRead:     tRead,
-			Chan:      chanIndex,
+			Chan:      ch,
 			Stale:     stale,
 		}
 
-		lg.Debug("received timestamp", "timestamp", t, "channel", chanIndex, "stale", stale)
+		lg.Debug("received timestamp", "timestamp", t, "channel", ch, "stale", stale)
 		
 		select {
 		case eventCh <- event:
