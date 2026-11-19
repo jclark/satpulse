@@ -283,13 +283,13 @@ func (c *Configurator) generateOutputReqs() {
 		// An empty Messages argument keeps the current list (the
 		// omitted-argument rule); an empty selection must be spelled none.
 		list := listOrNone(strings.Join(c.sbfOutputList(), "+"))
-		c.addReq("setSBFOutput, "+ownStream+", "+c.port+", "+list+", sec1",
-			np.parseSBFOutput)
+		sel := &sReq{cmd: "setSBFOutput, " + ownStream + ", " + c.port + ", " + list + ", sec1", onReply: np.parseSBFOutput}
+		c.append(sel)
 		// A stream emits nothing on a port whose output excludes SBF. An
 		// empty stream says nothing about other SBF streams on the port, so
 		// SBF is only ever turned on here, never off.
 		if list != "none" {
-			c.addOutputProtoReq("SBF", true)
+			c.addOutputProtoReq("SBF", true, sel)
 		}
 	}
 	if c.target.Opts.NMEAMsg.IsSet() {
@@ -300,11 +300,12 @@ func (c *Configurator) generateOutputReqs() {
 		}
 		// With Other, the named sentences are still controlled exactly, so the
 		// list is written even when it names none of them (SEMANTICS.md).
+		var sel *sReq
 		if len(names) > 0 || f&gpsprot.NMEAMsgOther != 0 {
-			c.addReq("setNMEAOutput, "+ownStream+", "+c.port+", "+listOrNone(strings.Join(names, "+"))+", sec1",
-				np.parseNMEAOutput)
+			sel = &sReq{cmd: "setNMEAOutput, " + ownStream + ", " + c.port + ", " + listOrNone(strings.Join(names, "+")) + ", sec1", onReply: np.parseNMEAOutput}
+			c.append(sel)
 		}
-		c.addOutputProtoReq("NMEA", f&gpsprot.NMEAMsgAny != 0)
+		c.addOutputProtoReq("NMEA", f&gpsprot.NMEAMsgAny != 0, sel)
 	}
 	if c.target.Opts.RTCMMsg.IsSet() {
 		if !c.caps.rtcmV3Base() {
@@ -320,6 +321,7 @@ func (c *Configurator) generateOutputReqs() {
 		if f&gpsprot.RTCMMsgOther != 0 {
 			list = outputList(np.rtcmOutput, list, rtcmMessageClass)
 		}
+		var sel *sReq
 		if len(list) > 0 || f&gpsprot.RTCMMsgOther != 0 {
 			// setRTCMv3Output selects messages but not their rate, which
 			// setRTCMv3Interval sets for the whole receiver; enabled MSM
@@ -332,18 +334,22 @@ func (c *Configurator) generateOutputReqs() {
 					c.addReq("setRTCMv3Interval, "+m.name+", 1", nil)
 				}
 			}
-			c.addReq("setRTCMv3Output, "+c.port+", "+listOrNone(strings.Join(list, "+")), np.parseRTCMv3Output)
+			sel = &sReq{cmd: "setRTCMv3Output, " + c.port + ", " + listOrNone(strings.Join(list, "+")), onReply: np.parseRTCMv3Output}
+			c.append(sel)
 		}
-		c.addOutputProtoReq("RTCMv3", enable)
+		c.addOutputProtoReq("RTCMv3", enable, sel)
 	}
 }
 
-func (c *Configurator) addOutputProtoReq(proto string, enable bool) {
+// addOutputProtoReq turns proto on or off in this port's output. It needs
+// sel, the message selection written before it, when there is one: after a
+// refused selection the port would start sending the old one.
+func (c *Configurator) addOutputProtoReq(proto string, enable bool, sel *sReq) {
 	op := "-"
 	if enable {
 		op = "+"
 	}
-	c.addReq("setDataInOut, "+c.port+", , "+op+proto, nil)
+	c.append(&sReq{cmd: "setDataInOut, " + c.port + ", , " + op + proto, needs: sel})
 }
 
 func outputList(cur, desired, class []string) []string {

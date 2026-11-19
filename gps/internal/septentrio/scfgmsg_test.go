@@ -160,6 +160,66 @@ func TestConfigureOutputs(t *testing.T) {
 	}
 }
 
+// TestConfigureOutputSelectionRefused checks that a refused message selection
+// skips the protocol enable that follows it: the port would otherwise start
+// sending the old selection.
+func TestConfigureOutputSelectionRefused(t *testing.T) {
+	tests := []struct {
+		name     string
+		opts     func(*gpsprot.ConfigOptions)
+		query    string
+		state    string
+		selCmd   string
+		protoCmd string
+	}{
+		{
+			name:     "sbf",
+			opts:     func(o *gpsprot.ConfigOptions) { o.PVTMsg = gpsprot.PVTMsgEpoch | gpsprot.PVTMsgOff },
+			query:    "getSBFOutput, Stream1",
+			state:    "SBFOutput, Stream1, USB1, PVTGeodetic, sec1",
+			selCmd:   "setSBFOutput, Stream1, USB1, EndOfPVT, sec1",
+			protoCmd: "setDataInOut, USB1, , +SBF",
+		},
+		{
+			name:     "nmea",
+			opts:     func(o *gpsprot.ConfigOptions) { o.NMEAMsg = opt.Make(gpsprot.NMEAMsgRMC) },
+			query:    "getNMEAOutput, Stream1",
+			state:    "NMEAOutput, Stream1, USB1, GGA, sec1",
+			selCmd:   "setNMEAOutput, Stream1, USB1, RMC, sec1",
+			protoCmd: "setDataInOut, USB1, , +NMEA",
+		},
+		{
+			name:     "rtcm",
+			opts:     func(o *gpsprot.ConfigOptions) { o.RTCMMsg = opt.Make(gpsprot.RTCMMsgARP) },
+			selCmd:   "setRTCMv3Output, USB1, RTCM1005",
+			protoCmd: "setDataInOut, USB1, , +RTCMv3",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			replies := map[string]string{
+				tc.selCmd:   "!Argument 'Messages' is invalid!",
+				tc.protoCmd: "DataInOut, USB1, auto, RTCMv3+SBF+NMEA, (on)",
+			}
+			if tc.query != "" {
+				replies[tc.query] = tc.state
+			}
+			target := &gpsprot.ConfigTarget{}
+			tc.opts(&target.Opts)
+			_, sent, errs := runConfig(t, target, replies)
+			if len(errs) != 1 {
+				t.Fatalf("errors: got %v; want the refusal alone", errs)
+			}
+			if !slices.Contains(sent, tc.selCmd) {
+				t.Fatalf("selection command %q not sent; sent: %v", tc.selCmd, sent)
+			}
+			if slices.Contains(sent, tc.protoCmd) {
+				t.Errorf("protocol enable %q sent after a refused selection", tc.protoCmd)
+			}
+		})
+	}
+}
+
 func TestConfigureNMEAOutProtocolMask(t *testing.T) {
 	t.Run("none disables protocol only", func(t *testing.T) {
 		cmd := "setDataInOut, USB1, , -NMEA"
