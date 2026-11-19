@@ -40,6 +40,7 @@ type Configurator struct {
 	pps       *asbin.CfgPps       // latest CFG-PPS readback; nil if never answered
 	fixedEcef *asbin.CfgFixedECEF // latest CFG-FIXEDECEF readback
 	survey    *asbin.CfgSurvey    // latest CFG-SURVEY readback
+	surveying bool                // the request puts the receiver into survey mode
 	navSat    *asbin.CfgNavSat    // latest CFG-NAVSAT readback
 	speedReq  *asReq              // the baud change request, when one was generated
 	saveReq   *asReq              // the NVM save request, when one was generated (gates the reset)

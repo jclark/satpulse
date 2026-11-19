@@ -120,8 +120,8 @@ func TestPVTOut(t *testing.T) {
 			name:  "ptp_preset",
 			flags: gpsprot.PVTMsgTimingPTP,
 			expect: map[asbin.MsgID]uint8{
+				// no survey is started, so no NAV-SVIN
 				asbin.NavTimeID: 1, asbin.NavDopID: 1, asbin.NavAutoID: 1,
-				asbin.NavSvinID: 1,
 			},
 		},
 	}
@@ -184,11 +184,11 @@ func TestPVTOutMissingMessage(t *testing.T) {
 	// absence, never as an error.
 	rcvr := &testReceiver{
 		monVer:     tau1201Ver(),
-		nakTargets: map[asbin.MsgID]bool{asbin.NavSvinID: true},
+		nakTargets: map[asbin.MsgID]bool{asbin.NavAutoID: true},
 	}
 	cp := probe(t, rcvr)
 	target := &gpsprot.ConfigTarget{}
-	target.Opts.PVTMsg.Set(gpsprot.PVTMsgSurvey | gpsprot.PVTMsgTime)
+	target.Opts.PVTMsg.Set(gpsprot.PVTMsgQuality | gpsprot.PVTMsgTime)
 	_, errCount := configure(t, cp, rcvr, target)
 	if errCount != 0 {
 		t.Errorf("ErrorCount = %d, want 0: a missing carrier is absence, not an error", errCount)

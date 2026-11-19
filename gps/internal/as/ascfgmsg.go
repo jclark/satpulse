@@ -100,7 +100,9 @@ func (c *Configurator) generateRawReqs(flags gpsprot.RawMsgFlags) {
 // NAV-POSECEF carries position, NAV-VELNED or NAV-VELECEF velocity,
 // NAV-TIMEUTC UTC time, NAV-TIME GNSS time and the current leap
 // second, NAV-DOP plus NAV-AUTO solution quality, NAV-SVIN survey
-// progress. Time-of-pulse and end-of-epoch information have no
+// progress. Survey progress is scoped to the survey: the flag declares
+// interest, and NAV-SVIN is turned on only when the request itself puts
+// the receiver into survey mode, as in the other backends. Time-of-pulse and end-of-epoch information have no
 // Allystar carrier (audited: no TIM class, no EOE equivalent), so
 // requesting them enables nothing and they show as absence; with the
 // after option the solution-time messages stand in for a pulse-time
@@ -129,7 +131,7 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	set(asbin.NavTimeID, wantNavTime)
 	set(asbin.NavDopID, wantQual)
 	set(asbin.NavAutoID, wantQual)
-	set(asbin.NavSvinID, flags&gpsprot.PVTMsgSurvey != 0)
+	set(asbin.NavSvinID, flags&gpsprot.PVTMsgSurvey != 0 && c.surveying)
 }
 
 // generateSatsReqs configures the satellite information messages. A

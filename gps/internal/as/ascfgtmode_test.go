@@ -165,3 +165,105 @@ func TestTimeModeAbsent(t *testing.T) {
 		t.Error("mode reported for a receiver without the registers")
 	}
 }
+
+func TestSurveyProgress(t *testing.T) {
+	// NAV-SVIN is turned on only when the request itself puts the
+	// receiver into survey mode; otherwise the survey flag turns nothing
+	// on, and with the off flag NAV-SVIN is turned off.
+	type result struct {
+		Sent   bool
+		Period uint8
+	}
+	surveyed := asbin.CfgFixedECEF{X: -114469630, Y: 609033320, Z: 150417057}
+	running := asbin.CfgSurvey{MinDur: 40, AccLimit: 100000}
+	tests := []struct {
+		name       string
+		mode       *gpsprot.Mode
+		setStatic  bool
+		surveyOpts gpsprot.Survey
+		flags      gpsprot.PVTMsgFlags
+		asFoundPos asbin.CfgFixedECEF
+		asFoundSvy asbin.CfgSurvey
+		expect     result
+	}{
+		{
+			name:   "no time mode request",
+			flags:  gpsprot.PVTMsgSurvey,
+			expect: result{},
+		},
+		{
+			name:   "no time mode request, off",
+			flags:  gpsprot.PVTMsgSurvey | gpsprot.PVTMsgOff,
+			expect: result{Sent: true},
+		},
+		{
+			name:      "setstatic starts a survey",
+			setStatic: true,
+			flags:     gpsprot.PVTMsgSurvey,
+			expect:    result{Sent: true, Period: 1},
+		},
+		{
+			name:       "setstatic keeps a fixed position",
+			setStatic:  true,
+			flags:      gpsprot.PVTMsgSurvey,
+			asFoundPos: surveyed,
+			expect:     result{},
+		},
+		{
+			name:       "setstatic keeps a running survey",
+			setStatic:  true,
+			flags:      gpsprot.PVTMsgSurvey,
+			asFoundSvy: running,
+			expect:     result{},
+		},
+		{
+			name:       "survey asked for while one is running",
+			mode:       &gpsprot.Mode{Static: true},
+			flags:      gpsprot.PVTMsgSurvey,
+			asFoundSvy: running,
+			expect:     result{Sent: true, Period: 1},
+		},
+		{
+			name:       "survey asked for over a fixed position",
+			mode:       &gpsprot.Mode{Static: true},
+			flags:      gpsprot.PVTMsgSurvey,
+			asFoundPos: surveyed,
+			expect:     result{},
+		},
+		{
+			name:       "survey again over a fixed position",
+			mode:       &gpsprot.Mode{Static: true},
+			surveyOpts: gpsprot.Survey{Flags: gpsprot.SurveyAgain},
+			flags:      gpsprot.PVTMsgSurvey,
+			asFoundPos: surveyed,
+			expect:     result{Sent: true, Period: 1},
+		},
+		{
+			name:   "mobile",
+			mode:   &gpsprot.Mode{},
+			flags:  gpsprot.PVTMsgSurvey,
+			expect: result{},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			pos, svy := tc.asFoundPos, tc.asFoundSvy
+			rcvr := &testReceiver{monVer: tau1201Ver(), fixedEcef: &pos, survey: &svy}
+			target := &gpsprot.ConfigTarget{}
+			if tc.mode != nil {
+				target.Props.SetMode(*tc.mode)
+			}
+			target.Opts.SetStatic = tc.setStatic
+			target.Opts.Survey = tc.surveyOpts
+			target.Opts.PVTMsg.Set(tc.flags)
+			if _, errs := configure(t, probe(t, rcvr), rcvr, target); errs != 0 {
+				t.Errorf("errors = %d, want 0", errs)
+			}
+			var got result
+			got.Period, got.Sent = rcvr.rates[asbin.NavSvinID]
+			if got != tc.expect {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}

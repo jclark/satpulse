@@ -53,7 +53,10 @@ func (c *Configurator) generateTModeQuery() {
 
 // generateTModeSet computes and sends the time mode registers,
 // preserving a fixed position and a running survey on the SetStatic
-// default path unless SurveyAgain is set.
+// default path unless SurveyAgain is set. It records whether the request
+// puts the receiver into survey mode - by starting a survey, or by asking
+// for one while one is running - which is when survey progress is
+// delivered (see generatePVTReqs).
 func (c *Configurator) generateTModeSet() {
 	mode, haveMode := c.target.Props.GetMode()
 	setStatic := c.target.Opts.SetStatic
@@ -64,6 +67,7 @@ func (c *Configurator) generateTModeSet() {
 		return // no readback: the property does not exist here
 	}
 	survey := c.target.Opts.Survey
+	asked := haveMode && mode.Static && mode.PosType == gpsprot.PosTypeNone
 	if !haveMode || (!mode.Static && setStatic) {
 		mode = gpsprot.Mode{Static: true}
 	}
@@ -74,8 +78,11 @@ func (c *Configurator) generateTModeSet() {
 	}
 	if mode.PosType == gpsprot.PosTypeNone {
 		if survey.Flags&gpsprot.SurveyAgain == 0 && (c.haveFixedPos() || c.surveyRunning()) {
-			return // preserve a completed or running survey unless SurveyAgain
+			// preserve a completed or running survey unless SurveyAgain
+			c.surveying = asked && c.surveyRunning()
+			return
 		}
+		c.surveying = true
 		// SurveyAgain (or a fresh idle unit): zero FIXEDECEF first, so a
 		// completing survey cannot re-transfer the old position, then
 		// write the survey parameters.
