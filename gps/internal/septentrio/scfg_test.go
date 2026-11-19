@@ -509,8 +509,8 @@ func TestConfigureSetRefused(t *testing.T) {
 }
 
 // TestConfigureSignalsAndMode drives the SignalsEnabled two-command
-// realization (constellation gate, explicit tracking list preserving the
-// receiver-only GALE5) and a fixed-position static mode.
+// realization (explicit tracking list preserving the receiver-only GALE5,
+// then the constellation gate) and a fixed-position static mode.
 func TestConfigureSignalsAndMode(t *testing.T) {
 	replies := make(map[string]string, len(asFoundReplies))
 	maps.Copy(replies, asFoundReplies)
@@ -534,8 +534,8 @@ func TestConfigureSignalsAndMode(t *testing.T) {
 		t.Fatalf("unexpected errors: %v", errs)
 	}
 	wantOrder := []string{
-		"setSatelliteTracking, GPS+GALILEO",
 		sntCmd,
+		"setSatelliteTracking, GPS+GALILEO",
 		"setStaticPosGeodetic, Geodetic1, 13.732000000, 100.567000000, 12.3400",
 		"setPVTMode, Static, , Geodetic1",
 	}

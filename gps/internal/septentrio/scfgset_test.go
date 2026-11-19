@@ -279,3 +279,33 @@ func TestConfigureSignalsEmpty(t *testing.T) {
 		t.Errorf("SignalsEnabled: got %v, %v; want none", ss, ok)
 	}
 }
+
+// TestConfigureSignalsRefused checks that a refused signal tracking list
+// leaves the constellation gate unsent, so the enabled signals stay as found.
+func TestConfigureSignalsRefused(t *testing.T) {
+	sntCmd := "setSignalTracking, GALE1BC+GPSL1CA"
+	replies := map[string]string{
+		"getSatelliteTracking": allSatsTracking,
+		"getSignalTracking":    "SignalTracking, GPSL1CA+GLOL1CA+GALE1BC",
+		sntCmd:                 "!SignalTracking: Argument 'Signal' is invalid!",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1))
+	cfg, sent, errs := runConfig(t, target, replies)
+	if len(errs) != 1 {
+		t.Fatalf("errors: got %v; want the refusal alone", errs)
+	}
+	var got []string
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "set") {
+			got = append(got, cmd)
+		}
+	}
+	if expect := []string{sntCmd}; !slices.Equal(got, expect) {
+		t.Errorf("set commands: got %v, want %v", got, expect)
+	}
+	expect := gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGLOL1, gpsprot.SigGALE1)
+	if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || ss != expect {
+		t.Errorf("SignalsEnabled: got %v, %v; want the queried %v", ss, ok, expect)
+	}
+}

@@ -86,8 +86,8 @@ var sstGNSSNames = map[gpsprot.GNSS]string{
 	gpsprot.SBAS:  "SBAS",
 }
 
-// generateSignalReqs realizes SignalsEnabled with two commands: the
-// constellation gate (sst) and signal tracking (snt). Enabled means tracked:
+// generateSignalReqs realizes SignalsEnabled with two commands: signal
+// tracking (snt) and the constellation gate (sst). Enabled means tracked:
 // signal usage (snu) is left as the receiver has it, since its defaults
 // deliberately keep some tracked signals (Galileo E6, SBAS, NavIC L5) out of
 // the PVT. snt has no "-" removal (verified), so tracking is written as an
@@ -97,7 +97,9 @@ var sstGNSSNames = map[gpsprot.GNSS]string{
 // comes from the snt ack's own state line. A command that would leave the
 // queried state as it is is not sent: invoking snt stops and restarts all
 // tracking loops (reference guide), so re-applying the same signals would
-// cost lock.
+// cost lock. snt goes first and sst needs it: snt is the command whose
+// arguments depend on the receiver's capabilities (reference guide), so it is
+// the one a receiver may refuse, and a refusal then changes nothing.
 func (c *Configurator) generateSignalReqs() {
 	ss, ok := c.target.Props.GetSignalsEnabled()
 	if !ok {
@@ -105,10 +107,9 @@ func (c *Configurator) generateSignalReqs() {
 	}
 	// Intersect with the probe's supported-signal list: signals the receiver
 	// does not advertise are dropped silently, visible in the achieved set
-	// (the SEMANTICS.md best-effort pipeline). They are never sent because a
-	// refused snt after sst has applied would leave partial signal state -
-	// and the receiver-only signals preserved below came from the receiver,
-	// so they need no such filtering.
+	// (the SEMANTICS.md best-effort pipeline). They are never sent, so that
+	// snt is not refused for them - and the receiver-only signals preserved
+	// below came from the receiver, so they need no such filtering.
 	ss &= c.caps.sigSet
 	var names []string
 	for sig := range septSignalNames {
@@ -130,14 +131,16 @@ func (c *Configurator) generateSignalReqs() {
 		constList = "all"
 	}
 	np := &c.np
-	if np.satGNSS == nil || *np.satGNSS != gset {
-		c.addReq("setSatelliteTracking, "+listOrNone(constList), np.parseSatelliteTracking)
-	}
 	// snt has no empty-list value (reference guide), so an empty set is
 	// realized by the constellation gate alone: nothing is tracked when no
 	// satellite is allowed.
+	var snt *sReq
 	if len(tracking) > 0 && (!np.haveTracking || !sameSignals(tracking, np.tracking)) {
-		c.addReq("setSignalTracking, "+strings.Join(tracking, "+"), np.parseSignalTracking)
+		snt = &sReq{cmd: "setSignalTracking, " + strings.Join(tracking, "+"), onReply: np.parseSignalTracking}
+		c.append(snt)
+	}
+	if np.satGNSS == nil || *np.satGNSS != gset {
+		c.append(&sReq{cmd: "setSatelliteTracking, " + listOrNone(constList), onReply: np.parseSatelliteTracking, needs: snt})
 	}
 }
 
