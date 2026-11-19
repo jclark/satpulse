@@ -163,7 +163,13 @@ func (c *Configurator) sbfOutputList() []string {
 	if c.np.sbfStream != nil {
 		cur = c.np.sbfStream.messages
 	}
-	pvtDesired := pvtBlocks(o.PVTMsg)
+	pvt := o.PVTMsg
+	if !c.survey {
+		// Survey progress is delivered only when the request itself puts
+		// the receiver into survey mode (SEMANTICS.md).
+		pvt &^= gpsprot.PVTMsgSurvey
+	}
+	pvtDesired := pvtBlocks(pvt)
 	if o.PVTMsg&gpsprot.PVTMsgOff == 0 {
 		// Without the Off flag, PVT messages only get added.
 		pvtDesired = append(pvtDesired, intersect(cur, pvtClass)...)

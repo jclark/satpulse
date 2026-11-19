@@ -17,6 +17,7 @@ func TestSBFOutputList(t *testing.T) {
 	tests := []struct {
 		name    string
 		current []string
+		survey  bool
 		opts    func(*gpsprot.ConfigOptions)
 		expect  []string
 	}{
@@ -96,16 +97,34 @@ func TestSBFOutputList(t *testing.T) {
 			expect: []string{"BaseStation", "DOP", "DiffCorrIn", "PVTCartesian"},
 		},
 		{
-			name:    "quality with survey uses the survey's PVTCartesian",
+			name:    "quality in a survey uses the survey's PVTCartesian",
 			current: nil,
+			survey:  true,
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.PVTMsg = gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff
 			},
 			expect: []string{"BDSUtc", "BaseStation", "DOP", "DiffCorrIn", "EndOfPVT", "GALUtc", "GPSUtc", "PVTCartesian", "xPPSOffset"},
 		},
 		{
+			name:    "survey flag enables nothing outside a survey",
+			current: nil,
+			opts: func(o *gpsprot.ConfigOptions) {
+				o.PVTMsg = gpsprot.PVTMsgTimingPTP | gpsprot.PVTMsgOff
+			},
+			expect: []string{"BDSUtc", "BaseStation", "DOP", "DiffCorrIn", "EndOfPVT", "GALUtc", "GPSUtc", "PVTGeodetic", "xPPSOffset"},
+		},
+		{
+			name:    "survey flag outside a survey turns the carrier off",
+			current: []string{"PVTCartesian"},
+			opts: func(o *gpsprot.ConfigOptions) {
+				o.PVTMsg = gpsprot.PVTMsgSurvey | gpsprot.PVTMsgEpoch | gpsprot.PVTMsgOff
+			},
+			expect: []string{"EndOfPVT"},
+		},
+		{
 			name:    "survey and ecef pick PVTCartesian",
 			current: nil,
+			survey:  true,
 			opts: func(o *gpsprot.ConfigOptions) {
 				o.PVTMsg = gpsprot.PVTMsgPos | gpsprot.PVTMsgSurvey | gpsprot.PVTMsgECEF | gpsprot.PVTMsgOff
 			},
@@ -122,7 +141,7 @@ func TestSBFOutputList(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c := &Configurator{target: &gpsprot.ConfigTarget{}}
+			c := &Configurator{target: &gpsprot.ConfigTarget{}, survey: tc.survey}
 			if tc.current != nil {
 				c.np.sbfStream = &streamState{cd: "USB1", messages: slices.Clone(tc.current), interval: "sec1"}
 			}

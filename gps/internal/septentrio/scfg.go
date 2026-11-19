@@ -43,6 +43,7 @@ type Configurator struct {
 	np            nativeProps
 	ident         []xml.Token // Identification file tokens, the identity source
 	staticQueried bool        // the static-position follow-up query was generated
+	survey        bool        // this request puts the receiver into survey mode
 }
 
 type sReqState int

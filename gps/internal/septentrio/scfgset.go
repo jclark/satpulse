@@ -195,6 +195,7 @@ func (c *Configurator) generateModeReqs() {
 			c.target.Opts.Survey.Flags&gpsprot.SurveyAgain == 0 {
 			return // an existing self-determined position is left untouched
 		}
+		c.survey = true
 		c.addReq("setPVTMode, Static, , auto", np.parsePVTMode)
 	case gpsprot.PosTypeLLH:
 		c.addStaticReqs(fmt.Sprintf("setStaticPosGeodetic, Geodetic1, %.9f, %.9f, %.4f",
