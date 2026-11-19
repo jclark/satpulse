@@ -12,7 +12,8 @@ CONVBIN ?= convbin
 # Common convbin flags: RINEX 3.04 output with Doppler and SNR observables.
 CONVBIN_FLAGS = -v 3.04 -od -os
 GOLDEN = m8t-20251217.obs.gz f9t-20251217.obs.gz packet-rtcm-20260519.obs.gz \
-	um980-rtcm-20260527.obs.gz um980-uncb-20260527.obs.gz
+	um980-rtcm-20260527.obs.gz um980-uncb-20260527.obs.gz \
+	k901-rtcm-20260927.obs.gz k901-novb-20260927.obs.gz
 
 all: $(GOLDEN)
 
@@ -29,6 +30,11 @@ all: $(GOLDEN)
 	$(CONVBIN) -r unicore $(CONVBIN_FLAGS) -o $(basename $@) $<
 	gzip -nf $(basename $@)
 
+# NovAtel-format RANGE stream.
+%.obs.gz: %.novb
+	$(CONVBIN) -r nov $(CONVBIN_FLAGS) -o $(basename $@) $<
+	gzip -nf $(basename $@)
+
 # RTCM MSM streams: -tr gives convbin the start date to resolve the GPS week.
 packet-rtcm-20260519.obs.gz: packet-rtcm-20260519.rtcm
 	$(CONVBIN) -r rtcm3 $(CONVBIN_FLAGS) -ro "-MULTIMODE -INVPRR" -tr 2026/5/19 0:0:0 -o $(basename $@) $<
@@ -36,6 +42,10 @@ packet-rtcm-20260519.obs.gz: packet-rtcm-20260519.rtcm
 
 um980-rtcm-20260527.obs.gz: um980-rtcm-20260527.rtcm
 	$(CONVBIN) -r rtcm3 $(CONVBIN_FLAGS) -ro "-MULTIMODE -INVPRR" -tr 2026/5/27 0:0:0 -o $(basename $@) $<
+	gzip -nf $(basename $@)
+
+k901-rtcm-20260927.obs.gz: k901-rtcm-20260927.rtcm
+	$(CONVBIN) -r rtcm3 $(CONVBIN_FLAGS) -ro "-MULTIMODE -INVPRR" -tr 2026/9/27 0:0:0 -o $(basename $@) $<
 	gzip -nf $(basename $@)
 
 clean:

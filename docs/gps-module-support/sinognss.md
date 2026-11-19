@@ -22,6 +22,7 @@ For these modules, SatPulse supports:
 - decoding of the abbreviated ASCII packet format used for command responses (packet format tag is `NOVAA`)
 - conversion of messages into the SatPulse device-independent data model
 - a message file for low-level configuration
+- [conversion]({%link man/satpulsetool-convobs.1.md%}) of raw observation (RANGE) logs into RINEX
 
 SatPulse has been tested with the K803, the K901 and the K902.
 
@@ -66,6 +67,7 @@ the number is the message ID used by the binary form.
 |---------|--------|----------|
 | IONUTC | 8 | leap second |
 | BESTPOS | 42 | geodetic position, solution quality |
+| RANGE | 43 | raw observations |
 | PSRPOS | 47 | geodetic position, solution quality |
 | BESTVEL | 99 | geodetic velocity |
 | PSRVEL | 100 | geodetic velocity |

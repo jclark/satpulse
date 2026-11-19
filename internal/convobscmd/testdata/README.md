@@ -59,3 +59,16 @@ observation conversion, so the stream is filtered to OBSVM with `--msg`:
 
     satpulsetool pack -t uncb -m OBSVM <packet-log>.jsonl \
       > um980-uncb-20260527.uncb
+
+### `k901-novb-20260927.novb`, `k901-rtcm-20260927.rtcm`
+
+NovAtel-format RANGE and RTCM 3 MSM7 streams from a SinoGNSS K901, a
+15-minute slice (04:00 to 04:15 UTC) of a two-hour packet log with RANGE
+and MSM7 for every system at 1 Hz, so that both have the same epochs:
+
+    satpulsetool pack -t novb -m RANGE <slice>.jsonl > k901-novb-20260927.novb
+    satpulsetool pack -t rtcm <slice>.jsonl > k901-rtcm-20260927.rtcm
+
+The NOVB golden is `convbin -r nov`, which uses the OEM7 numbering of
+satellites and signals; `TestGoldenFiles` compares it with `convobs` both
+without `--vendor` and with `--vendor sinognss`.
