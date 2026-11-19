@@ -133,8 +133,11 @@ func (c *Configurator) generateSignalReqs() {
 	if np.satGNSS == nil || *np.satGNSS != gset {
 		c.addReq("setSatelliteTracking, "+listOrNone(constList), np.parseSatelliteTracking)
 	}
-	if !np.haveTracking || !sameSignals(tracking, np.tracking) {
-		c.addReq("setSignalTracking, "+listOrNone(strings.Join(tracking, "+")), np.parseSignalTracking)
+	// snt has no empty-list value (reference guide), so an empty set is
+	// realized by the constellation gate alone: nothing is tracked when no
+	// satellite is allowed.
+	if len(tracking) > 0 && (!np.haveTracking || !sameSignals(tracking, np.tracking)) {
+		c.addReq("setSignalTracking, "+strings.Join(tracking, "+"), np.parseSignalTracking)
 	}
 }
 

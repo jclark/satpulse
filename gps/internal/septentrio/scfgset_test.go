@@ -249,3 +249,33 @@ func TestConfigureSignalsUnchanged(t *testing.T) {
 		})
 	}
 }
+
+// TestConfigureSignalsEmpty checks that a request leaving no signal to enable
+// is realized by the constellation gate alone: setSignalTracking has no
+// empty-list value.
+func TestConfigureSignalsEmpty(t *testing.T) {
+	sstCmd := "setSatelliteTracking, none"
+	replies := map[string]string{
+		"getSatelliteTracking": allSatsTracking,
+		"getSignalTracking":    "SignalTracking, GPSL1CA+GALE1BC",
+		sstCmd:                 "SatelliteTracking, none",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigNAVICL5))
+	cfg, sent, errs := runConfigCaps(t, target, replies, trimmedCapsLine)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	var got []string
+	for _, cmd := range sent {
+		if strings.HasPrefix(cmd, "set") {
+			got = append(got, cmd)
+		}
+	}
+	if expect := []string{sstCmd}; !slices.Equal(got, expect) {
+		t.Errorf("set commands: got %v, want %v", got, expect)
+	}
+	if ss, ok := cfg.ConfigProps().GetSignalsEnabled(); !ok || ss != 0 {
+		t.Errorf("SignalsEnabled: got %v, %v; want none", ss, ok)
+	}
+}
