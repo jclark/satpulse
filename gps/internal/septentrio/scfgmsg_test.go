@@ -111,6 +111,14 @@ func TestSBFOutputList(t *testing.T) {
 			},
 			expect: []string{"PVTCartesian"},
 		},
+		{
+			name:    "tai enables no leap second blocks",
+			current: nil,
+			opts: func(o *gpsprot.ConfigOptions) {
+				o.PVTMsg = gpsprot.PVTMsgTime | gpsprot.PVTMsgTAI | gpsprot.PVTMsgOff
+			},
+			expect: []string{"PVTGeodetic"},
+		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

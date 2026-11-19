@@ -77,7 +77,7 @@ func pvtBlocks(f gpsprot.PVTMsgFlags) []string {
 	if f&gpsprot.PVTMsgTimePulse != 0 {
 		b = append(b, "xPPSOffset")
 	}
-	if f&(gpsprot.PVTMsgLeapSecond|gpsprot.PVTMsgTAI) != 0 {
+	if f&gpsprot.PVTMsgLeapSecond != 0 {
 		b = append(b, "GPSUtc", "GALUtc", "BDSUtc")
 	}
 	if f&gpsprot.PVTMsgSurvey != 0 {
