@@ -264,8 +264,8 @@ type periodSearch struct {
 	start     time.Time            // start of the current trial
 	probe     asbin.MsgID          // the message the trials set
 	found     uint8                // the probe's Period before the first trial
-	cur       uint8                // the probe's Period now
-	wrote     bool                 // cur was set by the current trial
+	cur       uint8                // the probe's Period now, as far as the search has asked for
+	wrote     bool                 // the receiver acknowledged setting cur
 	trials    []uint8              // the Periods to try, in order
 	deadline  time.Time            // when the search next needs to look at the clock
 }
@@ -457,7 +457,6 @@ func (c *Configurator) trialAdvance() bool {
 		// the trial's set has just been acknowledged; only messages
 		// after it count
 		delete(c.est.tracks, s.probe)
-		s.cur = s.trials[0]
 		s.wrote = true
 		s.start = c.now
 		return false
@@ -491,8 +490,14 @@ func (c *Configurator) nextTrial() bool {
 		s.wrote = false
 		return true
 	}
+	// cur changes when the set is sent, not when it is acknowledged: the
+	// receiver may apply a set whose acknowledgement is lost, and the
+	// search may end before the acknowledgement is acted on, and either
+	// way the probe has to be put back
 	s.start = time.Time{}
-	s.pending = c.sendMsgRate(s.probe, s.trials[0], false)
+	s.cur = s.trials[0]
+	s.wrote = false
+	s.pending = c.sendMsgRate(s.probe, s.cur, false)
 	return false
 }
 

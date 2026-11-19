@@ -51,6 +51,8 @@ type testReceiver struct {
 	cycle          int                    // update cycles emitted so far
 	stamp          func(cycle int) uint32 // overrides the timestamp of a cycle, ms
 	overflowing    bool                   // sends a BANDWIDTH OVERFLOW warning every cycle
+	overflowOnSet  bool                   // answers a CFG-MSG set that turns a message on with a BANDWIDTH OVERFLOW warning before the ACK
+	ackLost        map[asbin.MsgID]bool   // CFG-MSG targets whose sets are applied but never acknowledged
 }
 
 // cfgSet is one CFG-MSG set the test receiver was sent.
@@ -181,6 +183,12 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 		r.rates[target] = mt.Rate
 		r.msgSets = append(r.msgSets, target)
 		r.sets = append(r.sets, cfgSet{target, mt.Rate})
+		if mt.Rate != 0 && r.overflowOnSet {
+			return [][]byte{nmeaPacket("GNTXT,01,04,BANDWIDTH OVERFLOW WARNING"), r.ack(asbin.CfgMsgID)}
+		}
+		if r.ackLost[target] {
+			return nil
+		}
 		return [][]byte{r.ack(asbin.CfgMsgID)}
 	case *asbin.RxmDumpRaw:
 		r.rawOn = mt.Enable

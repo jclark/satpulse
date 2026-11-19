@@ -192,6 +192,23 @@ func TestPeriodSearch(t *testing.T) {
 			expect: result{Errs: 1, Sets: nmeaOffs},
 		},
 		{
+			// the warning arrives while the trial's set is being
+			// acknowledged: the probe is still put back
+			name:   "starts dropping output during a trial",
+			rcvr:   testReceiver{hz: 5, overflowOnSet: true},
+			target: leapSecTarget(),
+			expect: result{Errs: 1, Sets: []cfgSet{{navTime, 10}, {navTime, 0}}},
+		},
+		{
+			// the receiver applies the trial's set but its acknowledgement
+			// is lost: the probe is put back, and that set failing too is
+			// a second error
+			name:   "trial set applied but not acknowledged",
+			rcvr:   testReceiver{hz: 5, ackLost: map[asbin.MsgID]bool{navTime: true}},
+			target: leapSecTarget(),
+			expect: result{Errs: 2, Sets: []cfgSet{{navTime, 10}, {navTime, 10}, {navTime, 0}, {navTime, 0}}},
+		},
+		{
 			name:   "probe refused",
 			rcvr:   testReceiver{hz: 5, nakTargets: map[asbin.MsgID]bool{navTime: true}},
 			target: leapSecTarget(),
