@@ -1,204 +1,229 @@
 package as
 
 import (
-	"math"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/asbin"
-	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 )
 
-// The Allystar CFG-MSG Rate field is a divisor of the receiver's native
-// measurement cycle, not a frequency, so enabling a message at rate=1 on
-// a 5Hz-native unit yields 5Hz output. To honour the 1Hz output contract
-// the configurator must divide by the native rate, which is not
-// predictable from the chip number and has no CFG-RATE register to read.
-// The rate estimator computes it from the spacing of same-id messages:
-// exactly whenever any traffic flows, falling back to a bounded wait and
-// an optimistic rate=1 only when the receiver is silent. It never
-// produces a too-fast divisor - the only way a wrong rate could be
-// applied - because every divisor comes from exact interval arithmetic;
-// absence of traffic can only ever conclude 1Hz.
+// The Allystar CFG-MSG Period is a count of the receiver's update cycles,
+// not a time: Period 1 gives one message per second on a 1Hz receiver and
+// five on a 5Hz receiver. The update rate is 1, 5 or 10Hz, cannot be read
+// or set, and is not reliably implied by the chip. So the Period that
+// gives one message per second is found by watching: a message that is
+// seen arriving once per second has the right Period, whatever the
+// update rate is. No rate is ever calculated from a gap, because the gap
+// between two messages is not always a whole number of update periods:
+// receivers step and slew their epochs around start-up, with nothing in
+// the messages to mark it.
 //
-// The invariant that makes a wrong divisor impossible by construction:
-// divisors are computed only from CONTENT-time deltas (asbin NavMsg iTOW,
-// NMEA time-of-day), never from wall-clock read-time deltas. A content-time
-// delta cannot be shorter than the true native period, whereas a wall-clock
-// delta can (delivery coalescing/jitter shortens it), which through rule 1
-// (poll+interval) or rule 2 (self-set) could yield a too-small - too-fast -
-// divisor. The one NAV message without iTOW is NAV-AUTO; its arrivals still
-// count toward the anchored-negative/cap, they just never produce a divisor.
+// The gap between consecutive messages of one type is measured twice, by
+// the timestamps in the messages (NAV time of week, NMEA time of day) and
+// by their arrival times, and the two must agree: the timestamps jump
+// when the receiver sets its time, and arrival times bunch on the line.
+//
+// With Period 1, 5 or 10 on a 1, 5 or 10Hz receiver the steady gaps
+// nearest to one second are 0.5s and 2s. gapMin and gapMax are the
+// halfway points.
+const (
+	gapMin = 750 * time.Millisecond
+	gapMax = 1500 * time.Millisecond
+)
 
-// oneHzTolMs is how far an observed content-time interval may sit from
-// 1000ms and still count as 1Hz output. Only content time feeds this
-// decision (wall-clock intervals are barred), so intervals land on exact
-// multiples of the native period; the band is tight enough that no
-// realizable non-1Hz grid interval falls inside (a 5Hz unit's nearest
-// values are 800ms and 1200ms).
-const oneHzTolMs = 100
+// gapTightTol is how far from one second a single gap may be and still
+// show, alone, that a message is arriving once per second. A steady gap
+// is a multiple of 100ms, so the nearest alternatives are 900 and 1100ms;
+// this is a tenth of that separation.
+const gapTightTol = 10 * time.Millisecond
 
-// rateEstimator observes message arrivals and computes the receiver's
-// native measurement rate (Hz) from the spacing of same-id messages. It
-// is fed from both native channels (the messages the data path consumed
-// and those it did not) and is shared between the ConfigProtocol that
-// creates it and the Configurator, so observation runs continuously from
-// the first packet of the session.
-type rateEstimator struct {
-	tracks         map[asbin.MsgID]*rateTrack
-	nativeHz       int         // 0 until resolved
-	lastRead       time.Time   // wall clock of the latest message of any kind, for the watch deadline
-	lastWasArrival bool        // the most recent observe was a periodic arrival
-	lastArrivalMid asbin.MsgID // the id of that arrival, for the watch deadline extension
-}
-
-// rateTrack holds what is known about one CFG-MSG target: the spacing of
-// its arrivals and, when polled, its stored rate divisor.
-type rateTrack struct {
-	count       int     // periodic arrivals counted
-	lastContent float64 // content time (ms) of the last arrival
-	lastRead    time.Time
-	hasContent  bool    // this id carries content time (iTOW / NMEA time-of-day)
-	minInterval float64 // smallest observed same-id interval (ms); 0 = none yet
-	lastDelta   float64 // most recent same-id interval (ms)
-	haveDelta   bool    // at least one interval observed
-	consistent  bool    // the last two deltas agree (step immunity)
-	polledRate  uint8   // R from a CFG-MSG poll of this id
-	hasPoll     bool    // polledRate is known
-	selfSet     bool    // we set this id to rate=1
-}
-
-func newRateEstimator() *rateEstimator {
-	return &rateEstimator{tracks: make(map[asbin.MsgID]*rateTrack)}
-}
-
-func (e *rateEstimator) track(mid asbin.MsgID) *rateTrack {
-	tr := e.tracks[mid]
-	if tr == nil {
-		tr = &rateTrack{}
-		e.tracks[mid] = tr
-	}
-	return tr
-}
-
-// observe feeds one message from the receiver to the estimator. A
-// CFG-MSG readback records the polled rate of its target; a NAV message
-// is a periodic arrival timed by its iTOW; an NMEA time-bearing sentence
-// is a periodic arrival timed by its time-of-day. Everything else
-// (ACKs, MON-VER, non-time NMEA sentences) is ignored: non-time-bearing
-// NMEA repeats within one epoch and would fabricate fast intervals.
-func (e *rateEstimator) observe(msg any, tRead time.Time) {
-	e.lastWasArrival = false
-	if tRead.After(e.lastRead) {
-		e.lastRead = tRead
-	}
-	switch m := msg.(type) {
-	case *asbin.CfgMsg:
-		e.cfgMsgReadback(m)
-	case asbin.NavMsg:
-		e.arrival(m.ID(), float64(m.NavEpoch()), true, tRead)
-	case asbin.Msg:
-		if cls, _ := m.ID().Unpack(); cls == navClass {
-			// A NAV message without iTOW (NAV-AUTO): count it by wall
-			// clock for the anchored-negative/cap, but hasContent is false
-			// so it never produces an interval - a wall-clock delta can be
-			// shortened below the true native period, and only content time
-			// may set a divisor.
-			e.arrival(m.ID(), 0, false, tRead)
-		}
-	case timedSentence:
-		if mid, content, ok := nmeaArrival(m); ok {
-			e.arrival(mid, content, true, tRead)
-		}
-	case rtcmbin.Msg:
-		e.rtcmArrival(m, tRead)
-	}
-}
+// fastGapSplit separates the gaps of a message arriving at 10Hz from one
+// arriving at 5Hz, for choosing which Period to try first.
+const fastGapSplit = 150 * time.Millisecond
 
 const (
-	navClass  = 0x01
-	rtcmClass = 0xF8
+	weekMs = 7 * 24 * 3600 * 1000
+	dayMs  = 24 * 3600 * 1000
 )
 
-// rtcmArrival records one RTCM message arrival, keyed by the CFG-MSG 0xF8
-// target that controls its output, so a self-set MSM enable is credited
-// when its wire frame arrives. An MSM header carries the receiver's own
-// epoch (content time, exactly like a NAV iTOW); every other RTCM type
-// (1005 ARP, ephemeris) counts as an arrival for the anchored-negative/cap
-// but carries no epoch, so it never sets an interval and cannot resolve a
-// rate.
-func (e *rateEstimator) rtcmArrival(m rtcmbin.Msg, tRead time.Time) {
-	mid, ok := rtcmTargetID(m.MsgType())
-	if !ok {
-		return
-	}
-	if content, ok := msmEpochMs(m); ok {
-		e.arrival(mid, content, true, tRead)
-	} else {
-		e.arrival(mid, 0, false, tRead)
-	}
+// msgWatcher records, for each timestamped message type, the gaps between
+// its recent messages. It is fed every message from the first packet of
+// the session, by the ConfigProtocol that creates it, and is shared with
+// the Configurator.
+type msgWatcher struct {
+	tracks   map[asbin.MsgID]*msgTrack
+	first    time.Time // arrival of the first message of any kind
+	last     time.Time // arrival of the latest message of any kind
+	overflow bool      // the receiver has reported that it is dropping output
 }
 
-// rtcmTargetID maps an RTCM message type to the Allystar CFG-MSG 0xF8
-// target id that controls its output. The sub-id byte is the type minus
-// 1000 (standard messages) or minus 4000 (proprietary 40xx), per the
-// CFG-MSG 0xF8 table (CONTEXT.md); this connects a wire MSM type to the
-// target a deferred/self-set enable used, so the two share one track.
-// Types outside those ranges (or too large for the sub-id byte) have no
-// target.
-func rtcmTargetID(mt rtcmbin.MsgType) (asbin.MsgID, bool) {
-	var sub rtcmbin.MsgType
-	switch {
-	case mt >= 1000 && mt < 1256:
-		sub = mt - 1000
-	case mt >= 4000 && mt < 4256:
-		sub = mt - 4000
-	default:
-		return 0, false
-	}
-	return asbin.MakeMsgID(rtcmClass, byte(sub)), true
+// msgTrack is the recent history of one message type.
+type msgTrack struct {
+	ts    uint32     // timestamp of the latest message, ms
+	arr   time.Time  // arrival of the latest message
+	ngaps int        // gaps seen, saturating at 2
+	gaps  [2]gapKind // the latest gap and the one before
+	gap   time.Duration
 }
 
-// msmEpochMs returns an MSM message's epoch time in milliseconds - the
-// receiver's own measurement clock, hence content time. The header field
-// is 30 bits: a time-of-week in ms for GPS/GAL/QZSS/BDS/SBAS (BeiDou's
-// constant offset from GPS time cancels in same-id deltas). For GLONASS
-// the top 3 bits are the day of week and only the low 27 bits are the
-// time-of-day in ms; masking off the day of week makes a day rollover read
-// as a discarded negative delta rather than a spurious jump, and the
-// day-of-week offset cancels in same-id deltas anyway. ok is false for
-// non-MSM messages, which carry no epoch and must not resolve a rate.
-func msmEpochMs(m rtcmbin.Msg) (float64, bool) {
-	var h *rtcmbin.MSMHeader
-	switch msm := m.(type) {
-	case *rtcmbin.MSM:
-		h = &msm.MSMHeader
-	case *rtcmbin.MSMHiRes:
-		h = &msm.MSMHeader
-	default:
-		return 0, false
-	}
-	epoch := h.EpochTime
-	if h.GNSS() == rtcmbin.GLONASS {
-		epoch &= (1 << 27) - 1
-	}
-	return float64(epoch), true
+// gapKind classifies one gap between consecutive messages of a type.
+type gapKind uint8
+
+const (
+	gapOther  gapKind = iota // the measurements disagree, or the timestamp went backwards
+	gapSecond                // about a second by both measurements
+	gapTight                 // gapSecond, and within gapTightTol of a second by the timestamps
+	gapShort                 // under gapMin by both measurements
+	gapLong                  // over gapMax by both measurements
+)
+
+func newMsgWatcher() *msgWatcher {
+	return &msgWatcher{tracks: make(map[asbin.MsgID]*msgTrack)}
 }
 
-// timedSentence is the part of an NMEA sentence the estimator needs,
-// declared structurally so this package need not import the nmea
-// package (which would cycle through the nmea tests). *nmea.Sentence
-// satisfies it.
-type timedSentence interface {
+// sentence is the part of an NMEA sentence the watcher needs, declared
+// structurally so this package need not import the nmea package (which
+// would cycle through the nmea tests). *nmea.Sentence satisfies it.
+type sentence interface {
 	AddressField() string
 	TimeOfDay() (string, bool)
+	Body() string
+}
+
+// observe feeds one message from the receiver to the watcher. NAV
+// messages are timed by their time of week and RMC, GGA, GLL and ZDA by
+// their time of day; other messages only mark that the receiver is
+// sending. RTCM epochs are not used: a receiver sending nothing else is
+// handled by setting a NAV message and watching that.
+func (w *msgWatcher) observe(msg any, tRead time.Time) {
+	if w.first.IsZero() {
+		w.first = tRead
+	}
+	if tRead.After(w.last) {
+		w.last = tRead
+	}
+	switch m := msg.(type) {
+	case asbin.NavMsg:
+		w.arrival(m.ID(), m.NavEpoch(), weekMs, tRead)
+	case sentence:
+		if strings.HasSuffix(m.AddressField(), "TXT") && strings.Contains(m.Body(), "BANDWIDTH OVERFLOW") {
+			w.overflow = true
+		}
+		if mid, ts, ok := nmeaArrival(m); ok {
+			w.arrival(mid, ts, dayMs, tRead)
+		}
+	}
+}
+
+// arrival records one message of type mid with timestamp ts, which wraps
+// at mod. A message with the same timestamp as the last is a repeat
+// within one epoch and is ignored.
+func (w *msgWatcher) arrival(mid asbin.MsgID, ts, mod uint32, tRead time.Time) {
+	tr := w.tracks[mid]
+	if tr == nil {
+		w.tracks[mid] = &msgTrack{ts: ts, arr: tRead}
+		return
+	}
+	dts := (ts%mod + mod - tr.ts%mod) % mod
+	if dts == 0 {
+		return
+	}
+	tr.gaps[1] = tr.gaps[0]
+	tr.gap = time.Duration(dts) * time.Millisecond
+	tr.gaps[0] = classifyGap(tr.gap, dts > mod/2, tRead.Sub(tr.arr))
+	if tr.ngaps < 2 {
+		tr.ngaps++
+	}
+	tr.ts = ts
+	tr.arr = tRead
+}
+
+// classifyGap classifies a gap measured as byTS by the timestamps and
+// byArr by arrival time.
+func classifyGap(byTS time.Duration, backwards bool, byArr time.Duration) gapKind {
+	if backwards {
+		return gapOther
+	}
+	if byTS < gapMin && byArr < gapMin {
+		return gapShort
+	}
+	if byTS > gapMax && byArr > gapMax {
+		return gapLong
+	}
+	if byTS < gapMin || byTS > gapMax || byArr < gapMin || byArr > gapMax {
+		return gapOther
+	}
+	if d := byTS - time.Second; d >= -gapTightTol && d <= gapTightTol {
+		return gapTight
+	}
+	return gapSecond
+}
+
+// oncePerSecond reports whether the message type is arriving once per
+// second: one gap that is tight, or two in a row that are about a
+// second. One disturbance can make a single rough gap anything; two in a
+// row needs two disturbances.
+func (tr *msgTrack) oncePerSecond() bool {
+	if tr == nil || tr.ngaps == 0 {
+		return false
+	}
+	if tr.gaps[0] == gapTight {
+		return true
+	}
+	return tr.ngaps == 2 && tr.gaps[0] == gapSecond && (tr.gaps[1] == gapSecond || tr.gaps[1] == gapTight)
+}
+
+// tooFast reports whether the last two gaps were both short.
+func (tr *msgTrack) tooFast() bool {
+	return tr != nil && tr.ngaps == 2 && tr.gaps[0] == gapShort && tr.gaps[1] == gapShort
+}
+
+// notOncePerSecond reports whether the message type is clearly not
+// arriving once per second as of now: its latest gap was long, it has
+// been silent for gapMax, or it is too fast. This only rules a message
+// out, so a wrong call costs time and never a wrong Period.
+func (tr *msgTrack) notOncePerSecond(now time.Time) bool {
+	if tr.ngaps > 0 && tr.gaps[0] == gapLong {
+		return true
+	}
+	return now.Sub(tr.arr) >= gapMax || tr.tooFast()
+}
+
+// sortedMids returns the track ids in ascending order, so that choices
+// among them do not depend on map order (replay traces must not).
+func (w *msgWatcher) sortedMids() []asbin.MsgID {
+	mids := make([]asbin.MsgID, 0, len(w.tracks))
+	for mid := range w.tracks {
+		mids = append(mids, mid)
+	}
+	sort.Slice(mids, func(i, j int) bool { return mids[i] < mids[j] })
+	return mids
+}
+
+// fastHint returns the Period suggested by the messages that are too
+// fast: a message cannot arrive more often than the update rate, so gaps
+// of about 100ms mean 10Hz and gaps of about 200ms mean at least 5Hz. It
+// only orders the trials; whatever it suggests must still be seen
+// arriving once per second. It returns 0 when nothing is too fast.
+func (w *msgWatcher) fastHint() uint8 {
+	var hint uint8
+	for _, tr := range w.tracks {
+		if !tr.tooFast() {
+			continue
+		}
+		if tr.gap < fastGapSplit {
+			return 10
+		}
+		hint = 5
+	}
+	return hint
 }
 
 // nmeaArrival maps a time-bearing NMEA sentence to its CFG-MSG target id
-// and content time (time-of-day in ms). Only RMC, GGA, GLL, and ZDA
-// carry a timestamp; other sentences report false from TimeOfDay and
-// contribute nothing.
-func nmeaArrival(sen timedSentence) (asbin.MsgID, float64, bool) {
+// and timestamp (time of day in ms). Only RMC, GGA, GLL and ZDA carry a
+// time; a sentence whose time field is empty gives nothing.
+func nmeaArrival(sen sentence) (asbin.MsgID, uint32, bool) {
 	tod, ok := sen.TimeOfDay()
 	if !ok {
 		return 0, 0, false
@@ -233,241 +258,33 @@ func nmeaFormatID(addr string) (asbin.MsgID, bool) {
 	return 0, false
 }
 
-// todMillis parses an NMEA hhmmss.ss time-of-day field into milliseconds
-// since midnight. A constant per-id offset would cancel in same-id
-// deltas, so the absolute value need not be exact, only consistent.
-func todMillis(s string) (float64, bool) {
+// todMillis parses an NMEA hhmmss.sss time-of-day field into milliseconds
+// since midnight.
+func todMillis(s string) (uint32, bool) {
 	if len(s) < 6 {
 		return 0, false
 	}
-	var hh, mm, ss int
-	var frac float64
-	for i, r := range s[:6] {
+	var d [6]uint32
+	for i := range d {
+		if s[i] < '0' || s[i] > '9' {
+			return 0, false
+		}
+		d[i] = uint32(s[i] - '0')
+	}
+	ms := ((d[0]*10+d[1])*3600 + (d[2]*10+d[3])*60 + d[4]*10 + d[5]) * 1000
+	if len(s) == 6 {
+		return ms, true
+	}
+	if s[6] != '.' {
+		return 0, false
+	}
+	scale := uint32(100)
+	for _, r := range s[7:] {
 		if r < '0' || r > '9' {
 			return 0, false
 		}
-		d := int(r - '0')
-		switch i {
-		case 0:
-			hh = d * 10
-		case 1:
-			hh += d
-		case 2:
-			mm = d * 10
-		case 3:
-			mm += d
-		case 4:
-			ss = d * 10
-		case 5:
-			ss += d
-		}
+		ms += uint32(r-'0') * scale
+		scale /= 10
 	}
-	if len(s) > 6 {
-		if s[6] != '.' {
-			return 0, false
-		}
-		var scale = 0.1
-		for _, r := range s[7:] {
-			if r < '0' || r > '9' {
-				return 0, false
-			}
-			frac += float64(r-'0') * scale
-			scale /= 10
-		}
-	}
-	return (float64(hh*3600+mm*60+ss) + frac) * 1000, true
-}
-
-// cfgMsgReadback records the polled rate of a CFG-MSG target from a poll
-// response. It is not a periodic arrival.
-func (e *rateEstimator) cfgMsgReadback(m *asbin.CfgMsg) {
-	mid := asbin.MakeMsgID(m.MsgClass, m.MsgID)
-	tr := e.track(mid)
-	if tr.selfSet {
-		// Rule 2 covers a self-set id; a readback of an off-grid
-		// self-set stream (a fixless unit) could yield a spurious rule-1
-		// divisor instead of letting the cap conclude 1Hz.
-		return
-	}
-	tr.polledRate = m.Rate
-	tr.hasPoll = true
-	e.tryResolve(mid, tr)
-}
-
-// arrival records one periodic arrival of mid. When hasContent is true,
-// content is the message's content time (ms) and feeds the divisor rules;
-// a wall-clock-only arrival (hasContent false) still counts toward the
-// anchored-negative/cap but never sets an interval, because a wall-clock
-// delta can be shorter than the true native period and only content time
-// may yield a divisor. A zero or negative content delta (a repeat within
-// one epoch, or an iTOW step backwards at fix acquisition) is discarded.
-func (e *rateEstimator) arrival(mid asbin.MsgID, content float64, hasContent bool, tRead time.Time) {
-	e.lastWasArrival = true
-	e.lastArrivalMid = mid
-	tr := e.track(mid)
-	if hasContent && tr.count > 0 {
-		delta := content - tr.lastContent
-		if delta > 0 {
-			if tr.minInterval == 0 || delta < tr.minInterval {
-				tr.minInterval = delta
-			}
-			tr.consistent = tr.haveDelta && closeEnough(delta, tr.lastDelta)
-			tr.lastDelta = delta
-			tr.haveDelta = true
-		}
-	}
-	tr.count++
-	tr.lastRead = tRead
-	if hasContent {
-		tr.lastContent = content
-		tr.hasContent = true
-	}
-	e.tryResolve(mid, tr)
-}
-
-// closeEnough reports whether two intervals agree closely enough to be
-// two samples of the same period (25% or 30ms, whichever is larger).
-func closeEnough(a, b float64) bool {
-	diff := math.Abs(a - b)
-	tol := 0.25 * math.Max(a, b)
-	if tol < 30 {
-		tol = 30
-	}
-	return diff <= tol
-}
-
-// sortedMids returns the track ids in ascending order. Iteration over the
-// tracks map is otherwise random, which would make the chosen poll ids
-// differ run to run (replay traces must not).
-func (e *rateEstimator) sortedMids() []asbin.MsgID {
-	mids := make([]asbin.MsgID, 0, len(e.tracks))
-	for mid := range e.tracks {
-		mids = append(mids, mid)
-	}
-	sort.Slice(mids, func(i, j int) bool { return mids[i] < mids[j] })
-	return mids
-}
-
-// tryResolve computes nativeHz from the evidence for mid, by the first
-// rule that fires: poll+interval (exact, any value), then a self-set
-// interval confirmed by two consistent deltas (step immunity). Only mid's
-// track has changed since the last call, so no other track can newly
-// qualify. Both rules use only content-time evidence (hasContent): a
-// wall-clock interval could be short enough to set a too-fast divisor.
-// The 1Hz-from-absence rules live in the resolve phase's timeout, not
-// here.
-func (e *rateEstimator) tryResolve(mid asbin.MsgID, tr *rateTrack) {
-	if e.nativeHz != 0 || !tr.hasContent {
-		return
-	}
-	if tr.hasPoll && tr.polledRate >= 1 && tr.minInterval > 0 {
-		if hz := hzFromInterval(tr.minInterval, int(tr.polledRate)); hz >= 1 {
-			e.nativeHz = hz
-			return
-		}
-	}
-	if tr.selfSet && tr.consistent {
-		if hz := hzFromInterval(tr.lastDelta, 1); hz >= 1 {
-			e.nativeHz = hz
-		}
-	}
-}
-
-// hzFromInterval returns the native rate from an observed interval of a
-// message whose stored divisor is r: native = round(1000 * r / interval).
-func hzFromInterval(intervalMs float64, r int) int {
-	return int(math.Round(float64(r) * 1000 / intervalMs))
-}
-
-// concludeSilent resolves the rate when no computation was possible: the
-// receiver produced no fast traffic, so it is 1Hz. It is called at the
-// resolve-phase deadline.
-func (e *rateEstimator) concludeSilent() {
-	if e.nativeHz == 0 {
-		e.nativeHz = 1
-	}
-}
-
-// observedInterval returns the smallest observed same-id interval (ms)
-// for mid, if any, for the msg-phase already-1Hz skip decision.
-func (e *rateEstimator) observedInterval(mid asbin.MsgID) (float64, bool) {
-	tr := e.tracks[mid]
-	if tr == nil || tr.minInterval == 0 {
-		return 0, false
-	}
-	return tr.minInterval, true
-}
-
-// isOneHz reports whether an observed interval means 1Hz output.
-func isOneHz(intervalMs float64) bool {
-	return math.Abs(intervalMs-1000) <= oneHzTolMs
-}
-
-// sawPeriodic reports whether any id has produced at least two arrivals,
-// i.e. traffic is flowing and an interval is (or will soon be) available.
-func (e *rateEstimator) sawPeriodic() bool {
-	for _, tr := range e.tracks {
-		if tr.count >= 2 {
-			return true
-		}
-	}
-	return false
-}
-
-// flowingPollID returns a flowing content-bearing id to poll for its
-// stored rate, preferring one in keep (ids the request will not disable,
-// so they keep producing the second arrival that turns the polled rate
-// into a native rate), then the most-arrived. Only a content-bearing id
-// qualifies: only its interval can turn the polled rate into a native
-// rate, and the poll is sent once, so polling anything else would block
-// the lazy poll. Returns false if no such id is flowing.
-func (e *rateEstimator) flowingPollID(keep map[asbin.MsgID]bool) (asbin.MsgID, bool) {
-	var best asbin.MsgID
-	bestCount := 0
-	bestKept := false
-	for _, mid := range e.sortedMids() {
-		tr := e.tracks[mid]
-		if tr.count < 1 || !tr.hasContent {
-			continue
-		}
-		kept := keep[mid]
-		// Sorted iteration makes the tie-break deterministic.
-		better := best == 0 || (kept && !bestKept) ||
-			(kept == bestKept && tr.count > bestCount)
-		if better {
-			best, bestCount, bestKept = mid, tr.count, kept
-		}
-	}
-	return best, best != 0
-}
-
-// lazyPollID returns a content-bearing flowing id whose stored rate is
-// not yet known and that we did not self-set, for the resolve-phase
-// fallback poll. Only a content-bearing id qualifies: rule 1 pairs the
-// polled rate with the id's content-time interval, and only content time
-// may set a divisor. A self-set id is excluded: rule 2 covers it, and
-// polling an off-grid self-set stream (a fixless unit) could yield a
-// spurious rule-1 divisor instead of letting the cap conclude 1Hz. Ids
-// are visited in a defined order so the choice is deterministic.
-func (e *rateEstimator) lazyPollID() (asbin.MsgID, bool) {
-	for _, mid := range e.sortedMids() {
-		tr := e.tracks[mid]
-		if tr.hasContent && tr.count >= 1 && !tr.hasPoll && !tr.selfSet {
-			return mid, true
-		}
-	}
-	return 0, false
-}
-
-// markSelfSet records that the receiver has acknowledged setting mid to
-// rate=1, so a clean interval on it is the native period directly. A
-// polled rate or an interval from before the set was measured at the old
-// divisor, and either rule would turn it into a wrong native rate, so
-// both are dropped. The last arrival's content time is kept: the next
-// delta spans the change, so it is a whole number of native periods,
-// and rule 2 accepts it only when the following delta agrees.
-func (e *rateEstimator) markSelfSet(mid asbin.MsgID) {
-	tr := e.track(mid)
-	*tr = rateTrack{count: tr.count, lastContent: tr.lastContent,
-		lastRead: tr.lastRead, hasContent: tr.hasContent, selfSet: true}
+	return ms, true
 }

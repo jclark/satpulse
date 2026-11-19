@@ -123,8 +123,8 @@ type NativeMsgHandler interface {
 // that also wants to observe messages the data path consumed. The
 // arguments match NativeMsg. A packet processor that consumes a message
 // (routing it to the MsgHandler) emits it here too, so an observer such
-// as a rate estimator sees the whole stream, not just the messages the
-// data path did not recognize. The two channels are mutually exclusive
+// as a configurator that watches how often each message arrives sees the
+// whole stream, not just the messages the data path did not recognize. The two channels are mutually exclusive
 // per packet. Implementations that do not need consumed traffic (the
 // normal-operation dispatcher) simply do not implement this, and pay
 // nothing: the emit is guarded by a type assertion.

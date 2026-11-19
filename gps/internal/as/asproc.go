@@ -42,9 +42,8 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	nmh := p.GetNativeMsgHandler()
 	if p.dispatch(m, tRead) {
 		// The data path consumed the message; still offer it to an
-		// observer (the rate estimator) via the optional handled
-		// channel, passing the already-parsed message so iTOW comes
-		// for free.
+		// observer (the configurator, which watches how often each
+		// message arrives) via the optional handled channel.
 		if hh, ok := nmh.(gpsprot.HandledNativeMsgHandler); ok {
 			return msgID, hh.HandledNativeMsg(Tag, msgID, m, tRead)
 		}

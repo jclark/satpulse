@@ -104,6 +104,12 @@ func (s *Sentence) TimeOfDay() (string, bool) {
 	return as.Fields[idx], true
 }
 
+// Body returns the sentence between the '$' and the '*'. It lets an
+// observer read a sentence without depending on this package's types.
+func (s *Sentence) Body() string {
+	return s.Payload
+}
+
 func (s *Sentence) AddressField() string {
 	if s.SyntaxFlags&nmeamsg.SentenceApprovedAddressFormat != 0 {
 		return s.Payload[:5] // e.g. GPRMC
@@ -200,10 +206,10 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 			return msgID, err
 		}
 		if handled {
-			// Offer the consumed sentence to an observer (the rate
-			// estimator) via the optional handled channel: NMEA is the
-			// main traffic on a fresh unit, and its time-bearing
-			// sentences carry content time.
+			// Offer the consumed sentence to an observer (a configurator
+			// that watches how often each message arrives) via the
+			// optional handled channel: NMEA is the main traffic on a
+			// fresh unit, and its time-bearing sentences carry a time.
 			if hh, ok := p.GetNativeMsgHandler().(gpsprot.HandledNativeMsgHandler); ok {
 				return msgID, hh.HandledNativeMsg(Tag, msgID, sen, tRead)
 			}

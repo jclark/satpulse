@@ -26,6 +26,7 @@ func TestNMEAOut(t *testing.T) {
 				asbin.NmeaGllID: 0,
 				asbin.NmeaGstID: 0, asbin.NmeaGrsID: 0, asbin.NmeaDtmID: 0,
 				asbin.NmeaJamID: 0,
+				asbin.NavTimeID: 0, // borrowed to find the Period
 			},
 		},
 		{
@@ -48,6 +49,7 @@ func TestNMEAOut(t *testing.T) {
 				asbin.NmeaGsvID: 0, asbin.NmeaRmcID: 1, asbin.NmeaGgaID: 0,
 				asbin.NmeaGsaID: 0, asbin.NmeaZdaID: 0, asbin.NmeaVtgID: 0,
 				asbin.NmeaGllID: 0,
+				asbin.NavTimeID: 0, // borrowed to find the Period
 			},
 		},
 	}
@@ -215,7 +217,9 @@ func TestRTCMOut(t *testing.T) {
 			if errCount != 0 {
 				t.Errorf("ErrorCount = %d, want 0", errCount)
 			}
-			expect := map[asbin.MsgID]uint8{asbin.RtcmArpID: 1}
+			// the receiver is quiet, so NAV-TIME is borrowed to find the
+			// Period and then turned off again
+			expect := map[asbin.MsgID]uint8{asbin.RtcmArpID: 1, asbin.NavTimeID: 0}
 			for _, mid := range rtcmMSM4IDs {
 				expect[mid] = 1
 			}

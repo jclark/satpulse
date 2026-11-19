@@ -1,6 +1,7 @@
 package as
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
@@ -25,6 +26,7 @@ func (c *Configurator) generateMsgReqs() {
 	if opts.RTCMMsg.IsSet() {
 		c.generateRTCMReqs(opts.RTCMMsg.Get())
 	}
+	c.startMsgReqs()
 }
 
 // rtcmMSM4IDs and rtcmMSM7IDs list the per-constellation MSM targets,
@@ -140,7 +142,7 @@ func (c *Configurator) generateSatsReqs(flags gpsprot.SatsMsgFlags) {
 	c.addMsgRate(asbin.NavSvInfoID, flags&gpsprot.SatsMsgSat != 0)
 }
 
-// addMsgRate requests a message be enabled (at 1Hz output) or disabled
+// addMsgRate requests a message be turned on (at one per second) or off
 // via CFG-MSG. A NAK is acceptable: the message may not exist on this
 // firmware (the TAU951M lacks NAV-SVSTATE, for example), and
 // undeliverable information shows as absence.
@@ -152,8 +154,7 @@ func (c *Configurator) addMsgRate(mid asbin.MsgID, on bool) {
 // wire-format request is complete). These are not nakOK: every tested
 // unit accepts all seven ids, so a NAK is a genuine refusal. GSV goes
 // first because it carries the most traffic, so turning it off frees the
-// line soonest; disables are sent here, while an enable may be deferred
-// to the resolve phase, so GSV-first ordering of the disables holds.
+// line soonest.
 func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 	msgs := []struct {
 		flag gpsprot.NMEAMsgFlags
@@ -186,265 +187,389 @@ func (c *Configurator) generateNMEAReqs(flags gpsprot.NMEAMsgFlags) {
 var nmeaOtherIDs = []asbin.MsgID{asbin.NmeaGstID, asbin.NmeaGrsID,
 	asbin.NmeaDtmID, asbin.NmeaJamID}
 
-// msgRate applies one CFG-MSG target's output request. In planning mode
-// (the query-phase dry run) it only records the enable/disable intent.
-// A disable is rate-independent and always sent. An enable is a three-way
-// decision keyed on the native rate: the Allystar Rate field is a divisor
-// of the native cycle, so "1Hz output" means rate = nativeHz, and until
-// the estimator knows nativeHz an enable cannot be sent correctly.
-//   - already 1Hz by observation: skip - the message is doing the
-//     requested thing whatever its stored divisor (no send, no save).
-//   - native rate resolved: send at rate = nativeHz. Correct first try.
-//   - neither: defer to the resolve phase.
+// msgRate records one CFG-MSG target's output request. Nothing is sent
+// here: a turn-off does not depend on the update rate, but it waits with
+// the turn-ons so that it cannot silence a message the Period search is
+// watching (see startMsgReqs).
 func (c *Configurator) msgRate(mid asbin.MsgID, on bool, nakOK bool) {
-	if c.planning {
-		c.plan[mid] = on
-		return
-	}
-	if !on {
-		c.sendMsgRate(mid, 0, nakOK)
-		return
-	}
-	if iv, ok := c.est.observedInterval(mid); ok && isOneHz(iv) {
-		return
-	}
-	if hz := c.est.nativeHz; hz != 0 {
-		c.sendMsgRate(mid, uint8(hz), nakOK)
-		return
-	}
-	c.deferred = append(c.deferred, deferredEnable{mid: mid, nakOK: nakOK})
+	c.msgs = append(c.msgs, msgReq{mid: mid, on: on, nakOK: nakOK})
 }
 
-// sendMsgRate appends a CFG-MSG set of mid to the given rate.
-func (c *Configurator) sendMsgRate(mid asbin.MsgID, rate uint8, nakOK bool) {
+// sendMsgRate appends a CFG-MSG set of mid to the given Period.
+func (c *Configurator) sendMsgRate(mid asbin.MsgID, period uint8, nakOK bool) *asReq {
 	cls, id := mid.Unpack()
-	m := &asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{MsgClass: cls, MsgID: id, Rate: rate}}
-	if nakOK {
-		c.addReqNakOK(m)
-	} else {
-		c.addReq(m)
-	}
+	m := &asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{MsgClass: cls, MsgID: id, Rate: period}}
+	return c.addMsg(m, asReq{nakOK: nakOK})
 }
 
-// plannedEnabled returns the CFG-MSG targets the message phase will
-// enable, by running the message generators in planning mode (no
-// requests emitted). The query-phase rate poll prefers one of these, as
-// an id the request is about to disable may never produce the second
-// arrival that turns a polled rate into a native rate.
-func (c *Configurator) plannedEnabled() map[asbin.MsgID]bool {
-	c.planning = true
-	c.plan = make(map[asbin.MsgID]bool)
-	c.generateMsgReqs()
-	c.planning = false
-	keep := make(map[asbin.MsgID]bool)
-	for mid, on := range c.plan {
-		if on {
-			keep[mid] = true
+// msgReq is one requested CFG-MSG target: on at one message per second,
+// or off. nakOK carries the id's NAK tolerance (binary NAV and RTCM ids
+// may not exist; NMEA ids do).
+type msgReq struct {
+	mid   asbin.MsgID
+	on    bool
+	nakOK bool
+}
+
+// startMsgReqs acts on the recorded message requests. With nothing to
+// turn on, the turn-offs go out at once. Otherwise the Period that gives
+// one message per second has to be found first, and everything waits on
+// the search.
+func (c *Configurator) startMsgReqs() {
+	for _, m := range c.msgs {
+		if m.on {
+			c.search = &periodSearch{ignored: make(map[asbin.MsgID]bool)}
+			c.search.watch = c.addWatchReq()
+			c.now = c.est.last
+			c.searchStep(c.now)
+			return
 		}
 	}
-	c.plan = nil
-	return keep
+	c.sendMsgOffs()
 }
 
-// generateRatePoll adds one CFG-MSG poll of a flowing id when traffic is
-// flowing and some message will be enabled. Its polled rate, combined
-// with the observed interval of that id, gives the native rate exactly
-// (this is what makes the restart cases free). Its mid 0x06 0x01 is
-// distinct from the property polls, so it pipelines with them - zero
-// added round trips. Requires the 4-byte CFG-MSG readback parse.
-func (c *Configurator) generateRatePoll() {
-	if !c.est.sawPeriodic() {
-		return
+// sendMsgOffs sends the recorded turn-offs, in request order.
+func (c *Configurator) sendMsgOffs() {
+	for _, m := range c.msgs {
+		if !m.on {
+			c.sendMsgRate(m.mid, 0, m.nakOK)
+		}
 	}
-	keep := c.plannedEnabled()
-	if len(keep) == 0 {
-		return
-	}
-	mid, ok := c.est.flowingPollID(keep)
-	if !ok {
-		return
-	}
-	c.add(&asReq{mid: asbin.CfgMsgID, packet: asbin.PollCfgMsg(mid),
-		onData: func(asbin.Msg) {}, optional: true, nakOK: true})
-	c.ratePollSent = true
 }
 
-// generateResolveReqs completes every deferred enable, bounded. If the
-// rate resolved in the meantime, the enables go out at once at the right
-// divisor. If traffic is flowing but the rate is not yet computed, a
-// watch waits for it (at most ~1s) with no wrong-rate transient. If the
-// receiver is silent, the enables go out at rate=1 to create the
-// evidence, and the watch corrects them if the unit turns out faster or
-// concludes 1Hz on the deadline.
-func (c *Configurator) generateResolveReqs() {
-	if len(c.deferred) == 0 {
-		return
-	}
-	if c.est.nativeHz != 0 {
-		c.sendDeferred(uint8(c.est.nativeHz))
-		return
-	}
-	if c.est.sawPeriodic() {
-		c.watch = c.addWatchReq(resolveFlowingDelay)
-		return
-	}
-	c.sendDeferredAtRate1()
-	c.watchSent = true
-	c.watch = c.addWatchReq(resolveSilentDelay)
+// periodSearch is the search for the CFG-MSG Period that gives one
+// message per second on this receiver (see asrate.go for why it has to
+// be found by watching). It runs in stages:
+//
+//   - look: watch the messages already arriving. When one arrives once
+//     per second, poll its Period; 1, 5 or 10 is the answer.
+//   - trial: if nothing is arriving once per second, set one NAV message
+//     (the probe) to a trial Period and watch it. Arriving once per
+//     second, the trial is the answer; clearly not, the next is tried.
+//
+// With the answer, every requested message is set to it. Without one,
+// nothing is turned on and the search fails; the failure suppresses the
+// save like any failed request.
+type periodSearch struct {
+	watch     *asReq               // holds configuration open while the search runs
+	ignored   map[asbin.MsgID]bool // types arriving once per second whose Period is not 1, 5 or 10
+	pending   *asReq               // the poll or set the search is waiting on
+	polling   bool                 // the pending request is a poll
+	polled    asbin.MsgID          // the target of the latest poll
+	period    uint8                // the Period the latest poll returned
+	gotPeriod bool                 // the latest poll was answered for its target
+	trialing  bool                 // the look stage is over
+	start     time.Time            // start of the current trial
+	probe     asbin.MsgID          // the message the trials set
+	found     uint8                // the probe's Period before the first trial
+	cur       uint8                // the probe's Period now
+	wrote     bool                 // cur was set by the current trial
+	trials    []uint8              // the Periods to try, in order
+	deadline  time.Time            // when the search next needs to look at the clock
 }
 
-// addWatchReq appends the resolve-phase watch: a request born awaiting a
-// response that it never sent, so the director never transmits it. It
-// resolves when the estimator computes the rate (onObserve) or when its
-// deadline passes (watchTimeout). The deadline is anchored at creation
-// time (the estimator's current notion of now, or the enables' send
-// time when nothing has been read yet) and advances only on waited-on
-// arrivals (see onObserve and GetDeadline).
-func (c *Configurator) addWatchReq(dur time.Duration) *asReq {
-	req := &asReq{state: reqAwaitingAck, watch: true, watchDur: dur,
-		watchAnchor: c.est.lastRead, cfg: c}
+// stageLimit is how long one stage may run. Every other wait ends by
+// itself; this covers messages that keep arriving but never settle. A
+// steady receiver needs about 3s in a stage, and this is three times
+// that: a judgement about how long to tolerate an unsettled receiver.
+const stageLimit = 10 * time.Second
+
+// searchTick is how often the search looks again while it has nothing
+// more specific to wait for.
+const searchTick = time.Second
+
+// addWatchReq appends the search's watch: a request born awaiting a
+// response that it never sent, so the director never transmits it and
+// later phases wait for it. Its deadline is whenever the search next
+// needs to look at the clock.
+func (c *Configurator) addWatchReq() *asReq {
+	req := &asReq{state: reqAwaitingAck, watch: true, cfg: c}
 	c.reqs = append(c.reqs, req)
 	return req
 }
 
-// onObserve is called after every observed packet is fed to the shared
-// estimator. It completes the watch as soon as the rate resolves, and
-// otherwise advances the deadline only when a track the watch waits on
-// makes progress - the first arrival of an id whose further arrivals can
-// still resolve the rate (a polled id, or one we self-set at rate=1).
-// Unrelated traffic must not advance it, so the cap stays bounded; and
-// only a first arrival advances, so a flood of non-resolving arrivals of a
-// waited-on id cannot postpone the cap indefinitely.
-func (c *Configurator) onObserve() {
-	w := c.watch
-	if w == nil || w.state != reqAwaitingAck {
+// searchStep advances the search as far as what has been seen by now
+// allows. It runs after every message from the receiver and whenever the
+// watch's deadline passes.
+func (c *Configurator) searchStep(now time.Time) {
+	s := c.search
+	if s == nil || s.watch.state != reqAwaitingAck {
 		return
 	}
-	if !w.watchStarted {
-		// Anchor the deadline on the first real packet the watch sees (the
-		// enable ACK, or the first flowing arrival). est.lastRead may be
-		// the zero time at creation when no traffic preceded the watch, so
-		// the anchor cannot be snapshotted then.
-		w.watchAnchor = c.est.lastRead
-		w.watchStarted = true
+	if now.After(c.now) {
+		c.now = now
 	}
-	if c.est.nativeHz != 0 {
-		c.resolveWatch()
-		return
+	for c.searchAdvance() {
 	}
-	if !c.est.lastWasArrival {
-		return
+	if s.watch.state == reqAwaitingAck {
+		s.deadline = c.searchDeadline()
 	}
-	c.maybeLazyPoll()
-	mid := c.est.lastArrivalMid
-	tr := c.est.tracks[mid]
-	if tr == nil || !(tr.hasPoll || tr.selfSet) || w.extended[mid] {
-		return
-	}
-	if w.extended == nil {
-		w.extended = make(map[asbin.MsgID]bool)
-	}
-	w.extended[mid] = true
-	w.watchAnchor = c.est.lastRead
 }
 
-// maybeLazyPoll issues a CFG-MSG rate poll during an active watch when no
-// poll has gone out yet and a content-bearing track is flowing whose
-// stored rate is unknown. The query-phase eager poll only fires when
-// traffic is already qualified (two arrivals) at generation time; a unit
-// that bursts a single epoch and then emits at 1Hz does not qualify then,
-// and its as-found content is neither self-set nor polled, so no rule
-// could ever resolve the native rate - the deferred enables would stay at
-// rate=1 and a 5Hz-native unit would emit at 5x forever (the RTCM-out
-// hardware failure). Polling that id now pairs its stored rate with its
-// observed content-time interval to resolve the rate exactly (rule 1).
-// Self-set ids are excluded: rule 2 already covers them, and an off-grid
-// self-set stream (a fixless unit) must resolve via the anchored-negative
-// cap, not a spurious rule-1 divisor from a short off-grid interval.
-//
-// The poll is issued once. The polled id then joins the watch's waited-on
-// set (hasPoll), so once the readback lands its next arrival advances the
-// deadline anchor once via the existing once-per-id rule (see onObserve),
-// covering the readback plus the second same-id arrival that completes
-// rule 1. Worst-case liveness is thus unchanged in kind: the base watch
-// bound (resolveSilentDelay or resolveFlowingDelay) plus at most one
-// per-id anchor extension, i.e. at most one further native period (~1s)
-// beyond the base window - still bounded, so the invocation terminates.
-func (c *Configurator) maybeLazyPoll() {
-	if c.ratePollSent {
-		return
-	}
-	mid, ok := c.est.lazyPollID()
-	if !ok {
-		return
-	}
-	c.add(&asReq{mid: asbin.CfgMsgID, packet: asbin.PollCfgMsg(mid),
-		onData: func(asbin.Msg) {}, optional: true, nakOK: true})
-	c.ratePollSent = true
-}
-
-// resolveWatch completes the watch once the native rate is known: it
-// sends the deferred enables at the native divisor, or - if they were
-// already sent at rate=1 and the rate is 1 - leaves them as they are.
-func (c *Configurator) resolveWatch() {
-	if c.watchSent && c.est.nativeHz == 1 {
-		c.deferred = nil
-	} else {
-		c.sendDeferred(uint8(c.est.nativeHz))
-	}
-	c.watch.state = reqSucceeded
-	c.watch = nil
-}
-
-// watchTimeout handles the watch deadline. A flowing wait that elapsed
-// without a computed rate falls back to the silent path: enable at
-// rate=1 to create evidence and extend the deadline. A silent wait that
-// elapsed means no fast traffic appeared, so the rate is 1Hz (anchored
-// negative, or the cap with a log line when nothing arrived at all);
-// rate=1 was already sent and is correct.
-func (c *Configurator) watchTimeout(req *asReq) {
-	if c.est.nativeHz != 0 {
-		c.resolveWatch()
-		return
-	}
-	if !c.watchSent {
-		c.sendDeferredAtRate1()
-		c.watchSent = true
-		req.watchDur = resolveSilentDelay
-		req.watchAnchor = c.est.lastRead
-		req.extended = nil
-		return
-	}
-	c.est.concludeSilent()
-	c.deferred = nil
-	req.state = reqSucceeded
-	c.watch = nil
-}
-
-// sendDeferred issues each deferred enable at rate hz, skipping any that
-// is already observed at 1Hz (naturally, or because hz turned out to be
-// 1). It clears the deferred list.
-func (c *Configurator) sendDeferred(hz uint8) {
-	for _, d := range c.deferred {
-		if iv, ok := c.est.observedInterval(d.mid); ok && isOneHz(iv) {
-			continue
+// searchAdvance takes one step of the search and reports whether it
+// should be called again.
+func (c *Configurator) searchAdvance() bool {
+	s := c.search
+	if s.pending != nil {
+		switch s.pending.state {
+		case reqSucceeded:
+			s.pending = nil
+			if s.polling && !s.gotPeriod {
+				c.searchEnd(fmt.Errorf("no Period in the reply to a poll of %v", s.polled))
+				return false
+			}
+			s.polling = false
+		case reqFailed:
+			// the failed request carries the error
+			c.searchEnd(nil)
+			return false
+		default:
+			return false
 		}
-		c.sendMsgRate(d.mid, hz, d.nakOK)
 	}
-	c.deferred = nil
+	if c.est.overflow {
+		c.searchEnd(fmt.Errorf("receiver reports it is dropping output (BANDWIDTH OVERFLOW)"))
+		return false
+	}
+	if s.trialing {
+		return c.trialAdvance()
+	}
+	if s.gotPeriod {
+		s.gotPeriod = false
+		if validPeriod(s.period) {
+			c.sendMsgOffs()
+			c.searchFound(s.period)
+			return false
+		}
+		s.ignored[s.polled] = true
+	}
+	for _, mid := range c.est.sortedMids() {
+		if !s.ignored[mid] && c.est.tracks[mid].oncePerSecond() {
+			c.searchPoll(mid)
+			return false
+		}
+	}
+	if !c.lookOver() {
+		return false
+	}
+	c.sendMsgOffs()
+	c.startTrials()
+	return false
 }
 
-// sendDeferredAtRate1 enables each deferred message at rate=1 to create
-// the evidence a silent receiver needs, and on its ACK marks it self-set
-// so a clean interval on it is the native period directly. Marking waits
-// for the ACK because arrivals before it are still at the old divisor.
-// The deferred list is kept so the enables can be corrected if the unit
-// proves faster.
-func (c *Configurator) sendDeferredAtRate1() {
-	for _, d := range c.deferred {
-		mid := d.mid
-		cls, id := mid.Unpack()
-		m := &asbin.CfgMsg{CfgMsgFixed: asbin.CfgMsgFixed{MsgClass: cls, MsgID: id, Rate: 1}}
-		c.addMsg(m, asReq{nakOK: d.nakOK, onAck: func() { c.est.markSelfSet(mid) }})
+// validPeriod reports whether p is a Period that gives one message per
+// second on a supported receiver.
+func validPeriod(p uint8) bool {
+	return p == 1 || p == 5 || p == 10
+}
+
+// lookOver reports whether the look stage has nothing more to wait for:
+// every message type seen has been ruled out and a silent receiver has
+// had gapMax to send something, or the stage has run for stageLimit.
+func (c *Configurator) lookOver() bool {
+	since := c.now.Sub(c.est.first)
+	if since >= stageLimit {
+		return true
 	}
+	if since < gapMax {
+		return false
+	}
+	for mid, tr := range c.est.tracks {
+		if !c.search.ignored[mid] && !tr.notOncePerSecond(c.now) {
+			return false
+		}
+	}
+	return true
+}
+
+// searchPoll polls the stored Period of mid. The reply is used only if
+// it names mid.
+func (c *Configurator) searchPoll(mid asbin.MsgID) {
+	s := c.search
+	s.polled = mid
+	s.polling = true
+	s.gotPeriod = false
+	s.pending = c.add(&asReq{mid: asbin.CfgMsgID, packet: asbin.PollCfgMsg(mid), onData: func(m asbin.Msg) {
+		if cm, ok := m.(*asbin.CfgMsg); ok && asbin.MakeMsgID(cm.MsgClass, cm.MsgID) == mid {
+			s.period = cm.Rate
+			s.gotPeriod = true
+		}
+	}})
+}
+
+// probeIDs are the NAV messages that can serve as the probe, in order of
+// preference. Each carries a time of week that advances even before the
+// receiver has the time, which NMEA sentences do not.
+var probeIDs = []asbin.MsgID{asbin.NavTimeID, asbin.NavTimeUtcID, asbin.NavPosLlhID,
+	asbin.NavPosEcefID, asbin.NavVelNedID, asbin.NavVelEcefID, asbin.NavDopID, asbin.NavSvInfoID}
+
+// startTrials begins the trial stage: it chooses the probe and the order
+// of trials and polls the probe's Period, so that it can be put back.
+// The probe is a requested message when one will do, since that needs no
+// restoring; otherwise NAV-TIME is borrowed. The first trial is what the
+// too-fast messages suggest, if anything; after it the order is 10, 5,
+// 1, so that a wrong trial sends the probe less often than once per
+// second and not more.
+func (c *Configurator) startTrials() {
+	s := c.search
+	s.trialing = true
+	s.probe = asbin.NavTimeID
+	for _, mid := range probeIDs {
+		if c.requestedOn(mid) {
+			s.probe = mid
+			break
+		}
+	}
+	hint := c.est.fastHint()
+	if hint != 0 {
+		s.trials = append(s.trials, hint)
+	}
+	for _, p := range []uint8{10, 5, 1} {
+		if p != hint {
+			s.trials = append(s.trials, p)
+		}
+	}
+	c.searchPoll(s.probe)
+}
+
+func (c *Configurator) requestedOn(mid asbin.MsgID) bool {
+	for _, m := range c.msgs {
+		if m.mid == mid {
+			return m.on
+		}
+	}
+	return false
+}
+
+// trialAdvance takes one step of the trial stage.
+func (c *Configurator) trialAdvance() bool {
+	s := c.search
+	if s.gotPeriod {
+		// the probe's Period as found
+		s.gotPeriod = false
+		s.found = s.period
+		s.cur = s.period
+		return c.nextTrial()
+	}
+	if s.start.IsZero() {
+		// the trial's set has just been acknowledged; only messages
+		// after it count
+		delete(c.est.tracks, s.probe)
+		s.cur = s.trials[0]
+		s.wrote = true
+		s.start = c.now
+		return false
+	}
+	tr := c.est.tracks[s.probe]
+	if tr.oncePerSecond() {
+		c.searchFound(s.cur)
+		return false
+	}
+	silent := tr == nil && c.now.Sub(s.start) >= gapMax
+	if silent || (tr != nil && tr.notOncePerSecond(c.now)) {
+		s.trials = s.trials[1:]
+		return c.nextTrial()
+	}
+	if c.now.Sub(s.start) >= stageLimit {
+		c.searchEnd(fmt.Errorf("%v did not settle at Period %d", s.probe, s.cur))
+	}
+	return false
+}
+
+// nextTrial starts the next trial. A trial at the Period the probe
+// already has needs no set, and what has been seen of it counts.
+func (c *Configurator) nextTrial() bool {
+	s := c.search
+	if len(s.trials) == 0 {
+		c.searchEnd(fmt.Errorf("%v does not arrive once per second at Period 1, 5 or 10", s.probe))
+		return false
+	}
+	if s.trials[0] == s.cur {
+		s.start = c.now
+		s.wrote = false
+		return true
+	}
+	s.start = time.Time{}
+	s.pending = c.sendMsgRate(s.probe, s.trials[0], false)
+	return false
+}
+
+// searchFound ends the search with the answer and sets every requested
+// message to it, whether or not it already appears to arrive once per
+// second: what a request names is what gets configured, and saved.
+func (c *Configurator) searchFound(period uint8) {
+	s := c.search
+	for _, m := range c.msgs {
+		if m.on && !(s.wrote && m.mid == s.probe) {
+			c.sendMsgRate(m.mid, period, m.nakOK)
+		}
+	}
+	c.restoreProbe(true)
+	s.watch.state = reqSucceeded
+}
+
+// searchEnd ends the search without an answer: the turn-offs still go
+// out, the probe is put back, and nothing is turned on. A nil err means
+// a request of the search's own failed and carries the error.
+func (c *Configurator) searchEnd(err error) {
+	s := c.search
+	if !s.trialing {
+		c.sendMsgOffs()
+	}
+	c.restoreProbe(false)
+	s.watch.state = reqSucceeded
+	if err != nil {
+		s.watch.state = reqFailed
+		s.watch.err = fmt.Errorf("cannot turn messages on: %w", err)
+	}
+}
+
+// restoreProbe gives the probe the Period it should end with, if it
+// does not have it: 0 if the request turns it off, otherwise the Period
+// it was found with. A probe that the request turns on already has the
+// answer when the search found one.
+func (c *Configurator) restoreProbe(found bool) {
+	s := c.search
+	if !s.trialing || (found && c.requestedOn(s.probe)) {
+		return
+	}
+	want := s.found
+	for _, m := range c.msgs {
+		if m.mid == s.probe && !m.on {
+			want = 0
+		}
+	}
+	if s.cur != want {
+		c.sendMsgRate(s.probe, want, true)
+	}
+}
+
+// searchDeadline returns when the search next needs to look at the
+// clock: the earliest moment after now at which time alone could rule a
+// message out or end a stage.
+func (c *Configurator) searchDeadline() time.Time {
+	s := c.search
+	d := c.now.Add(searchTick)
+	consider := func(t time.Time) {
+		if t.After(c.now) && t.Before(d) {
+			d = t
+		}
+	}
+	if s.pending != nil {
+		return d
+	}
+	if !s.trialing {
+		consider(c.est.first.Add(gapMax))
+		consider(c.est.first.Add(stageLimit))
+		for _, tr := range c.est.tracks {
+			consider(tr.arr.Add(gapMax))
+		}
+		return d
+	}
+	consider(s.start.Add(gapMax))
+	consider(s.start.Add(stageLimit))
+	if tr := c.est.tracks[s.probe]; tr != nil {
+		consider(tr.arr.Add(gapMax))
+	}
+	return d
 }

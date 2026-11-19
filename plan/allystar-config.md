@@ -111,7 +111,7 @@ exist).
   entry point. `optional` covers both NAK-means-absent (CFG-MSG targets)
   and silence-means-absent (id discovery polls).
 - **Phased generation** gated on all-earlier-final: query -> set -> message
-  enables -> speed -> NVM. Queries first (read-modify-write for structs
+  enables (see "Message Period" below) -> speed -> NVM. Queries first (read-modify-write for structs
   where we set only some fields, e.g. CFG-PPS preserving GPIO); speed after
   everything whose ACKs it could garble; NVM last so a save persists
   fallback outcomes and the new baud rate.
@@ -122,6 +122,94 @@ exist).
   solicited poll whose answer at the new rate confirms the change directly;
   `MaybeSpeedChangeSucceeded` as the heuristic secondary path. Never
   retried. Open stage-0 questions below (which port, ACK rate, timing).
+
+### Message Period
+
+The CFG-MSG Period counts the receiver's update cycles, not time: Period 1
+gives one message per second on a 1 Hz receiver and five on a 5 Hz one.
+The update rate is 1 Hz on the TAU1201 and TAU1302 and 5 Hz on the
+TAU951M-P200; 10 Hz is claimed in data sheets and no unit has been seen.
+It cannot be read or set, and the chip name is not trusted to imply it
+(no documentation ties them together, and firmware may differ). So the
+Period that gives one message per second is found by watching, and only
+1, 5 and 10 are ever accepted.
+
+No rate is calculated from a gap. The gap between two messages of one
+type is not always a whole number of update periods: the TAU1201 steps
+and slews its epochs for several seconds after its first fix (gaps of 800,
+500, then 980 ms), the TAU951M runs at 180 ms for about a second when it
+sets its time, and nothing in the messages marks either. Instead the
+configurator finds a message that is arriving once per second and uses
+that message's Period.
+
+1. **Look.** From the first packet, watch the timestamped messages already
+   arriving (NAV messages by time of week; RMC, GGA, GLL, ZDA by time of
+   day when the field is filled). When one arrives once per second, poll
+   its Period. 1, 5 or 10 is the answer; anything else and that message is
+   ignored.
+2. **Make one.** If nothing arrives once per second, set one NAV message
+   (the probe) to a trial Period and watch it. Arriving once per second,
+   the trial is the answer; clearly not, the next is tried.
+3. **Write.** Set every requested message to the answer, whether or not it
+   already appears right: what a request names is what gets configured,
+   and so what a save persists.
+
+Definitions. A gap is measured by the timestamps and by arrival time, and
+both must agree (timestamps jump when the receiver sets its time; arrival
+times bunch on the line).
+
+- *About a second*: 0.75 to 1.5 s by both. With Period 1, 5 or 10 at 1, 5
+  or 10 Hz the steady gaps nearest to one second are 0.5 s and 2 s; these
+  are the halfway points.
+- *Arriving once per second*: one gap within 1% of a second by the
+  timestamps, or two gaps in a row of about a second. (A steady gap is a
+  multiple of 100 ms, so 10 ms is a tenth of the distance to the nearest
+  alternative.)
+- *Clearly not*: the latest gap over 1.5 s, or 1.5 s of silence, or two
+  gaps in a row under 0.75 s. This only rules a message out, so a wrong
+  call costs time and never a wrong Period.
+
+Details.
+
+- The look stage ends when every message seen is clearly not once per
+  second and 1.5 s have passed since the first packet, or after 10 s.
+- Turn-offs wait for the look stage to end, so that they cannot silence
+  the message being watched. A request that turns nothing on sends them
+  at once.
+- The probe is a requested NAV message when one will do, otherwise
+  NAV-TIME, borrowed and put back as found. NMEA cannot be the probe: its
+  time field is empty until the receiver has the time, while NAV time of
+  week advances regardless.
+- The first trial is what messages arriving too fast suggest: 10 for gaps
+  under 150 ms, 5 for longer ones. A message cannot arrive more often
+  than the update rate, but its Period is not known, so this only orders
+  the trials. After it the order is 10, 5, 1: a wrong trial then sends
+  the probe less often than once per second, not more.
+- A trial that runs 10 s without the probe settling, a `BANDWIDTH
+  OVERFLOW` TXT sentence (the receiver is dropping output, so gaps mean
+  nothing), or a refused or unanswered poll or set of the probe ends the
+  search: nothing is turned on, the probe is put back, the request fails
+  and the failure suppresses the save. There is no limit on the search as
+  a whole.
+- RTCM epochs are not used; a receiver sending only RTCM goes to the
+  trials. The RTCM packet processor therefore does not parse message
+  bodies.
+
+Decided against: calculating the rate from fast gaps (the TAU1201 factory
+capture shows one 200 ms gap, with a fix, on a 1 Hz unit); a chip-to-rate
+table; leaving a requested message alone because it looks right; probing
+with every requested message at once (a failed search would leave them all
+at the last trial Period); requiring two gaps in every case (an extra
+second on every start).
+
+Known limit: a wrong Period can be written only if a message that is not
+at one per second is seen arriving once per second, which needs a message
+stored at Period 5 or 10 that is wrong for the receiver together with a
+disturbance that puts its gap at one second, or output dropped regularly
+without an overflow warning.
+
+Files: `gps/internal/as/asrate.go` (the watcher and its tests of a gap),
+`gps/internal/as/ascfgmsg.go` (the search).
 
 ## Stage 0: remaining design-shaping unknowns
 
@@ -243,7 +331,8 @@ Files: `gps/internal/as/ascfgprot.go` (ConfigProtocol),
 
 - Probe/ProbeOK per Design; ReceiverInfo from MON-VER (split SW/HW strings).
 - `--nmea-out`, `--nmea`/`--binary` via CFG-MSG F0 targets: named sentences
-  enabled at rate 1, unnamed group members disabled; TXT limitation shown
+  enabled at the Period that gives one per second (see "Message Period"),
+  unnamed group members disabled; TXT limitation shown
   as characterization, not error.
 
 Functionality: `satpulsetool gps --nmea-out RMC,GGA` works on all three.

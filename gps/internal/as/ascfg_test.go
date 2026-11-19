@@ -1,13 +1,16 @@
 package as
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nmea"
 	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/lib/latin1z"
+	"github.com/jclark/satpulse/gps/lib/nmeamsg"
 )
 
 // testReceiver simulates an Allystar receiver at the packet level.
@@ -21,27 +24,115 @@ type testReceiver struct {
 	t              *testing.T
 	monVer         *asbin.MonVer
 	rates          map[asbin.MsgID]uint8
-	msgSets        []asbin.MsgID        // CFG-MSG set targets received, in order
-	naks           map[asbin.MsgID]bool // set requests answered with NAK
-	nakTargets     map[asbin.MsgID]bool // CFG-MSG targets answered with NAK
-	silent         map[asbin.MsgID]bool // requests not answered at all
-	deferIDs       map[asbin.MsgID]bool // ids whose responses are deferred (see pending)
-	pending        [][]byte             // deferred responses, delivered after a later request's responses
-	rawOn          uint8                // RXM-DUMPRAW state
-	nakRawOff      bool                 // TAU951M quirk: NAK the raw disable yet apply it
-	saves          []asbin.CfgCfg       // CFG-CFG save/load requests received (ACKed)
-	clears         []asbin.CfgCfg       // CFG-CFG clear requests received (silent, like hardware)
-	resets         []asbin.CfgSimpleRst // SIMPLERST requests received (silent)
-	pps            *asbin.CfgPps        // nil: CFG-PPS unsupported (poll is silent)
-	fixedEcef      *asbin.CfgFixedECEF  // nil: unsupported (poll is silent)
-	survey         *asbin.CfgSurvey     // nil: unsupported (poll is silent)
-	navSat         *asbin.CfgNavSat     // nil: unsupported (poll is silent)
-	sigCap         asbin.CfgNavSatMask  // hardware capability; clamps written masks
-	prt            [2]uint32            // stored CFG-PRT records
-	liveRate       uint32               // the live rate of the arriving port
-	elev           asbin.CfgElev        // CFG-ELEV store (always present: every unit has it)
-	ignoreZeroDuty bool                 // TAU1302 quirk: ACK a zero duty cycle without applying it
-	fourByteCfgMsg bool                 // answer CFG-MSG polls in the 4-byte form (rate + port mask), like the 5Hz units
+	msgSets        []asbin.MsgID          // CFG-MSG set targets received, in order
+	sets           []cfgSet               // CFG-MSG sets received, in order
+	naks           map[asbin.MsgID]bool   // set requests answered with NAK
+	nakTargets     map[asbin.MsgID]bool   // CFG-MSG targets answered with NAK
+	silent         map[asbin.MsgID]bool   // requests not answered at all
+	deferIDs       map[asbin.MsgID]bool   // ids whose responses are deferred (see pending)
+	pending        [][]byte               // deferred responses, delivered after a later request's responses
+	rawOn          uint8                  // RXM-DUMPRAW state
+	nakRawOff      bool                   // TAU951M quirk: NAK the raw disable yet apply it
+	saves          []asbin.CfgCfg         // CFG-CFG save/load requests received (ACKed)
+	clears         []asbin.CfgCfg         // CFG-CFG clear requests received (silent, like hardware)
+	resets         []asbin.CfgSimpleRst   // SIMPLERST requests received (silent)
+	pps            *asbin.CfgPps          // nil: CFG-PPS unsupported (poll is silent)
+	fixedEcef      *asbin.CfgFixedECEF    // nil: unsupported (poll is silent)
+	survey         *asbin.CfgSurvey       // nil: unsupported (poll is silent)
+	navSat         *asbin.CfgNavSat       // nil: unsupported (poll is silent)
+	sigCap         asbin.CfgNavSatMask    // hardware capability; clamps written masks
+	prt            [2]uint32              // stored CFG-PRT records
+	liveRate       uint32                 // the live rate of the arriving port
+	elev           asbin.CfgElev          // CFG-ELEV store (always present: every unit has it)
+	ignoreZeroDuty bool                   // TAU1302 quirk: ACK a zero duty cycle without applying it
+	fourByteCfgMsg bool                   // answer CFG-MSG polls in the 4-byte form (rate + port mask), like the 5Hz units
+	hz             int                    // update rate; 0 means 1
+	mute           bool                   // sends no periodic output whatever is turned on
+	cycle          int                    // update cycles emitted so far
+	stamp          func(cycle int) uint32 // overrides the timestamp of a cycle, ms
+	overflowing    bool                   // sends a BANDWIDTH OVERFLOW warning every cycle
+}
+
+// cfgSet is one CFG-MSG set the test receiver was sent.
+type cfgSet struct {
+	Target asbin.MsgID
+	Period uint8
+}
+
+// emission is one periodic message from the receiver and when it left.
+type emission struct {
+	t   time.Time
+	pkt []byte
+}
+
+// emitStart is when the test receiver's update cycles begin, two seconds
+// before configuration, so that what it is already sending has been seen.
+var emitStart = time.Date(2026, 1, 1, 0, 0, 58, 0, time.UTC)
+
+// emitters build the periodic messages the test receiver can send, each
+// from a timestamp in ms.
+var emitters = map[asbin.MsgID]func(ts uint32) []byte{
+	asbin.NavTimeID: func(ts uint32) []byte {
+		return mustSerialize(&asbin.NavTime{RefTow: ts})
+	},
+	asbin.NavTimeUtcID: func(ts uint32) []byte {
+		return mustSerialize(&asbin.NavTimeUTC{NavITOW: asbin.NavITOW{ITow: ts}})
+	},
+	asbin.NavPosLlhID: func(ts uint32) []byte {
+		return mustSerialize(&asbin.NavPosLlh{NavITOW: asbin.NavITOW{ITow: ts}})
+	},
+	asbin.NavPosEcefID: func(ts uint32) []byte {
+		return mustSerialize(&asbin.NavPosEcef{NavITOW: asbin.NavITOW{ITow: ts}})
+	},
+	asbin.NavSvInfoID: func(ts uint32) []byte {
+		return mustSerialize(&asbin.NavSVInfo{NavSVInfoFixed: asbin.NavSVInfoFixed{NavITOW: asbin.NavITOW{ITow: ts}}})
+	},
+	asbin.NmeaRmcID: func(ts uint32) []byte {
+		s := ts / 1000
+		return nmeaPacket(fmt.Sprintf("GNRMC,%02d%02d%02d.%03d,A,,,,,,,010126,,,A", s/3600, s/60%60, s%60, ts%1000))
+	},
+}
+
+// nmeaPacket frames an NMEA sentence body with its checksum.
+func nmeaPacket(body string) []byte {
+	return fmt.Appendf(nil, "$%s*%02X\r\n", body, nmeamsg.Checksum([]byte(body)))
+}
+
+var emitOrder = []asbin.MsgID{asbin.NavTimeID, asbin.NavTimeUtcID, asbin.NavPosLlhID,
+	asbin.NavPosEcefID, asbin.NavSvInfoID, asbin.NmeaRmcID}
+
+func mustSerialize(m asbin.Msg) []byte {
+	pkt, err := asbin.Serialize(m)
+	if err != nil {
+		panic(err)
+	}
+	return pkt
+}
+
+// due returns what the receiver sends up to now: on each update cycle,
+// every message that is on and whose Period divides the cycle.
+func (r *testReceiver) due(now time.Time) []emission {
+	hz := max(r.hz, 1)
+	var out []emission
+	for {
+		t := emitStart.Add(time.Duration(r.cycle) * time.Second / time.Duration(hz))
+		if t.After(now) {
+			return out
+		}
+		ts := uint32(100000 + r.cycle*1000/hz)
+		if r.stamp != nil {
+			ts = r.stamp(r.cycle)
+		}
+		for _, mid := range emitOrder {
+			if p := int(r.rates[mid]); p > 0 && r.cycle%p == 0 && !r.mute {
+				out = append(out, emission{t, emitters[mid](ts)})
+			}
+		}
+		if r.overflowing {
+			out = append(out, emission{t, nmeaPacket("GNTXT,01,04,BANDWIDTH OVERFLOW WARNING")})
+		}
+		r.cycle++
+	}
 }
 
 func (r *testReceiver) takePending() [][]byte {
@@ -89,6 +180,7 @@ func (r *testReceiver) respondOne(data []byte) [][]byte {
 		}
 		r.rates[target] = mt.Rate
 		r.msgSets = append(r.msgSets, target)
+		r.sets = append(r.sets, cfgSet{target, mt.Rate})
 		return [][]byte{r.ack(asbin.CfgMsgID)}
 	case *asbin.RxmDumpRaw:
 		r.rawOn = mt.Enable
@@ -265,33 +357,53 @@ func probe(t *testing.T, rcvr *testReceiver) *ConfigProtocol {
 }
 
 // configure runs the full ConfigDirector loop against the test
-// receiver, feeding all responses through the real PacketProcessor.
+// receiver, feeding its responses and its periodic output through the
+// real packet processors.
 func configure(t *testing.T, cp *ConfigProtocol, rcvr *testReceiver, target *gpsprot.ConfigTarget) (*Configurator, int) {
 	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
 	pp.SetNativeMsgHandler(cp)
+	np := nmea.NewPacketProcessor(gpsprot.NewNavEpochManager())
+	np.SetNativeMsgHandler(cp)
+	process := func(pkt []byte, tRead time.Time) {
+		var err error
+		if pkt[0] == '$' {
+			_, err = np.ProcessPacket(string(pkt), tRead)
+		} else {
+			_, err = pp.ProcessPacket(string(pkt), tRead)
+		}
+		if err != nil {
+			t.Fatalf("ProcessPacket: %v", err)
+		}
+	}
+	feed := func(now time.Time) {
+		for _, e := range rcvr.due(now) {
+			process(e.pkt, e.t)
+		}
+	}
+	t0 := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)
+	feed(t0)
 	cfgI, err := cp.Configure(target)
 	if err != nil {
 		t.Fatalf("Configure: %v", err)
 	}
 	cfg := cfgI.(*Configurator)
 	director := gpsprot.NewConfigDirector(cfg, 2)
-	t0 := time.Date(2026, 1, 1, 0, 1, 0, 0, time.UTC)
 	for action := range director.Actions() {
 		switch action.Type {
 		case gpsprot.ConfigActionSendRequest:
 			t0 = t0.Add(10 * time.Millisecond)
+			feed(t0)
 			cfg.Request(action.Index).SetSentTime(t0)
 			for _, resp := range append(rcvr.respond(action.Packet), rcvr.takePending()...) {
 				t0 = t0.Add(5 * time.Millisecond)
-				if _, err := pp.ProcessPacket(string(resp), t0); err != nil {
-					t.Fatalf("ProcessPacket: %v", err)
-				}
+				process(resp, t0)
 				director.ValidPacketReceived(t0)
 			}
 		case gpsprot.ConfigActionWaitUntil:
 			if action.Deadline.After(t0) {
 				t0 = action.Deadline.Add(time.Millisecond)
 			}
+			feed(t0)
 			director.AdvanceTimeTo(t0)
 		}
 	}
@@ -344,7 +456,7 @@ func TestConfigSupport(t *testing.T) {
 		{"HD.n0dig", base | rtcm}, // HD without digits
 	} {
 		ver := &asbin.MonVer{SwVersion: z16("3.018"), HwVersion: z16(tc.hw)}
-		cfg := newConfigurator(&gpsprot.ConfigTarget{}, ver, newRateEstimator())
+		cfg := newConfigurator(&gpsprot.ConfigTarget{}, ver, newMsgWatcher())
 		if got := cfg.ConfigSupport(); got != tc.want {
 			t.Errorf("%s: ConfigSupport = %v, want %v", tc.hw, got, tc.want)
 		}
@@ -476,7 +588,7 @@ func TestNVMSaveGatesReset(t *testing.T) {
 		target := &gpsprot.ConfigTarget{}
 		target.Opts.Save = gpsprot.SaveAll
 		target.Opts.Reset = gpsprot.ResetReload
-		cfg := newConfigurator(target, tau1201Ver(), newRateEstimator())
+		cfg := newConfigurator(target, tau1201Ver(), newMsgWatcher())
 		if err := cfg.GenerateRequests(); err != nil {
 			t.Fatalf("GenerateRequests: %v", err)
 		}
