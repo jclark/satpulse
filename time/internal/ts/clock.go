@@ -234,6 +234,10 @@ func (clk *Clock) validatePinDesc(pinGiven bool) error {
 
 func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, error) {
 	attrs := []any{"device", clk.Path()}
+	err := clk.ExttsMaskSingle(clk.chanIndex)
+	if err != nil {
+		return nil, err
+	}
 	if clk.HasPins() {
 		err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
 		if err != nil {
