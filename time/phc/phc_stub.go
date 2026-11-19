@@ -69,6 +69,10 @@ func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err er
 	panic(ErrNotSupported)
 }
 
+func (clk *Clock) ExttsMaskSingle(chanIndex uint32) error {
+	panic(ErrNotSupported)
+}
+
 func (clk *Clock) ExttsChanCount() int {
 	panic(ErrNotSupported)
 }
