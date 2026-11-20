@@ -13,8 +13,7 @@ of the same kind and match it:
 
 The site reads as one engineer explaining to a capable peer what he
 has built and found out. The register is plain and declarative:
-short sentences, one point each, in the order the reader needs them,
-with the reasoning given rather than the conclusion asserted.
+short sentences, one point each, in the order the reader needs them.
 Opinions are personal recommendations with their grounds ("I
 recommend Raspberry Pi OS, since it is optimized for the Raspberry Pi
 hardware"; "the NEO-F10T is a cheaper alternative to the ZED-F9T: it
@@ -34,11 +33,14 @@ synchronize).
   write "I" for anything the author has not actually done or tested.
 - "you" is the reader doing the task. "we" appears occasionally when
   walking through reasoning ("we are trying to solve two problems").
-- Factual, specific, quantified: model numbers, prices, versions,
-  exact paths and flags. Where a fact will age, anchor it in time
-  ("At the time of writing, 2026Q2, ...").
+- Where a fact will age, anchor it in time ("At the time of
+  writing, 2026Q2, ...").
 - State limitations plainly and immediately ("This is imprecise but
   is useful when...", "The original author no longer maintains it").
+- One point per sentence, in normal word order. No "which is why",
+  no bracketed asides.
+- Say it directly: "cannot be used with X", not "is not for a board
+  doing X".
 
 ## Structure
 
