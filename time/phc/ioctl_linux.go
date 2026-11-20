@@ -19,8 +19,8 @@ func ioctlPtpMaskEnSingle(fd int, chanIndex uint32) error {
 }
 
 func ioctlPtpSysOffset(fd int, nSamples uint32) (*unix.PtpSysOffset, error) {
-	value := unix.PtpSysOffset{Samples: nSamples}
-	return &value, ioctlPtr(fd, unix.PTP_SYS_OFFSET2, unsafe.Pointer(&value))
+	v := unix.PtpSysOffset{Samples: nSamples}
+	return &v, ioctlPtr(fd, unix.PTP_SYS_OFFSET2, unsafe.Pointer(&v))
 }
 
 // Wrapper around ioctl syscall for case when argument is a pointer
