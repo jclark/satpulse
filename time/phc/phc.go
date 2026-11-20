@@ -176,6 +176,23 @@ func (clk *Clock) exttsRequest(fd int, req *unix.PtpExttsRequest) error {
 	}
 }
 
+// ExttsMaskSingle sets the event mask of clk so that only timestamps from
+// channel chanIndex enter its event queue. Since Linux 6.7 each open of a PHC
+// has its own queue and mask, so this does not affect other readers. If the
+// kernel does not support event masks, it does nothing, and ReadExtts returns
+// timestamps from every enabled channel. Any failure once the mask has been
+// cleared is an error, since the queue would otherwise receive no timestamps.
+func (clk *Clock) ExttsMaskSingle(chanIndex uint32) error {
+	err := ioctlPtpMaskClearAll(clk.fd)
+	if errors.Is(err, unix.ENOTTY) {
+		return nil
+	}
+	if err != nil {
+		return clk.wrapErr(err, "ioctl(PTP_MASK_CLEAR_ALL)")
+	}
+	return clk.wrapErr(ioctlPtpMaskEnSingle(clk.fd, chanIndex), "ioctl(PTP_MASK_EN_SINGLE)")
+}
+
 func (clk *Clock) ExttsChanCount() int {
 	return int(clk.caps.N_ext_ts)
 }
