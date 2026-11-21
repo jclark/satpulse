@@ -501,10 +501,14 @@ export function App() {
         setConfigProps(props);
     }, []);
 
+    // The picker can resolve after this window connected or lost the write
+    // seat; its choice must not then replace the device the bar shows.
+    const deviceSelectable = useRef(true);
+    deviceSelectable.current = connState === 'disconnected' && !readOnly;
     const handleChoosePort = useCallback(async () => {
         try {
             const p = await transport.connection?.choosePort?.();
-            if (p) {
+            if (p && deviceSelectable.current) {
                 setDevice(p.device);
                 refreshPorts();
             }
