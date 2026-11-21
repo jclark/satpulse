@@ -266,6 +266,19 @@ func (fs *fakeSink) count(name EventName) int {
 	return n
 }
 
+// inPackets returns the number of gps:packet events for received packets.
+func (fs *fakeSink) inPackets() int {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	n := 0
+	for _, ev := range fs.events {
+		if pe, ok := ev.(PacketEvent); ok && !pe.Out {
+			n++
+		}
+	}
+	return n
+}
+
 // testSession creates a Session and arranges for it to be disconnected
 // at the end of the test, so a failing synctest test does not leave
 // blocked goroutines in the bubble.
@@ -825,7 +838,7 @@ func TestPacketEventGating(t *testing.T) {
 					time.Sleep(100 * time.Millisecond)
 				}
 				synctest.Wait()
-				if got := fs.count(EventPacket) > 0; got != tc.wantPacket {
+				if got := fs.inPackets() > 0; got != tc.wantPacket {
 					t.Errorf("packet events emitted = %v, want %v", got, tc.wantPacket)
 				}
 				if fs.count(EventMsg) == 0 {

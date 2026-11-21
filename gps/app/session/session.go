@@ -458,11 +458,14 @@ func (s *Session) endRun() {
 		s.pb = nil
 	}
 	s.configCh = nil
-	if s.conn != nil {
-		s.conn.Close()
-		s.conn = nil
-	}
+	conn := s.conn
+	s.conn = nil
 	s.mu.Unlock()
+	// Close outside s.mu: it can wait for a write blocked on the packet
+	// log, whose worker may be in Emit calling a Session accessor.
+	if conn != nil {
+		conn.Close()
+	}
 }
 
 // endConn transitions to Disconnected after the connection ends on its
