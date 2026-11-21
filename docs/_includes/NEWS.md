@@ -5,6 +5,7 @@ _Not yet released_
 - The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
 - `satpulsed` can send NTP samples with PHC drivers that do not support `PTP_SYS_OFFSET_EXTENDED` (such as stmmac before Linux 7.4). (#547)
 - The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
+- An experimental browser build runs SatPulse Workbench entirely in the browser using WebAssembly and Web Serial, without a local SatPulse process. (#486)
 
 ## Changes in 0.3
 
@@ -63,7 +64,6 @@ _Released 2026-10-28_
 
 ### SatPulse Workbench
 
-- An experimental browser build runs SatPulse Workbench entirely in the browser using WebAssembly and Web Serial, without a local SatPulse process.
 - There is a new `satpulsewb` command, which serves SatPulse Workbench: a web app for interactive GPS receiver configuration and monitoring. It offers device-independent receiver configuration through a GUI that requires no knowledge of the receiver's protocol, live monitoring of position, time, satellites, and signal strength, a packet inspector, sending configuration message files chosen from a built-in library (with `SATPULSE_GPSMSG_PATH` directories searched ahead of it), and correction forwarding from an Ntrip caster or TCP source. `satpulsewb` is a commissioning tool run when needed: from a local desktop session it opens the browser automatically; over SSH it prints a URL protected by a per-run token. It serves a GUI session until stopped. (#357)
 
 ### Other satpulsetool improvements

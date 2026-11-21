@@ -50,14 +50,15 @@ capability checks with explicit contracts:
 | `Session.runConn` and `emitSpeed` | Call `SetPacketLog` and `Speed` directly | Both native and browser serial provide the required methods; missing capabilities are compile-time errors. |
 | Correction forwarding | Pass `session.Conn` as a `stream.PacketWriter` | Remove the optional packet-writer assertion and plain-write fallback. |
 | `gpscfg.configure` | Assert `gpsio.SerialOutPort` directly | Use baud-change operations for any serial implementation, including browser serial. |
-| `session.SocketOpener` | Remove the unused opener | No current shell uses it, so no NetConn adapter is needed. |
+| `session.SocketOpener` | Remove the unused opener | No current shell uses it. `gpsio.NetConn` satisfies `session.Conn` directly, so the planned TCP opener can return it. |
+| `gpsio.OpenSerial` | Return `(*SerialConn, error)`, dropping the speed result | The connection reports its own speed through `Speed()`. |
 
 The addition is `session.Conn`, defined by the consumer. It embeds
 `gpsio.Conn` and `stream.PacketWriter`, adding `Speed()` and `SetPacketLog()`.
 The latter transfers ownership of the packet log's output half: complete it
 exactly once after the final output write, normally at Stop. Native and wasm
 serial satisfy this interface with their existing methods. `session.Sink`,
-`gpsio.Conn`, `gpscfg.Configure`, and `gpsio.OpenSerial` retain their contracts.
+`gpsio.Conn`, and `gpscfg.Configure` retain their contracts.
 
 ### Shared shell data
 
