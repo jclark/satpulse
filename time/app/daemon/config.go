@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -75,12 +74,12 @@ type SerialSampleConfig struct {
 }
 
 type PHCConfig struct {
-	Interface    string  `toml:"interface"`
-	Device       string  `toml:"device"`
-	Pin          *uint8  `toml:"pin"` // nil means no pin: 0 on a PHC with pins, none on a PHC without
-	Channel      uint8   `toml:"channel"`
-	Wait         bool    `toml:"wait"`
-	ExttsLatency float64 `toml:"exttsLatency"` // in nanoseconds
+	Interface    string `toml:"interface"`
+	Device       string `toml:"device"`
+	Pin          *uint8 `toml:"pin"` // nil means no pin: 0 on a PHC with pins, none on a PHC without
+	Channel      uint8  `toml:"channel"`
+	Wait         bool   `toml:"wait"`
+	ExttsLatency int64  `toml:"exttsLatency"` // in nanoseconds
 }
 
 type LeapSecondConfig struct {
@@ -217,7 +216,6 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 	return hasRTCMPushMSM7To4(cfg)
 }
 
-// Measured EXTTS latencies are tens of nanoseconds; the bound catches a value given in the wrong unit.
 const maxExttsLatency = 1_000_000 // in nanoseconds
 
 // Validate validates the configuration and logs warnings for deprecated options.
@@ -235,8 +233,8 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if cfg.PHC.Interface != "" && cfg.PHC.Device != "" {
 		return &configError{err: fmt.Errorf("interface and device in the [phc] table cannot both be specified")}
 	}
-	if !(math.Abs(cfg.PHC.ExttsLatency) <= maxExttsLatency) {
-		return configErrorf("exttsLatency in the [phc] table must be between -%v and %v (exttsLatency is in nanoseconds)", maxExttsLatency, maxExttsLatency)
+	if cfg.PHC.ExttsLatency < -maxExttsLatency || cfg.PHC.ExttsLatency > maxExttsLatency {
+		return configErrorf("exttsLatency in the [phc] table must be between -%d and %d (exttsLatency is in nanoseconds)", maxExttsLatency, maxExttsLatency)
 	}
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
@@ -295,7 +293,7 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 	}
 	var clk *ts.Clock
 	var err error
-	lat := time.Duration(math.Round(cfg.ExttsLatency))
+	lat := time.Duration(cfg.ExttsLatency)
 	if cfg.Device != "" {
 		clk, err = ts.OpenDeviceClock(cfg.Device, cfg.PinDesc(), lat)
 	} else {

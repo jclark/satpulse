@@ -262,8 +262,10 @@
           "default": false
         },
         "exttsLatency": {
-          "type": "number",
-          "default": 0
+          "type": "integer",
+          "default": 0,
+          "minimum": -1000000,
+          "maximum": 1000000
         }
       }
     },
