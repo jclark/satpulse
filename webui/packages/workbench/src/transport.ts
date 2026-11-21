@@ -142,6 +142,7 @@ export interface ConnectionTransport {
     disconnect(): Promise<void>;
     listPorts(): Promise<PortInfo[]>;
     // choosePort runs a browser permission picker directly from a user gesture.
+    // It resolves to null when the user cancels the picker.
     choosePort?(): Promise<PortInfo | null>;
 }
 
