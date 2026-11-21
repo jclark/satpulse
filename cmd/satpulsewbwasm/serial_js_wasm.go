@@ -55,9 +55,6 @@ func (o *serialOpener) Open(ctx context.Context, _ *slog.Logger) (session.Conn, 
 	return c, nil
 }
 
-// Socket reports that Web Serial is a direct receiver connection.
-func (*serialOpener) Socket() bool { return false }
-
 type serialConn struct {
 	value   js.Value
 	op      *serialOpener

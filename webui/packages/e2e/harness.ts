@@ -374,6 +374,14 @@ export interface WorkbenchCaster {
   caster: { host: string; port: number; mountpoint: string; username: string; password: string };
 }
 
+// MockWorkbench serves the real Workbench components against the test-only
+// mock transport in packages/workbench/test, through Vite's dev server; no
+// backend runs.
+export interface MockWorkbench {
+  // url returns the fixture page with the given query string (e.g. "?corrections").
+  url(query?: string): string;
+}
+
 // --- launchers --------------------------------------------------------------
 
 async function launchSatpulsed(session: RunSession): Promise<{ fifoPath: string; httpPort: number }> {
@@ -462,6 +470,7 @@ interface WorkerFixtures {
   dashboardReplay: DashboardReplay;
   workbenchFixed: WorkbenchFixed;
   workbenchCaster: WorkbenchCaster;
+  mockWorkbench: MockWorkbench;
 }
 
 interface TestFixtures {
@@ -663,6 +672,33 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
             password: CASTER_PASSWORD,
           },
         });
+      } catch (e) {
+        session.keep = true;
+        throw e;
+      } finally {
+        openSessions.delete(session);
+        await session.teardown();
+      }
+    },
+    { scope: 'worker' },
+  ],
+
+  mockWorkbench: [
+    async ({}, use) => {
+      const session = new RunSession('satpulse-e2e-mock-wb');
+      openSessions.add(session);
+      try {
+        const port = await freePort();
+        const proc = session.spawnLogged('vite', 'npm', [
+          '--prefix', path.join(REPO, 'webui'), 'run', 'dev', '--workspace=@satpulse/workbench-http', '--',
+          '--host', '127.0.0.1', '--port', String(port), '--strictPort',
+        ]);
+        await poll(`vite port ${port}`, 30000, () => {
+          session.deadIfExited(proc);
+          return httpResponds(port, '/');
+        });
+        const page = path.join(REPO, 'webui', 'packages', 'workbench', 'test', 'index.html');
+        await use({ url: (query = '') => `http://127.0.0.1:${port}/@fs/${page}${query}` });
       } catch (e) {
         session.keep = true;
         throw e;
