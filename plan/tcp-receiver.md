@@ -180,10 +180,11 @@ tab can send a reset command from a message file regardless of
 what the config UI hides, and wrong because its premise is false --
 many resets do not re-enumerate or drop the connection at all. A
 reset that does kill the connection is ordinary device loss. The
-`Opener` seam is unaffected: `Opener.Socket()` answers only the
-detection-shortcut question, and `TCPOpener{Addr}` returns false.
-(The session briefly enforced this gating -- ApplyConfig refused
-resets when Socket() was true -- and that has been removed.)
+`Opener` seam is unaffected: `TCPOpener{Addr}` takes no detection
+shortcut, so it needs nothing beyond `Open`. (The session briefly
+enforced this gating -- ApplyConfig refused resets on a proxy socket
+-- and that has been removed, as has `Opener.Socket()`, which no
+opener answered true once the unused `SocketOpener` was removed.)
 
 The wire contract additions (connect request carrying a transport
 kind and address, snapshot/state changes if any) follow mechanically
