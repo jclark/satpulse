@@ -1,12 +1,8 @@
-import {test, expect} from '@playwright/test';
-import * as path from 'node:path';
-
-// Vite serves this test-only entry point using the real Workbench components.
-const fixture = 'http://127.0.0.1:4175/@fs/' + path.resolve(__dirname, '../../workbench/test/index.html');
+import {test, expect} from '../harness';
 
 test.describe('optional transport capabilities', () => {
-    test('omits corrections controls and subscriptions without the capability', async ({page}) => {
-        await page.goto(fixture);
+    test('omits corrections controls and subscriptions without the capability', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url());
         await expect(page.getByRole('banner')).toBeVisible();
         await expect(page.getByRole('button', {name: 'Corrections', exact: true})).toHaveCount(0);
         await expect(page.getByPlaceholder('e.g. 10.0.0.1')).toHaveCount(0);
@@ -14,10 +10,10 @@ test.describe('optional transport capabilities', () => {
         for (const name of ['gps:corrpacket', 'gps:corrections', 'gps:basearp']) expect(subs).not.toContain(name);
     });
 
-    test('mounts corrections controls and synchronizes through the capability', async ({page}) => {
+    test('mounts corrections controls and synchronizes through the capability', async ({page, mockWorkbench}) => {
         // The snapshot reports a running stream that no event announces, as
         // for a window opened after corrections started.
-        await page.goto(fixture + '?corrections=connected');
+        await page.goto(mockWorkbench.url('?corrections=connected'));
         await page.getByRole('button', {name: 'Corrections', exact: true}).click();
         const panel = page.locator('div.flex.h-full.flex-col').filter({has: page.locator('span:text-is("Mountpoint:")')});
         await expect(panel.getByRole('button', {name: 'Disconnect', exact: true})).toBeVisible();
@@ -26,8 +22,8 @@ test.describe('optional transport capabilities', () => {
         for (const name of ['gps:corrpacket', 'gps:corrections', 'gps:basearp']) expect(subs).toContain(name);
     });
 
-    test('starts and stops through the supplied corrections capability', async ({page}) => {
-        await page.goto(fixture + '?corrections');
+    test('starts and stops through the supplied corrections capability', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?corrections'));
         await page.getByRole('button', {name: 'Corrections', exact: true}).click();
         const panel = page.locator('div.flex.h-full.flex-col').filter({has: page.locator('span:text-is("Mountpoint:")')});
         await page.getByPlaceholder('e.g. 10.0.0.1').fill('caster.test');
