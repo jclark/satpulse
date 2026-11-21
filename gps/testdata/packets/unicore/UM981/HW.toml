@@ -1,0 +1,4 @@
+vendor = "Unicore"
+model = "UM981"
+firmware = "Build10598"
+default-baud = 115200

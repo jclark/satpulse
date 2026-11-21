@@ -18,6 +18,11 @@ func ioctlPtpMaskEnSingle(fd int, chanIndex uint32) error {
 	return ioctlPtr(fd, unix.PTP_MASK_EN_SINGLE, unsafe.Pointer(&chanIndex))
 }
 
+func ioctlPtpSysOffset(fd int, nSamples uint32) (*unix.PtpSysOffset, error) {
+	v := unix.PtpSysOffset{Samples: nSamples}
+	return &v, ioctlPtr(fd, unix.PTP_SYS_OFFSET2, unsafe.Pointer(&v))
+}
+
 // Wrapper around ioctl syscall for case when argument is a pointer
 // and return value just says whether there's an error
 func ioctlPtr(fd int, req uint, arg unsafe.Pointer) (err error) {

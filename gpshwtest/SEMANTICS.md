@@ -97,7 +97,7 @@ Satellite information is an independent stream, not part of the navigation epoch
 **Save** persists running configuration to non-volatile memory.
 
 - Saving everything persists the entire running configuration.
-- Saving minimally persists at least the changes made by the same invocation, plus as little else as possible. How little is the receiver's *save granularity*: receivers persist configuration in groups, so saving one property may persist everything in its group. The granularity is a partition of the properties, ranging from one group per property (perfectly selective) to a single group (saving anything saves everything).
+- Saving minimally persists at least everything the same invocation specified, whether or not the receiver already had that setting, plus as little else as possible. How little is the receiver's *save granularity*: receivers persist configuration in groups, so saving one property may persist everything in its group. The granularity is a partition of the properties, ranging from one group per property (perfectly selective) to a single group (saving anything saves everything).
 
 **Resets** restore state from non-volatile memory, with strictly increasing scope: *reload* restores configuration only; *reset* additionally discards the receiver's knowledge of position, time, and satellite orbits; *factory reset* first restores the non-volatile memory itself to factory defaults and then resets.
 
