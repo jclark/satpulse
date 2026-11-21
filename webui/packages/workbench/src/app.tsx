@@ -501,6 +501,22 @@ export function App() {
         setConfigProps(props);
     }, []);
 
+    // The picker can resolve after this window connected or lost the write
+    // seat; its choice must not then replace the device the bar shows.
+    const deviceSelectable = useRef(true);
+    deviceSelectable.current = connState === 'disconnected' && !readOnly;
+    const handleChoosePort = useCallback(async () => {
+        try {
+            const p = await transport.connection?.choosePort?.();
+            if (p && deviceSelectable.current) {
+                setDevice(p.device);
+                refreshPorts();
+            }
+        } catch (e) {
+            addToast(e instanceof Error ? e.message : 'Could not choose port', 'error');
+        }
+    }, [addToast, refreshPorts]);
+
     const handleConnect = useCallback(async () => {
         const conn = transport.connection;
         if (!conn) return;
@@ -559,6 +575,7 @@ export function App() {
                 receiverIdent={receiverIdent}
                 ports={ports}
                 onRefreshPorts={refreshPorts}
+                onChoosePort={transport.connection?.choosePort ? handleChoosePort : undefined}
             />
 
             {/* Tab bar */}
