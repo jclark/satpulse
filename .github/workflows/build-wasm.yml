@@ -25,3 +25,9 @@ jobs:
         GOOS: js
         GOARCH: wasm
       run: PATH="$PATH:$(go env GOROOT)/lib/wasm" go test ./gps/...
+
+    - name: Compile browser shell
+      env:
+        GOOS: js
+        GOARCH: wasm
+      run: go build -o /dev/null ./cmd/satpulsewbwasm
