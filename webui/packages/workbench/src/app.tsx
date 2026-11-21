@@ -371,7 +371,9 @@ export function App() {
             setVelRows(evict);
             setTimeRows(evict);
         });
-        const offBaseARP = transport.eventsOn('gps:basearp', (evt: {stationID: number; ecef: [number, number, number]}) => {
+        // Both events come only from a correction stream, so a transport
+        // without the corrections capability is not asked for them.
+        const offBaseARP = transport.corrections && transport.eventsOn('gps:basearp', (evt: {stationID: number; ecef: [number, number, number]}) => {
             setBaseARPs(prev => {
                 const next = new Map(prev);
                 next.set(evt.stationID, evt.ecef);
@@ -381,7 +383,7 @@ export function App() {
         // The base ARP belongs to the active correction stream. Drop it when
         // a session starts fresh or stops, so a stale RTCM ARP doesn't linger
         // after switching to a source that sends no 1005/1006 (e.g. SPARTN).
-        const offCorrARP = transport.eventsOn('gps:corrections', (evt: {state: string}) => {
+        const offCorrARP = transport.corrections && transport.eventsOn('gps:corrections', (evt: {state: string}) => {
             if (evt.state === 'connecting' || evt.state === 'stopped') {
                 setBaseARPs(new Map());
             }
@@ -443,8 +445,8 @@ export function App() {
             offState();
             offInitialPos();
             offEpochPVT();
-            offBaseARP();
-            offCorrARP();
+            offBaseARP?.();
+            offCorrARP?.();
             offTime();
             offMsgSend();
             offResponse();

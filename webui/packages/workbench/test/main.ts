@@ -49,11 +49,12 @@ const transport: Transport = {
     openURL: () => {},
 };
 
-if (new URLSearchParams(location.search).has('corrections')) {
+const correctionsState = new URLSearchParams(location.search).get('corrections');
+if (correctionsState !== null) {
     transport.corrections = {
         getCorrectionsState: async () => {
             record('getCorrectionsState');
-            return {state: 'stopped'};
+            return {state: correctionsState || 'stopped'};
         },
         startCorrections: async source => {
             record('startCorrections', source);
