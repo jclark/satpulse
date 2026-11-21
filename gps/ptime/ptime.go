@@ -126,14 +126,6 @@ func BeiDou(week int16, tow time.Duration) Time {
 	return gnss(week, tow, epochBeiDou, TAIMinusBeiDou)
 }
 
-// GLONASSWeek creates a Time from a GLONASS week number and time of week.
-// See epochGLONASS week for explanation of GLONASS week number concept.
-// GLONASS time is aligned with UTC (except for leap seconds), and CASIC uses
-// the same TAI offset as GPS.
-func GLONASSWeek(week int16, tow time.Duration) Time {
-	return gnss(week, tow, epochGLONASSWeek, TAIMinusGPS)
-}
-
 func gnss(week int16, tow time.Duration, epoch time.Time, epochTAIOffset int64) Time {
 	// The Unix method in Go doesn't consider leap seconds
 	// GNSS time also doesn't consider leap seconds since that GNSS's epoch

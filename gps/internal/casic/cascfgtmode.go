@@ -173,9 +173,9 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 		m.XFixed = int32(math.Round(tt.ecef[0] * casbin.CfgTMode2FixedPositionScale))
 		m.YFixed = int32(math.Round(tt.ecef[1] * casbin.CfgTMode2FixedPositionScale))
 		m.ZFixed = int32(math.Round(tt.ecef[2] * casbin.CfgTMode2FixedPositionScale))
-		m.FixedPacc = uint32(math.Round(tt.posAcc * casbin.CfgTMode2PositionAccuracyScale))
+		m.FixedPacc = tmode2Acc(tt.posAcc)
 		m.SvinMinDur = tt.svinDur
-		m.SvinPaccLim = uint32(math.Round(tt.svinAcc * casbin.CfgTMode2PositionAccuracyScale))
+		m.SvinPaccLim = tmode2Acc(tt.svinAcc)
 		if !force && m == *c.tm6 {
 			c.touchNoOp(casbin.CfgCfgSectionNav)
 			return
@@ -208,6 +208,16 @@ func (c *Configurator) addTModeSet(tt *tmodeTarget, force bool) {
 	c.addSetReq(m, func() { c.tm5 = m })
 }
 
+// tmode2Acc converts an accuracy in meters to CFG-TMODE2 units, rounding
+// to nearest but not to 0, which would turn a stated accuracy into none.
+func tmode2Acc(meters float64) uint32 {
+	acc := uint32(math.Round(meters * casbin.CfgTMode2PositionAccuracyScale))
+	if meters > 0 {
+		acc = max(acc, 1)
+	}
+	return acc
+}
+
 // tmodeConfigProps reports the positioning mode from the readback.
 func (c *Configurator) tmodeConfigProps(props *gpsprot.ConfigProps) {
 	mode, ok := c.curTModeMode()
@@ -231,6 +241,12 @@ func (c *Configurator) tmodeConfigProps(props *gpsprot.ConfigProps) {
 				gpsprot.Meters(c.tm5.EcefZ),
 			}
 			m.FixedPosAcc = gpsprot.Meters(casbin.CfgTModeAccuracyFromVariance(c.tm5.PosVar))
+			if c.tm5.PosVar > 0 {
+				// The float variance can hold an accuracy finer than any
+				// that can be requested, or too fine for a Length, which
+				// would read back as 0, meaning none stated.
+				m.FixedPosAcc = max(m.FixedPosAcc, gpsprot.MinAccuracy)
+			}
 		}
 	}
 	props.SetMode(m)

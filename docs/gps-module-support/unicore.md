@@ -30,7 +30,7 @@ There are some minor implementation differences in these logs between Unicore an
 for example, Unicore uses a different number for the IONUTC log.
 The `vendor` must be specified to enable correct handling of these Unicore differences.
 
-SatPulse has been tested with the UM980, UM982 and UM960.
+SatPulse has been tested with the UM980, UM981, UM982 and UM960.
 
 ## Supported logs
 

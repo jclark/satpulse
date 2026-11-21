@@ -4,7 +4,7 @@ toc: false
 classes: wide
 ---
 
-SatPulse supports modules from [Septentrio](https://www.septentrio.com/). {% include new-in-03.html %}
+SatPulse supports modules from [Septentrio](https://www.septentrio.com/).
 The vendor name used with the `--vendor` option and `vendor` key is `septentrio`.
 
 Septentrio modules use the Septentrio Binary Format (SBF) for periodic data.

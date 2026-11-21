@@ -14,6 +14,7 @@ import {
     SatsMsgSat, SatsMsgSignal,
     RawMsgObs,
     SurveyAgain, SaveNone, SaveMinimal, SaveAll, ResetNone, ResetReload, ResetCold, ResetFactory,
+    MinAccuracy,
 } from './msg-flags';
 import type {ConnState, OperationState} from './app';
 import type {
@@ -108,7 +109,7 @@ function validateFields(
     const bad = new Set<string>();
     if (timeMode === 'survey') {
         if (surveyTime !== '') { const v = Number(surveyTime); if (isNaN(v) || v <= 0) bad.add('surveyTime'); }
-        if (surveyAcc !== '') { const v = Number(surveyAcc); if (isNaN(v) || v < 0.001) bad.add('surveyAcc'); }
+        if (surveyAcc !== '') { const v = Number(surveyAcc); if (isNaN(v) || v < MinAccuracy) bad.add('surveyAcc'); }
     }
     if (timeMode === 'fixed') {
         if (coordSystem === 'ecef') {
@@ -120,7 +121,7 @@ function validateFields(
             if (fixedLLH[1] === '') bad.add('llhLon'); else { const v = Number(fixedLLH[1]); if (isNaN(v) || v < -180 || v > 180) bad.add('llhLon'); }
             if (fixedLLH[2] === '' || isNaN(Number(fixedLLH[2]))) bad.add('llhHeight');
         }
-        if (fixedPosAcc !== '') { const v = Number(fixedPosAcc); if (isNaN(v) || v < 0.001) bad.add('fixedPosAcc'); }
+        if (fixedPosAcc !== '') { const v = Number(fixedPosAcc); if (isNaN(v) || v < MinAccuracy) bad.add('fixedPosAcc'); }
     }
     if (ppsPeriod !== '') { const v = Number(ppsPeriod); if (isNaN(v) || v < 0) bad.add('ppsPeriod'); }
     if (ppsWidth !== '') { const v = Number(ppsWidth); if (isNaN(v) || v < 0 || v > 1) bad.add('ppsWidth'); }

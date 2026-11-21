@@ -398,10 +398,10 @@ def main() -> None:
     
     # Discovery phase
     log("\n=== Interface Discovery ===")
-    run_sdp_command(["--show"])
-    run_sdp_command(["--show", input_iface])
+    run_sdp_command(["--show-ifaces"])
+    run_sdp_command(["--show-pins", input_iface])
     if output_iface != input_iface:
-        run_sdp_command(["--show", output_iface])
+        run_sdp_command(["--show-pins", output_iface])
     
     log(f"Using pins: input={input_iface}:{input_pin}, output={output_iface}:{output_pin}")
     
