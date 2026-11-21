@@ -61,6 +61,8 @@ The `phc` table is about the PTP hardware clock. It can have following keys:
 * `channel` - an integer giving the timestamping channel to use; the default is 0; this needs changing only if
   multiple pins are in use, in which case each pin must specify a distinct channel, or if the PHC has no
   pins and the PPS is on another channel
+* `exttsLatency` - an integer giving the external timestamp latency in nanoseconds: how much later the PHC
+  captures a timestamp than the pulse edge arrived at the pin
 
 Example
 
