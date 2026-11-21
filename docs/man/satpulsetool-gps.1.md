@@ -95,10 +95,11 @@ The following option selects machine-readable output.
 : Write the results of high-level configuration to stdout as a single JSON object
 instead of the human-readable output.
 The object can have the following fields, omitted when there is nothing to report:
-`receiver` (vendor, hardware, firmware, and supported GNSS constellations),
+`receiver` (vendor, hardware, firmware, supported GNSS constellations, and the message types received during configuration, per protocol),
 `supports` (the configuration features the receiver supports, as listed by the `Supports:` line of **\-\-show\-receiver**),
 `packetFormats` (the packet formats detected),
 `config` (the configuration properties that were set or queried),
+`warnings` (user-facing warnings, such as a request skipped because it takes effect only after a save and reset),
 and `error` (the error message when configuration fails; the exit code is unaffected).
 Applies to high-level configuration and the show options; cannot be combined with **\-\-msg\-file**.
 
@@ -173,6 +174,11 @@ The **GAL** and **BDS** prefixes can be omitted.
 The *list* parameter is a comma-separated list of signal names, as with **\-\-signal**.
 Requires **\-\-gnss**.
 
+On some receivers, signal changes take effect only after the configuration is saved to non-volatile
+memory and the receiver is reset; such receivers show `signalOnlyWithReset` in the `Supports:` list.
+On these receivers the signal options above are performed only when **\-\-save** is combined with
+**\-\-reload** or **\-\-reset**, and are otherwise skipped with a warning.
+
 **\-\-min\-elev** *degrees*
 : Set the minimum elevation angle in degrees for satellites to be used. Satellites below this angle above the horizon are ignored.
 
@@ -209,6 +215,12 @@ The following options control the time mode of the receiver. In time mode, the r
 
 **\-\-mobile**
 : Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**, **\-\-fixed-pos-ecef** or **\-\-fixed-pos-llh**.
+
+On some receivers, positioning-mode changes take effect only after the configuration is saved to
+non-volatile memory and the receiver is reset; such receivers show `modeOnlyWithReset` in the
+`Supports:` list. On these receivers the time-mode options above are performed only when
+**\-\-save** is combined with **\-\-reload** or **\-\-reset**, and are otherwise skipped, with a
+warning when the skip leaves the receiver differing from the request.
 
 The following options control which messages the receiver outputs.
 
@@ -304,6 +316,13 @@ The following options control which messages the receiver outputs.
 
   **none**
   : Disable all RTCM messages
+
+On some receivers, switching between MSM4 and MSM7 takes effect only after the configuration is
+saved and the receiver reset; such receivers show `rtcmMSMOnlyWithReset` in the `Supports:` list.
+On these receivers an explicit **MSM4** or **MSM7** request is performed only when **\-\-save** is
+combined with **\-\-reload** or **\-\-reset**, and is otherwise skipped, with a warning unless the
+RTCM output observed during configuration already has the requested type; **auto** silently uses
+the type already in effect. Message enabling and disabling always applies immediately.
 
 **\-\-rtcm\-base\-id** *id*
 : Set the RTCM reference station ID. The *id* must be an integer between 0 and 4095.

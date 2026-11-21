@@ -31,6 +31,15 @@ func (mt MsgType) IsMSM() bool {
 	return mt >= 1071 && mt <= 1137 && msm >= 1 && msm <= 7
 }
 
+// MSMLevel returns the MSM level (1-7) of an MSM message type, or 0
+// if mt is not an MSM type.
+func (mt MsgType) MSMLevel() int {
+	if !mt.IsMSM() {
+		return 0
+	}
+	return int(mt % 10)
+}
+
 // ExtractMsgType returns the 12-bit message type from a packet.
 func ExtractMsgType[B Bytes](pkt B) MsgType {
 	if len(pkt) <= 6 {
