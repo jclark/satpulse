@@ -45,3 +45,7 @@ A log directory is self-contained: `--analyze` re-derives all verdicts from it o
 ## Concurrency
 
 One receiver per invocation. Sweeps over different receivers run in parallel from the caller; log directory names include the device so concurrent starts do not collide. satpulsetool itself locks the serial device per invocation.
+
+## Vendor plugins
+
+A few probes need what high-level configuration has no vocabulary for: the message-rate probe sets the fix rate, and a session on a backend without speed support raises the link speed. Both use the receiver's shipped low-level message file, found in the gpsmsg directory next to the satpulsetool being run (`../share/satpulse/gpsmsg` for an installed binary, `configs/gpsmsg` for a repo build). Which file fits a receiver, and how to read the replies to its tags, comes from the vendor's plugin, `vendors/<vendor>.py`, named by the reported vendor lower-cased with everything but letters and digits removed (`vendors/ublox.py` for u-blox). A vendor without a plugin, or a receiver its plugin does not know, skips those probes.

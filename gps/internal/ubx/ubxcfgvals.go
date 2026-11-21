@@ -287,7 +287,7 @@ func newTxnBuilder(known *CfgVals, target *gpsprot.ConfigTarget, ver *Version, p
 // first with partial knowledge, then again after fetching the needed keys.
 func (tb *txnBuilder) build() error {
 	cp := &tb.target.Props
-	tg := tb.timePulseBuild()
+	tb.timePulseBuild()
 
 	err := tb.modeBuild()
 	if err != nil {
@@ -313,64 +313,11 @@ func (tb *txnBuilder) build() error {
 		txnAddItem(tb, ucv.KTpPolTp1, v)
 	}
 	if v, ok := cp.GetTimeGNSS(); ok {
-		tg = gnssToTimegridTp1(v)
-		txnAddItem(tb, ucv.KTpTimegridTp1, tg)
+		txnAddItem(tb, ucv.KTpTimegridTp1, gnssToTimegridTp1(v))
 		txnAddItem(tb, ucv.KNavspgUtcstandard, gnssToEnumNavspgUtcstandard(v))
 		txnAddItem(tb, ucv.KRateTimeref, gnssToRateTimeref(v))
 	}
-	if true {
-		// new code, under development
-		err = tb.messagesBuild()
-	} else {
-		// old code
-		err = tb.messagesBuildOld(tg)
-	}
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-func (tb *txnBuilder) messagesBuildOld(tg ucv.EnumTpTimegridTp1) error {
-	opts := &tb.target.Opts
-	if opts.EnablesMsgs() {
-		txnAddItem(tb, ucv.KRateMeas, 1000)
-		txnAddItem(tb, ucv.KRateNav, 1)
-	}
-	if opts.NMEAMsg.IsSet() {
-		v := opts.NMEAMsg.Get() != 0
-		k := portOutprotNmeaKey(tb.port)
-		if k != 0 {
-			txnAddItem(tb, k, v)
-		}
-	}
-	if opts.PVTMsg.Get()&gpsprot.PVTMsgTimePulse != 0 {
-		// XXX this is not consistent with the legacy case
-		// simpler just to enable NAV-TIMEGPS
-		// the fractional TOW will not be the same but we don't use that
-		txnAddItem(tb, timegridTp1ToMsgRateKey(tg).KeyU(tb.port), 1)
-		txnAddItem(tb, ucv.KUbxTimTp.KeyU(tb.port), 1)
-	}
-	if opts.PVTMsg.Get()&gpsprot.PVTMsgLeapSecond != 0 {
-		txnAddItem(tb, ucv.KUbxNavTimels.KeyU(tb.port), 1)
-	}
-	if opts.PVTMsg.Get()&gpsprot.PVTMsgSurvey != 0 {
-		// XXX this isn't turning it off as it did before
-		switch tb.ver.ProductCategory() {
-		case "TIM":
-			txnAddItem(tb, ucv.KUbxTimSvin.KeyU(tb.port), 1)
-		case "HPG":
-			txnAddItem(tb, ucv.KUbxNavSvin.KeyU(tb.port), 1)
-		}
-	}
-	if opts.SatsMsg.IsSet() {
-		rate := uint64(0)
-		if opts.SatsMsg.Get()&gpsprot.SatsMsgSat != 0 {
-			rate = 1
-		}
-		txnAddItem(tb, ucv.KUbxNavSat.KeyU(tb.port), rate)
-	}
-	return nil
+	return tb.messagesBuild()
 }
 
 func (tb *txnBuilder) messagesBuild() error {
@@ -646,9 +593,7 @@ func (raw *CfgVals) getBaudRate(port *ubxbin.PortID) (uint32, bool) {
 }
 
 // timePulseBuild compiles the parts of the configuration related to the time pulse.
-// If it infers the GNSS to which the pulse is aligned, it returns that.
-func (tb *txnBuilder) timePulseBuild() ucv.EnumTpTimegridTp1 {
-	tg := ucv.ETpTimegridTp1Utc
+func (tb *txnBuilder) timePulseBuild() {
 	cp := &tb.target.Props
 	period, havePeriod := cp.GetTimePulsePeriod()
 	width, haveWidth := cp.GetTimePulseWidth()
@@ -660,7 +605,7 @@ func (tb *txnBuilder) timePulseBuild() ucv.EnumTpTimegridTp1 {
 		txnAddItem(tb, ucv.KTpAlignToTowTp1, align)
 		txnAddItem(tb, ucv.KTpSyncGnssTp1, align)
 		if _, ok := cp.GetTimeGNSS(); !ok {
-			tg = tb.inferTimegridTp1()
+			tb.inferTimegridTp1()
 		}
 	} else {
 		if havePeriod || haveWidth {
@@ -700,7 +645,6 @@ func (tb *txnBuilder) timePulseBuild() ucv.EnumTpTimegridTp1 {
 		txnAddItem(tb, ucv.KTpTp1Ena, us != 0)
 		txnAddItem(tb, ucv.KTpPulseLengthDef, ucv.ETpPulseLengthDefLength)
 	}
-	return tg
 }
 
 func (tb *txnBuilder) inferTpLenTp1(lenLock uint64) {
@@ -735,17 +679,6 @@ func (tb *txnBuilder) inferTimegridTp1() ucv.EnumTpTimegridTp1 {
 			return tg
 		}
 	}
-	if false {
-		// This isn't a good idea because the default for this is GPS.
-		if r, ok := txnGetOrAdd(tb, ucv.KRateTimeref); ok {
-			tg := rateTimeRefToTimegridTp1(r)
-			if tg != ucv.ETpTimegridTp1Utc {
-				txnAddItem(tb, ucv.KTpTimegridTp1, tg)
-				return tg
-			}
-		}
-	}
-
 	// Fall back to first of GPS, Galileo, BeiDou, GLONASS that is enabled (in that order)
 	sigEna := []ucv.KeyL{ucv.KSignalGpsEna, ucv.KSignalGalEna, ucv.KSignalBdsEna, ucv.KSignalGloEna}
 	sigTg := []ucv.EnumTpTimegridTp1{ucv.ETpTimegridTp1Gps, ucv.ETpTimegridTp1Gal, ucv.ETpTimegridTp1Bds, ucv.ETpTimegridTp1Glo}
@@ -797,21 +730,6 @@ func navspgUtcstandardToTimegridTp1(u ucv.EnumNavspgUtcstandard) ucv.EnumTpTimeg
 	//	case ucv.ENavspgUtcstandardNict:
 	//		return ucv.ETpTimegridTp1Qzss
 
-	default:
-		return ucv.ETpTimegridTp1Utc
-	}
-}
-
-func rateTimeRefToTimegridTp1(r ucv.EnumRateTimeref) ucv.EnumTpTimegridTp1 {
-	switch r {
-	case ucv.ERateTimerefGps:
-		return ucv.ETpTimegridTp1Gps
-	case ucv.ERateTimerefGal:
-		return ucv.ETpTimegridTp1Gal
-	case ucv.ERateTimerefGlo:
-		return ucv.ETpTimegridTp1Glo
-	case ucv.ERateTimerefBds:
-		return ucv.ETpTimegridTp1Bds
 	default:
 		return ucv.ETpTimegridTp1Utc
 	}
@@ -881,21 +799,6 @@ func timegridTp1ToGNSS(tg ucv.EnumTpTimegridTp1) gpsprot.GNSS {
 		return gpsprot.NAVIC
 	}
 	return 0
-}
-
-func timegridTp1ToMsgRateKey(tg ucv.EnumTpTimegridTp1) ucv.KeyM {
-	switch tg {
-	case ucv.ETpTimegridTp1Gps:
-		return ucv.KUbxNavTimegps
-	case ucv.ETpTimegridTp1Gal:
-		return ucv.KUbxNavTimegal
-	case ucv.ETpTimegridTp1Glo:
-		return ucv.KUbxNavTimeglo
-	case ucv.ETpTimegridTp1Bds:
-		return ucv.KUbxNavTimebds
-	default:
-		return ucv.KUbxNavTimeutc
-	}
 }
 
 func portOutprotNmeaKey(port ucv.Port) ucv.KeyL {

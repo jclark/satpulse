@@ -52,6 +52,10 @@ export const RawMsgNames = [RawMsgObs, RawMsgNavData] as const;
 export type RawMsgFlag = typeof RawMsgNames[number];
 export type RawMsgFlags = RawMsgFlag[];
 
+// MinAccuracy is gpsprot.MinAccuracy in meters: the smallest survey accuracy
+// limit or fixed position accuracy that can be requested.
+export const MinAccuracy = 0.0001;
+
 export const SurveyAgain = 'again';
 export const SurveyFlagNames = [SurveyAgain] as const;
 export type SurveyFlag = typeof SurveyFlagNames[number];

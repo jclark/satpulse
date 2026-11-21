@@ -1,89 +1,72 @@
 ---
 name: reviewing-code-with-codex
-description: This skill should be used when the user asks to "review code", "code review", "review changes", or "review with codex". It uses Codex AI agent in read-only mode to review code changes for correctness and plan consistency, then acts on the findings. Tests should already have been run before invoking this skill.
-allowed-tools: Bash, Glob, Grep, Read, Edit, Write, AskUserQuestion
+description: Use when the user asks for a review by Codex, in words such as "review this with Codex", "get Codex Sol to review the branch", "ask Codex Astra to check the error handling". Runs a read-only Codex review through the Codex plugin, optionally with a model and focus wording taken from the request, then evaluates the findings and reports them without fixing anything. Tests should already have been run.
+allowed-tools: Bash, Read, Grep, Glob
 user-invocable: true
 ---
 
 # Reviewing code with Codex
 
-Invoke Codex AI for a non-interactive code review focused on correctness and plan consistency, then evaluate and act on the findings.
+Run a read-only Codex review through the companion script of the Codex plugin for Claude Code
+(`codex@openai-codex`, from `openai/codex-plugin-cc`), then evaluate what Codex found.
+Do not ask the user anything before running it: take everything from the request.
+The user can run the plugin's own `/codex:review` and `/codex:adversarial-review` directly;
+those are user-only, which is why this skill calls the script.
 
-Prerequisites: tests should already have been run and passed before using this skill.
+## Step 1: Read the request
 
-## Step 1: Determine change status
+- **Model**: "Sol" means `gpt-6.2-sol`; "Astra" means `gpt-6.2-astra`.
+  A full model id given by the user is used as is.
+  With no model named, use `gpt-6.2-astra`.
+- **Focus**: any wording about what to look at or question ("focus on the partial-failure handling",
+  "challenge whether the mask belongs in phc").
+  Keep the user's words; do not rewrite them.
+- **Plan**: if the work being reviewed was implemented from a plan file that is apparent from the
+  conversation, the review also checks consistency with it.
+  Do not guess a plan from `plan/`.
+- **Target**: what to review, if the user says ("the branch", "PR 544", "against master").
 
-Run `git status --porcelain` to classify changes:
-- **Staged**: index column has status (first column is not space/`?`)
-- **Modified**: worktree column has status (second column is not space)
-- **Both**: some staged, some modified
+## Step 2: Choose the target
 
-## Step 2: Find the plan
-
-Check the conversation context for a plan file that was used for the current implementation. If the user mentioned a plan file or one was read during the session, use that path.
-
-If no plan is apparent from context, check for the most recently modified file in the `plan/` directory:
-
-```bash
-ls -t plan/*.md | head -1
-```
-
-Ask the user to confirm whether this is the right plan before proceeding. If they say there is no plan, skip the plan consistency check.
+- If the user named a target, use it: a branch or PR is `--base <ref>`, with the PR's base from
+  `gh pr view <n> --json baseRefName -q .baseRefName`.
+- Otherwise, if `git status --porcelain` shows changes, review the working tree: `--scope working-tree`.
+  This covers staged, unstaged and untracked changes together; the script cannot review only staged
+  changes, so if the user asks for that, say so instead of running it.
+- Otherwise review the branch against its PR's base (`gh pr view --json baseRefName -q .baseRefName`),
+  or `master` if the branch has no PR: `--base <ref>`.
+  Always pass the base explicitly: the script's own default is the default branch, which is wrong for
+  a branch stacked on another PR.
 
 ## Step 3: Run Codex
 
-**Use a 15-minute timeout** (timeout: 900000) on the Bash tool call, since Codex with xhigh reasoning effort can take several minutes.
+Use the helper next to this file, which finds the installed plugin's companion script:
 
-Build the prompt and run. The prompt must tell Codex:
-1. Whether changes are staged, modified, or both (so it uses the right git diff command)
-2. Not to run tests and not to modify files
-3. To review for correctness
-4. If a plan exists, to check implementation against the plan
-
-When there is a plan file at PLAN_PATH:
-
-```bash
-# 2>/dev/null suppresses reasoning/thinking token output on stderr
-codex exec --sandbox read-only --model gpt-5.3-codex -c model_reasoning_effort=xhigh "$(cat <<'PROMPT'
-Review the CHANGE_STATUS code changes (use git diff or git diff --cached as appropriate).
-
-Do NOT run any tests. Do NOT modify any files.
-
-Review for correctness: logic errors, off-by-one errors, nil pointer risks, error handling bugs, race conditions.
-
-Also read the plan at PLAN_PATH and check whether the implementation is consistent with the plan. Flag anywhere the code diverges from or is missing something specified in the plan.
-
-Be concise. Only flag real issues.
-PROMPT
-)" 2>/dev/null
+```
+.claude/skills/reviewing-code-with-codex/codex-companion.sh review --model <model> <target>
+.claude/skills/reviewing-code-with-codex/codex-companion.sh adversarial-review --model <model> <target> "<focus>"
 ```
 
-When there is no plan:
+- With no focus and no plan, use `review`: Codex's built-in reviewer, which takes no instructions.
+- Otherwise use `adversarial-review`, the only review that takes instructions.
+  It is framed to question the approach and design as well as the code.
+  The focus text is the user's wording, then, if there is a plan, `Also check that the implementation
+  is consistent with the plan in <path>, and flag where it diverges or omits something.`,
+  then `Do not run tests. Do not modify files.`
+- Neither command takes a reasoning effort: Codex uses the user's configured default.
 
-```bash
-# 2>/dev/null suppresses reasoning/thinking token output on stderr
-codex exec --sandbox read-only --model gpt-5.3-codex -c model_reasoning_effort=xhigh "$(cat <<'PROMPT'
-Review the CHANGE_STATUS code changes (use git diff or git diff --cached as appropriate).
+Run it with Bash in the background (`run_in_background: true`): reviews take minutes.
+Tell the user what is running (command, model, target), then wait for the completion notification;
+do not poll.
+If the helper reports that the plugin is missing or Codex is not set up or logged in,
+pass that on and stop.
 
-Do NOT run any tests. Do NOT modify any files.
+## Step 4: Evaluate the findings
 
-Review for correctness: logic errors, off-by-one errors, nil pointer risks, error handling bugs, race conditions.
+Read the output and check each finding against the code. Do not assume Codex is right.
+Report the findings as a numbered list, most severe first, each with Codex's file and line and,
+for each one, whether you agree, disagree or are unsure, and why.
+If Codex found nothing, say so.
 
-Be concise. Only flag real issues.
-PROMPT
-)" 2>/dev/null
-```
-
-Replace CHANGE_STATUS with "staged", "modified (unstaged)", or "staged and modified (unstaged)".
-
-## Step 4: Evaluate and act on findings
-
-Read the Codex output and critically evaluate each issue raised. Do not assume the reviewer is correct.
-
-For each issue:
-
-- **Agree with the finding**: fix the code directly.
-- **Disagree with the finding**: present both perspectives to the user (the Codex argument and why you disagree) and ask the user to decide.
-- **Uncertain**: present it to the user for a decision.
-
-After addressing all findings, re-run tests on affected packages to confirm nothing was broken by the fixes.
+Then stop. Do not fix anything until the user says which findings to fix.
+After fixing, run the tests for the affected packages.

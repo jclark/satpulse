@@ -55,5 +55,3 @@ func NoFlowControl(*Attr) error { return nil }
 func Speed(int) AttrSetter { return func(*Attr) error { return nil } }
 
 func ReadTimeout(time.Duration) AttrSetter { return func(*Attr) error { return nil } }
-
-func IsValidSpeed(int) bool { return false }
