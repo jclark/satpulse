@@ -260,6 +260,10 @@
         "wait": {
           "type": "boolean",
           "default": false
+        },
+        "exttsLatency": {
+          "type": "number",
+          "default": 0
         }
       }
     },
