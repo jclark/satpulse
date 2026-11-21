@@ -123,6 +123,8 @@ export class SerialConnection {
     private transmitUntil = 0;
     private closing?: Promise<void>;
     private opened = false;
+    private stopping = new AbortController();
+    private reopenPending = false;
 
     constructor(private port: BrowserPort, private speed: number, private released: () => void) {}
 
@@ -182,8 +184,12 @@ export class SerialConnection {
             if (this.stopped) throw new Error('Serial port is closed.');
             this.queue = [];
             this.queued = 0;
-            await this.port.open({baudRate: speed, bufferSize: 65536});
-            this.opened = true;
+            // As for the first open, stopping ends the wait but not the open.
+            this.reopenPending = true;
+            this.opening = this.port.open({baudRate: speed, bufferSize: 65536})
+                .then(() => { this.opened = true; })
+                .finally(() => { this.reopenPending = false; });
+            await waitFor(this.opening, this.stopping.signal);
             if (this.stopped) {
                 await this.closeStreams();
                 throw new Error('Serial port is closed.');
@@ -203,12 +209,13 @@ export class SerialConnection {
 
     stop(): void {
         this.stopped = true;
+        this.stopping.abort(new Error('Serial port is closed.'));
         this.wake?.();
     }
 
     close(): Promise<void> {
         this.stop();
-        return this.closing ??= (async () => {
+        this.closing ??= (async () => {
             try {
                 await this.opening?.catch(() => {});
                 await this.changingSpeed?.catch(() => {});
@@ -217,6 +224,11 @@ export class SerialConnection {
                 this.released();
             }
         })();
+        if (!this.reopenPending) return this.closing;
+        // The port stays reserved until the reopen settles and is closed,
+        // but the caller need not wait for an open that may never complete.
+        this.closing.catch(() => {});
+        return Promise.resolve();
     }
 
     private startStreams(): void {

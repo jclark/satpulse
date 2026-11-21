@@ -145,18 +145,19 @@ it('releases ownership after an open failure', async () => {
     expect(port.closes).toBe(1);
 });
 
-it('close waits for a pending baud reopen before another connection opens', async () => {
+it('close interrupts a stalled baud reopen but keeps the port until it settles', async () => {
     const first = await serial.open('serial:1', 38400);
     const gate = deferred();
     port.barrier = gate.promise;
     const changed = first.changeSpeed(57600);
     const rejected = expect(changed).rejects.toThrow('Serial port is closed.');
     await vi.waitFor(() => expect(port.state).toBe('opening'));
-    const closed = first.close();
-    const next = serial.open('serial:1', 115200);
-    gate.resolve();
+    await first.close();
     await rejected;
-    await closed;
+    const next = serial.open('serial:1', 115200);
+    await new Promise(resolve => setTimeout(resolve, 0));
+    expect(port.opens).toEqual([38400, 57600]);
+    gate.resolve();
     await (await next).close();
     expect(port.opens).toEqual([38400, 57600, 115200]);
     expect(port.closes).toBe(3);

@@ -209,9 +209,10 @@ The adapter makes the following choices:
   end the connection after previously queued input is delivered.
 - **Port ownership.** Each port remains reserved through opening, use, baud
   changes and close. New connections wait for superseded attempts to finish
-  cleanup. The Go opener's context aborts its JavaScript wait; because Web
-  Serial cannot abort the underlying open, a late completion is closed before
-  the reservation is released.
+  cleanup. The Go opener's context aborts its JavaScript wait, and `Stop`
+  aborts the wait for a baud-change reopen; because Web Serial cannot abort
+  the underlying open, a late completion is closed before the reservation is
+  released, and `Close` returns without waiting for it.
 - **Runtime failure.** The browser shell monitors Go throughout its lifetime,
   rejects pending and future calls on exit, closes JavaScript serial resources,
   and replaces the UI with a visible error. Promise rejection reasons retain
