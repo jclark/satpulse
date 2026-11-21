@@ -86,4 +86,4 @@ func (s *replaySampler) Sample(data phcsync.Sample) {
 	s.sampleCount++
 }
 
-func (s *replaySampler) ModeChanged(_, _ phcsync.Mode) {}
+func (s *replaySampler) ModeChanged(_, _ phcsync.Mode, _ time.Time) {}

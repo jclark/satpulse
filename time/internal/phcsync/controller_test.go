@@ -186,12 +186,13 @@ type recordingSampler struct {
 
 type modeChange struct {
 	old, new Mode
+	t        time.Time
 }
 
 func (s *recordingSampler) Sample(data Sample) { s.samples = append(s.samples, data) }
 
-func (s *recordingSampler) ModeChanged(old, new Mode) {
-	s.modeChanges = append(s.modeChanges, modeChange{old, new})
+func (s *recordingSampler) ModeChanged(old, new Mode, t time.Time) {
+	s.modeChanges = append(s.modeChanges, modeChange{old, new, t})
 }
 
 // fakeClock is a minimal phcsync.Clock implementation for tests.
@@ -232,7 +233,27 @@ func forceConverging(t *testing.T, c *Controller, rsgDetectLeap func(time.Durati
 	}
 	rsg.detectLeap = rsgDetectLeap
 	c.lastSample = &Sample{Kind: SampleOK}
-	c.changeMode(ModeConverging)
+	c.changeMode(ModeConverging, time.Time{})
+}
+
+// modeProc is a sampleProcessor that always asks for mode.
+type modeProc struct{ mode Mode }
+
+func (p modeProc) processSample(*Sample) (phcAction, Mode) { return phcAction{}, p.mode }
+
+// TestSampleModeChangeTime checks that a mode change caused by a sample
+// is reported with the sample's Sys.
+func TestSampleModeChangeTime(t *testing.T) {
+	c := newTestController(t, &fakeBuffer{})
+	forceConverging(t, c, func(time.Duration) bool { return false })
+	c.sampleProc = modeProc{ModeReset}
+	sys := time.Unix(4, 0)
+	c.processPresentSample(&Sample{Kind: SampleOK, Sys: sys})
+	rec := c.observer.(*recordingSampler)
+	want := modeChange{ModeConverging, ModeReset, sys}
+	if got := rec.modeChanges[len(rec.modeChanges)-1]; got != want {
+		t.Errorf("last ModeChanged = %v, want %v", got, want)
+	}
 }
 
 // TestTimeMessageDetectsLeap exercises the Controller.TimeMessage
@@ -283,9 +304,17 @@ func TestTimeMessageDetectsLeap(t *testing.T) {
 			} else {
 				c.detectLeap = nil
 			}
-			c.TimeMessage()
+			tRead := time.Unix(5, 0)
+			c.TimeMessage(tRead)
 			if c.Mode() != tt.expectMode {
 				t.Errorf("Mode() = %v, want %v", c.Mode(), tt.expectMode)
+			}
+			if tt.expectMode == ModeReset {
+				rec := c.observer.(*recordingSampler)
+				want := modeChange{ModeConverging, ModeReset, tRead}
+				if got := rec.modeChanges[len(rec.modeChanges)-1]; got != want {
+					t.Errorf("last ModeChanged = %v, want %v", got, want)
+				}
 			}
 			if called != tt.expectInvoked {
 				t.Errorf("detectLeap invoked = %v, want %v", called, tt.expectInvoked)
@@ -328,7 +357,7 @@ func TestChangeModeWiringDetectLeap(t *testing.T) {
 		if c.detectLeap == nil {
 			t.Fatalf("preconditions: closure should be set after leaving reset")
 		}
-		c.changeMode(ModeReset)
+		c.changeMode(ModeReset, time.Time{})
 		if c.detectLeap != nil {
 			t.Errorf("expected detectLeap to be cleared on entering reset, got non-nil")
 		}
@@ -371,16 +400,18 @@ func TestModeChangedFiresWithoutSample(t *testing.T) {
 	c.SetTimeMsgBuffer(&fakeBuffer{})
 	// Drive sampleless transitions through the controller's internal API.
 	c.lastSample = &Sample{Kind: SampleOK}
-	c.changeMode(ModeConverging)
-	c.changeMode(ModeTracking)
+	t1, t2, t3 := time.Unix(1, 0), time.Unix(2, 0), time.Unix(3, 0)
+	c.changeMode(ModeConverging, t1)
+	c.changeMode(ModeTracking, t2)
 	// The case Codex flagged: carrier loss while tracking.
-	c.Pause()
+	c.Pause(t3)
 
+	// The initial transition has no input, so its time is zero.
 	want := []modeChange{
-		{ModeInvalid, ModeReset},
-		{ModeReset, ModeConverging},
-		{ModeConverging, ModeTracking},
-		{ModeTracking, ModeReset},
+		{ModeInvalid, ModeReset, time.Time{}},
+		{ModeReset, ModeConverging, t1},
+		{ModeConverging, ModeTracking, t2},
+		{ModeTracking, ModeReset, t3},
 	}
 	if len(rec.modeChanges) != len(want) {
 		t.Fatalf("ModeChanged calls: got %d (%v), want %d (%v)",

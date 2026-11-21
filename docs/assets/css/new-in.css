@@ -1,5 +1,5 @@
-/* Inline "new in 0.3" label on tutorial pages, emitted by the
-   new-in-03.html include while prerelease_labels is set in _config.yml. */
+/* Inline "new in" label on tutorial pages, emitted by the new-in.html
+   include while its version is the site's development version. */
 .new-in-label {
   font-size: 0.65em;
   font-weight: 700;

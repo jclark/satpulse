@@ -249,7 +249,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 				continue
 			}
 			if e.Kind == ts.PauseEvent {
-				d.controller.Pause()
+				d.controller.Pause(e.TReadMono.Sys)
 				continue
 			}
 			if e.Kind == ts.ResumeEvent {
@@ -576,7 +576,7 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {
-		d.controller.TimeMessage()
+		d.controller.TimeMessage(tRead)
 	}
 
 	d.timeTicker.Time(mt, tRead)
@@ -623,6 +623,7 @@ func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	d.logMsg(msg, tRead)
 	d.timeTicker.NavEpoch(msg, tRead)
+	msg.Acc.FillDerived() // after logMsg, so the event log has only reported values
 	d.pvAccum.PVMsgBundle.FillDerived()
 	pv := d.pvAccum.PVMsgBundle // copy before clearing
 	d.pvAccum.NavEpoch(msg, tRead)

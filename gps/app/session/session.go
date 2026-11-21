@@ -220,21 +220,6 @@ type Options struct {
 	PacketLog io.Writer // optional JSONL packet log; writes are serialized (nil to disable)
 }
 
-// Conn is a receiver connection with the capabilities a Session needs.
-type Conn interface {
-	gpsio.Conn
-	stream.PacketWriter
-	// Speed returns the current host serial port speed, or 0 if there is none.
-	Speed() int
-	// SetPacketLog takes ownership of the log's output half. The connection
-	// must call SemiClose exactly once after its last LogOutput, normally
-	// when stopped. A connection with no output logging must complete that
-	// half immediately. Attach the log before starting the packet pipeline.
-	SetPacketLog(*gpsio.PacketLog)
-}
-
-var _ Conn = (*gpsio.SerialConn)(nil)
-
 // Session is an interactive session with a GPS receiver.
 // Its methods are safe for concurrent use.
 type Session struct {
@@ -510,6 +495,22 @@ func (s *Session) enterReconnect() bool {
 	return true
 }
 
+// Conn is a receiver connection with the capabilities a Session needs.
+type Conn interface {
+	gpsio.Conn
+	stream.PacketWriter
+	// Speed returns the current host serial port speed, or 0 if there is none.
+	Speed() int
+	// SetPacketLog takes ownership of the log's output half. The connection
+	// must call SemiClose exactly once after its last LogOutput, normally
+	// when stopped. A connection with no output logging must complete that
+	// half immediately. Attach the log before starting the packet pipeline.
+	SetPacketLog(*gpsio.PacketLog)
+}
+
+var _ Conn = (*gpsio.SerialConn)(nil)
+var _ Conn = (*gpsio.NetConn)(nil)
+
 // Opener opens (and re-opens) the connection to the receiver.
 type Opener interface {
 	// Open connects to the receiver.
@@ -537,7 +538,7 @@ const deviceWaitInterval = 200 * time.Millisecond
 // different name is not found (known limitation).
 func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (Conn, error) {
 	for {
-		conn, _, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
+		conn, err := gpsio.OpenSerial(lg, o.Device, o.Speed)
 		if err == nil {
 			return conn, nil
 		}
@@ -708,6 +709,7 @@ func (s *Session) runConn(connCtx context.Context, conn Conn) connVerdict {
 	// reconnect must not resume from the dead connection's state.
 	procs := gpsreg.CreatePacketProcessors(s.vendors)
 	configCh := make(chan configRequest)
+	speed := conn.Speed()
 	s.mu.Lock()
 	s.conn = conn
 	s.runCtx = runCtx
@@ -715,7 +717,7 @@ func (s *Session) runConn(connCtx context.Context, conn Conn) connVerdict {
 	s.portLock = portLock
 	s.pb = pb
 	s.configCh = configCh
-	s.speed = conn.Speed()
+	s.speed = speed
 	s.resetPending = false
 	s.mu.Unlock()
 	v := s.packetWorker(runCtx, conn, procs, pktSub, configCh, portLock)
@@ -1781,9 +1783,9 @@ func (s *Session) sendConfigRequest(ctx context.Context, target *gpsprot.ConfigT
 // Called after any gpscfg.Configure since that is the only path that can
 // change the host speed (via SerialOutPort.WriteThenChangeSpeed).
 func (s *Session) emitSpeed(conn Conn) {
+	speed := conn.Speed()
 	s.mu.Lock()
-	s.speed = conn.Speed()
-	speed := s.speed
+	s.speed = speed
 	s.mu.Unlock()
 	s.emit(SpeedEvent(speed))
 }

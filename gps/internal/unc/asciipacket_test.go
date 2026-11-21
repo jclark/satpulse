@@ -202,6 +202,7 @@ func TestAsciiPacketMsgID(t *testing.T) {
 		want   string
 	}{
 		{"OBSVMA normalizes to OBSVM", "#OBSVMA,97,GPS,FINE,2419,522335000,17548,0,18,23;112,0,6*00\r\n", "OBSVM"},
+		{"GPSEPHA without a decoder normalizes to GPSEPH", "#GPSEPHA,89,GPS,FINE,2445,211095000,0,0,18,13;7*00\r\n", "GPSEPH"},
 		{"PPSSTATUSA normalizes to PPSSTATUS", "#PPSSTATUSA,93,GPS,FINE,2376,540337000,0,0,18,29;3,2376,540336000*0bbaac1a\r\n", "PPSSTATUS"},
 		{"MODE has no suffix and is kept", "#MODE,81,GPS,FINE,2230,547967000,0,0,18,518;MODE ROVER SURVEY*1b\r\n", "MODE"},
 		{"unknown message keeps its wire name", "#NOSUCHMSGA,1,x;y*00\r\n", "NOSUCHMSGA"},

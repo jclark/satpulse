@@ -75,7 +75,7 @@ Decide in this order:
    |--------|-------|
    | `--band`, `--signal`, `--except-signal` | `signal` |
    | `--speed` | `speed` |
-   | `--survey` / `--survey-acc` | `survey` / `surveyAcc` |
+   | `--survey` / `--survey-acc` / `--survey-time` | `survey` / `surveyAcc` / `surveyDur` |
    | `--fixed-pos-ecef`, `--fixed-pos-llh` / `--fixed-pos-acc` | `fixedPos` / `fixedPosAcc` |
    | `--raw-out` | `raw` |
    | `--pvt-out survey` | `surveyMsg` |

@@ -26,7 +26,6 @@
         value: "{{ item.value }}"
       loop:
         - { section: "phc", option: "interface", value: '"{{ interface }}"' }
-        - { section: "phc", option: "pin", value: "{{ pin }}" }
         - { section: "phc", option: "channel", value: "{{ channel }}" }
         - { section: "serial", option: "device", value: '"{{ device }}"' }
         - { section: "serial", option: "speed", value: "{{ speed }}" }
@@ -35,6 +34,23 @@
         - { section: "log", option: "clock", value: "true" }
         - { section: "ntp", option: "sock.path", value: '"{{ sock_path }}"'}
         - { section: "[http]", option: "listen", value: '":{{ http_port }}"' }
+
+    - name: Set the PHC pin
+      ini_file:
+        path: "{{ config_file }}"
+        section: phc
+        option: pin
+        value: "{{ pin }}"
+      when: pin | string | length > 0
+
+    # A PHC without pins (BeagleY-AI CPTS) must have no pin key at all: pin: ""
+    - name: Remove the PHC pin for a PHC without pins
+      ini_file:
+        path: "{{ config_file }}"
+        section: phc
+        option: pin
+        state: absent
+      when: pin | string | length == 0
 
     - name: Remove old options from SatPulse config file
       ini_file:

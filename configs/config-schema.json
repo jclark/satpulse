@@ -246,6 +246,9 @@
         "interface": {
           "type": "string"
         },
+        "device": {
+          "type": "string"
+        },
         "pin": {
           "type": "integer",
           "minimum": 0
@@ -257,6 +260,12 @@
         "wait": {
           "type": "boolean",
           "default": false
+        },
+        "exttsLatency": {
+          "type": "integer",
+          "default": 0,
+          "minimum": -1000000,
+          "maximum": 1000000
         }
       }
     },
