@@ -509,9 +509,6 @@ var _ Conn = (*gpsio.NetConn)(nil)
 type Opener interface {
 	// Open connects to the receiver.
 	Open(ctx context.Context, lg *slog.Logger) (Conn, error)
-	// Socket reports a proxy connection: sets ConfigOptions.Socket
-	// for gpscfg.Configure.
-	Socket() bool
 }
 
 // SerialOpener opens a local serial device.
@@ -546,9 +543,6 @@ func (o SerialOpener) Open(ctx context.Context, lg *slog.Logger) (Conn, error) {
 		}
 	}
 }
-
-// Socket reports that a serial device is not a proxy connection.
-func (o SerialOpener) Socket() bool { return false }
 
 // Connect opens a connection to a GPS receiver via op. It is
 // asynchronous: it returns once the transport is open, and probe
@@ -755,7 +749,6 @@ func (s *Session) packetWorker(runCtx context.Context, conn Conn, procs map[gpsp
 	// on for the connection; the cost is one GGA per epoch into a cap-1 chan.
 	sel := stream.NewGGASelector()
 	synth := nmeasyn.New(sel)
-	socket := s.op.Socket()
 	s.mu.Lock()
 	s.mh = mh
 	s.probe = ReceiverEvent{}
@@ -775,7 +768,6 @@ func (s *Session) packetWorker(runCtx context.Context, conn Conn, procs map[gpsp
 	// Run initial probe, matching the daemon's pattern of Configure before dispatch.
 	target := gpsprot.NewConfigTarget()
 	target.Opts.ForceProbe = true
-	target.Opts.Socket = socket
 	rslt, err := gpscfg.Configure(runCtx, s.lg, procs,
 		gpsreg.CreateConfigProtocols(s.vendors), target, sub, conn)
 	portLock <- port
@@ -841,7 +833,6 @@ func (s *Session) packetWorker(runCtx context.Context, conn Conn, procs map[gpsp
 			s.mu.Lock()
 			s.resetPending = reset
 			s.mu.Unlock()
-			req.target.Opts.Socket = socket
 			rslt, err := gpscfg.Configure(req.ctx, s.lg, procs,
 				gpsreg.CreateConfigProtocols(s.vendors), req.target, sub, conn)
 			portLock <- port
@@ -1240,14 +1231,15 @@ func (s *Session) ReadConfig(ctx context.Context) (*gpsprot.ConfigProps, error) 
 }
 
 // ApplyConfig sends configuration changes to the receiver. It removes
-// read-only properties from target.Props and sets target.Opts.Socket to
-// match the transport. Like ReadConfig it is an exclusive receiver
+// read-only properties from target.Props and clears target.Opts.Socket,
+// since no Session transport is a satpulsed proxy socket. Like ReadConfig it is an exclusive receiver
 // operation: it requires StateConnected, holds the
 // port as StateConfiguring until the run completes, and returns an
 // error if the session is not connected or another operation is in
 // progress.
 func (s *Session) ApplyConfig(ctx context.Context, target *gpsprot.ConfigTarget) error {
 	target.Props.ClearReadOnlyProps()
+	target.Opts.Socket = false
 	s.mu.Lock()
 	if s.state != StateConnected {
 		err := s.stateErrLocked()

@@ -137,10 +137,9 @@ func (c *fakeConn) isClosed() bool {
 
 // fakeOpener hands out queued fakeConns, one per Open call.
 type fakeOpener struct {
-	mu     sync.Mutex
-	conns  []*fakeConn
-	socket bool
-	opens  int
+	mu    sync.Mutex
+	conns []*fakeConn
+	opens int
 }
 
 func (o *fakeOpener) Open(_ context.Context, _ *slog.Logger) (Conn, error) {
@@ -154,8 +153,6 @@ func (o *fakeOpener) Open(_ context.Context, _ *slog.Logger) (Conn, error) {
 	o.conns = o.conns[1:]
 	return c, nil
 }
-
-func (o *fakeOpener) Socket() bool { return o.socket }
 
 func (o *fakeOpener) openCount() int {
 	o.mu.Lock()
