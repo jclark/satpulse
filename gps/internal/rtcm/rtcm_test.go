@@ -2,7 +2,9 @@ package rtcm
 
 import (
 	"bytes"
+	"reflect"
 	"testing"
+	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/internal/scantest"
@@ -110,5 +112,37 @@ func TestMSMMsgType(t *testing.T) {
 				t.Errorf("MSMMsgType(%v, %d) = %d, want %d", tt.gnss, tt.msm, got, tt.want)
 			}
 		})
+	}
+}
+
+// nativeRecord captures what ProcessPacket delivered to the native
+// message handler.
+type nativeRecord struct {
+	Tag    gpsprot.Tag
+	MsgID  string
+	MsgNil bool
+}
+
+type recordingHandler struct{ rec *nativeRecord }
+
+func (h *recordingHandler) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
+	*h.rec = nativeRecord{tag, msgID, msg == nil}
+	return nil
+}
+
+func TestProcessPacketNativeMsg(t *testing.T) {
+	// the handler gets the message id and no parsed body
+	var rec nativeRecord
+	p := NewPacketProcessor()
+	p.SetNativeMsgHandler(&recordingHandler{&rec})
+	msgID, err := p.ProcessPacket(rtcmEx, time.Time{})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if msgID != "1005" {
+		t.Fatalf("msgID %q, want 1005", msgID)
+	}
+	if expect := (nativeRecord{Tag, "1005", true}); !reflect.DeepEqual(rec, expect) {
+		t.Errorf("got  %+v\nwant %+v", rec, expect)
 	}
 }

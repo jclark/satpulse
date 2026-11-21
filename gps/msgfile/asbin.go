@@ -65,7 +65,7 @@ func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 	mid := asbin.MakeMsgID(am.Class, am.ID)
 	corr := asbinMsgIDString(asbin.PacketMsgId(data))
 	payloadLen := len(data) - asbin.PacketMinLen
-	if mid.CfgClass() {
+	if mid.CfgClass() || mid.Ackable() {
 		if !mid.Ackable() {
 			return requestAnalysis{
 				ackTag:       gpsreg.TagAllystarBin,
@@ -88,7 +88,8 @@ func (am *ASBINMsg) analyzeRequest(data string) requestAnalysis {
 		}
 		return a
 	}
-	// Non-CFG poll.
+	// Non-CFG poll (RXM-DUMPRAW, the one acknowledged non-CFG set, was
+	// handled above).
 	return requestAnalysis{
 		expectAck:  ExpectAckNone,
 		dataTag:    gpsreg.TagAllystarBin,
