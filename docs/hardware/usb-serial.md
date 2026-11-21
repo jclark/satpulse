@@ -1,14 +1,14 @@
 ---
-title: USB-serial adapters
+title: USB serial adapters
 ---
 
-In some cases you can directly connect a GPS receiver to a computer without a USB-serial adapter:
+In some cases you can directly connect a GPS receiver to a computer without a USB serial adapter:
 
 - an SBC such as a Raspberry Pi typically has GPIO pins which can be connected to the pins on a GPS module
 - some desktop computers have RS232 DB9 male connectors which can be connected to a GPS enclosure that has an RS232 DB9 female connector
 - some GPS receivers have a USB connector which can be connected to a computer's USB port
 
-In other cases, you will typically need a USB-serial adapter.
+In other cases, you will typically need a USB serial adapter.
 
 The serial connection can be used for a PPS signal as well as for transmitting and receiving serial data.
 
@@ -46,12 +46,18 @@ In choosing this kind of USB serial adapter, you need to consider the following 
    A few adapters have a full set of modem control lines including DCD; this is useful on Linux,
    since it enables you to use kernel PPS timestamping, but these are unusual and more expensive.
    But SatPulse can work well with the CTS pin.
-4. The chipset manufacturer is usually FTDI (FT232R family), Prolific (PL2303 family), Silicon Labs (CP210x family) or WCH (CH34x family).
+4. The chipset manufacturer is usually FTDI (FT232 family), Prolific (PL2303 family), Silicon Labs (CP210x family) or WCH (CH34x family).
    I strongly recommend choosing one from FTDI particularly if you are using the connection for PPS.
    FTDI has the best cross-platform driver support. The cp210x driver on Linux does not support some important APIs.
+   The pl2303 driver on Linux reports a cached pin state, which delays PPS timestamps by a varying amount up to ~1ms.
    Some WCH chips use the CDC USB class, which does not allow the CTS pin to be used for PPS.
-5. Most USB-serial adapters are USB full speed, meaning they run at 12 Mbit/s, which was the maximum speed supported by USB 1.
-   This is plenty for serial data. But there are a few USB-serial adapters that use the FT232H chip, which is USB high speed, meaning it runs at 480 Mbit/s. The advantage of the high speed chip is it provides more consistent timing for the PPS signal in some USB topologies, since it avoids delays introduced by the need to translate between high speed and full speed transactions.
+   To summarize, chipset ranking for PPS on Linux from best to worst is: FT232, CP210x, PL2303, CH34x.
+5. Most USB serial adapters are USB full-speed, meaning they run at 12 Mbit/s, which was the maximum speed supported by USB 1.
+   This is plenty for serial data. But there are a few USB serial adapters that use the FT232H chip, which is USB high-speed, meaning it runs at 480 Mbit/s. The advantage of the high-speed chip is that it provides more consistent timing for the PPS signal in some USB topologies, since it avoids delays introduced by the need to translate between high-speed and full-speed transactions.
+   Note that the fact that full-speed USB uses a 1ms frame interval does not imply that a USB operation must take at least 1ms:
+   a single frame can contain many bus transactions.
+   But with a full-speed device, USB hardware that schedules operations sub-optimally can introduce delays that are multiples of 1ms.
+   When using a hub, the relevant scheduling is performed by the hub rather than the host computer.
 6. Some adapters physically consist of a cable with a USB connector at one end and Dupont female connectors at the other.
    Some adapters have no cable, and have Dupont male pins; these often include a separate jumper cable.
    I recommend the latter type, since with a suitable jumper cable they can work with boards using JST connectors.
@@ -64,7 +70,7 @@ I like the ones from [Waveshare](https://www.waveshare.com/), which are availabl
 The dongle has the disadvantage that it tends to block adjacent ports,
 but it has the unusual feature of having two GND pins, which is convenient when you want to connect the PPS pin of a GPS board to an SDP on a PHC,
 which also needs a ground connection,
-while connecting the other pins on the GPS board to the USB-serial adapter.
+while connecting the other pins on the GPS board to the USB serial adapter.
 
 There are relatively few suitable FT232H adapters.
 I specifically recommend the [Adafruit FT232H breakout board](https://www.adafruit.com/product/2264).

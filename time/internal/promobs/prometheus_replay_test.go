@@ -63,10 +63,10 @@ func TestReplay(t *testing.T) {
 	t.Logf("replayed %d NavEpoch, %d Satellites events", nNavEpoch, nSatellites)
 
 	// Also exercise Sample() and ModeChanged() with hand-crafted PHC samples.
-	obs.ModeChanged(phcsync.ModeInvalid, phcsync.ModeReset)
+	obs.ModeChanged(phcsync.ModeInvalid, phcsync.ModeReset, time.Time{})
 	obs.Sample(phcsync.Sample{Kind: phcsync.SampleMissing, Mode: phcsync.ModeReset, Freq: 1000})
 	obs.Sample(phcsync.Sample{Kind: phcsync.SampleMissing, Mode: phcsync.ModeReset, Freq: 2000})
-	obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking)
+	obs.ModeChanged(phcsync.ModeReset, phcsync.ModeTracking, time.Time{})
 	obs.Sample(phcsync.Sample{
 		Kind: phcsync.SampleOK, Mode: phcsync.ModeTracking, Freq: 500,
 		Offset: 50 * time.Nanosecond, FreqDelta: 0.1,
@@ -188,7 +188,7 @@ doneSignalCheck:
 	// A ModeChanged notification — without any accompanying sample — must
 	// drive both gauges immediately, including paths like carrier-loss
 	// Pause where the controller transitions without producing a sample.
-	obs.ModeChanged(phcsync.ModeTracking, phcsync.ModeReset)
+	obs.ModeChanged(phcsync.ModeTracking, phcsync.ModeReset, time.Time{})
 	mfAfterTransition := scrape(t, obs)
 	assertGauge(t, mfAfterTransition, "satpulse_phc_sync_mode", float64(phcsync.ModeReset))
 	assertGauge(t, mfAfterTransition, "satpulse_phc_sync_status", 0)

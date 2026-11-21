@@ -1,0 +1,1 @@
+{%- capture new_in_current -%}{% include VERSION %}{%- endcapture -%}{%- if include.version == new_in_current -%}<span class="new-in-label">new in {{ include.version }}</span>{%- endif -%}

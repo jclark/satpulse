@@ -43,6 +43,7 @@ This can help with seeing whether your receiver is handling the commands correct
 
 ## Vendor directories
 
+- [Airoha](airoha/)
 - [Allystar](allystar/)
 - [Bynav](bynav/)
 - [Quectel](quectel/)

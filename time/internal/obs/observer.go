@@ -96,10 +96,10 @@ func (m *MultiObserver) Sample(data phcsync.Sample) {
 }
 
 // ModeChanged implements phcsync.Observer by type-asserting handlers to Observer
-func (m *MultiObserver) ModeChanged(oldMode, newMode phcsync.Mode) {
+func (m *MultiObserver) ModeChanged(oldMode, newMode phcsync.Mode, t time.Time) {
 	for h := range m.Handlers() {
 		if o, ok := h.(phcsync.Observer); ok {
-			o.ModeChanged(oldMode, newMode)
+			o.ModeChanged(oldMode, newMode, t)
 		}
 	}
 }
@@ -169,7 +169,7 @@ type DefaultObserver struct {
 func (o *DefaultObserver) Sample(data phcsync.Sample) {}
 
 // ModeChanged implements phcsync.Observer as a no-op
-func (o *DefaultObserver) ModeChanged(_, _ phcsync.Mode) {}
+func (o *DefaultObserver) ModeChanged(_, _ phcsync.Mode, _ time.Time) {}
 
 // Tick implements Observer as a no-op
 func (o *DefaultObserver) Tick(_ *gpsprot.TimeMsg, _ time.Time) {}

@@ -27,6 +27,7 @@ from characterize import to_json
 from model import emissions, port_has_serial_speed
 from probes import PROPS, ProbeRun
 from tool import Invocation, Tool, ToolFailure
+from vendor import load_vendor
 
 
 def main() -> int:
@@ -225,6 +226,7 @@ def drive(tool: Tool, phc: tuple[str, int, int] | None, serial_device: str | Non
         return
     receiver = ident.out.get("receiver", {})
     supports = ident.out.get("supports") or []
+    pr.vendor = load_vendor(receiver)
     print(f"receiver: {receiver.get('vendor')} {receiver.get('hardware')} "
           f"{receiver.get('firmware')}", file=sys.stderr)
     initial = pr.show_config("initial-config", "initial")

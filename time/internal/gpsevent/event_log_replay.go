@@ -66,7 +66,7 @@ func (rs *replaySampler) Sample(data phcsync.Sample) {
 	rs.count++
 }
 
-func (rs *replaySampler) ModeChanged(_, _ phcsync.Mode) {}
+func (rs *replaySampler) ModeChanged(_, _ phcsync.Mode, _ time.Time) {}
 
 func (rs *replaySampler) logDateTime(ref ptime.Time) string {
 	// Round because the reference time may have had a pulse offset applied
