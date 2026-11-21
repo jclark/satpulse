@@ -64,6 +64,10 @@ func parseStreamState(r *Reply, name string) *streamState {
 	return &streamState{cd: f[2], messages: signalList(f[3]), interval: f[4]}
 }
 
+// utcBlocks are the UTC-parameter blocks, the source of leap second
+// information.
+var utcBlocks = []string{"GPSUtc", "GALUtc", "BDSUtc"}
+
 // pvtBlocks returns the SBF blocks realizing the requested PVT messages.
 func pvtBlocks(f gpsprot.PVTMsgFlags) []string {
 	var b []string
@@ -78,7 +82,7 @@ func pvtBlocks(f gpsprot.PVTMsgFlags) []string {
 		b = append(b, "xPPSOffset")
 	}
 	if f&gpsprot.PVTMsgLeapSecond != 0 {
-		b = append(b, "GPSUtc", "GALUtc", "BDSUtc")
+		b = append(b, utcBlocks...)
 	}
 	if f&gpsprot.PVTMsgSurvey != 0 {
 		b = append(b, "PVTCartesian")
@@ -309,7 +313,14 @@ func (c *Configurator) generateOutputReqs() {
 		// that asks for a block, so that turning blocks off cannot start
 		// output of the blocks it leaves.
 		if c.wantsSBFOutput() {
-			c.addOutputProtoReq("SBF", true, sel)
+			proto := c.addOutputProtoReq("SBF", true, sel)
+			// A stream sends the UTC-parameter blocks only when their
+			// content changes, which can be minutes away, so the current
+			// ones are requested once to deliver leap second information
+			// at once.
+			if c.pvtMsg()&gpsprot.PVTMsgLeapSecond != 0 {
+				c.append(&sReq{cmd: "exeSBFOnce, " + c.port + ", " + strings.Join(utcBlocks, "+"), needs: proto})
+			}
 		}
 	}
 	if c.target.Opts.NMEAMsg.IsSet() {
@@ -364,12 +375,14 @@ func (c *Configurator) generateOutputReqs() {
 // addOutputProtoReq turns proto on or off in this port's output. It needs
 // sel, the message selection written before it, when there is one: after a
 // refused selection the port would start sending the old one.
-func (c *Configurator) addOutputProtoReq(proto string, enable bool, sel *sReq) {
+func (c *Configurator) addOutputProtoReq(proto string, enable bool, sel *sReq) *sReq {
 	op := "-"
 	if enable {
 		op = "+"
 	}
-	c.append(&sReq{cmd: "setDataInOut, " + c.port + ", , " + op + proto, needs: sel})
+	req := &sReq{cmd: "setDataInOut, " + c.port + ", , " + op + proto, needs: sel}
+	c.append(req)
+	return req
 }
 
 func outputList(cur, desired, class []string) []string {

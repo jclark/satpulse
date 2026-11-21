@@ -478,3 +478,33 @@ func TestConfigureOutputsDisableOnly(t *testing.T) {
 		t.Errorf("set commands: got %v, want %v", got, expect)
 	}
 }
+
+// TestConfigureLeapSecondOnce checks that a leap second request asks for the
+// UTC-parameter blocks once, after the stream and the port are set up: a
+// stream sends them only when their content changes.
+func TestConfigureLeapSecondOnce(t *testing.T) {
+	sbfCmd := "setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc, sec1"
+	protoCmd := "setDataInOut, USB1, , +SBF"
+	onceCmd := "exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc"
+	replies := map[string]string{
+		"getSBFOutput, Stream1": "SBFOutput, Stream1, USB1, none, sec1",
+		sbfCmd:                  "SBFOutput, Stream1, USB1, GPSUtc+GALUtc+BDSUtc, sec1",
+		protoCmd:                "DataInOut, USB1, auto, SBF, (on)",
+		onceCmd:                 "SBFOnce, USB1, GPSUtc+GALUtc+BDSUtc",
+	}
+	target := &gpsprot.ConfigTarget{}
+	target.Opts.PVTMsg = gpsprot.PVTMsgLeapSecond
+	_, sent, errs := runConfig(t, target, replies)
+	if len(errs) > 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	var got []string
+	for _, c := range sent {
+		if strings.HasPrefix(c, "set") || strings.HasPrefix(c, "exe") {
+			got = append(got, c)
+		}
+	}
+	if expect := []string{sbfCmd, protoCmd, onceCmd}; !slices.Equal(got, expect) {
+		t.Errorf("commands: got %v, want %v", got, expect)
+	}
+}
