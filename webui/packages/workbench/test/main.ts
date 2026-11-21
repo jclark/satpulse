@@ -50,11 +50,12 @@ const transport: Transport = {
     openURL: () => {},
 };
 
-if (params.has('corrections')) {
+const correctionsState = params.get('corrections');
+if (correctionsState !== null) {
     transport.corrections = {
         getCorrectionsState: async () => {
             record('getCorrectionsState');
-            return {state: 'stopped'};
+            return {state: correctionsState || 'stopped'};
         },
         startCorrections: async source => {
             record('startCorrections', source);
