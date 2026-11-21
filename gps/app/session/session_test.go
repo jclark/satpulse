@@ -18,7 +18,9 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/msgfile"
 )
 
 // fakeConn implements gpsio.Conn. Reads block until data is sent with
@@ -856,5 +858,32 @@ func TestApplyConfigClearsReadOnlyProps(t *testing.T) {
 	}
 	if got := target.Props.ReadOnlyProps(); got != 0 {
 		t.Errorf("read-only properties = %v, want none", got)
+	}
+}
+
+func TestMsgFilePreselect(t *testing.T) {
+	names := []msgfile.Entry{{Name: msgfile.Name{Vendor: "Zhongke"}}, {Name: msgfile.Name{Vendor: "u-blox"}}}
+	for _, tc := range []struct {
+		name     string
+		vendors  []gpsreg.Vendor
+		detected string
+		want     string
+	}{
+		{"asserted overrides detected", []gpsreg.Vendor{gpsreg.VendorZhongke}, "u-blox", "Zhongke"},
+		{"detected case insensitive", nil, "U-BLOX", "u-blox"},
+		{"multiple asserted uses detected", []gpsreg.Vendor{gpsreg.VendorUblox, gpsreg.VendorUnicore}, "zhongke", "Zhongke"},
+		{"missing asserted catalog entry", []gpsreg.Vendor{gpsreg.VendorUnicore}, "u-blox", ""},
+		{"missing detected catalog entry", nil, "unknown", ""},
+		{"no vendor", nil, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Session{}
+			if tc.detected != "" {
+				s.probe.Info.Set(gpsprot.ReceiverInfo{Vendor: tc.detected})
+			}
+			if got := s.MsgFilePreselect(names, tc.vendors); got != tc.want {
+				t.Fatalf("preselect = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
