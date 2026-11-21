@@ -14,6 +14,37 @@ import (
 
 const configsDir = "../../../configs"
 
+func TestPHCPinOmittedVersusZero(t *testing.T) {
+	// Pinless PHCs accept an omitted pin but reject an explicitly selected
+	// pin, including zero. Preserve that distinction through loading.
+	for _, explicit := range []bool{false, true} {
+		name := "omitted"
+		config := "[phc]\ninterface = \"eth0\"\n"
+		if explicit {
+			name = "explicit zero"
+			config += "pin = 0\n"
+		}
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "satpulse.toml")
+			if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, _, err := LoadConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pin := cfg.PHC.PinDesc().PinIndex
+			if !explicit {
+				if pin != nil {
+					t.Fatalf("omitted pin resolved to %d, want nil", *pin)
+				}
+			} else if pin == nil || *pin != 0 {
+				t.Fatalf("explicit pin 0 must remain a non-nil pointer to zero, got %v", pin)
+			}
+		})
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	cfgFiles, err := os.ReadDir(configsDir)
 	if err != nil {
@@ -223,8 +254,23 @@ interface = "eth0"
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface in the [phc] table") {
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface or device in the [phc] table") {
 		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
+	}
+}
+
+func TestPHCInterfaceAndDeviceConflict(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[phc]
+interface = "eth0"
+device = "/dev/ptp_tic"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "interface and device in the [phc] table cannot both be specified") {
+		t.Fatalf("Validate error = %v, want interface/device conflict", err)
 	}
 }
 
@@ -371,6 +417,11 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 		t.Fatalf("PHC-mode default SHM fixed precision = %v, want nil", *got)
 	}
 	cfg.PHC.Interface = ""
+	cfg.PHC.Device = "/dev/ptp_tic"
+	if got := cfg.shmFixedPrecision(); got != nil {
+		t.Fatalf("PHC device default SHM fixed precision = %v, want nil", *got)
+	}
+	cfg.PHC.Device = ""
 	got := cfg.shmFixedPrecision()
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)

@@ -6,30 +6,37 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 
 **satpulsetool** [*global options*] **sdp** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-i**\|**\-\-extts**] [**\-o**\|**\-\-perout**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-disable**] [**\-\-show**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-disable**] [**\-\-show\-ifaces**] [**\-\-show\-pins**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-t**\|**\-\-timeout** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-w**\|**\-\-width** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[*interface*]
+&nbsp;&nbsp;&nbsp;&nbsp;[*phc*]
 
 # DESCRIPTION
 
 The **satpulsetool** **sdp** command manages software-defined pins (SDP) on PTP hardware clocks (PHC).
 A pin can be configured for input, allowing timestamps of pulses received by the pin to be read,
-for example when the pin is connected the the PPS output of a GNSS receiver.
+for example when the pin is connected to the PPS output of a GNSS receiver.
 This is called external timestamping (extts).
 A pin can alternatively be configured for output, allowing periodic pulses aligned to the PHC
 to be generated, for example when the pin is connected to an oscilloscope.
 This is called periodic output (perout).
 
-The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable** and **\-\-show** options.
-At most one of these options can be specified;
-if none of them are specified, the command behaves as if **\-\-show** was specified.
-In **\-\-show** mode, the **interface** is optional.
+The *phc* argument selects the PHC. Usually, it should be an interface name, e.g. **eth0**,
+which selects the PHC associated with that interface.
+For a PHC that is not associated with an interface,
+*phc* can be the path of the PHC device, e.g. **/dev/ptp1**.
+
+The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable**,
+**\-\-show\-ifaces** and **\-\-show\-pins** options.
+At most one of these options can be specified.
+If none of them are specified, the command behaves as if **\-\-show\-ifaces** was specified.
+However, if *phc* is specified, and the PHC has pins or *phc* is a path, it behaves as if **\-\-show\-pins** was specified.
+In **\-\-show\-ifaces** mode, the *phc* argument is optional.
 In other modes, it is required.
-If the **interface** is specified, then root privileges are required.
+Root privileges are required except in **\-\-show\-ifaces** mode.
 
 # OPTIONS
 
@@ -37,38 +44,44 @@ If the **interface** is specified, then root privileges are required.
 : Show usage help for the **sdp** command.
 
 **\-i**, **\-\-extts**  
-: Check input on a pin.
-This configures a pin of the interface as an input pin and reads timestamp events from the PHC device.
+: Check input on a timestamp channel.
+This reads timestamp events from the channel.
+If the PHC has pins, it first sets the function of the pin to external timestamping on the channel.
 It will show each timestamp as it is received.
-It will read timestamp events for the length of time specified by the **\-\-t** option; default is 2 seconds.
-if this is 0, it will read until interrupted.
+It will read timestamp events for the length of time specified by the **\-t** option; default is 2 seconds.
+If this is 0, it will read until interrupted.
+The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
-The **\-\-chan** option can also be used to specify the timestamping channel to be used; the default is channel 0.
 
 **\-o**, **\-\-perout**  
-: Enable periodic output on a pin.
-This configures a pin of the interface as an output pin generating periodic pulses.
+: Enable output on a periodic output channel.
+This generates pulses on the channel.
+If the PHC has pins, it first sets the function of the pin to periodic output on the channel.
 The period can be specified with **\-\-period**; it defaults to 1 second, resulting in a PPS signal.
 Some Ethernet drivers allow the width of the pulses to be specified using the **\-\-width** option.
 If **\-\-width** is not specified, the pulse width is chosen by the ethernet driver.
-For Intel igb and igc drivers, the width cannnot be specified, and is always half the period,
+For Intel igb and igc drivers, the width cannot be specified, and is always half the period,
 i.e. a duty cycle of 50%.
+The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
-The **\-\-chan** option can also be used to specify the periodic output channel to be used; the default is channel 0.
 
 **\-\-disable**  
 : Disable the pin function.
 This sets the specified pin's function to none, effectively disabling any input or output operations on that pin.
 The pin to disable is specified with the **\-\-pin** option; the default is pin 0.
 
-**\-\-show**  
-: Show information about SDPs.
-If the *interface* argument is specified, shows information about the SDPs of that interface.
-Otherwise, shows information about all interfaces with a PHC that has SDPs.
+**\-\-show\-ifaces**  
+: Show information about interfaces with a PHC.
+If the *phc* argument is specified, shows information about its interface.
+Otherwise, shows information about all interfaces with a PHC that has pins or channels.
+
+**\-\-show\-pins**  
+: Show the pins of *phc*.
+If **\-\-pin** is specified, shows information about that pin only.
 
 **\-t**, **\-\-timeout** *seconds*  
 : Length of time in seconds for which to read timestamp events. 
-Applies only when **\-\-extts** options is specified.
+Applies only when **\-\-extts** option is specified.
 The default is 2.
 
 **\-w**, **\-\-width** *seconds*  
@@ -87,30 +100,35 @@ Supports exponential notation (e.g., 1e-1 for 100ms, 1e-3 for 1ms).
 Applies only when **\-\-perout** option is specified.
 
 **\-p**, **\-\-pin** *index*\|*name*
-: Select the pin to be used by **\-\-extts**, **\-\-perout**, or **\-\-disable**. The default is 0.
+: Select the pin to be used by **\-\-extts**, **\-\-perout**, or **\-\-disable**, or shown by **\-\-show\-pins**.
+The default is 0 when a pin is required.
 
 **\-\-chan** *index*  
 : Select the channel to be used by **\-\-extts** or **\-\-perout**. The default is 0.
 
 **\-\-show\-stale**  
-: Include stale timestamps in the output. By default, timestamps that were buffered before reading timestamp events started are not displayed. Applies only when **\-\-extts** options is specified.
+: Include stale timestamps in the output. By default, timestamps that were buffered before reading timestamp events started are not displayed. Applies only when **\-\-extts** option is specified.
 
 **\-j**, **\-\-jsonl**  
 : Output in JSON lines format instead of human-readable text.
 
 # EXAMPLES
 
-List all interfaces with PTP hardware clock that has SDPs:
+List all interfaces with PTP hardware clock that has pins or channels:
 
     satpulsetool sdp
 
-Show SDP configuration for interface enp4s0:
+Show information about the PHC of interface enp4s0:
 
     satpulsetool sdp enp4s0
 
 Check input on eth0, showing timestamp events received for 2 seconds, with pin defaulting to pin 0:
 
     satpulsetool sdp -i eth0
+
+Check input on channel 1 of eth0:
+
+    satpulsetool sdp -i --chan 1 eth0
 
 Output a PPS signal on eth0, with pin defaulting to pin 0:
 

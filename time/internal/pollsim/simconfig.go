@@ -1,5 +1,7 @@
 package pollsim
 
+import "math/rand"
+
 // Seconds is a true alias for float64, used for documentation in config
 // structs; the simulator converts to time.Duration internally.
 type Seconds = float64
@@ -42,18 +44,24 @@ type HostConfig struct {
 	ClockRead Seconds
 }
 
-// QueryConfig configures the state query. Its duration is Duration plus a
-// Gaussian error of Jitter, never below a quarter of Duration; while the
-// host has been idle it is multiplied by the idle factor.
+// QueryConfig configures the state query. Its duration is drawn from Time;
+// while the host has been idle it is multiplied by the idle factor.
 type QueryConfig struct {
-	// Duration is the typical query time: ~10 us for a UART, ~200 us for a
-	// USB adapter on macOS, ~1-2 ms for one on Linux.
-	Duration Seconds
-	// Jitter is the standard deviation of the query time.
-	Jitter Seconds
+	// Time draws the time of one query from rng. Typical query times are
+	// ~10 us for a UART, ~200 us for a USB adapter on macOS, ~1-2 ms for
+	// one on Linux.
+	Time func(rng *rand.Rand) Seconds
 	// Idle models hosts whose queries slow down while the machine idles,
 	// the effect PreWarm counters.
 	Idle IdleConfig
+}
+
+// Gaussian returns a query time model of mean plus a Gaussian error of
+// standard deviation sd, never below a quarter of mean.
+func Gaussian(mean, sd Seconds) func(*rand.Rand) Seconds {
+	return func(rng *rand.Rand) Seconds {
+		return max(mean+rng.NormFloat64()*sd, mean/4)
+	}
 }
 
 // IdleConfig models the idle slowdown: after After without activity
@@ -148,7 +156,7 @@ func DefaultConfig() Config {
 		Sim:   SimConfig{Duration: 600, Seed: 1},
 		Pulse: PulseConfig{Width: 0.1, Jitter: 20e-6},
 		Host: HostConfig{
-			Query:     QueryConfig{Duration: 200e-6, Jitter: 30e-6, Idle: IdleConfig{Factor: 1}},
+			Query:     QueryConfig{Time: Gaussian(200e-6, 30e-6), Idle: IdleConfig{Factor: 1}},
 			ClockRead: 50e-9,
 		},
 	}

@@ -1208,6 +1208,12 @@ func (f *SurveyFlags) UnmarshalJSON(data []byte) error {
 	return unmarshalJSONFlags(data, f, surveyJSON, "survey")
 }
 
+// MinAccuracy is the smallest survey accuracy limit or fixed position
+// accuracy that can be requested. It is the finest unit that receivers use
+// for these, and far above the resolution of Length, so that an accepted
+// accuracy cannot round to 0.
+const MinAccuracy = Millimeter / 10
+
 // Survey specifies the parameters for performing a survey-in.
 type Survey struct {
 	Flags    SurveyFlags   // control survey behavior

@@ -1,4 +1,4 @@
-# Compile the GPS tree for js/wasm without a wasm runtime.
+# Build and test the GPS tree for js/wasm using Node.js.
 
 name: Build (js/wasm)
 
@@ -20,8 +20,8 @@ jobs:
       with:
         go-version: '1.26.x'
 
-    - name: Compile GPS packages
+    - name: Test GPS packages
       env:
         GOOS: js
         GOARCH: wasm
-      run: go build ./gps/...
+      run: PATH="$PATH:$(go env GOROOT)/lib/wasm" go test ./gps/...

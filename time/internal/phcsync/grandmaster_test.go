@@ -153,7 +153,7 @@ func TestControllerGrandmasterClose(t *testing.T) {
 			f.request(t).complete(nil)
 			f.tick()
 
-			f.c.Pause()
+			f.c.Pause(time.Now())
 			pending := f.request(t)
 			checkGrandmasterSettings(t, pending.settings, 37, 0, false)
 			f.close()
@@ -281,7 +281,7 @@ func (f *grandmasterController) step() {
 			GNSS:    gpsprot.GPS, Ref: gpsprot.PostPulse,
 			Tag: gpsreg.TagUBX, NativeMsgID: "NAV-PVT",
 		}, sys)
-		f.c.TimeMessage()
+		f.c.TimeMessage(sys)
 	}
 	f.tick()
 	synctest.Wait()
