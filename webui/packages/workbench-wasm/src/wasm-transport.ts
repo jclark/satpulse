@@ -28,6 +28,9 @@ export async function newWasmTransport(onFatal: (error: Error) => void): Promise
     const {instance} = await WebAssembly.instantiateStreaming(response, go.importObject);
     const serial = new WebSerial();
     let failure: Error | undefined;
+    // Each in-flight call races its own rejecter: racing one shared pending
+    // promise would retain a reaction per completed call for the page's life.
+    const inFlight = new Set<(error: Error) => void>();
     let started = false;
     let rejectFailure!: (error: Error) => void;
     const failed = new Promise<never>((_, reject) => { rejectFailure = reject; });
@@ -35,6 +38,7 @@ export async function newWasmTransport(onFatal: (error: Error) => void): Promise
         if (failure) return;
         failure = reason instanceof Error ? reason : new Error(String(reason));
         rejectFailure(failure);
+        for (const reject of inFlight) reject(failure);
         void serial.close();
         if (started) onFatal(failure);
     };
@@ -45,7 +49,14 @@ export async function newWasmTransport(onFatal: (error: Error) => void): Promise
     if (error) throw new Error(error);
     const call = async (name: string, data: unknown = {}) => {
         if (failure) throw failure;
-        return JSON.parse(await Promise.race([api.call(name, JSON.stringify(data)), failed]));
+        let reject!: (error: Error) => void;
+        const stopped = new Promise<never>((_, r) => { reject = r; });
+        inFlight.add(reject);
+        try {
+            return JSON.parse(await Promise.race([api.call(name, JSON.stringify(data)), stopped]));
+        } finally {
+            inFlight.delete(reject);
+        }
     };
     const listeners = new Map<string, Set<(data: any) => void>>();
     started = true;
