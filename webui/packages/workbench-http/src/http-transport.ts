@@ -74,12 +74,9 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
     return {
         getConnection: () => get('connection') as Promise<ConnectionInfo>,
         getReceiverState: () => get('receiver'),
-        getCorrectionsState: () => get('corrections'),
         getAllSignals: (gnss: string[]) => readerPost('signals', {gnss}),
         readConfig: () => writerPost('config/read'),
         applyConfig: async target => { await writerPost('config/apply', target); },
-        startCorrections: async (src: CorrectionSource) => { await writerPost('corrections/start', src); },
-        stopCorrections: async () => { await writerPost('corrections/stop'); },
         decodePacket: (data: string, opts: DecodeOptions) =>
             readerPost('decode-packet', {data, hex: opts.hex, out: opts.out}),
         ecefToLLH: (x, y, z) => readerPost('geo/ecef-to-llh', {x, y, z}) as Promise<LLH>,
@@ -102,6 +99,11 @@ export async function newHTTPTransport(token: string): Promise<Transport> {
             if (n !== claimSeq) return;
             seat = s;
             events.setSeat(s);
+        },
+        corrections: {
+            getCorrectionsState: () => get('corrections'),
+            startCorrections: async (src: CorrectionSource) => { await writerPost('corrections/start', src); },
+            stopCorrections: async () => { await writerPost('corrections/stop'); },
         },
         connection: {
             connect: async (device: string, speed: number) => {

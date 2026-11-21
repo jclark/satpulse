@@ -4,6 +4,9 @@
     "module": "commonjs",
     "moduleResolution": "node",
     "strict": true,
+    "jsx": "preserve",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
     "esModuleInterop": true,
     "skipLibCheck": true,
     "noEmit": true,
@@ -11,5 +14,5 @@
     "types": ["node"],
     "lib": ["es2022", "dom"]
   },
-  "include": ["harness.ts", "playwright.config.ts", "dashboard", "workbench"]
+  "include": ["harness.ts", "playwright.config.ts", "dashboard", "workbench", "../workbench/test"]
 }
