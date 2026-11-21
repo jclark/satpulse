@@ -163,6 +163,16 @@ it('close interrupts a stalled baud reopen but keeps the port until it settles',
     expect(port.closes).toBe(3);
 });
 
+it('keeps input received before a baud change', async () => {
+    const c = await serial.open('serial:1', 38400);
+    port.controller.enqueue(new Uint8Array([1, 2]));
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await c.changeSpeed(57600);
+    expect(port.opens).toEqual([38400, 57600]);
+    expect([...(await c.read())!]).toEqual([1, 2]);
+    await c.close();
+});
+
 it('adapter shutdown rejects queued opens and closes the active port', async () => {
     await serial.open('serial:1', 38400);
     const next = serial.open('serial:1', 115200);

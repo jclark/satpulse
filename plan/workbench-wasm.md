@@ -189,7 +189,8 @@ The adapter makes the following choices:
 
 - **Speed change.** Write the receiver command, wait for estimated 8N1
   transmission, cancel/release the streams, close the port, and reopen at
-  the new baud. There is no `tcdrain`; physical drain timing and possible
+  the new baud. Input already queued is kept, as a native speed change keeps
+  it. There is no `tcdrain`; physical drain timing and possible
   DTR/device-reset effects still need hardware validation.
 - **`Buffered()`** returns 0 because Web Serial does not expose pending UART
   output bytes. `Drain()` waits for the JavaScript transmission estimate.

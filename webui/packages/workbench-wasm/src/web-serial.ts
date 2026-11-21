@@ -182,8 +182,8 @@ export class SerialConnection {
             await this.drain();
             await this.closeStreams();
             if (this.stopped) throw new Error('Serial port is closed.');
-            this.queue = [];
-            this.queued = 0;
+            // Keep input already received at the old speed, as a native
+            // speed change does: a reply to the speed command may be in it.
             // As for the first open, stopping ends the wait but not the open.
             this.reopenPending = true;
             this.opening = this.port.open({baudRate: speed, bufferSize: 65536})
