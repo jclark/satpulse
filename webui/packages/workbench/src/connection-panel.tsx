@@ -105,12 +105,14 @@ export function ConnectionPanel({
                         <ul class="absolute right-0 left-0 z-50 mt-0.5 max-h-48 overflow-y-auto rounded border border-border-subtle bg-surface-2 shadow-sm">
                             {ports.length === 0 && <li class="px-2 py-1.5 text-xs italic text-text-muted">{onChoosePort ? 'No devices added' : 'No ports found'}</li>}
                             {ports.map(p => (
-                                <li
-                                    key={p.device}
-                                    class="cursor-pointer px-2 py-1.5 text-xs text-text-primary hover:bg-surface-3"
-                                    onClick={() => selectPort(p)}
-                                >
-                                    {p.display}
+                                <li key={p.device}>
+                                    <button
+                                        type="button"
+                                        class="w-full cursor-pointer px-2 py-1.5 text-left text-xs text-text-primary hover:bg-surface-3"
+                                        onClick={() => selectPort(p)}
+                                    >
+                                        {p.display}
+                                    </button>
                                 </li>
                             ))}
                             {onChoosePort && (
@@ -123,6 +125,8 @@ export function ConnectionPanel({
                                         onClick={() => {
                                             setOpen(false);
                                             onChoosePort();
+                                            // This button unmounts with the list; keep focus in the bar.
+                                            wrapRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Select port"]')?.focus();
                                         }}
                                     >
                                         Add a device...
