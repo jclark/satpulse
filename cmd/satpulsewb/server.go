@@ -352,19 +352,18 @@ var (
 	errInvalidSpeed   = errors.New("speed must be greater than zero")
 )
 
-// connection returns the complete connection-bar snapshot. While connected,
-// the session's speed is authoritative: configuration can change it after the
-// port was opened. Reading the snapshot also retains that speed for the next
-// disconnected view.
+// connection returns the complete connection-bar snapshot. The session's
+// speed, when it has one, takes precedence over the chosen speed:
+// configuration can change it after the port was opened, and the session
+// keeps it after the connection ends. It is read, never stored, so a read
+// made as a new Connect starts cannot outlast that Connect.
 func (s *server) connection() session.ConnectionInfo {
-	state := s.sess.State()
-	activeSpeed := s.sess.Speed()
 	s.connMu.Lock()
-	if activeSpeed != 0 {
-		s.speed = activeSpeed
+	defer s.connMu.Unlock()
+	info := session.ConnectionInfo{State: s.sess.State(), Device: s.device, Speed: s.speed}
+	if speed := s.sess.Speed(); speed != 0 {
+		info.Speed = speed
 	}
-	info := session.ConnectionInfo{State: state, Device: s.device, Speed: s.speed}
-	s.connMu.Unlock()
 	return info
 }
 
