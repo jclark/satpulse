@@ -30,4 +30,4 @@ jobs:
       env:
         GOOS: js
         GOARCH: wasm
-      run: go build -o /dev/null ./cmd/satpulsewbwasm
+      run: go build -tags nohttp -o /dev/null ./cmd/satpulsewbwasm
