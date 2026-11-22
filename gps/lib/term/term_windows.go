@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,14 +41,6 @@ const (
 
 const maxDWORD = 0xffffffff
 
-// baudRates is used by IsValidSpeed so the set of accepted speeds matches
-// Unix. Windows accepts the baud rate value directly in DCB.BaudRate.
-var baudRates = []int{
-	50, 75, 110, 134, 150, 200, 300, 600, 1200, 1800,
-	2400, 4800, 9600, 19200, 38400, 57600, 115200,
-	230400, 460800, 921600,
-}
-
 type windowsTerm struct {
 	handle        windows.Handle
 	path          string
@@ -67,13 +58,14 @@ type Attr struct {
 
 type AttrSetter func(*Attr) error
 
-// Open opens and configures a serial terminal.
-func Open(path string, opts ...AttrSetter) (Term, error) {
+// Open opens and configures a serial terminal. Windows needs no write delay,
+// so the returned safe write time is always zero.
+func Open(path string, opts ...AttrSetter) (Term, time.Time, error) {
 	t := new(windowsTerm)
 	if err := t.init(path, opts...); err != nil {
-		return nil, err
+		return nil, time.Time{}, err
 	}
-	return t, nil
+	return t, time.Time{}, nil
 }
 
 func (t *windowsTerm) init(path string, opts ...AttrSetter) (err error) {
@@ -114,9 +106,7 @@ func (t *windowsTerm) init(path string, opts ...AttrSetter) (err error) {
 		windows.CloseHandle(h)
 		t.handle = windows.InvalidHandle
 	}()
-	var dcb windows.DCB
-	dcb.DCBlength = uint32(unsafe.Sizeof(dcb))
-	err = windows.GetCommState(h, &dcb)
+	dcb, err := getCommState(h)
 	if err != nil {
 		// GetCommState fails with ERROR_INVALID_FUNCTION on a handle that is
 		// not a serial device (e.g. a named pipe used as a replay sink), the
@@ -168,27 +158,27 @@ func normalizeCOM(path string) string {
 }
 
 // Change changes the attributes of the terminal after output has drained.
-func (t *windowsTerm) Change(opts ...AttrSetter) error {
+func (t *windowsTerm) Change(opts ...AttrSetter) (time.Time, error) {
 	attr := t.attr
 	for _, opt := range opts {
 		err := opt(&attr)
 		if err != nil {
-			return err
+			return time.Time{}, err
 		}
 	}
 	if err := t.Drain(); err != nil {
-		return err
+		return time.Time{}, err
 	}
 	err := windows.SetCommState(t.handle, &attr.dcb)
 	if err != nil {
-		return t.wrapErr(err, "SetCommState")
+		return time.Time{}, t.wrapErr(err, "SetCommState")
 	}
 	err = windows.SetCommTimeouts(t.handle, &attr.timeouts)
 	if err != nil {
-		return t.wrapErr(err, "SetCommTimeouts")
+		return time.Time{}, t.wrapErr(err, "SetCommTimeouts")
 	}
 	t.attr = attr
-	return nil
+	return time.Time{}, nil
 }
 
 func (t *windowsTerm) Read(buf []byte) (int, error) {
@@ -450,13 +440,38 @@ func (t *windowsTerm) Drain() error {
 	return t.wrapErr(windows.FlushFileBuffers(t.handle), "FlushFileBuffers")
 }
 
-func (t *windowsTerm) Restore() error {
-	err := windows.SetCommState(t.handle, &t.dcbSaved)
-	if err != nil {
+func (t *windowsTerm) Restore(exceptHardware bool) error {
+	dcb := t.dcbSaved
+	if exceptHardware {
+		current, err := getCommState(t.handle)
+		if err != nil {
+			return t.wrapErr(err, "GetCommState")
+		}
+		dcb = restoreExceptHardware(dcb, current)
+	}
+	if err := windows.SetCommState(t.handle, &dcb); err != nil {
 		return t.wrapErr(err, "SetCommState")
 	}
-	err = windows.SetCommTimeouts(t.handle, &t.timeoutsSaved)
-	return t.wrapErr(err, "SetCommTimeouts")
+	return t.wrapErr(windows.SetCommTimeouts(t.handle, &t.timeoutsSaved), "SetCommTimeouts")
+}
+
+func getCommState(h windows.Handle) (windows.DCB, error) {
+	var dcb windows.DCB
+	dcb.DCBlength = uint32(unsafe.Sizeof(dcb))
+	return dcb, windows.GetCommState(h, &dcb)
+}
+
+// restoreExceptHardware returns saved with the attributes that program the
+// UART hardware taken from current: speed, frame format, and control of the
+// hardware handshake lines. XON/XOFF is handled by the driver, so it is restored.
+func restoreExceptHardware(saved, current windows.DCB) windows.DCB {
+	saved.BaudRate = current.BaudRate
+	saved.ByteSize = current.ByteSize
+	saved.Parity = current.Parity
+	saved.StopBits = current.StopBits
+	const lines = dcbOutxCtsFlow | dcbOutxDsrFlow | dcbDtrControlMask | dcbDsrSensitivity | dcbRtsControlMask
+	saved.Flags = saved.Flags&^lines | current.Flags&lines
+	return saved
 }
 
 func (t *windowsTerm) Close() error {
@@ -661,9 +676,4 @@ func ReadTimeout(timeout time.Duration) AttrSetter {
 		a.timeouts.WriteTotalTimeoutConstant = 0
 		return nil
 	}
-}
-
-func IsValidSpeed(speed int) bool {
-	i := sort.SearchInts(baudRates, speed)
-	return i < len(baudRates) && baudRates[i] == speed
 }

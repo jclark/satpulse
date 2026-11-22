@@ -11,7 +11,7 @@ import (
 var ruleRE = regexp.MustCompile(`^(>=?|<=?)(.+)$`)
 
 // Validate validates all fields in a struct based on their "check" tags.
-// Recursively validates nested structs, building qualified names using toml tags.
+// Recursively validates nested structs and slices of structs, building qualified names using toml tags.
 // Returns nil if all validations pass, or a slice of validation error messages.
 // Panics if v is not a struct or if check tags are malformed.
 func Validate(v any) []string {
@@ -32,13 +32,20 @@ func validateStruct(val reflect.Value, prefix string) []string {
 		field := typ.Field(i)
 		fval := val.Field(i)
 
-		// Build qualified name using toml tag or field name
+		// Build qualified name using toml tag or field name. An untagged
+		// embedded struct, or pointer to one, is inlined by the TOML
+		// decoder, so its fields are named as the embedding struct's own;
+		// any other embedded field is decoded under its type name.
 		name := field.Tag.Get("toml")
-		if name == "" {
-			name = field.Name
-		}
-		if prefix != "" {
-			name = prefix + "." + name
+		if ftyp := field.Type; name == "" && field.Anonymous && derefKind(ftyp) == reflect.Struct {
+			name = prefix
+		} else {
+			if name == "" {
+				name = field.Name
+			}
+			if prefix != "" {
+				name = prefix + "." + name
+			}
 		}
 
 		// Check for validation tag
@@ -47,9 +54,15 @@ func validateStruct(val reflect.Value, prefix string) []string {
 			errs = append(errs, validateField(name, fval, tag)...)
 		}
 
-		// Recurse into nested structs
-		if fval.Kind() == reflect.Struct {
+		switch fval.Kind() {
+		case reflect.Struct:
 			errs = append(errs, validateStruct(fval, name)...)
+		case reflect.Slice:
+			if fval.Type().Elem().Kind() == reflect.Struct {
+				for j := 0; j < fval.Len(); j++ {
+					errs = append(errs, validateStruct(fval.Index(j), fmt.Sprintf("%s[%d]", name, j))...)
+				}
+			}
 		}
 	}
 	if len(errs) == 0 {
@@ -143,4 +156,11 @@ func checkRule(val reflect.Value, op, limit string) bool {
 		panic(fmt.Sprintf("unsupported type %s for check tag", val.Kind()))
 	}
 	panic(fmt.Sprintf("unknown operator %q", op))
+}
+
+func derefKind(t reflect.Type) reflect.Kind {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	return t.Kind()
 }

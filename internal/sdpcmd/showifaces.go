@@ -26,7 +26,7 @@ type InterfaceInfo struct {
 	Device            string   `json:"device,omitempty"`   // PCI device name
 	Revision          uint32   `json:"revision,omitempty"` // PCI revision
 	ClockIndex        int      `json:"clock_index"`        // PHC index from ethtool
-	Pins              []string `json:"pins"`               // From /sys/class/ptp/ptpX/pins/ directory listing
+	Pins              []string `json:"pins"`               // From /sys/class/ptp/ptpX/pins/ directory listing; empty when the PHC has no pins
 	NumExttsChannels  int      `json:"n_extts_channels"`   // From /sys/class/ptp/ptpX/n_external_timestamps
 	NumPeroutChannels int      `json:"n_perout_channels"`  // From /sys/class/ptp/ptpX/n_periodic_outputs
 }
@@ -51,57 +51,78 @@ func (info *InterfaceInfo) Print(f *os.File) {
 		fmt.Fprintf(f, "  Revision: %02x\n", info.Revision)
 	}
 	fmt.Fprintf(f, "  PTP clock device: /dev/ptp%d\n", info.ClockIndex)
-	fmt.Fprintf(f, "  Pins: %s\n", strings.Join(info.Pins, ", "))
+	if len(info.Pins) > 0 {
+		fmt.Fprintf(f, "  Pins: %s\n", strings.Join(info.Pins, ", "))
+	}
 	fmt.Fprintf(f, "  External timestamp channels: %d\n", info.NumExttsChannels)
 	fmt.Fprintf(f, "  Periodic output channels: %d\n", info.NumPeroutChannels)
 }
 
-// showIfaces implements --show mode when no interface is specified
+// showIfaces implements --show-ifaces mode: all interfaces whose PHC has
+// pins or channels, or just the specified interface
 func showIfaces(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
-	var result []Printer
+	if cfg.Interface != "" {
+		phcIndex, err := ifPHCIndex(cfg.Interface)
+		if err != nil {
+			return nil, err
+		}
+		return showIface(lg, cfg.Interface, phcIndex)
+	}
 
 	interfaces, err := net.Interfaces()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list network interfaces: %w", err)
 	}
-
 	fsys := os.DirFS("/sys")
-
+	var result []Printer
 	for _, iface := range interfaces {
-		phcIndex, err := phc.IfPhcIndex(iface.Name)
+		phcIndex, err := phc.IfPHCIndex(iface.Name)
 		if err != nil || phcIndex < 0 {
 			// No PHC on this interface
 			continue
 		}
-
-		info, err := getInterfaceInfo(fsys, iface.Name, phcIndex)
-		if err != nil {
-			lg.Warn("PHC info error",
-				"interface", iface.Name,
-				"phc", phcIndex,
-				"error", err)
+		info := interfaceInfo(lg, fsys, iface, phcIndex)
+		if len(info.Pins) == 0 && info.NumExttsChannels == 0 && info.NumPeroutChannels == 0 {
+			continue // Nothing to use
 		}
-		if info == nil {
-			continue // No usable data (no pins or fatal error)
-		}
-
-		// Add non-testable fields
-		info.Status = formatStatus(iface.Flags)
-		info.Driver, _ = phc.IfDriverName(iface.Name)
-
-		pciSlot, vendor, device, revision := getPCIInfo(iface.Name)
-		info.PCISlot = pciSlot
-		info.Vendor = vendor
-		info.Device = device
-		info.Revision = revision
-
 		result = append(result, info)
 	}
 
 	if len(result) == 0 {
-		return nil, NoDataError{msg: "no interfaces with software-defined pins found"}
+		return nil, NoDataError{msg: "no interfaces with PTP hardware clock pins or channels found"}
 	}
 	return result, nil
+}
+
+// showIface shows one interface using its already resolved PHC index.
+func showIface(lg *slog.Logger, ifname string, phcIndex int) ([]Printer, error) {
+	iface, err := net.InterfaceByName(ifname)
+	if err != nil {
+		return nil, err
+	}
+	return []Printer{interfaceInfo(lg, os.DirFS("/sys"), *iface, phcIndex)}, nil
+}
+
+// interfaceInfo gathers the full interface record, logging any sysfs inconsistency
+func interfaceInfo(lg *slog.Logger, fsys fs.FS, iface net.Interface, phcIndex int) *InterfaceInfo {
+	info, err := getInterfaceInfo(fsys, iface.Name, phcIndex)
+	if err != nil {
+		lg.Warn("PHC info error",
+			"interface", iface.Name,
+			"phc", phcIndex,
+			"error", err)
+	}
+
+	// Add non-testable fields
+	info.Status = formatStatus(iface.Flags)
+	info.Driver, _ = phc.IfDriverName(iface.Name)
+
+	pciSlot, vendor, device, revision := getPCIInfo(iface.Name)
+	info.PCISlot = pciSlot
+	info.Vendor = vendor
+	info.Device = device
+	info.Revision = revision
+	return info
 }
 
 func formatStatus(flags net.Flags) string {
@@ -117,32 +138,30 @@ func formatStatus(flags net.Flags) string {
 	return "down"
 }
 
-// getInterfaceInfo gathers PHC information from sysfs (testable)
-// Returns nil, nil if interface has no software-defined pins (not an error)
+// getInterfaceInfo gathers PHC information from sysfs (testable).
+// Pins is empty, never nil, when the PHC has no pins.
 // May return non-nil info AND error if data is incomplete but usable
 func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInfo, error) {
 	ptpPath := fmt.Sprintf("class/ptp/ptp%d", phcIndex)
-
-	// Check for pins
-	nPins := readSysfsInt(fsys, path.Join(ptpPath, "n_programmable_pins"))
-	if nPins <= 0 {
-		nPins = readSysfsInt(fsys, path.Join(ptpPath, "n_pins"))
+	info := &InterfaceInfo{
+		Name:              ifaceName,
+		ClockIndex:        phcIndex,
+		Pins:              []string{},
+		NumExttsChannels:  readSysfsInt(fsys, path.Join(ptpPath, "n_external_timestamps")),
+		NumPeroutChannels: readSysfsInt(fsys, path.Join(ptpPath, "n_periodic_outputs")),
 	}
+
+	nPins := sysfsPinCount(fsys, phcIndex)
 	if nPins <= 0 {
-		return nil, nil // No software-defined pins - not an error
+		return info, nil
 	}
 
 	pins, err := readPinNames(fsys, ptpPath)
 	if err != nil {
-		return nil, fmt.Errorf("reading pin names for %s: %w", ifaceName, err)
+		return info, fmt.Errorf("reading pin names for %s: %w", ifaceName, err)
 	}
-
-	info := &InterfaceInfo{
-		Name:              ifaceName,
-		ClockIndex:        phcIndex,
-		Pins:              pins,
-		NumExttsChannels:  readSysfsInt(fsys, path.Join(ptpPath, "n_external_timestamps")),
-		NumPeroutChannels: readSysfsInt(fsys, path.Join(ptpPath, "n_periodic_outputs")),
+	if pins != nil {
+		info.Pins = pins
 	}
 
 	// Check for inconsistency
@@ -153,6 +172,15 @@ func getInterfaceInfo(fsys fs.FS, ifaceName string, phcIndex int) (*InterfaceInf
 	return info, nil
 }
 
+// sysfsPinCount returns the number of programmable pins of PHC phcIndex
+func sysfsPinCount(fsys fs.FS, phcIndex int) int {
+	ptpPath := fmt.Sprintf("class/ptp/ptp%d", phcIndex)
+	n := readSysfsInt(fsys, path.Join(ptpPath, "n_programmable_pins"))
+	if n <= 0 {
+		n = readSysfsInt(fsys, path.Join(ptpPath, "n_pins"))
+	}
+	return n
+}
 
 func readSysfsInt(fsys fs.FS, name string) int {
 	data, err := fs.ReadFile(fsys, name)
@@ -243,4 +271,3 @@ func getPCIInfo(ifname string) (slot string, vendor string, device string, revis
 
 	return
 }
-

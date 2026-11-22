@@ -49,16 +49,32 @@ func TestListSyntheticFilesystem(t *testing.T) {
 	acmPort := filepath.Join(acmInterface, "tty", "ttyACM0")
 	makePort(t, "ttyACM0", acmPort)
 	makeUSBDevice(t, usbDevice, "1546", "01A9", "u-blox GNSS receiver", "")
-	makeUSBInterface(t, acmInterface)
+	makeUSBInterface(t, acmInterface, "00")
+
+	multiportDevice := filepath.Join(root, "sys", "devices", "pci0000:00", "usb1", "1-9")
+	makeUSBDevice(t, multiportDevice, "152a", "8231", "Septentrio USB Device", "0100019577")
+	for _, iface := range []struct{ num, tty string }{{"00", "ttyACM1"}, {"02", "ttyACM2"}} {
+		dir := filepath.Join(multiportDevice, "1-9:1."+iface.num[1:])
+		makePort(t, iface.tty, filepath.Join(dir, "tty", iface.tty))
+		makeUSBInterface(t, dir, iface.num)
+	}
+
+	for _, dev := range []struct{ port, tty string }{{"3-1", "ttyUSB1"}, {"3-2", "ttyUSB2"}} {
+		dir := filepath.Join(root, "sys", "devices", "pci0000:00", "usb3", dev.port)
+		iface := filepath.Join(dir, dev.port+":1.0")
+		makePort(t, dev.tty, filepath.Join(iface, dev.tty, "tty", dev.tty))
+		makeUSBDevice(t, dir, "1a86", "7523", "USB Serial", "")
+		makeUSBInterface(t, iface, "00")
+	}
 
 	usbSerialDevice := filepath.Join(root, "sys", "devices", "pci0000:00", "usb2", "2-1")
 	usbSerialInterface := filepath.Join(usbSerialDevice, "2-1:1.0")
 	usbSerialPort := filepath.Join(usbSerialInterface, "ttyUSB0", "tty", "ttyUSB0")
 	makePort(t, "ttyUSB0", usbSerialPort)
 	makeUSBDevice(t, usbSerialDevice, "0403", "6001", "FT232R USB UART", "BG02DBNX")
-	makeUSBInterface(t, usbSerialInterface)
+	makeUSBInterface(t, usbSerialInterface, "00")
 
-	for _, name := range []string{"rfcomm0", "ttyS0", "ttyS2", "ttyAMA0", "ttyACM0", "ttyUSB0"} {
+	for _, name := range []string{"rfcomm0", "ttyS0", "ttyS2", "ttyAMA0", "ttyACM0", "ttyACM1", "ttyACM2", "ttyUSB0", "ttyUSB1", "ttyUSB2"} {
 		writeFile(t, filepath.Join(devDir, name), "")
 	}
 	makeLink(t, filepath.Join(devDir, "gps0"), "ttyACM0")
@@ -87,7 +103,22 @@ func TestListSyntheticFilesystem(t *testing.T) {
 				VID: 0x1546,
 				PID: 0x01a9,
 			},
-			Aliases: []string{filepath.Join(devDir, "gps0"), filepath.Join(devDir, "zz-gps")},
+			Interface: "00",
+			Aliases:   []string{filepath.Join(devDir, "gps0"), filepath.Join(devDir, "zz-gps")},
+		},
+		{
+			Device:    filepath.Join(devDir, "ttyACM1"),
+			Display:   filepath.Join(devDir, "ttyACM1") + " (Septentrio USB Device, if00)",
+			USB:       USBID{VID: 0x152a, PID: 0x8231},
+			Serial:    "0100019577",
+			Interface: "00",
+		},
+		{
+			Device:    filepath.Join(devDir, "ttyACM2"),
+			Display:   filepath.Join(devDir, "ttyACM2") + " (Septentrio USB Device, if02)",
+			USB:       USBID{VID: 0x152a, PID: 0x8231},
+			Serial:    "0100019577",
+			Interface: "02",
 		},
 		{
 			Device:  filepath.Join(devDir, "ttyAMA0"),
@@ -105,7 +136,20 @@ func TestListSyntheticFilesystem(t *testing.T) {
 				VID: 0x0403,
 				PID: 0x6001,
 			},
-			Serial: "BG02DBNX",
+			Serial:    "BG02DBNX",
+			Interface: "00",
+		},
+		{
+			Device:    filepath.Join(devDir, "ttyUSB1"),
+			Display:   filepath.Join(devDir, "ttyUSB1") + " (USB Serial)",
+			USB:       USBID{VID: 0x1a86, PID: 0x7523},
+			Interface: "00",
+		},
+		{
+			Device:    filepath.Join(devDir, "ttyUSB2"),
+			Display:   filepath.Join(devDir, "ttyUSB2") + " (USB Serial)",
+			USB:       USBID{VID: 0x1a86, PID: 0x7523},
+			Interface: "00",
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -169,12 +213,13 @@ func makeUSBDevice(t *testing.T, dir, vid, pid, product, serial string) {
 	}
 }
 
-func makeUSBInterface(t *testing.T, dir string) {
+func makeUSBInterface(t *testing.T, dir, num string) {
 	t.Helper()
 	mkdir(t, dir)
 	sysDir := filepath.Dir(filepath.Dir(sysClassTTYDir))
 	makeLink(t, filepath.Join(dir, "subsystem"), filepath.Join(sysDir, "bus", "usb"))
 	writeFile(t, filepath.Join(dir, "uevent"), "DEVTYPE=usb_interface\n")
+	writeFile(t, filepath.Join(dir, "bInterfaceNumber"), num+"\n")
 }
 
 func mkdir(t *testing.T, path string) {

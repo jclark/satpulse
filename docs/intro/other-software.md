@@ -29,7 +29,7 @@ It can also be used as a library to implement PTP on other platforms, including 
 [NTP](https://www.ntp.org/) is the original implementation of NTP,
 which has now mostly been supplanted by the [NTPsec](https://www.ntpsec.org/) fork.
 
-SatPulse can provide timing information to NTPsec using the SHM reference clock protocol. {% include new-in-03.html %}
+SatPulse can provide timing information to NTPsec using the SHM reference clock protocol.
 
 It is included in Debian and Fedora.
 
@@ -134,5 +134,5 @@ Vendors all have their own proprietary programs for working with their receivers
 - Zhongke: GnssToolkit3
 - Allystar: Satrack
 - Techtotop/Taidou: TDMonitor
-- ByNav: BY_Connect
+- Bynav: BY_Connect
 - ComNav/SinoGNSS: CRU

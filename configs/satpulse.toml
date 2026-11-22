@@ -28,9 +28,9 @@ speed = 9600
 #[sample.serial.pps]
 #delayUncertainty = 0.005
 #maxDelay = 0.8
-# Uncomment to limit CPU wakeup latency while serial PPS is active.
-# The value is in microseconds; 0 is maximally strict.
-#maxWakeupLatency = 10
+# Uncomment to limit CPU wakeup latency while serial PPS is active;
+# 0 requests the lowest latency available.
+#maxWakeupLatency = 10e-6
 
 [gps]
 # Uncomment to configure the GPS (changes are not persistent across GPS reboots)

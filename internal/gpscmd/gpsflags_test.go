@@ -50,6 +50,8 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{mode: opt.Make(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{baudRate: opt.Make(uint32(9600))}},
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600, showReceiver: true}},
+	{"ttyS0", []string{"--packet-log", "pkt.jsonl", "--capture", "10"}, flagVars{packetLogPath: "pkt.jsonl", capture: opt.Make(10 * time.Second), showReceiver: true}},
+	{"ttyS0", []string{"--json", "--packet-log", "pkt.jsonl", "--capture", "10"}, flagVars{packetLogPath: "pkt.jsonl", capture: opt.Make(10 * time.Second), showReceiver: true, jsonOut: true}},
 	{"ttyS0", []string{"--save-all", "--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll, Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--gnss", "GPS,GLO,GAL,BDS"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS),
@@ -446,7 +448,7 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 		{"except-signal", []string{"--gnss", "GPS", "--except-signal", "GPSL1C"}, gpsprot.ConfigSupportSignal, 0},
 		{"survey default accuracy", []string{"--survey"}, gpsprot.ConfigSupportSurvey, 0},
 		{"survey explicit accuracy", []string{"--survey", "--survey-acc", "5.5"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc, 0},
-		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey, 0},
+		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyDur, 0},
 		{"pvt survey", []string{"--pvt-out", "survey"}, gpsprot.ConfigSupportSurveyMsg, 0},
 		{"pvt ptp", []string{"--pvt-out", "ptp"}, gpsprot.ConfigSupportSurveyMsg, 0},
 		{"pvt ntp", []string{"--pvt-out", "ntp"}, gpsprot.ConfigSupportSurveyMsg, 0},
@@ -637,8 +639,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "0,0,0"},                   // center of Earth (invalid)
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "8000000,8000000,8000000"}, // far outside valid range
 	// Test invalid --fixed-pos-acc values
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"},      // accuracy too small
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"},       // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.00005"}, // accuracy below minimum
 	// Test mutual exclusion with --mobile and --survey
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--mobile"}, // can't use with mobile
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"}, // can't use with survey
@@ -657,8 +659,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,-501"},        // height below -500m
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,10001"},       // height above 10000m
 	// Test invalid --fixed-pos-acc with --fixed-pos-llh
-	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0"},      // accuracy too small
-	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0"},       // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.00005"}, // accuracy below minimum
 	// Test mutual exclusion of --fixed-pos-llh with --fixed-pos-ecef, --mobile, --survey
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-llh", "51.5007,-0.1246,11"},
@@ -726,10 +728,9 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
-	// Test --json cannot be combined with --msg-file or passive capture
-	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--json"},                      // can't use with --msg-file
-	{"--serial-device", "ttyS0", "--json", "--packet-log", "pkt.jsonl", "--capture", "10"}, // passive capture has no result to report
-	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-tags", "--json"},       // can't use with --msg-file even with --show-tags
+	// Test --json cannot be combined with --msg-file
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--json"},                // can't use with --msg-file
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-tags", "--json"}, // can't use with --msg-file even with --show-tags
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed
 	{"--config-file", "test.toml", "--serial-device", "ttyS0"}, // can't use with --serial-device
 	{"--config-file", "test.toml", "--device-speed", "9600"},   // can't use with --device-speed
@@ -891,8 +892,8 @@ func TestResolveTargetJSONValidates(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name:      "survey accuracy under a millimeter",
-			json:      `{"Opts":{"Survey":{"MinDur":60000000000,"AccLimit":0.0005}}}`,
+			name:      "survey accuracy under the minimum",
+			json:      `{"Opts":{"Survey":{"MinDur":60000000000,"AccLimit":0.00005}}}`,
 			expectErr: true,
 		},
 		{
@@ -900,9 +901,13 @@ func TestResolveTargetJSONValidates(t *testing.T) {
 			json: `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000]}}}`,
 		},
 		{
-			name:      "fixed position accuracy under a millimeter",
-			json:      `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.0005}}}`,
+			name:      "fixed position accuracy under the minimum",
+			json:      `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.00005}}}`,
 			expectErr: true,
+		},
+		{
+			name: "fixed position accuracy at the minimum",
+			json: `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.0001}}}`,
 		},
 	}
 	for _, tc := range tests {

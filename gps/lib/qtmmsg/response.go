@@ -58,6 +58,7 @@ const (
 	RequestCommand RequestKind = iota // expects ResponseOK or ResponseError
 	RequestQuery                      // expects ResponseOKData or ResponseError
 	RequestVerno                      // expects ResponseData or ResponseError
+	RequestNoAck                      // expects ResponseError on failure, nothing on success
 )
 
 // RequestClass is the result of classifying a sent PQTM command.
@@ -72,6 +73,8 @@ type RequestClass struct {
 //   - Second field is "W" -> RequestCommand (write)
 //   - Second field is "R" -> RequestQuery (read)
 //   - Sentence is PQTMVERNO -> RequestVerno
+//   - Sentence is PQTMUNIQID or PQTMSN (queries without "R") -> RequestQuery
+//   - Sentence is PQTMCOLD, PQTMWARM, PQTMHOT or PQTMSRR -> RequestNoAck
 //   - Otherwise -> RequestCommand (default)
 func ClassifyRequest(sent string) RequestClass {
 	name, rest, _ := strings.Cut(sent, ",")
@@ -82,8 +85,13 @@ func ClassifyRequest(sent string) RequestClass {
 	case "R":
 		return RequestClass{Kind: RequestQuery, Sentence: name}
 	}
-	if name == "PQTMVERNO" {
+	switch name {
+	case "PQTMVERNO":
 		return RequestClass{Kind: RequestVerno, Sentence: name}
+	case "PQTMUNIQID", "PQTMSN":
+		return RequestClass{Kind: RequestQuery, Sentence: name}
+	case "PQTMCOLD", "PQTMWARM", "PQTMHOT", "PQTMSRR":
+		return RequestClass{Kind: RequestNoAck, Sentence: name}
 	}
 	return RequestClass{Kind: RequestCommand, Sentence: name}
 }

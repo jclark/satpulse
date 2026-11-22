@@ -323,6 +323,60 @@ func TestTimeTim2TimeGLN(t *testing.T) {
 	}
 }
 
+// TestTimeV5GLONASS checks that V5 messages with GLONASS time give UTCTime,
+// using packets from an ATGM332D-5N71 read at 2026-06-13T01:56:55.140Z.
+func TestTimeV5GLONASS(t *testing.T) {
+	tests := []struct {
+		name   string
+		packet string
+		expect gpsprot.TimeMsg
+	}{
+		{
+			name:   "NAV-SOL",
+			packet: "bace48000102b4a8950007070205070700002300340614000000ce0820413475dfa0787731c1afc09c38973b574112d67d90adf33641fae0b04400000000000000000000000099b1523fe3e03d4036e6e7c0",
+			expect: gpsprot.TimeMsg{
+				NativeMsgID: "NAV-SOL",
+				UTCTime:     ptr(ptime.UTC(2026, 6, 13, 1, 56, 55, 2)),
+				GNSS:        gpsprot.GLO,
+			},
+		},
+		{
+			name:   "TIM-TP",
+			packet: "bace18000200b4a895000000000000000000d00820413406120304010000d4b8c944",
+			expect: gpsprot.TimeMsg{
+				Ref:         gpsprot.PrePulse,
+				NativeMsgID: "TIM-TP",
+				UTCTime:     ptr(ptime.UTC(2026, 6, 13, 1, 56, 56, 0)),
+				GNSS:        gpsprot.GLO,
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			b, err := hex.DecodeString(tc.packet)
+			if err != nil {
+				t.Fatal(err)
+			}
+			msg, err := casbin.ParseMsg(string(b))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got *gpsprot.TimeMsg
+			switch m := msg.(type) {
+			case *casbin.NavSol:
+				got = timeNavSol(m)
+			case *casbin.TimTP:
+				got = timeTimTP(m)
+			default:
+				t.Fatalf("parsed %T, want *casbin.NavSol or *casbin.TimTP", msg)
+			}
+			if !reflect.DeepEqual(*got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", *got, tc.expect)
+			}
+		})
+	}
+}
+
 func ptr[T any](v T) opt.Val[T] { return opt.Make(v) }
 
 func TestTimeTim2Tpx(t *testing.T) {
