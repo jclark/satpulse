@@ -29,11 +29,15 @@ The browser build is a third shell:
 - `webui/packages/workbench` supplies the shared UI, with the small capability
   and connection-panel changes listed below.
 
-The Go build is standard Go, not TinyGo. The browser needs `reflect.Select`,
-which `gps/app/bcast` uses and TinyGo does not implement, and full reflect for
-go-toml in `gps/msgfile`. TinyGo 0.42.0's `reflect.Select` still panics; no usable
-full-session TinyGo binary was produced. Reducing download size remains a
-reason to investigate TinyGo separately, but it is not a prerequisite here.
+The Go build is standard Go, not TinyGo. The blocker is `reflect.Select`,
+which `gps/app/bcast` uses and TinyGo 0.42.0 does not implement: a TinyGo
+module compiles but panics on the first broadcast. go-toml is not a blocker;
+it lists and parses the built-in message-file catalog under TinyGo on wasm.
+#490 supplies `reflect.Select` on TinyGo. TinyGo work is tracked in #491,
+which measured this shell at 2,311,786 bytes Brotli with standard Go against
+862,686 with TinyGo `-no-debug`, before that adapter; a TinyGo build with the
+adapter has not been measured or loaded in a browser. It is not a
+prerequisite here.
 
 ## Changes to existing APIs
 
