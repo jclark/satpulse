@@ -10,7 +10,7 @@ import (
 
 // perout implements --perout/-o mode
 func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
-	clk, pinIndex, err := phcOpen(cfg.Interface, cfg.Pin)
+	clk, pinIndex, err := phcOpen(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -21,22 +21,29 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		return nil, err
 	}
 
-	err = clk.PinSetFunc(pinIndex, phc.PinFuncPerout, chanIndex)
-	if err != nil {
-		return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", pinIndex, err)
+	attrs := cfg.logAttrs()
+	if clk.HasPins() {
+		err = clk.PinSetFunc(pinIndex, phc.PinFuncPerout, chanIndex)
+		if err != nil {
+			return nil, fmt.Errorf("failed to configure pin %d for periodic output: %w", pinIndex, err)
+		}
+		attrs = append(attrs, "pin", pinIndex)
 	}
+	attrs = append(attrs, "channel", cfg.Chan)
 
-	driver, err := phc.IfDriverName(cfg.Interface)
-	if err != nil {
-		return nil, fmt.Errorf("failed to get driver name for interface %s: %w", cfg.Interface, err)
-	}
 	startOff := time.Duration(0)
-	switch driver {
-	case "igb", "igc":
-		// igb and igc always use 50% duty cycle
-		// The start in PTP_PEROUT_ENABLE determines the start of the *low* part i.e. the falling edge.
-		// But we want the rising edge to be aligned with the start of the second.
-		startOff = cfg.Perout.Period / 2
+	if cfg.Interface != "" {
+		driver, err := phc.IfDriverName(cfg.Interface)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get driver name for interface %s: %w", cfg.Interface, err)
+		}
+		switch driver {
+		case "igb", "igc":
+			// igb and igc always use 50% duty cycle
+			// The start in PTP_PEROUT_ENABLE determines the start of the *low* part i.e. the falling edge.
+			// But we want the rising edge to be aligned with the start of the second.
+			startOff = cfg.Perout.Period / 2
+		}
 	}
 	err = clk.PeroutEnable(chanIndex, cfg.Perout.Period, cfg.Perout.Width, startOff)
 	if err != nil {
@@ -44,26 +51,15 @@ func perout(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	}
 
 	if cfg.Perout.Period == 0 {
-		lg.Info("periodic output disabled",
-			"interface", cfg.Interface,
-			"pin", pinIndex,
-			"channel", cfg.Chan)
+		lg.Info("periodic output disabled", attrs...)
 	} else {
+		attrs = append(attrs, "period", cfg.Perout.Period)
 		if cfg.Perout.Width > 0 {
-			lg.Info("periodic output enabled",
-				"interface", cfg.Interface,
-				"pin", pinIndex,
-				"channel", cfg.Chan,
-				"period", cfg.Perout.Period,
-				"width", cfg.Perout.Width)
+			attrs = append(attrs, "width", cfg.Perout.Width)
 		} else {
-			lg.Info("periodic output enabled",
-				"interface", cfg.Interface,
-				"pin", pinIndex,
-				"channel", cfg.Chan,
-				"period", cfg.Perout.Period,
-				"width", "default")
+			attrs = append(attrs, "width", "default")
 		}
+		lg.Info("periodic output enabled", attrs...)
 	}
 
 	return nil, nil

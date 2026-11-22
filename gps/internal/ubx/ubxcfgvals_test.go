@@ -78,13 +78,6 @@ func expectItem[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T], val
 	}
 }
 
-func expectMissing[T comparable](t *testing.T, m *CfgVals, key ucv.TypedKey[T]) {
-	_, ok := cfgValGet(m, key)
-	if ok {
-		t.Errorf("expected db not to contain %x", key)
-	}
-}
-
 func TestConfigItems_Empty(t *testing.T) {
 	target := gpsprot.NewConfigTarget()
 	ver := &Version{GNSS: gpsprot.MajorGNSSSet}
