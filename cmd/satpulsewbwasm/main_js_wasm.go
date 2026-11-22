@@ -73,12 +73,15 @@ func main() {
 func (s *shell) call(name, data string) (any, error) {
 	switch name {
 	case "connection":
+		// As in satpulsewb, the session's speed takes precedence but is never
+		// stored, so a read made as a new Connect starts cannot outlast it.
 		s.mu.Lock()
 		defer s.mu.Unlock()
+		info := session.ConnectionInfo{State: s.sess.State(), Device: s.device, Speed: s.speed}
 		if speed := s.sess.Speed(); speed != 0 {
-			s.speed = speed
+			info.Speed = speed
 		}
-		return session.ConnectionInfo{State: s.sess.State(), Device: s.device, Speed: s.speed}, nil
+		return info, nil
 	case "receiver":
 		return s.sess.Receiver(), nil
 	case "corrections":
