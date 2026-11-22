@@ -67,14 +67,6 @@ import (
 // the port, and further operations are refused until it completes.
 type ConnState string
 
-// ConnectionInfo is the connection-bar snapshot shared by shells. Device and
-// Speed retain the shell's selected settings while disconnected.
-type ConnectionInfo struct {
-	State  ConnState `json:"state"`
-	Device string    `json:"device"`
-	Speed  int       `json:"speed,omitempty"`
-}
-
 // EventName implements Event.
 func (ConnState) EventName() EventName { return EventState }
 
@@ -86,6 +78,14 @@ const (
 	StateConfiguring  ConnState = "configuring"
 	StateSending      ConnState = "sending"
 )
+
+// ConnectionInfo is the connection-bar snapshot shared by shells. Device and
+// Speed retain the shell's selected settings while disconnected.
+type ConnectionInfo struct {
+	State  ConnState `json:"state"`
+	Device string    `json:"device"`
+	Speed  int       `json:"speed,omitempty"` // 0 (absent): no speed specified or chosen yet
+}
 
 const (
 	packetLogChannelSize = 64
