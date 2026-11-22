@@ -455,8 +455,8 @@ func startScan(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cancel 
 		gpsio.Scan(ctx, lg, conn, msg, pLog, pktFormats)
 		// Scan returns only when the GPS data source is gone. If we weren't
 		// already shutting down, the serial input reached EOF (the device
-		// disappeared): cancel with a cause so the daemon shuts down and Cmd
-		// exits non-zero to be restarted.
+		// disappeared): cancel with a cause so the daemon shuts down and Run
+		// returns an error.
 		if ctx.Err() == nil {
 			cancel(fmt.Errorf("serial device no longer providing input: %s", conn.LocalAddr()))
 		}
