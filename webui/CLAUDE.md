@@ -7,10 +7,13 @@ that are checked in and compiled into the Go binaries with `//go:embed`:
   `time/internal/web/embed.go`.
 - `packages/workbench` is a component library with no standalone app. It is
   consumed by the entry package `packages/workbench-http`, which is the
-  `satpulsewb` UI, embedded via `cmd/satpulsewb/embed.go`.
+  `satpulsewb` UI, embedded via `cmd/satpulsewb/embed.go`. Its `test/`
+  directory is a test-only entry point that mounts the app on a mock
+  transport; `packages/e2e` serves it for the mock-transport checks and
+  type-checks against it.
 
-Nothing else depends on `packages/workbench`, and `packages/dashboard` does not
-depend on it, so the two frontends regenerate independently.
+`packages/dashboard` does not depend on `packages/workbench`, so the two
+frontends regenerate independently.
 
 ## Regenerating the embedded assets
 

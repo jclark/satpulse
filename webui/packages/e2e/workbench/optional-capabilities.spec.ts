@@ -6,6 +6,9 @@ test.describe('optional transport capabilities', () => {
         await expect(page.getByRole('banner')).toBeVisible();
         await expect(page.getByRole('button', {name: 'Corrections', exact: true})).toHaveCount(0);
         await expect(page.getByPlaceholder('e.g. 10.0.0.1')).toHaveCount(0);
+        // gps:state is registered by the same effect, so once it is present the
+        // correction subscriptions would be too.
+        await expect.poll(() => page.evaluate(() => window.workbenchTest.subscriptions())).toContain('gps:state');
         const subs = await page.evaluate(() => window.workbenchTest.subscriptions());
         for (const name of ['gps:corrpacket', 'gps:corrections', 'gps:basearp']) expect(subs).not.toContain(name);
     });

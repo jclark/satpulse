@@ -689,8 +689,9 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
       openSessions.add(session);
       try {
         const port = await freePort();
-        const proc = session.spawnLogged('vite', 'npm', [
-          '--prefix', path.join(REPO, 'webui'), 'run', 'dev', '--workspace=@satpulse/workbench-http', '--',
+        // Run Vite itself, not through npm, so teardown signals the server.
+        const proc = session.spawnLogged('vite', path.join(REPO, 'webui', 'node_modules', '.bin', 'vite'), [
+          path.join(REPO, 'webui', 'packages', 'workbench-http'),
           '--host', '127.0.0.1', '--port', String(port), '--strictPort',
         ]);
         await poll(`vite port ${port}`, 30000, () => {
