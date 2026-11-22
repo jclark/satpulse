@@ -67,6 +67,8 @@ test.describe('optional transport capabilities', () => {
         expect(await page.evaluate(() => window.workbenchTest.calls.find(c => c.method === 'connect')?.args)).toEqual(['serial:1', 38400]);
         await page.getByRole('button', {name: 'Select port', exact: true}).click();
         await expect(page.locator('header ul')).toContainText('Receiver');
+        await page.getByRole('button', {name: 'Receiver', exact: true}).click();
+        await expect(page.getByRole('button', {name: 'Select port', exact: true})).toBeFocused();
     });
 
     test('picker cancellation preserves the selected device', async ({page, mockWorkbench}) => {
