@@ -1186,8 +1186,8 @@ func (s *Session) State() ConnState {
 }
 
 // Speed returns the host serial port speed, or 0 if the transport has
-// none. After a connection ends it keeps that connection's last speed,
-// until the next Connect clears it.
+// none. After a connection ends it keeps that connection's last speed
+// until a later Connect starts to open a transport.
 func (s *Session) Speed() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
