@@ -125,7 +125,6 @@ func (s *service) Execute(_ []string, r <-chan svc.ChangeRequest, status chan<- 
     cfg, lg, err := s.startup() // LoadConfig + open --log-file slog handler
     if err != nil {
         s.elog.Error(evStartFailed, err.Error())
-        status <- svc.Status{State: svc.Stopped}
         return true, 1 // service-specific: SCM won't misread it as Win32
     }
 
@@ -146,7 +145,6 @@ func (s *service) Execute(_ []string, r <-chan svc.ChangeRequest, status chan<- 
                 cancel()
             }
         case err := <-done:
-            status <- svc.Status{State: svc.Stopped}
             if err != nil {
                 s.elog.Error(evExitError, err.Error())
                 return true, 1 // service-specific error code

@@ -94,17 +94,24 @@ type service struct {
 }
 
 // Execute is the svc.Handler; it maps SCM Stop/Shutdown requests onto the
-// daemon's context cancellation. Failures are reported with a
-// service-specific exit code: with svcSpecificEC false the SCM would
-// misread the daemon's sysexits-style codes as Win32 error numbers. The
-// real detail is in the Event Log and the daemon log file.
+// daemon's context cancellation. It never sends Stopped itself: the svc
+// package reports Stopped, with the exit code returned here, once Execute
+// returns, and an earlier Stopped would reach the SCM with exit code 0.
+// Failures are reported with a service-specific exit code: with
+// svcSpecificEC false the SCM would misread the daemon's sysexits-style
+// codes as Win32 error numbers. The real detail is in the Event Log and
+// the daemon log file.
 func (s *service) Execute(_ []string, r <-chan svc.ChangeRequest, status chan<- svc.Status) (svcSpecificEC bool, exitCode uint32) {
 	status <- svc.Status{State: svc.StartPending}
 	s.elog.Info(evStarting, serviceName+" starting")
 	cfg, lg, closeLog, err := s.startup()
 	if err != nil {
-		s.elog.Error(evStartFailed, serviceName+" failed to start: "+err.Error())
-		status <- svc.Status{State: svc.Stopped}
+		msg := err.Error()
+		// go-toml puts the offending key and position in String(), not Error().
+		if d, ok := err.(fmt.Stringer); ok && d.String() != msg {
+			msg += "\n" + d.String()
+		}
+		s.elog.Error(evStartFailed, serviceName+" failed to start: "+msg)
 		return true, 1
 	}
 	defer closeLog()
@@ -126,7 +133,6 @@ func (s *service) Execute(_ []string, r <-chan svc.ChangeRequest, status chan<- 
 				cancel()
 			}
 		case err := <-done:
-			status <- svc.Status{State: svc.Stopped}
 			if err != nil {
 				s.elog.Error(evExitError, serviceName+" exited with error: "+err.Error())
 				return true, 1
