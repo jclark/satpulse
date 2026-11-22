@@ -107,10 +107,13 @@ it('delivers buffered bytes before a terminal error', async () => {
     await expect(c.read()).rejects.toMatchObject({name: 'NetworkError'});
 });
 
-it('refuses a port whose device has disconnected', async () => {
+it('explains a failed open of a port whose device has disconnected', async () => {
     port.connected = false;
+    port.failOpen = true;
     await expect(serial.open('serial:1', 38400)).rejects.toThrow('The device has disconnected');
-    expect(port.opens).toEqual([]);
+    port.failOpen = false;
+    const c = await serial.open('serial:1', 38400);
+    await c.close();
 });
 
 it('holds ownership until an aborted delayed open is closed', async () => {

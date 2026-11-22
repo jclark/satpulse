@@ -63,9 +63,6 @@ export class WebSerial {
         if (this.closed) throw new Error('Serial port is closed.');
         const port = this.ports.get(device);
         if (!port) throw new Error('Choose a serial port first.');
-        // A device that re-enumerates, for example after a receiver reset,
-        // comes back as a new SerialPort; this one never opens again.
-        if (port.connected === false) throw new Error('The device has disconnected. Use "Add a device..." to choose it again.');
         const previous = this.available.get(port) ?? Promise.resolve();
         let release!: () => void;
         const held = new Promise<void>(resolve => { release = resolve; });
@@ -87,7 +84,16 @@ export class WebSerial {
             release();
         });
         this.connections.add(c);
-        await c.open(signal);
+        try {
+            await c.open(signal);
+        } catch (e) {
+            // A device that re-enumerates, for example after a receiver reset,
+            // comes back as a new SerialPort; this one never opens again. Try
+            // the open first: an idle Bluetooth port is not connected until
+            // opened.
+            if (port.connected === false) throw new Error('The device has disconnected. Use "Add a device..." to choose it again.');
+            throw e;
+        }
         return c;
     }
 
