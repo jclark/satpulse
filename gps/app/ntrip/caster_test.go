@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -657,6 +658,9 @@ func TestStreamDisconnectsLaggingClient(t *testing.T) {
 // streamLoop returns.  net.Pipe is unbuffered, so it models a socket
 // whose buffers are already full.
 func TestStreamLoopClientStops(t *testing.T) {
+	if runtime.Compiler == "tinygo" {
+		t.Skip("bcast needs reflect.Select, which TinyGo does not implement")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		var logs bytes.Buffer
 		lg := slog.New(slog.NewTextHandler(&logs, nil))
