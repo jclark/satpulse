@@ -584,6 +584,7 @@ func (s *Session) connect(gen int, op Opener, vendors []gpsreg.Vendor) error {
 		return errors.New("connection attempt superseded")
 	}
 	s.setStateLocked(StateConnecting)
+	s.speed = 0
 	s.mu.Unlock()
 	s.lifecycleMu.Unlock()
 	s.emitStateChange()
@@ -1185,7 +1186,8 @@ func (s *Session) State() ConnState {
 }
 
 // Speed returns the host serial port speed, or 0 if the transport has
-// none.
+// none. After a connection ends it keeps that connection's last speed,
+// until the next Connect clears it.
 func (s *Session) Speed() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()

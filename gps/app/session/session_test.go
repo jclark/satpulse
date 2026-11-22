@@ -291,6 +291,30 @@ func TestConnectDisconnect(t *testing.T) {
 	})
 }
 
+// TestFailedConnectClearsSpeed checks that a Connect whose open fails
+// does not leave the previous connection's speed as the session speed,
+// which shells would report in place of the speed the user requested.
+func TestFailedConnectClearsSpeed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := testSession(t, &fakeSink{})
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		s.Disconnect()
+		if got := s.Speed(); got != 9600 {
+			t.Errorf("Speed() after Disconnect = %d, expect 9600", got)
+		}
+		if err := s.Connect(op, nil); err == nil {
+			t.Fatalf("Connect succeeded with no connection left to open")
+		}
+		if got := s.Speed(); got != 0 {
+			t.Errorf("Speed() after failed Connect = %d, expect 0", got)
+		}
+	})
+}
+
 // TestConnectSuperseded checks the supersession contract: a Connect or
 // Disconnect issued while another Connect's open is pending wins; the
 // pending attempt returns an error, closes its late-opened transport,
