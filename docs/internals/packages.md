@@ -72,7 +72,9 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (serial device or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
 
-`gps/app/serialpps` detects PPS edges on serial modem-control input lines and combines their system timestamps with recent receiver UTC messages to generate refclock samples.
+`gps/app/pps` handles PPS edges timestamped by the system clock, independently of how they are detected: it combines an edge's timestamp with recent receiver UTC messages to generate a refclock sample, and provides the adaptive polling loop that detects edges on a pin whose level can only be read, predicting each pulse and polling in a window around it.
+
+`gps/app/serialpps` detects PPS edges on serial modem-control input lines, by polling through `gps/app/pps` or by waiting for line changes, and reports them as `gps/app/pps` candidate edges.
 
 `gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
 
@@ -136,6 +138,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/rnxrtcm` converts RTCM MSM7 observation messages to `gps/lib/rinex` records. It uses `gps/lib/rtcmbin` to decode the source messages.
 
+`gps/lib/rnxsbf` converts Septentrio SBF raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/sbfbin` to decode the source messages.
+
 `gps/lib/rnxubx` converts u-blox raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/ubxbin` to decode the source messages.
 
 `gps/lib/rnxunc` converts Unicore raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/uncmsg` to decode the source messages.
@@ -161,6 +165,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
 `gps/lib/kpps` provides low-level access to kernel PPS sources using the RFC 2783 data model. It is currently implemented on Linux.
+
+`gps/lib/gpiomem` reads the level of a Raspberry Pi GPIO directly from the GPIO controller's registers through the gpiomem device. It is built for 64-bit Linux only.
 
 `gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; on FreeBSD it scans `/dev` for call-out devices and takes USB identity from the `dev.` sysctl tree; other platforms use go.bug.st/serial/enumerator.
 
@@ -211,6 +217,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 `time/internal/refclock` provides abstractions for sending clock synchronization samples to external time synchronization services like chrony. It includes a worker goroutine that processes samples from a channel and delivers them to configured refclock implementations.
 
 `time/internal/syncsim` provides a discrete-event simulator for testing the phcsync controller with configurable error models for GPS PPS timing and PHC oscillator characteristics. It generates synthetic pulses, messages, and ticks under various fault conditions and measures controller performance.
+
+`time/internal/pollsim` simulates the serial PPS polling loop of `gps/app/pps` in virtual time. It supplies the loop's clock, timer and pulse reader from a model of the pulse and the host (query time, timer truncation and overshoot, idle slowdown) with injected pulse outages and stalls of the polling thread, applies the daemon's forwarding rule to the candidates, and reports how many edges the time daemon would have received, their error against the true edge, and the gaps between them.
 
 `time/internal/obs` provides unified observability interfaces including `Observer` (which extends `phcsync.Sampler` and `gpsprot.Handler`) for receiving both clock synchronization samples and GPS protocol messages.
 

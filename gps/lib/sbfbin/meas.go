@@ -29,15 +29,23 @@ const (
 	MeasExtraLockTimeClipped     = 0xFFFE
 )
 
-// CommonFlagsE6BUsed is the MeasEpoch CommonFlags bit indicating that the
-// Galileo E6 measurement (signal number 19) is the E6-B component; when clear
-// it is E6-C.
-const CommonFlagsE6BUsed CommonFlags = 1 << 6
+// Boolean flags in MeasEpoch CommonFlags.
+const (
+	CommonFlagsMultipathMitigation CommonFlags = 1 << iota // multipath mitigation enabled
+	CommonFlagsSmoothingOfCode                             // at least one code measurement is smoothed
+	_                                                      // reserved
+	CommonFlagsClockSteering                               // clock steering active
+	_                                                      // not applicable
+	CommonFlagsHighDynamics                                // receiver in high-dynamics mode
+	CommonFlagsE6BUsed                                     // Galileo E6 (signal number 19) is E6B, not E6C
+	CommonFlagsScrambling                                  // measurements scrambled: no Measurement Availability permission
+)
 
-// E6BUsed reports whether the E6-B-used bit is set.
-func (f CommonFlags) E6BUsed() bool {
-	return f&CommonFlagsE6BUsed != 0
-}
+// Boolean flags in MeasEpoch ObsInfo.
+const (
+	ObsInfoSmoothed  ObsInfo = 1 << 0 // pseudorange is smoothed
+	ObsInfoHalfCycle ObsInfo = 1 << 2 // carrier phase has a half-cycle ambiguity
+)
 
 // Observed-axis signal numbers, guide sec 4.1.10. These index both
 // MeasEpoch's SigIdxLo field and the PVT SignalInfo bitmask.
@@ -257,34 +265,18 @@ func (t *MeasEpochChannelType2) DopplerOffsetHz() (float64, bool) {
 	return (float64(msb)*65536 + float64(t.DopplerOffsetLSB)) * 0.0001, true
 }
 
-// HalfCycleAmbiguity reports whether bit 2 is set, meaning the carrier phase
-// has a half-cycle ambiguity.
-func (o ObsInfo) HalfCycleAmbiguity() bool {
-	return o&0x4 != 0
-}
-
 // GLONASSFreqNr returns the GLONASS frequency number (-7..6) for a master
 // channel whose signal is one of the GLONASS FDMA signal numbers 8-11.
-// ObsInfo bits 3-7 encode the frequency number with an offset of 8; the wire
-// value 0 does not encode a frequency number and reports false, as does any
-// non-FDMA signal.
+// ObsInfo bits 3-7 encode the frequency number with an offset of 8; a wire
+// value outside 1-14, which does not encode a valid frequency number, reports
+// false, as does any non-FDMA signal.
 func (t *MeasEpochChannelType1) GLONASSFreqNr() (int8, bool) {
-	return glonassFreqNr(t.Type, t.ObsInfo)
-}
-
-// GLONASSFreqNr returns the GLONASS frequency number for a slave channel.
-// The reference guide spells out the ObsInfo frequency-number encoding only
-// for the Type1 sub-block; applying it to Type2 follows plan/sbf-rinex.md.
-func (t *MeasEpochChannelType2) GLONASSFreqNr() (int8, bool) {
-	return glonassFreqNr(t.Type, t.ObsInfo)
-}
-
-func glonassFreqNr(typ MeasType, obs ObsInfo) (int8, bool) {
-	n := uint8(typ) & 0x1F
-	if n < SigNumGLONASSL1CA || n > SigNumGLONASSL2CA || obs>>3 == 0 {
+	n := uint8(t.Type) & 0x1F
+	k := int8(t.ObsInfo>>3) - 8
+	if n < SigNumGLONASSL1CA || n > SigNumGLONASSL2CA || k < -7 || k > 6 {
 		return 0, false
 	}
-	return int8(uint8(obs)>>3) - 8, true
+	return k, true
 }
 
 type measExtraHead struct {
@@ -423,6 +415,11 @@ func (s *MeasExtraChannelSub) SignalNumber() uint8 {
 		return 32 + (s.Misc>>3)&0x1F
 	}
 	return n
+}
+
+// AntennaID returns the AntennaID field of a MeasExtra channel sub-block.
+func (s *MeasExtraChannelSub) AntennaID() uint8 {
+	return measAntennaID(s.Type)
 }
 
 // CN0HighRes returns the high-resolution C/N0 refinement in dB-Hz to be added

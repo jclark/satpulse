@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -60,8 +61,8 @@ type SerialConfig struct {
 }
 
 type SerialPPSConfig struct {
-	Pin            string `toml:"pin"`
-	InvertPolarity bool   `toml:"invertPolarity"`
+	Pin            gpsio.SerialPin `toml:"pin"`
+	InvertPolarity bool            `toml:"invertPolarity"`
 }
 
 type SampleConfig struct {
@@ -73,10 +74,12 @@ type SerialSampleConfig struct {
 }
 
 type PHCConfig struct {
-	Interface string `toml:"interface"`
-	Pin       uint8  `toml:"pin"`
-	Channel   uint8  `toml:"channel"`
-	Wait      bool   `toml:"wait"`
+	Interface    string `toml:"interface"`
+	Device       string `toml:"device"`
+	Pin          *uint8 `toml:"pin"` // nil means no pin: 0 on a PHC with pins, none on a PHC without
+	Channel      uint8  `toml:"channel"`
+	Wait         bool   `toml:"wait"`
+	ExttsLatency int64  `toml:"exttsLatency"` // in nanoseconds
 }
 
 type LeapSecondConfig struct {
@@ -188,12 +191,7 @@ func defaultConfig() *Config {
 }
 
 func (cfg *Config) anyHTTP(f func(HTTPConfig) bool) bool {
-	for _, c := range cfg.HTTP {
-		if f(c) {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(cfg.HTTP, f)
 }
 
 func (cfg *Config) httpWantsSatellites() bool {
@@ -218,25 +216,33 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 	return hasRTCMPushMSM7To4(cfg)
 }
 
+const maxExttsLatency = 1_000_000 // in nanoseconds
+
 // Validate validates the configuration and logs warnings for deprecated options.
 // It is separate from LoadConfig because the config contains logging settings.
 func (cfg *Config) Validate(lg *slog.Logger) error {
 	cfg.GPS.validate(lg)
 	if cfg.Serial.PPS != nil {
-		if _, err := cfg.Serial.PPS.modemControlPin(); err != nil {
-			return &configError{err: err}
+		if cfg.Serial.PPS.Pin == 0 {
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table must be specified")}
 		}
-		if cfg.PHC.Interface != "" {
-			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
+		if cfg.PHC.specified() {
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface or device in the [phc] table")}
 		}
+	}
+	if cfg.PHC.Interface != "" && cfg.PHC.Device != "" {
+		return &configError{err: fmt.Errorf("interface and device in the [phc] table cannot both be specified")}
+	}
+	if cfg.PHC.ExttsLatency < -maxExttsLatency || cfg.PHC.ExttsLatency > maxExttsLatency {
+		return configErrorf("exttsLatency in the [phc] table must be between -%d and %d (exttsLatency is in nanoseconds)", maxExttsLatency, maxExttsLatency)
 	}
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	// An explicitly selected method never falls back, and kernel PPS reports
 	// only DCD changes, so the combination could only fail at startup.
-	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != "dcd" {
-		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = "dcd" in the [serial] table, got %q`, cfg.Serial.PPS.Pin)}
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != gpsio.SerialPinDCD {
+		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = %q in the [serial] table, got %q`, gpsio.SerialPinDCD, cfg.Serial.PPS.Pin)}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
@@ -256,27 +262,11 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 
 // wiring is the pulse wiring the table describes.
 func (cfg SerialPPSConfig) wiring() serialpps.Wiring {
-	pin, _ := cfg.modemControlPin() // checked by Config.Validate
-	w := serialpps.Wiring{Pin: pin}
+	w := serialpps.Wiring{Pin: cfg.Pin}
 	if cfg.InvertPolarity {
 		w.Polarity = serialpps.PolarityAssert
 	}
 	return w
-}
-
-func (cfg SerialPPSConfig) modemControlPin() (gpsio.ModemControlPin, error) {
-	switch cfg.Pin {
-	case "cts":
-		return gpsio.ModemCTS, nil
-	case "dcd":
-		return gpsio.ModemDCD, nil
-	case "dsr":
-		return gpsio.ModemDSR, nil
-	case "ri":
-		return gpsio.ModemRI, nil
-	default:
-		return 0, fmt.Errorf("pps.pin %q in the [serial] table: must be one of cts, dcd, dsr, ri", cfg.Pin)
-	}
 }
 
 // userSet checks the top-level [[user]] table for empty or duplicate
@@ -298,10 +288,17 @@ func (cfg *Config) userSet() (map[string]struct{}, error) {
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
-	if cfg.Interface == "" {
+	if !cfg.specified() {
 		return nil, nil
 	}
-	clk, err := ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	var clk *ts.Clock
+	var err error
+	lat := time.Duration(cfg.ExttsLatency)
+	if cfg.Device != "" {
+		clk, err = ts.OpenDeviceClock(cfg.Device, cfg.PinDesc(), lat)
+	} else {
+		clk, err = ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait, lat)
+	}
 	if err != nil {
 		var cfgErr *ts.ConfigError
 		if errors.As(err, &cfgErr) {
@@ -312,11 +309,18 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 	return clk, nil
 }
 
+// specified reports whether the configuration names a PHC.
+func (cfg PHCConfig) specified() bool {
+	return cfg.Interface != "" || cfg.Device != ""
+}
+
 func (cff PHCConfig) PinDesc() ts.PinDesc {
-	return ts.PinDesc{
-		PinIndex:  uint32(cff.Pin),
-		ChanIndex: uint32(cff.Channel),
+	pd := ts.PinDesc{ChanIndex: uint32(cff.Channel)}
+	if cff.Pin != nil {
+		pin := uint32(*cff.Pin)
+		pd.PinIndex = &pin
 	}
+	return pd
 }
 
 func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
@@ -356,7 +360,7 @@ func (cfg *Config) shmFixedPrecision() *int8 {
 		p := serialPPSSHMPrecision
 		return &p
 	}
-	if cfg.PHC.Interface == "" {
+	if !cfg.PHC.specified() {
 		p := serialSHMPrecision
 		return &p
 	}

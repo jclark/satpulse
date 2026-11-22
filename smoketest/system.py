@@ -741,7 +741,7 @@ def run_checks(ctx: Context) -> None:
         LiveCheck("Ntrip authenticated stream", lambda: ntrip.check_stream(ctx, "RTCM", auth=("rover", "secret"))),
         LiveCheck("UBX TCP proxy", lambda: proxy.check_tcp(ctx, ctx.port("SATPULSE_TEST_PROXY_TCP_PORT"), "UBX")),
         LiveCheck("RTCM TCP proxy", lambda: proxy.check_tcp(ctx, ctx.port("SATPULSE_TEST_PROXY_TCP_RTCM_PORT"), "RTCM")),
-        LiveCheck("UBX socket proxy capture", lambda: proxy.check_socket_capture(ctx, protocol="UBX")),
+        LiveCheck("UBX socket proxy", lambda: proxy.check_socket(ctx, protocol="UBX")),
     ]
     for check in live:
         check.start(ctx)

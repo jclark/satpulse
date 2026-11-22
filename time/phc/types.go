@@ -85,8 +85,9 @@ const (
 )
 
 // A MultiSample is a series of samples of the PHC and system clocks.
-// In the case of a MultiSample returned by SysOffset, the number
-// of PHC samples is the one more than the number of system clock samples.
+// In the case of a MultiSample from PTP_SYS_OFFSET, the number
+// of system clock samples is one more than the number of PHC samples;
+// each PHC sample is bracketed by the system clock samples before and after it.
 // In the case of a MultiSample returned by SysOffsetExtended,
 // the number of system clock samples is twice the number of PHC samples;
 // the system clock samples are the system clock times immediately before and after the PHC clock time.

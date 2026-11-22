@@ -37,6 +37,7 @@ const (
 	ConfigSupportSpeed
 	ConfigSupportSurvey
 	ConfigSupportSurveyAcc
+	ConfigSupportSurveyDur
 	ConfigSupportSurveyMsg
 	ConfigSupportFixedPos
 	ConfigSupportFixedPosAcc
@@ -66,6 +67,7 @@ var configSupportFlagNames = [...]struct {
 	{ConfigSupportSpeed, "speed"},
 	{ConfigSupportSurvey, "survey"},
 	{ConfigSupportSurveyAcc, "surveyAcc"},
+	{ConfigSupportSurveyDur, "surveyDur"},
 	{ConfigSupportSurveyMsg, "surveyMsg"},
 	{ConfigSupportFixedPos, "fixedPos"},
 	{ConfigSupportFixedPosAcc, "fixedPosAcc"},
@@ -139,11 +141,11 @@ type Configurator interface {
 
 // ReceiverInfo provides static information about the GPS receiver.
 type ReceiverInfo struct {
-	Vendor         string      `json:"vendor"`        // receiver vendor (e.g., "u-blox")
-	Firmware       string      `json:"firmware"`      // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
-	Hardware       string      `json:"hardware"`      // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
-	SupportedGNSS  GNSSSet     `json:"supportedGNSS"` // supported GNSS constellations
-	VendorSpecific interface{} `json:"-"`             // vendor-specific information, excluded from JSON
+	Vendor         string  `json:"vendor"`        // receiver vendor (e.g., "u-blox")
+	Firmware       string  `json:"firmware"`      // information about firmware; for u-blox, format would be e.g. "TIM 2.20 PROTVER 18.00"
+	Hardware       string  `json:"hardware"`      // information about hardware; for u-blox, this is the model (e.g., "ZED-F9T")
+	SupportedGNSS  GNSSSet `json:"supportedGNSS"` // supported GNSS constellations
+	VendorSpecific any     `json:"-"`             // vendor-specific information, excluded from JSON
 }
 
 // ConfigRequestState represents the current state of a configuration request.

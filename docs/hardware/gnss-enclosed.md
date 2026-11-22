@@ -18,10 +18,10 @@ evk_gallery:
 ---
 
 This page contains recommendations for GNSS boards that have their own enclosure, separate from the host PC.
-At the moment, this covers only receivers that are convenient for timing applications,
+At the moment, this covers only receivers that are convenient for [timing]({% link intro/timing.md %}) applications,
 which means that they must provide a PPS output using an SMA or BNC connector,
 with the signal between 0 and 3.3V.
-These receivers also work well as an RTK base station.
+These receivers also work well as an [RTK base station]({% link intro/positioning.md %}#real-time-kinematic).
 
 It will also need to provide a serial connection, which can be either USB (USB C or micro USB), or RS-232 (typically DB-9 female).
 When there is a serial USB connection, then that usually provides power also.

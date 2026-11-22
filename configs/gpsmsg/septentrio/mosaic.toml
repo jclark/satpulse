@@ -158,6 +158,82 @@ tag = "antenna-main-off"
 text = "setAntennaOffset, Main, 0, 0, 0, Unknown, Unknown, 0"
 description = "Clear main antenna offsets and phase-center calibration"
 
+# DeltaU is the height of the ARP above the marker. The antenna type, serial
+# number and setup ID are omitted, so they keep their current values.
+# Verified on mosaic-G5: after antenna-main-example, antenna-height-2000 reads
+# back as 0, 0, 2.0 with the example antenna type and serial number kept.
+[[line]]
+tag = "antenna-height-0"
+text = "setAntennaOffset, Main, 0, 0, 0"
+description = "Set main antenna height above the marker to 0"
+[[line]]
+tag = "antenna-height-2000"
+text = "setAntennaOffset, Main, 0, 0, 2.0"
+description = "Set main antenna height above the marker to 2 m"
+
+# Antenna cable delay
+#
+# setCalibCommonDelay compensates all pseudoranges (and hence the receiver
+# time and the PPS) for delays in the reception chain: a CommonDelay of X ns
+# makes the PPS pulse come X ns earlier. Unlike setPPSParameters' Delay
+# argument, which moves only the pulse, this also corrects the pseudoranges.
+# The factory default is 0. u-blox receivers default their equivalent
+# (CFG-TP-ANT_CABLEDELAY) to 50 ns, so antenna-cable-delay-50 aligns a
+# Septentrio's PPS with a u-blox receiver on the same antenna.
+# Confirmed identical command/range on both models.
+
+# Verified on mosaic-G5: returns the current delay (factory default 0.000).
+[[line]]
+tag = "get-antenna-cable-delay"
+text = "getCalibCommonDelay"
+description = "Query common antenna/cable delay compensation"
+
+# Verified ACK with readback on mosaic-G5 (CalibCommonDelay, 50.000); the PPS
+# moved ~50ns earlier, measured against a u-blox ZED-F9P on the same host via
+# chrony SOCK refclocks.
+[[line]]
+tag = "antenna-cable-delay-50"
+text = "setCalibCommonDelay, 50"
+description = "Compensate 50ns antenna cable delay (the u-blox default)"
+
+# Verified ACK with readback on mosaic-G5 (CalibCommonDelay, 0.000).
+[[line]]
+tag = "antenna-cable-delay-0"
+text = "setCalibCommonDelay, 0"
+description = "Clear antenna cable delay compensation (factory default)"
+
+# Receiver clock synchronization
+#
+# setClockSyncThreshold selects free-running or steered mode for the receiver
+# clock. In free-running mode (factory default usec500), the receiver jumps its
+# clock by an integer number of milliseconds whenever its offset from the
+# system time exceeds the threshold, so the measurements jump too. With
+# ClockSteering, the clock is continuously steered to the system time to
+# within a couple of nanoseconds; the reference guides recommend this only
+# under open-sky conditions. Either way the xPPS pulses stay within a few
+# nanoseconds of the requested time. MeasEpoch CommonFlags bit 3 shows whether
+# steering is active. The StartupSync argument is omitted, so it keeps its
+# current value. Confirmed identical command/enum on both models.
+
+# Verified on mosaic-G5: returns the factory setting usec500, off.
+[[line]]
+tag = "get-clock-steering"
+text = "getClockSyncThreshold"
+description = "Query receiver clock synchronization mode"
+
+# Verified ACK with readback on mosaic-G5 (ClockSyncThreshold, ClockSteering,
+# off).
+[[line]]
+tag = "clock-steering"
+text = "setClockSyncThreshold, ClockSteering"
+description = "Steer the receiver clock to GNSS time"
+
+# Verified ACK with readback on mosaic-G5 (ClockSyncThreshold, usec500, off).
+[[line]]
+tag = "clock-steering-off"
+text = "setClockSyncThreshold, usec500"
+description = "Free-running receiver clock with 0.5ms sync threshold (factory default)"
+
 # NMEA message output control
 # Septentrio routes NMEA through a "stream": one NMEA stream (Stream1..Stream10,
 # a pool separate from the SBF streams) carries a list of sentences to one
@@ -714,11 +790,16 @@ description = "Clear fixed position, return to rover mode"
 # the setRTCMv3Output reply echoes the resulting USB1 message list. (Actual
 # RTCM bytes on the wire additionally require base mode + a reference position;
 # the readback confirms enablement.)
-# Verified: rtcm-arp adds RTCM1006 to the USB1 output list.
 [[line]]
 tag = "rtcm-arp-usb1"
+text = "setRTCMv3Output, USB1, +RTCM1005"
+description = "Enable RTCM ARP message (1005) at default interval"
+
+# 1006 adds the antenna height; set it with antenna-height-*.
+[[line]]
+tag = "rtcm-arph-usb1"
 text = "setRTCMv3Output, USB1, +RTCM1006"
-description = "Enable RTCM ARP message (1006, includes antenna height) at default interval"
+description = "Enable RTCM ARP message with antenna height (1006) at default interval"
 
 # Verified: MSM4 expands to RTCM1074/1084/1094/1104/1114/1124/1134.
 [[line]]

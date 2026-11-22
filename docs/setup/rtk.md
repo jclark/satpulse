@@ -1,5 +1,7 @@
 ---
 title: RTK setup
+redirect_from:
+  - /howtos/rtk.html
 ---
 
 The [Precision positioning]({% link intro/positioning.md %}#real-time-kinematic) page explains the concepts behind RTK.
@@ -20,7 +22,7 @@ as an Ntrip caster, as an Ntrip server pushing to a remote caster, or as a plain
 The receiver needs some configuration to act as a base.
 Two things are mandatory: a stationary position, either surveyed or explicitly specified, and RTCM output.
 
-If the receiver supports high-level configuration, which currently means u-blox and Unicore,
+If the receiver supports high-level configuration (see [GPS module support]({% link gps-module-support/index.md %})),
 both can be done entirely with the `[gps]` table of `/etc/satpulse.toml`:
 
 ```
@@ -72,7 +74,7 @@ satpulsetool gps -d /dev/ttyUSB0 -s 115200 -m /usr/share/satpulse/gpsmsg/quectel
 
 ### Ntrip caster
 
-satpulsed includes a native Ntrip caster. {% include new-in-03.html %}
+satpulsed includes a native Ntrip caster.
 Unlike a normal Ntrip caster, this gets corrections direct from the receiver, rather than from an Ntrip server.
 The minimum configuration needed for a caster is to specify a mountpoint name.
 
@@ -144,7 +146,7 @@ Add `--user rover:secret` if the mountpoint requires authentication.
 
 ### Ntrip server
 
-satpulsed can also act as an Ntrip server, where it pushes corrections to a separate Ntrip caster. {% include new-in-03.html %}
+satpulsed can also act as an Ntrip server, where it pushes corrections to a separate Ntrip caster.
 This can either be an Ntrip caster you operate yourself (such as the [BKG Ntrip caster]({% link intro/other-software.md %}#bkg-ntrip-caster)),
 or a public caster network such as [RTK2go](http://rtk2go.com/). 
 
@@ -177,7 +179,7 @@ SatPulse is designed for hardware RTK, where the RTK position solution is comput
 On the rover side, the job of satpulsed is to feed corrections to the receiver and monitor the solution status.
 
 The `[stream.pull]` table configures a network endpoint as the source of correction data;
-the data is scanned as RTCM and sent to the receiver over the configured serial connection. {% include new-in-03.html %}
+the data is scanned as RTCM and sent to the receiver over the configured serial connection.
 
 ### Ntrip client
 
@@ -192,6 +194,36 @@ ntrip.password = "secret"
 ```
 
 The username and password keys are needed only if the mountpoint requires authentication.
+
+Many large-scale Ntrip services do not expose a separate mountpoint for each base station;
+rather they expect the client to send its location as an NMEA GGA sentence;
+they then use that location to either select a specific base station or synthesize RTCM corrections from other representations.
+This kind of Ntrip caster is called a VRS (Virtual Reference Station).
+An example is u-blox PointPerfect's Ntrip service.
+To enable this, specify `ntrip.nmeaSend = true`.
+
+```
+[stream.pull]
+ntrip.address = "caster.example.com"
+ntrip.mountpoint = "AUTO"
+ntrip.username = "rover"
+ntrip.password = "secret"
+ntrip.nmeaSend = true
+```
+
+This makes satpulsed send the receiver's current position after connecting and periodically thereafter.
+The default is to send every 5 seconds;
+you can change this with `ntrip.nmeaSendInterval`, which gives the interval in seconds;
+0 means upload once per connection.
+
+You can check whether a caster is working by using `satpulsetool ntrip`.
+It connects to a mountpoint
+and writes the packets it receives to standard output as a JSONL packet log.
+The `--nmea-send-pos` and `--nmea-send-interval` options have a similar effect to the corresponding configuration keys:
+
+```
+satpulsetool ntrip --user rover:secret --nmea-send-pos 13.7563,100.5018 caster.example.com AUTO
+```
 
 ### TCP client
 
