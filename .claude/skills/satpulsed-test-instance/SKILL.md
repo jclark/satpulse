@@ -53,7 +53,7 @@ listen = ":2001"   # optional; web interface on a non-2000 port
 
 Rules, and why:
 
-- **No `[phc]` table.** Without a PHC, `satpulsed` runs without root, and a startup "GPS detection failed: no output detected" is only a `WARN` rather than fatal. With a `[phc]` table the same failure is fatal: the daemon exits if it does not see GPS data within the detection window (about 2s, up to 10s), which it usually will not before the input is flowing.
+- **No `[phc]` table.** Without a PHC, `satpulsed` runs without root, and a startup "no output from GPS" is only a `WARN` rather than fatal. With a `[phc]` table the same failure is fatal: the daemon exits if it does not see GPS data within the detection window (about 2s, up to 10s), which it usually will not before the input is flowing.
 - **`[log] dir` must be under your tmp directory.** The default is `/var/log/satpulse`, which is root-owned; an unprivileged daemon cannot write there.
 - **`[[http]] listen` must not be `:2000`** if a system `satpulsed` may be using that port. Use `:2001` (or another free port).
 - The `[log]` and `[[http]]` blocks are both optional. Include only what the test needs.
@@ -72,7 +72,7 @@ For a fixed observation window, run under `timeout` (exit code 124 on normal exp
 timeout 10 out/$ARCH/satpulsed -v -f tmp/satpulsed/<name>.toml > tmp/satpulsed/satpulsed.log 2>&1
 ```
 
-In the startup log, expect `running without a PTP hardware clock` (no `[phc]`), and a `GPS detection failed: no output detected` `WARN` until input starts flowing. Neither is an error.
+In the startup log, expect `running without a PTP hardware clock` (no `[phc]`), and a `no output from GPS` `WARN` until input starts flowing. Neither is an error.
 
 ## Inspect
 

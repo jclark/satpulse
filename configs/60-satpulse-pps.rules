@@ -1,0 +1,7 @@
+# Make tty-backed kernel PPS sources (N_PPS line discipline) accessible
+# to the dialout group, so unprivileged satpulsed and satpulsetool runs
+# can read PPS edges. PHC-backed pps devices have an empty path
+# attribute and stay root-only.
+#
+# Not installed by the packages yet: copy to /etc/udev/rules.d/.
+SUBSYSTEM=="pps", ATTR{path}=="/dev/tty*", GROUP="dialout", MODE="0660"

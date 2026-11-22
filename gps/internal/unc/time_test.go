@@ -3,10 +3,12 @@ package unc
 import (
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/lib/uncmsg"
 )
@@ -76,6 +78,36 @@ func TestRecTime(t *testing.T) {
 	expectedAccuracy := time.Duration(8) // 7.786425700 nanoseconds rounds up to 8
 	if timeMsg.Accuracy != expectedAccuracy {
 		t.Errorf("Accuracy = %v, want %v", timeMsg.Accuracy, expectedAccuracy)
+	}
+}
+
+func TestRecTimeClockNotValid(t *testing.T) {
+	asciiPacket := "#RECTIMEA,97,GPS,FINE,2379,441279000,0,0,18,15;VALID,-4.997042211e-04,7.786425700e-09,-18.00000000000,2025,8,15,2,34,21000,VALID*a15fd8d6\r\n"
+	tests := []struct {
+		name        string
+		clockStatus novmsg.ClockStatus
+	}{
+		{name: "converging", clockStatus: novmsg.ClockStatusConverging},
+		{name: "iterating", clockStatus: novmsg.ClockStatusIterating},
+		{name: "invalid", clockStatus: novmsg.ClockStatusInvalid},
+	}
+	expect := &gpsprot.TimeMsg{Tag: TagAscii, NativeMsgID: "RECTIME"}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			msg, err := uncmsg.ParseAsciiMessage([]byte(asciiPacket))
+			if err != nil {
+				t.Fatalf("Failed to parse ASCII packet: %v", err)
+			}
+			rt := msg.Body.(*uncmsg.RecTime)
+			rt.ClockStatus = tc.clockStatus
+			got, err := timeMsgFromRecTime(&msg.Hdr, rt, TagAscii)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(got, expect) {
+				t.Errorf("got  %+v\nwant %+v", got, expect)
+			}
+		})
 	}
 }
 

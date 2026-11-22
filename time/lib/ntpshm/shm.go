@@ -1,12 +1,10 @@
-//go:build linux || darwin
+//go:build linux || darwin || freebsd
 
 package ntpshm
 
 import (
 	"fmt"
 	"unsafe"
-
-	"golang.org/x/sys/unix"
 )
 
 type shmWriter struct {
@@ -16,17 +14,17 @@ type shmWriter struct {
 
 func newShmWriter(segment uint8) (shmWriter, Attach, error) {
 	key := shmKey(segment)
-	id, err := unix.SysvShmGet(int(key), expectedSize, unix.IPC_CREAT|shmMode(segment))
+	id, err := sysvShmGet(int(key), expectedSize, ipcCreat|shmMode(segment))
 	a := Attach{Segment: int(segment), Key: key}
 	if err != nil {
 		return shmWriter{}, a, fmt.Errorf("shmget: %w", err)
 	}
-	data, err := unix.SysvShmAttach(id, 0, 0)
+	data, err := sysvShmAttach(id)
 	if err != nil {
 		return shmWriter{}, a, fmt.Errorf("shmat: %w", err)
 	}
 	if len(data) < expectedSize {
-		unix.SysvShmDetach(data)
+		sysvShmDetach(data)
 		return shmWriter{}, a, fmt.Errorf("shmat: segment size %d is smaller than %d", len(data), expectedSize)
 	}
 	w := shmWriter{t: (*shmTime)(unsafe.Pointer(&data[0])), data: data}
@@ -45,5 +43,5 @@ func (w shmWriter) close() error {
 	if len(w.data) == 0 {
 		return nil
 	}
-	return unix.SysvShmDetach(w.data)
+	return sysvShmDetach(w.data)
 }

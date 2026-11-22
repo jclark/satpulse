@@ -1,4 +1,13 @@
 # Makefile for satpulse: requires GNU make
+# Everything below is Linux-only; other Unixes use the portable Makefile.unix.
+# all is needed because a make without arguments builds the first target in the
+# file, but .DEFAULT does not work for this. smoketest is needed because .DEFAULT
+# is not used for a goal that names an existing file or directory.
+ifneq ($(shell uname -s),Linux)
+.DEFAULT all smoketest:
+	@$(MAKE) -f Makefile.unix $@
+.PHONY: all smoketest
+else
 # Where the config file will be installed by the install target.
 CONFIG_FILE=/usr/local/etc/satpulse.toml
 CMD=github.com/jclark/satpulse/gps/app/cmd
@@ -25,13 +34,14 @@ endif
 RPM_PKG_VERSION=$(RPM_VERSION)-$(RPM_RELEASE)
 XFLAGS:=-X \"$(CMD).version=$(CMD_VERSION)\" -X \"$(CMD).buildDate=$(BUILD_DATE)\"
 TAGS=netgo,osusergo
+PACKAGES=./cmd/... ./gps/... ./internal/... ./time/...
 # ARM architecture version for 32-bit arm builds; ignored when GOARCH is not arm.
 GOARM=6
 # The GOARCHs we support.
 ALL_GOARCH=arm64 amd64 arm
 TOMLS:=$(patsubst %,out/%/satpulse.toml,$(ALL_GOARCH))
 ARCH:=$(shell uname -m)
-MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1 satpulse.toml.5 satpulsed.8
+MAN_PAGES=satpulsetool.1 satpulsetool-gps.1 satpulsetool-serial.1 satpulsetool-pack.1 satpulsetool-scan.1 satpulsetool-sdp.1 satpulsetool-syncsim.1 satpulsetool-convobs.1 satpulsewb.1 satpulse.toml.5 satpulsed.8
 MAN_TARGETS = $(addprefix out/, $(MAN_PAGES))
 MAN_GZ_TARGETS = $(addsuffix .gz, $(MAN_TARGETS))
 MAN_TXT_TARGETS = $(addsuffix .txt, $(MAN_TARGETS))
@@ -50,7 +60,7 @@ all: $(GOARCH) out/$(GOARCH)/satpulse.toml
 allarch: $(ALL_GOARCH) $(TOMLS)
 
 $(ALL_GOARCH):
-	env GOOS=linux GOARCH=$@ GOARM=$(GOARM) go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./...
+	env GOOS=linux GOARCH=$@ GOARM=$(GOARM) go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" $(PACKAGES)
 
 windows_amd64:
 	env CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -tags "$(TAGS)" -o out/$@/ -ldflags "$(XFLAGS)" ./cmd/satpulsed ./cmd/satpulsetool ./cmd/satpulsewb
@@ -93,6 +103,7 @@ install: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpul
 	done
 	install -D -m 644 out/satpulsetool.1 /usr/local/share/man/man1/satpulsetool.1
 	sed 's;/usr/share/satpulse/gpsmsg;/usr/local/share/satpulse/gpsmsg;g' out/satpulsetool-gps.1 > /usr/local/share/man/man1/satpulsetool-gps.1
+	install -D -m 644 out/satpulsetool-serial.1 /usr/local/share/man/man1/satpulsetool-serial.1
 	install -D -m 644 out/satpulsetool-pack.1 /usr/local/share/man/man1/satpulsetool-pack.1
 	install -D -m 644 out/satpulsetool-scan.1 /usr/local/share/man/man1/satpulsetool-scan.1
 	install -D -m 644 out/satpulsetool-sdp.1 /usr/local/share/man/man1/satpulsetool-sdp.1
@@ -115,6 +126,7 @@ uninstall:
 	rm -rf /usr/local/share/satpulse/gpsmsg
 	rm -f /usr/local/share/man/man1/satpulsetool.1
 	rm -f /usr/local/share/man/man1/satpulsetool-gps.1
+	rm -f /usr/local/share/man/man1/satpulsetool-serial.1
 	rm -f /usr/local/share/man/man1/satpulsetool-pack.1
 	rm -f /usr/local/share/man/man1/satpulsetool-scan.1
 	rm -f /usr/local/share/man/man1/satpulsetool-sdp.1
@@ -126,7 +138,7 @@ uninstall:
 	systemctl daemon-reload
 
 test:
-	go test ./...
+	go test $(PACKAGES)
 
 smoketest: out/$(GOARCH)/satpulsed out/$(GOARCH)/satpulsetool out/$(GOARCH)/satpulsewb
 	python3 smoketest/run.py
@@ -187,6 +199,7 @@ $(DEB_PATTERN): $(ALL_GOARCH) $(TOMLS) $(MAN_GZ_TARGETS) gpsmsg
 	install -D -m 644 configs/satpulse@.service out/$*/deb/lib/systemd/system/satpulse@.service
 	install -D -m 644 out/satpulsetool.1.gz out/$*/deb/usr/share/man/man1/satpulsetool.1.gz
 	install -D -m 644 out/satpulsetool-gps.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-gps.1.gz
+	install -D -m 644 out/satpulsetool-serial.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-serial.1.gz
 	install -D -m 644 out/satpulsetool-pack.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-pack.1.gz
 	install -D -m 644 out/satpulsetool-scan.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-scan.1.gz
 	install -D -m 644 out/satpulsetool-sdp.1.gz out/$*/deb/usr/share/man/man1/satpulsetool-sdp.1.gz
@@ -241,12 +254,10 @@ release: $(GH_DEBS) $(GH_RPMS) $(WIN_ZIP)
 		--draft \
 		$^
 
-tag:
-	git update-index -q --refresh
-	git diff-index --exit-code HEAD
-	git tag -f -a "$(VERSION_TAG)" -m "Release $(VERSION_TAG)"
+# tag, untag, and the docker-wrapped builds live in the portable
+# Makefile.unix, so they work the same on every host.
+docker-pkg docker-release docker-up tag untag:
+	@$(MAKE) -f Makefile.unix $@
 
-untag:
-	git tag -d "$(VERSION_TAG)"
-
-.PHONY: $(ALL_GOARCH) all windows_amd64 test smoketest install uninstall clean pkg deb rpm winzip release man man.gz gpsmsg tag untag
+.PHONY: $(ALL_GOARCH) all windows_amd64 test smoketest install uninstall clean pkg deb rpm winzip release man man.gz gpsmsg docker-pkg docker-release docker-up tag untag
+endif

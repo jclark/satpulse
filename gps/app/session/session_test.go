@@ -18,10 +18,12 @@ import (
 	"github.com/jclark/satpulse/gps/app/gpscfg"
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/lib/nmeamsg"
+	"github.com/jclark/satpulse/gps/msgfile"
 )
 
-// fakeConn implements gpsio.Conn. Reads block until data is sent with
+// fakeConn implements Conn. Reads block until data is sent with
 // send or the connection is killed, which makes Read return io.EOF as
 // an unplugged or reset device does.
 type fakeConn struct {
@@ -31,12 +33,14 @@ type fakeConn struct {
 	closed  chan struct{}
 	stopped bool
 	writes  [][]byte
+	speed   int
+	pLog    *gpsio.PacketLog
 }
 
-var _ gpsio.Conn = (*fakeConn)(nil)
+var _ Conn = (*fakeConn)(nil)
 
 func newFakeConn() *fakeConn {
-	return &fakeConn{dataCh: make(chan []byte), closed: make(chan struct{})}
+	return &fakeConn{dataCh: make(chan []byte), closed: make(chan struct{}), speed: 9600}
 }
 
 func (c *fakeConn) Read(p []byte) (int, error) {
@@ -61,14 +65,38 @@ func (c *fakeConn) Read(p []byte) (int, error) {
 }
 
 func (c *fakeConn) Write(b []byte) (int, error) {
+	return c.write(b, nil)
+}
+
+func (c *fakeConn) WritePacket(b []byte, pf gpsprot.PacketFormat) (int, error) {
+	return c.write(b, pf)
+}
+
+func (c *fakeConn) write(b []byte, pf gpsprot.PacketFormat) (int, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.writes = append(c.writes, append([]byte(nil), b...))
+	if c.pLog != nil {
+		c.pLog.LogOutput(time.Now(), b, 0, pf)
+	}
 	return len(b), nil
+}
+
+func (c *fakeConn) Speed() int {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.speed
+}
+
+func (c *fakeConn) SetPacketLog(pl *gpsio.PacketLog) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pLog = pl
 }
 
 func (c *fakeConn) Buffered() (int, error) { return 0, nil }
 func (c *fakeConn) Drain() error           { return nil }
+func (c *fakeConn) SetDetected()           {}
 func (c *fakeConn) ReadOnly() bool         { return false }
 func (c *fakeConn) Direct() bool           { return true }
 func (c *fakeConn) LocalAddr() string      { return "fake" }
@@ -82,6 +110,10 @@ func (c *fakeConn) kill() {
 	defer c.mu.Unlock()
 	if !c.stopped {
 		c.stopped = true
+		if c.pLog != nil {
+			c.pLog.SemiClose()
+			c.pLog = nil
+		}
 		close(c.closed)
 	}
 }
@@ -107,25 +139,22 @@ func (c *fakeConn) isClosed() bool {
 
 // fakeOpener hands out queued fakeConns, one per Open call.
 type fakeOpener struct {
-	mu     sync.Mutex
-	conns  []*fakeConn
-	socket bool
-	opens  int
+	mu    sync.Mutex
+	conns []*fakeConn
+	opens int
 }
 
-func (o *fakeOpener) Open(_ context.Context) (gpsio.Conn, int, error) {
+func (o *fakeOpener) Open(_ context.Context, _ *slog.Logger) (Conn, error) {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	o.opens++
 	if len(o.conns) == 0 {
-		return nil, 0, errors.New("no more conns")
+		return nil, errors.New("no more conns")
 	}
 	c := o.conns[0]
 	o.conns = o.conns[1:]
-	return c, 9600, nil
+	return c, nil
 }
-
-func (o *fakeOpener) Socket() bool { return o.socket }
 
 func (o *fakeOpener) openCount() int {
 	o.mu.Lock()
@@ -140,9 +169,9 @@ type blockingOpener struct {
 	gate chan struct{}
 }
 
-func (o *blockingOpener) Open(ctx context.Context) (gpsio.Conn, int, error) {
+func (o *blockingOpener) Open(ctx context.Context, lg *slog.Logger) (Conn, error) {
 	<-o.gate
-	return o.fakeOpener.Open(ctx)
+	return o.fakeOpener.Open(ctx, lg)
 }
 
 // gatedSink wraps fakeSink, blocking gps:state emissions on gate
@@ -234,6 +263,19 @@ func (fs *fakeSink) count(name EventName) int {
 	return n
 }
 
+// inPackets returns the number of gps:packet events for received packets.
+func (fs *fakeSink) inPackets() int {
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	n := 0
+	for _, ev := range fs.events {
+		if pe, ok := ev.(PacketEvent); ok && !pe.Out {
+			n++
+		}
+	}
+	return n
+}
+
 // testSession creates a Session and arranges for it to be disconnected
 // at the end of the test, so a failing synctest test does not leave
 // blocked goroutines in the bubble.
@@ -286,6 +328,166 @@ func TestConnectDisconnect(t *testing.T) {
 		expect := []ConnState{StateConnecting, StateConnected, StateDisconnected}
 		if got := fs.states(); !reflect.DeepEqual(got, expect) {
 			t.Errorf("state events = %v, want %v", got, expect)
+		}
+	})
+}
+
+func TestConnSpeedAndOutputLog(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &fakeSink{wantPacket: true}
+		s := testSession(t, fs)
+		c := newFakeConn()
+		c.speed = 38400
+		if err := s.Connect(&fakeOpener{conns: []*fakeConn{c}}, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		if got := s.Speed(); got != 38400 {
+			t.Errorf("Speed() = %d, want 38400", got)
+		}
+		fs.mu.Lock()
+		output := false
+		for _, ev := range fs.events {
+			if pkt, ok := ev.(PacketEvent); ok && pkt.Out {
+				output = true
+			}
+		}
+		fs.mu.Unlock()
+		if !output {
+			t.Error("no outgoing probe packet was logged")
+		}
+		c.mu.Lock()
+		c.speed = 115200
+		c.mu.Unlock()
+		if _, err := s.ReadConfig(context.Background()); !errors.Is(err, gpscfg.ErrNotDetected) {
+			t.Fatalf("ReadConfig: %v, want ErrNotDetected", err)
+		}
+		if got := s.Speed(); got != 115200 {
+			t.Errorf("Speed() after configuration = %d, want 115200", got)
+		}
+		s.Disconnect()
+		s.Disconnect()
+	})
+}
+
+// snapshotSink holds the first packet event until gate opens, then reads
+// the session's cached speed as a UI sink may do.
+type snapshotSink struct {
+	fakeSink
+	s    *Session
+	gate chan struct{}
+	once sync.Once
+}
+
+func (fs *snapshotSink) Emit(ev Event) {
+	if ev.EventName() == EventPacket {
+		fs.once.Do(func() {
+			<-fs.gate
+			fs.s.Speed()
+		})
+	}
+	fs.fakeSink.Emit(ev)
+}
+
+// speedNotifyConn signals when Speed enters before waiting for the write lock.
+type speedNotifyConn struct {
+	*fakeConn
+	entered chan struct{}
+}
+
+func (c *speedNotifyConn) Speed() int {
+	close(c.entered)
+	return c.fakeConn.Speed()
+}
+
+// TestEmitSpeedWithBlockedOutput checks that reading the connection speed
+// leaves Session accessors available to the sink draining its output log.
+func TestEmitSpeedWithBlockedOutput(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &snapshotSink{fakeSink: fakeSink{wantPacket: true}, gate: make(chan struct{})}
+		s := New(slog.New(slog.DiscardHandler), fs, Options{})
+		fs.s = s
+		c := &speedNotifyConn{fakeConn: newFakeConn(), entered: make(chan struct{})}
+		pl, ch := gpsio.NewPacketLog(nil, gpsio.MinPacketLogChannelSize)
+		c.SetPacketLog(pl)
+		logDone := make(chan struct{})
+		go func() {
+			s.packetLogWorker(ch)
+			close(logDone)
+		}()
+		c.Write([]byte("first"))
+		synctest.Wait()
+		for range gpsio.MinPacketLogChannelSize {
+			c.Write([]byte("buffered"))
+		}
+		writeDone := make(chan struct{})
+		go func() {
+			c.Write([]byte("blocked"))
+			close(writeDone)
+		}()
+		synctest.Wait()
+		speedDone := make(chan struct{})
+		go func() {
+			s.emitSpeed(context.Background(), c)
+			close(speedDone)
+		}()
+		<-c.entered
+		close(fs.gate)
+		<-writeDone
+		<-speedDone
+		if got := s.Speed(); got != 9600 {
+			t.Errorf("Speed() = %d, want 9600", got)
+		}
+		c.Stop()
+		pl.SemiClose()
+		<-logDone
+	})
+}
+
+// TestFailedConnectClearsSpeed checks that a Connect whose open fails
+// does not leave the previous connection's speed as the session speed,
+// which shells would report in place of the speed the user requested.
+func TestFailedConnectClearsSpeed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := testSession(t, &fakeSink{})
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		s.Disconnect()
+		if got := s.Speed(); got != 9600 {
+			t.Errorf("Speed() after Disconnect = %d, expect 9600", got)
+		}
+		if err := s.Connect(op, nil); err == nil {
+			t.Fatalf("Connect succeeded with no connection left to open")
+		}
+		if got := s.Speed(); got != 0 {
+			t.Errorf("Speed() after failed Connect = %d, expect 0", got)
+		}
+	})
+}
+
+// TestSupersededRunReportsNoSpeed checks that a run cancelled by a newer
+// Connect while it is probing does not report its speed, which would
+// replace the speed of the connection superseding it.
+func TestSupersededRunReportsNoSpeed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &fakeSink{}
+		s := testSession(t, fs)
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		// The probe of the silent connection is now waiting; time does not
+		// advance until the test goroutine blocks.
+		synctest.Wait()
+		if err := s.Connect(op, nil); err == nil {
+			t.Fatalf("Connect succeeded with no connection left to open")
+		}
+		synctest.Wait()
+		if n := fs.count(EventSpeed); n != 0 {
+			t.Errorf("speed events from the superseded run = %d, expect 0", n)
 		}
 	})
 }
@@ -681,8 +883,13 @@ func TestPacketEventGating(t *testing.T) {
 					time.Sleep(100 * time.Millisecond)
 				}
 				synctest.Wait()
-				if got := fs.count(EventPacket) > 0; got != tc.wantPacket {
-					t.Errorf("packet events emitted = %v, want %v", got, tc.wantPacket)
+				// Probe packets are outgoing, so only inbound ones show that
+				// the GGA packets themselves were emitted.
+				if tc.wantPacket && fs.inPackets() == 0 {
+					t.Errorf("no inbound packet events emitted")
+				}
+				if !tc.wantPacket && fs.count(EventPacket) != 0 {
+					t.Errorf("packet events emitted without a subscriber: %d", fs.count(EventPacket))
 				}
 				if fs.count(EventMsg) == 0 {
 					t.Errorf("no gps:msg events from the GGA packets")
@@ -855,5 +1062,32 @@ func TestApplyConfigClearsReadOnlyProps(t *testing.T) {
 	}
 	if got := target.Props.ReadOnlyProps(); got != 0 {
 		t.Errorf("read-only properties = %v, want none", got)
+	}
+}
+
+func TestMsgFilePreselect(t *testing.T) {
+	names := []msgfile.Entry{{Name: msgfile.Name{Vendor: "Zhongke"}}, {Name: msgfile.Name{Vendor: "u-blox"}}}
+	for _, tc := range []struct {
+		name     string
+		vendors  []gpsreg.Vendor
+		detected string
+		expect   string
+	}{
+		{"asserted overrides detected", []gpsreg.Vendor{gpsreg.VendorZhongke}, "u-blox", "Zhongke"},
+		{"detected case insensitive", nil, "U-BLOX", "u-blox"},
+		{"multiple asserted uses detected", []gpsreg.Vendor{gpsreg.VendorUblox, gpsreg.VendorUnicore}, "zhongke", "Zhongke"},
+		{"missing asserted catalog entry", []gpsreg.Vendor{gpsreg.VendorUnicore}, "u-blox", ""},
+		{"missing detected catalog entry", nil, "unknown", ""},
+		{"no vendor", nil, "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			s := &Session{}
+			if tc.detected != "" {
+				s.probe.Info.Set(gpsprot.ReceiverInfo{Vendor: tc.detected})
+			}
+			if got := s.MsgFilePreselect(names, tc.vendors); got != tc.expect {
+				t.Errorf("preselect = %q, expect %q", got, tc.expect)
+			}
+		})
 	}
 }

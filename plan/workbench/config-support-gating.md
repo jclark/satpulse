@@ -111,9 +111,14 @@ so unsupported props and opts are never sent.
   gaps (e.g. Gen 8 HPG lacking Galileo MSM), so it is meaningful
   with a single MSM version. ARP stays ungated -- no flag corresponds
   to it (`rtcmBaseID` gates DF003 configuration, not ARP output).
-- `reload` (casic-config) -- "Reload" reset radio in Persistent
-  operations: grey. Save and the other reset types stay ungated.
-  CASIC V5 declares it while V6 does not, so both states occur.
+- `reload` -- "Reload" reset radio in Persistent operations: grey.
+  Save and the other reset types stay ungated. The flag and the
+  gating flip both land with casic-config (the branch that
+  introduces the flag also delivers the UI behaviour, so V6
+  receivers never show an enabled radio that does nothing). Every
+  u-blox declares it (it sits in the universal base, outside
+  `ubxVariable`), as does CASIC V5; CASIC V6 does not, so both
+  states occur.
 - `signal` -- **not gated**. The flag means "supports
   finer-than-constellation selection", not "can set signals":
   constellation-level enable/disable works on every configurator
@@ -173,15 +178,14 @@ skip sections whose support flag is absent.
 
 ## Deferred until dependencies merge
 
-Two flags (`surveyDur`, `reload`) are contributed only by pending backend
-branches and are absent from every backend on master. Once each branch
-lands, its supporting receivers -- including u-blox -- declare the flag,
-so the flag is present exactly when the control should be enabled. Gating
-on the flag's absence *now* would grey a control that master's u-blox
+One flag (`surveyDur`) is contributed only by a pending backend branch
+and is absent from every backend on master. Once the branch lands, its
+supporting receivers -- including u-blox -- declare the flag, so the
+flag is present exactly when the control should be enabled. Gating on
+the flag's absence *now* would grey a control that master's u-blox
 (and the F9P simulator the e2e tests drive) actually supports, breaking
-those tests. So the frontend gating for these two is written but left
-inert until the branch merges. Each is a one-line flip in
-`config-panel.tsx`:
+those tests. So the frontend gating is written but left inert until the
+branch merges, as a one-line flip in `config-panel.tsx`:
 
 - **`surveyDur`** (config-support-survey-dur): the Survey time field is
   currently gated only by survey support and the mode radio
@@ -191,14 +195,13 @@ inert until the branch merges. Each is a one-line flip in
   'not supported'}`). After merge, u-blox `tmode > 0` receivers declare
   `surveyDur`; Septentrio (survey takes no arguments) does not, so its
   field greys.
-- **`reload`** (casic-config): the Reload reset radio is currently
-  ungated. When the branch merges, gate it on
-  `reloadSupported = has(SUP.reload)` (the `SUP.reload` name is already
-  in place). After merge, u-blox `tmode` receivers and CASIC V5 declare
-  `reload`; CASIC V6 does not, so V6's radio greys.
 
-The `SUP` table in `config-panel.tsx` already carries both names, so no
-other wiring is needed -- only the gating expression changes.
+The `SUP` table in `config-panel.tsx` already carries the name, so no
+other wiring is needed -- only the gating expression changes. `reload`
+was originally deferred the same way, but its flip moved onto
+casic-config itself: there the deferral rationale does not apply, since
+that branch's u-blox already declares the flag, so its e2e tests keep
+the radio enabled.
 
 One deferred item is new frontend work rather than a gating flip:
 
@@ -231,6 +234,13 @@ the frontend needs to change -- the gating already written lights up:
 
 - **allystar-config**: TAU1201 declares neither MSM flag, so the RTCM
   subgroup mutes via the existing `notSupported={!rtcmSupported}` path.
+  One backend fix is needed on that branch after casic-config merges:
+  its `ConfigSupport` builds flags additively, so it would silently
+  omit `reload` even though the TAU1201 implements it (SIMPLERST
+  mode 0), greying a working radio. The fix is restructuring it
+  subtractively from `ConfigSupportFull` (minus `FixedPosAcc`,
+  `RTCMBaseID`, `Port`, and conditionally the MSM/QZSS flags) so
+  future universal flags are picked up automatically.
 - **septentrio-config**: declares no `speed`/`surveyAcc`/`fixedPosAcc`,
   which the existing `speedSupported`/`has(SUP.surveyAcc)`/
   `has(SUP.fixedPosAcc)` gates already handle (`surveyDur` excepted, see
@@ -254,6 +264,7 @@ and the pending config branches):
 - **Allystar TAU1201**: no RTCM at all (every RTCM CFG-MSG target
   NAKs) -- RTCM subgroup muted.
 - **CASIC V5**: the stress test -- no `signal`, `raw`, `surveyMsg`,
-  MSM, or `port`; uniquely *has* `reload` while V6 does not.
+  MSM, or `port`; *has* `reload` while V6 is the one profile
+  without it.
 - **Quectel**: full minus `raw`/`fixedPosAcc`, with all three reset
   qualifiers.
