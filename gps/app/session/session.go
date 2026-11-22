@@ -1780,23 +1780,24 @@ func (s *Session) sendConfigRequest(ctx context.Context, target *gpsprot.ConfigT
 
 // emitSpeed reads the current host serial port speed and emits gps:speed.
 // Called after any gpscfg.Configure since that is the only path that can
-// change the host speed (via
-// SerialConn.WriteThenChangeSpeed). A run that has been cancelled, for
-// example by a newer Connect, reports nothing: its speed would replace the
-// speed of the connection superseding it. closeLocked cancels runs under
-// s.mu, so checking under s.mu orders the two.
+// change the host speed (via SerialConn.WriteThenChangeSpeed).
+//
+// A run that has been cancelled still records its final speed, which a
+// later Connect clears only after closeLocked has waited for the run, but
+// does not emit it: clients would take it as the speed of a connection
+// superseding the run. closeLocked cancels runs under s.mu, so checking
+// under s.mu orders the two.
 func (s *Session) emitSpeed(runCtx context.Context, conn gpsio.Conn) {
 	s.mu.Lock()
-	if runCtx.Err() != nil {
-		s.mu.Unlock()
-		return
-	}
 	if sc, ok := conn.(*gpsio.SerialConn); ok {
 		s.speed = sc.Speed()
 	}
 	speed := s.speed
+	cancelled := runCtx.Err() != nil
 	s.mu.Unlock()
-	s.emit(SpeedEvent(speed))
+	if !cancelled {
+		s.emit(SpeedEvent(speed))
+	}
 }
 
 // logHandler is an slog.Handler that emits "gps:log" events to the sink
