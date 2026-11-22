@@ -4,7 +4,7 @@ name: Node tests
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "workbench-web" ]
   pull_request:
 
 jobs:
