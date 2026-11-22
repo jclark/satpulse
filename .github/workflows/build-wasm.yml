@@ -31,3 +31,15 @@ jobs:
         GOOS: js
         GOARCH: wasm
       run: go build -tags nohttp -o /dev/null ./cmd/satpulsewbwasm
+
+    # nohttp exists to keep net/http out of the browser build; a new import
+    # could bring it back without breaking the build.
+    - name: Check browser shell does not link net/http
+      env:
+        GOOS: js
+        GOARCH: wasm
+      run: |
+        if go list -deps -tags nohttp ./cmd/satpulsewbwasm | grep -qx net/http; then
+          echo "cmd/satpulsewbwasm depends on net/http" >&2
+          exit 1
+        fi
