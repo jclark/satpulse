@@ -223,6 +223,11 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 	candidates := resolveSpeedCandidates(speeds, currentSpeed, conn.kind == term.DevUSB)
 	idle := false
 	attempt := func(speed int) (trySpeedResult, bool, error) {
+		// A run of rejected speeds never reaches trySpeed, which is where
+		// cancellation is otherwise noticed.
+		if err := ctx.Err(); err != nil {
+			return tryOther, false, err
+		}
 		if speed != currentSpeed {
 			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
 				if errors.Is(err, term.ErrSpeedUnsupported) {
