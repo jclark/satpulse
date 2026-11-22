@@ -187,10 +187,14 @@ func (c *SerialConn) newPinWatch(pin SerialPin, method PPSMethod) (term.ModemCon
 	}
 }
 
-// KernelPPSSupportsPin reports whether the kernel PPS method can watch pin on
-// this platform.
-func KernelPPSSupportsPin(pin SerialPin) bool {
-	return term.KernelPPSSupportsPin(pin.termPin())
+// KernelPPSPins returns the pins the kernel PPS method can watch on this
+// platform, which are none where kernel PPS is unavailable.
+func KernelPPSPins() []SerialPin {
+	var pins []SerialPin
+	for _, p := range term.KernelPPSPins() {
+		pins = append(pins, serialPin(p))
+	}
+	return pins
 }
 
 // WaitSerialPinChange blocks until a modem control input changes,

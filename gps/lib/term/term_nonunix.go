@@ -18,8 +18,8 @@ func IsValidSpeed(speed int) bool {
 	return i < len(baudRates) && baudRates[i] == speed
 }
 
-// KernelPPSSupportsPin reports whether kernel PPS can watch pin, which it
-// cannot on this platform.
-func KernelPPSSupportsPin(pin ModemControlPin) bool {
-	return false
+// KernelPPSPins returns the pins kernel PPS can watch, which are none on
+// this platform.
+func KernelPPSPins() []ModemControlPin {
+	return nil
 }

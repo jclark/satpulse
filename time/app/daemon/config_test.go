@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -289,14 +290,21 @@ method = "kernel"
 			}
 			cfg.Serial.PPS.Pin = pin
 			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-			if !gpsio.KernelPPSSupportsPin(pin) {
-				if err == nil || !strings.Contains(err.Error(), `method = "kernel"`) {
-					t.Fatalf("Validate error = %v, want the kernel method to reject the pin", err)
+			pins := gpsio.KernelPPSPins()
+			var expectErr string
+			if len(pins) == 0 {
+				expectErr = "is not available on this platform"
+			} else if !slices.Contains(pins, pin) {
+				expectErr = "requires pps.pin to be"
+			}
+			if expectErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
 				}
 				return
 			}
-			if err != nil {
-				t.Fatalf("unexpected error: %v", err)
+			if err == nil || !strings.Contains(err.Error(), expectErr) {
+				t.Fatalf("Validate error = %v, want one containing %q", err, expectErr)
 			}
 		})
 	}
