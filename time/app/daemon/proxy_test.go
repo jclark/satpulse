@@ -1,12 +1,12 @@
 package daemon
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/time/internal/proxy"
-	"golang.org/x/exp/slices"
 )
 
 func TestProxyConfig(t *testing.T) {

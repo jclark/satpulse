@@ -1,11 +1,10 @@
 // The transport is the UI's interface to its backend. The universal
-// core (Transport) covers snapshots, configuration, corrections,
+// core (Transport) covers snapshots, configuration,
 // decoding, geodesy, and event subscription; every backend implements
-// it. Connection management (ports, connect/disconnect) and
-// message files are optional capabilities: a backend with a permanently
-// connected receiver owns no port and implements neither.
+// it. Connection management, message files and correction forwarding
+// are optional capabilities, implemented by backends that provide them.
 //
-// Implementations: fetch+SSE (satpulsewb) and Wails bindings (desktop).
+// Implementations: fetch+SSE (satpulsewb), Wails (desktop), wasm (browser).
 
 import type {ConfigProps, ConfigTarget} from '@satpulse/gps/configtarget';
 
@@ -91,16 +90,11 @@ export interface Transport {
     // Snapshots, for initial sync and late-joining clients.
     getConnection(): Promise<ConnectionInfo>;
     getReceiverState(): Promise<any>;
-    getCorrectionsState(): Promise<any>;
     getAllSignals(gnss: string[]): Promise<Record<string, string[]> | null>;
 
     // Configuration.
     readConfig(): Promise<ConfigProps>;
     applyConfig(target: ConfigTarget): Promise<void>;
-
-    // Corrections.
-    startCorrections(src: CorrectionSource): Promise<void>;
-    stopCorrections(): Promise<void>;
 
     // Packet decoding.
     decodePacket(data: string, opts: DecodeOptions): Promise<Record<string, any> | null>;
@@ -130,6 +124,14 @@ export interface Transport {
     // Optional capabilities.
     connection?: ConnectionTransport;
     msgFile?: MsgFileTransport;
+    corrections?: CorrectionsTransport;
+}
+
+// CorrectionsTransport is the correction-forwarding capability.
+export interface CorrectionsTransport {
+    getCorrectionsState(): Promise<any>;
+    startCorrections(src: CorrectionSource): Promise<void>;
+    stopCorrections(): Promise<void>;
 }
 
 // ConnectionTransport is the connection-management capability,
@@ -139,6 +141,16 @@ export interface ConnectionTransport {
     connect(device: string, speed: number): Promise<void>;
     disconnect(): Promise<void>;
     listPorts(): Promise<PortInfo[]>;
+    // choosePort runs a browser permission picker directly from a user gesture.
+    // It resolves to null when the user cancels the picker.
+    choosePort?(): Promise<PortInfo | null>;
+    // portGone reports whether the device behind a chosen port has
+    // disappeared, so that port can never be opened again and the device
+    // must be chosen anew. It comes with choosePort.
+    portGone?(device: string): boolean;
+    // onPortGone calls cb with the device of a chosen port when its device
+    // disappears, and returns a function that stops the calls.
+    onPortGone?(cb: (device: string) => void): () => void;
 }
 
 // MsgFileTransport is the message-file capability. A backend obtains the

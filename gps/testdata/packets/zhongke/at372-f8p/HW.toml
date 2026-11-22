@@ -1,0 +1,4 @@
+vendor = "zhongke"
+model = "AT372-AT9880-F8P-36"
+firmware = "URANUS6,V6.5.1.0"
+default-baud = 115200

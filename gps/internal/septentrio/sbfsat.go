@@ -63,7 +63,7 @@ func (c *satCombiner) addChannelStatus(chn *sbfbin.ChannelStatus) {
 			continue
 		}
 		tracked := false
-		for slot := 0; slot < 8; slot++ {
+		for slot := range 8 {
 			if st.TrackingStatus.Slot(slot) == sbfbin.TrackStatusTracking {
 				tracked = true
 				break
@@ -110,7 +110,7 @@ func (c *satCombiner) addUsedCodes(id gpsprot.SVID, st *sbfbin.ChannelStateInfo)
 		c.used[id] = used
 	}
 	sys := id.GNSS.SVIDPrefix()
-	for slot := 0; slot < 8; slot++ {
+	for slot := range 8 {
 		if st.PVTStatus.Slot(slot) != sbfbin.PVTStatusUsed {
 			continue
 		}

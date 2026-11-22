@@ -5,8 +5,6 @@ import (
 	"log/slog"
 	"reflect"
 	"sync"
-
-	"golang.org/x/exp/constraints"
 )
 
 type subscriber[T any] struct {
@@ -157,11 +155,16 @@ func (b *Bcast[T]) trimQ() {
 	}
 	nNeed := b.nextQIndex - needIndex
 	if nNeed == 0 {
+		clear(b.q)
 		b.q = b.q[:0]
-	} else if nDiscard := len(b.q) - nNeed; nDiscard > 0 {
-		oldQ := b.q[nDiscard:]
+	} else if nDiscard := len(b.q) - nNeed; nDiscard >= nNeed {
+		// Compact only once at least half of q is discardable, so a
+		// lagging subscriber costs amortised O(1) per packet rather
+		// than a copy of the whole backlog.
+		old := b.q
 		b.q = b.q[0:nNeed]
-		copy(b.q, oldQ)
+		copy(b.q, old[nDiscard:])
+		clear(old[nNeed:])
 	}
 }
 
@@ -172,11 +175,4 @@ func (b *Bcast[T]) subscriberIndex(c <-chan T) int {
 		}
 	}
 	return -1
-}
-
-func min[T constraints.Ordered](a, b T) T {
-	if a < b {
-		return a
-	}
-	return b
 }

@@ -32,18 +32,18 @@ func (e *ExttsEvent) Print(f *os.File) {
 // extts implements --extts/-i mode
 func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 	return func(yield func(Printer) bool) {
-		lg.Debug("extts mode", "interface", cfg.Interface, "timeout", cfg.Timeout, "pin", cfg.Pin, "chan", cfg.Chan)
+		lg.Debug("extts mode", append(cfg.logAttrs(), "timeout", cfg.Timeout, "pin", cfg.Pin, "chan", cfg.Chan)...)
 		
-		clk, pinIndex, err := phcOpen(cfg.Interface, cfg.Pin)
+		clk, pinIndex, err := phcOpen(cfg)
 		if err != nil {
 			*errp = err
 			return
 		}
 		defer clk.Close()
 
-		iface, err := net.InterfaceByName(cfg.Interface)
-		if err == nil {
-			if iface.Flags&net.FlagUp == 0 {
+		if cfg.Interface != "" {
+			iface, err := net.InterfaceByName(cfg.Interface)
+			if err == nil && iface.Flags&net.FlagUp == 0 {
 				lg.Warn("interface is not up, external timestamps may not work",
 					"interface", cfg.Interface)
 			}
@@ -55,10 +55,19 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 			return
 		}
 
-		err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
+		attrs := cfg.logAttrs()
+		err = clk.ExttsMaskSingle(chanIndex)
 		if err != nil {
-			*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
+			*errp = err
 			return
+		}
+		if clk.HasPins() {
+			err = clk.PinSetFunc(pinIndex, phc.PinFuncExtts, chanIndex)
+			if err != nil {
+				*errp = fmt.Errorf("failed to configure pin %d for external timestamps: %w", pinIndex, err)
+				return
+			}
+			attrs = append(attrs, "pin", pinIndex)
 		}
 
 		_, err = clk.ExttsEnable(chanIndex, true)
@@ -76,16 +85,14 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 		}
 
 		// Log configuration
-		lg.Info("checking input", 
-			"interface", cfg.Interface,
-			"pin", pinIndex,
+		lg.Info("checking input", append(attrs,
 			"channel", cfg.Chan,
 			"timeout", cfg.Timeout,
-			"showStale", cfg.ShowStale)
+			"showStale", cfg.ShowStale)...)
 
 		// Start worker goroutine
 		eventCh := make(chan ExttsEvent, 10)
-		go exttsWorker(ctx, lg, clk, eventCh)
+		go exttsWorker(ctx, lg, clk, chanIndex, eventCh)
 
 		noEventsReceived := true
 		for {
@@ -111,8 +118,8 @@ func extts(lg *slog.Logger, cfg *FlagConfig, errp *error) iter.Seq[Printer] {
 	}
 }
 
-// exttsWorker reads external timestamps from the PHC device
-func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh chan<- ExttsEvent) {
+// exttsWorker reads external timestamps from the PHC device for channel chanIndex
+func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, chanIndex uint32, eventCh chan<- ExttsEvent) {
 	defer close(eventCh)
 	
 	const pollTimeout = 100 * time.Millisecond
@@ -133,21 +140,26 @@ func exttsWorker(ctx context.Context, lg *slog.Logger, clk *phc.Clock, eventCh c
 			continue
 		}
 
-		t, chanIndex, err := clk.ReadExtts()
+		t, ch, err := clk.ReadExtts()
 		tRead := time.Now()
 		if err != nil {
 			lg.Debug("failed to read external timestamp", "error", err)
+			continue
+		}
+		if ch != chanIndex {
+			// Possible without kernel event masks, or if queued before the mask was set.
+			lg.Debug("ignoring timestamp for another channel", "timestamp", t, "channel", ch)
 			continue
 		}
 
 		event := ExttsEvent{
 			Timestamp: t,
 			TRead:     tRead,
-			Chan:      chanIndex,
+			Chan:      ch,
 			Stale:     stale,
 		}
 
-		lg.Debug("received timestamp", "timestamp", t, "channel", chanIndex, "stale", stale)
+		lg.Debug("received timestamp", "timestamp", t, "channel", ch, "stale", stale)
 		
 		select {
 		case eventCh <- event:

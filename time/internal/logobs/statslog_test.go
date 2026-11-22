@@ -17,10 +17,10 @@ func TestStatsLogObserver(t *testing.T) {
 		obs := NewStatsLogObserver(lg, 0)
 
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOK,
-			Offset:    100 * time.Nanosecond,
-			Freq:      1000,
-			Mode: phcsync.ModeTracking,
+			Kind:   phcsync.SampleOK,
+			Offset: 100 * time.Nanosecond,
+			Freq:   1000,
+			Mode:   phcsync.ModeTracking,
 		})
 
 		if buf.Len() > 0 {
@@ -35,10 +35,10 @@ func TestStatsLogObserver(t *testing.T) {
 
 		// Test OK sample
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOK,
-			Offset:    100 * time.Nanosecond,
-			Freq:      1000,
-			Mode: phcsync.ModeTracking,
+			Kind:   phcsync.SampleOK,
+			Offset: 100 * time.Nanosecond,
+			Freq:   1000,
+			Mode:   phcsync.ModeTracking,
 		})
 
 		output := buf.String()
@@ -53,7 +53,7 @@ func TestStatsLogObserver(t *testing.T) {
 
 		// Test missing sample
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleMissing,
+			Kind: phcsync.SampleMissing,
 			Mode: phcsync.ModeTracking,
 		})
 
@@ -66,10 +66,10 @@ func TestStatsLogObserver(t *testing.T) {
 
 		// Test outlier sample
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOutlier,
-			Offset:    200 * time.Nanosecond,
-			Freq:      2000,
-			Mode: phcsync.ModeTracking,
+			Kind:   phcsync.SampleOutlier,
+			Offset: 200 * time.Nanosecond,
+			Freq:   2000,
+			Mode:   phcsync.ModeTracking,
 		})
 
 		output = buf.String()
@@ -84,13 +84,13 @@ func TestStatsLogObserver(t *testing.T) {
 		obs := NewStatsLogObserver(lg, 3) // Accumulate 3 samples
 
 		// Add 3 samples to trigger flush
-		for i := 0; i < 3; i++ {
+		for i := range 3 {
 			obs.Sample(phcsync.Sample{
 				Kind:      phcsync.SampleOK,
 				Offset:    time.Duration(100+i*10) * time.Nanosecond,
 				Freq:      float64(1000 + i*100),
 				FreqDelta: float64(i * 10),
-				Mode: phcsync.ModeTracking,
+				Mode:      phcsync.ModeTracking,
 			})
 		}
 
@@ -116,32 +116,32 @@ func TestStatsLogObserver(t *testing.T) {
 
 		// Add different sample types
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOK,
-			Offset:    100 * time.Nanosecond,
-			Freq:      1000,
+			Kind:   phcsync.SampleOK,
+			Offset: 100 * time.Nanosecond,
+			Freq:   1000,
+			Mode:   phcsync.ModeTracking,
+		})
+		obs.Sample(phcsync.Sample{
+			Kind: phcsync.SampleMissing,
 			Mode: phcsync.ModeTracking,
 		})
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleMissing,
-			Mode: phcsync.ModeTracking,
+			Kind:   phcsync.SampleOutlier,
+			Offset: 500 * time.Nanosecond,
+			Freq:   1100,
+			Mode:   phcsync.ModeTracking,
 		})
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOutlier,
-			Offset:    500 * time.Nanosecond,
-			Freq:      1100,
-			Mode: phcsync.ModeTracking,
+			Kind:   phcsync.SampleOK,
+			Offset: 150 * time.Nanosecond,
+			Freq:   1050,
+			Mode:   phcsync.ModeTracking,
 		})
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOK,
-			Offset:    150 * time.Nanosecond,
-			Freq:      1050,
-			Mode: phcsync.ModeTracking,
-		})
-		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOK,
-			Offset:    120 * time.Nanosecond,
-			Freq:      1025,
-			Mode: phcsync.ModeTracking,
+			Kind:   phcsync.SampleOK,
+			Offset: 120 * time.Nanosecond,
+			Freq:   1025,
+			Mode:   phcsync.ModeTracking,
 		})
 
 		output := buf.String()
@@ -162,12 +162,12 @@ func TestStatsLogObserver(t *testing.T) {
 		obs := NewStatsLogObserver(lg, 10) // Large interval
 
 		// Add some samples while in sync
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			obs.Sample(phcsync.Sample{
-				Kind:      phcsync.SampleOK,
-				Offset:    100 * time.Nanosecond,
-				Freq:      1000,
-				Mode: phcsync.ModeTracking,
+				Kind:   phcsync.SampleOK,
+				Offset: 100 * time.Nanosecond,
+				Freq:   1000,
+				Mode:   phcsync.ModeTracking,
 			})
 		}
 
@@ -178,7 +178,7 @@ func TestStatsLogObserver(t *testing.T) {
 
 		// Lose sync - should trigger flush
 		obs.Sample(phcsync.Sample{
-			Kind:      phcsync.SampleOK,
+			Kind: phcsync.SampleOK,
 			Mode: phcsync.ModeReset,
 		})
 
@@ -197,12 +197,12 @@ func TestStatsLogObserver(t *testing.T) {
 		obs := NewStatsLogObserver(lg, 10)
 
 		// Add partial samples
-		for i := 0; i < 3; i++ {
+		for range 3 {
 			obs.Sample(phcsync.Sample{
-				Kind:      phcsync.SampleOK,
-				Offset:    100 * time.Nanosecond,
-				Freq:      1000,
-				Mode: phcsync.ModeTracking,
+				Kind:   phcsync.SampleOK,
+				Offset: 100 * time.Nanosecond,
+				Freq:   1000,
+				Mode:   phcsync.ModeTracking,
 			})
 		}
 
@@ -224,12 +224,12 @@ func TestStatsLogObserver(t *testing.T) {
 		obs := NewStatsLogObserver(lg, 3)
 
 		// Add samples while not in sync
-		for i := 0; i < 5; i++ {
+		for range 5 {
 			obs.Sample(phcsync.Sample{
-				Kind:      phcsync.SampleOK,
-				Offset:    100 * time.Nanosecond,
-				Freq:      1000,
-				Mode: phcsync.ModeReset,
+				Kind:   phcsync.SampleOK,
+				Offset: 100 * time.Nanosecond,
+				Freq:   1000,
+				Mode:   phcsync.ModeReset,
 			})
 		}
 

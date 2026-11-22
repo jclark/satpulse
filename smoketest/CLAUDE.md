@@ -2,7 +2,7 @@
 
 Guidance for working in `smoketest/`. For the user-facing overview, scenario
 list, and design rationale, read `README.md` first; the design doc is
-`plan/smoke-test.md` (repo root). This file covers what an agent needs to make
+`plan/archive/smoke-test.md` (repo root). This file covers what an agent needs to make
 changes safely.
 
 ## What this is
@@ -42,16 +42,11 @@ make            # from repo root: build satpulsed + satpulsetool + satpulsewb
 make smoketest  # run all scenarios in parallel
 ```
 
-On macOS and FreeBSD:
-
-```sh
-./unix-build.sh
-python3 smoketest/run.py
-```
+This works on macOS and FreeBSD as well as Linux.
 
 The runner honours `GOOS` and `GOARCH` when set. Linux binaries live under
 `out/<arch>/`; non-Linux Unix binaries live under `out/<goos>_<arch>/`, matching
-`unix-build.sh`.
+what the build produces.
 
 For selecting scenarios, listing, or serial debugging, call `run.py` directly
 (the make target takes no args):

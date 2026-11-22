@@ -1,0 +1,20 @@
+vendor = "bynav"
+model = "M10"
+firmware = "V7.82_AB1AD3_T"
+default-baud = 115200
+
+# From LOG VERSION:
+# $BDVER,V7.82_AB1AD3_T,24081625,24110741,2408163A,24102627,23060503,,,24081609,00000000*24
+# Captured on COM1 with a single-point fix. factory.jsonl is the receiver's
+# factory output (GPGGA, BESTPOSA, BYCHECKA); every other capture replaced
+# that output with the logs named in the file, at 1 Hz unless noted.
+# Receiver behaviour seen in these captures:
+# - BESTXYZ is accepted but always reports SOL_COMPUTED/NONE with all-zero
+#   position and velocity (bestxyz-dual.jsonl).
+# - The data line of an abbreviated PSRDOP log has no CR/LF terminator
+#   (abbrev-psrdop.jsonl).
+# - At sub-second epochs TIME's UTC milliseconds can be 1 ms below the
+#   header time (daemon-5hz.jsonl: 23799 for .800).
+# - GPGSA lists GPS satellites only; GSV covers all constellations.
+# - Ephemeris logs with ONTIME give one satellite per period, cycling
+#   through the satellites (raw-obs-nav.jsonl).

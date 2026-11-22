@@ -28,8 +28,8 @@ func ClockPath(phcIndex int) string {
 	return ""
 }
 
-// IfPhcIndex returns the PHC index for an interface.
-func IfPhcIndex(ifname string) (phcIndex int, err error) {
+// IfPHCIndex returns the PHC index for an interface.
+func IfPHCIndex(ifname string) (phcIndex int, err error) {
 	return 0, ErrNotSupported
 }
 
@@ -61,7 +61,15 @@ func (clk *Clock) PinCount() int {
 	panic(ErrNotSupported)
 }
 
+func (clk *Clock) HasPins() bool {
+	panic(ErrNotSupported)
+}
+
 func (clk *Clock) ExttsEnable(chanIndex uint32, enabled bool) (edges int, err error) {
+	panic(ErrNotSupported)
+}
+
+func (clk *Clock) ExttsMaskSingle(chanIndex uint32) error {
 	panic(ErrNotSupported)
 }
 
