@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
@@ -15,8 +16,13 @@ import (
 // ioctls directly on the serial device, so a Source is created on a TTY
 // descriptor rather than opened from a separate PPS device path.
 type Source struct {
-	file   *os.File
-	raw    syscall.RawConn
+	file *os.File
+	raw  syscall.RawConn
+	// inUse is read-held across each ioctl. Close write-locks it so that it
+	// returns only after an in-flight ioctl has finished with the descriptor:
+	// os.File.Close does not wait for one on a blocking descriptor such as a
+	// TTY.
+	inUse  sync.RWMutex
 	closed atomic.Bool
 }
 
@@ -129,20 +135,28 @@ func (s *Source) Fetch(previous Info, timeout time.Duration) (Info, error) {
 }
 
 func (s *Source) control(op string, f func(uintptr) error) error {
+	s.inUse.RLock()
+	defer s.inUse.RUnlock()
 	var callErr error
 	if err := s.raw.Control(func(fd uintptr) {
 		callErr = f(fd)
 	}); err != nil {
 		return s.wrapErr(err, op)
 	}
+	if callErr == nil && s.closed.Load() {
+		callErr = os.ErrClosed
+	}
 	return s.wrapErr(callErr, op)
 }
 
 // Close closes the PPS source. A Fetch waiting for new information fails with
-// an error wrapping os.ErrClosed when its current bounded slice ends; Close
-// waits for that slice before closing the descriptor.
+// an error wrapping os.ErrClosed when its current bounded slice ends, even if
+// an edge arrived during it; Close waits for that slice before closing the
+// descriptor.
 func (s *Source) Close() error {
 	s.closed.Store(true)
+	s.inUse.Lock()
+	defer s.inUse.Unlock()
 	return s.file.Close()
 }
 
