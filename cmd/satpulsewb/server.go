@@ -347,12 +347,6 @@ func (s *server) handleState(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, s.sess.State())
 }
 
-type connectionInfo struct {
-	State  session.ConnState `json:"state"`
-	Device string            `json:"device"`
-	Speed  int               `json:"speed,omitempty"` // 0 (absent): no speed specified or chosen yet
-}
-
 var (
 	errDeviceRequired = errors.New("device is required")
 	errInvalidSpeed   = errors.New("speed must be greater than zero")
@@ -363,10 +357,10 @@ var (
 // configuration can change it after the port was opened, and the session
 // keeps it after the connection ends. It is read, never stored, so a read
 // made as a new Connect starts cannot outlast that Connect.
-func (s *server) connection() connectionInfo {
+func (s *server) connection() session.ConnectionInfo {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
-	info := connectionInfo{State: s.sess.State(), Device: s.device, Speed: s.speed}
+	info := session.ConnectionInfo{State: s.sess.State(), Device: s.device, Speed: s.speed}
 	if speed := s.sess.Speed(); speed != 0 {
 		info.Speed = speed
 	}

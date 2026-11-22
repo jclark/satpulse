@@ -40,6 +40,7 @@ import (
 	"net"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -77,6 +78,14 @@ const (
 	StateConfiguring  ConnState = "configuring"
 	StateSending      ConnState = "sending"
 )
+
+// ConnectionInfo is the connection-bar snapshot shared by shells. Device and
+// Speed retain the shell's selected settings while disconnected.
+type ConnectionInfo struct {
+	State  ConnState `json:"state"`
+	Device string    `json:"device"`
+	Speed  int       `json:"speed,omitempty"` // 0 (absent): no speed specified or chosen yet
+}
 
 const (
 	packetLogChannelSize = 64
@@ -1301,6 +1310,23 @@ func (s *Session) SetMsgFile(mf *msgfile.Parsed) []MsgFileTag {
 	s.msgFile = mf
 	s.mu.Unlock()
 	return tags
+}
+
+// MsgFilePreselect matches the asserted vendor, or otherwise the detected
+// vendor, against the catalog and returns its spelling. No match returns "".
+func (s *Session) MsgFilePreselect(names []msgfile.Entry, vendors []gpsreg.Vendor) string {
+	vendor := ""
+	if len(vendors) == 1 {
+		vendor = vendors[0].String()
+	} else if r := s.Receiver(); r.Info.IsSet() {
+		vendor = r.Info.Get().Vendor
+	}
+	for _, e := range names {
+		if vendor != "" && strings.EqualFold(e.Vendor, vendor) {
+			return e.Vendor
+		}
+	}
+	return ""
 }
 
 // msgTagCaps reports whether the messages for tag take a port argument
