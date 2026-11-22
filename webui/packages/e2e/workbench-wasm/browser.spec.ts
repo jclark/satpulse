@@ -107,6 +107,8 @@ test('browser wasm runs the session, configuration, messages and serial lifecycl
         let granted = false;
         Object.defineProperty(navigator, 'serial', {value: {
             getPorts: async () => granted ? [port] : [],
+            addEventListener() {},
+            removeEventListener() {},
             requestPort: async () => {
                 port.pickerGestures.push(navigator.userActivation.isActive);
                 granted = true;
@@ -216,6 +218,8 @@ test('vendor URL enables Zhongke probes on every connection and rejects unknown 
         };
         Object.defineProperty(navigator, 'serial', {value: {
             getPorts: async () => [port],
+            addEventListener() {},
+            removeEventListener() {},
             requestPort: async () => port,
         }});
         (window as any).testPort = port;
@@ -274,6 +278,8 @@ test('picker cancellation, open failure, pending read and stream errors clean up
         let granted = false;
         Object.defineProperty(navigator, 'serial', {value: {
             getPorts: async () => granted ? [port] : [],
+            addEventListener() {},
+            removeEventListener() {},
             requestPort: async () => {
                 if (port.mode === 'cancel') throw new DOMException('Cancelled', 'NotFoundError');
                 granted = true;
@@ -364,7 +370,7 @@ test('a newer Connect waits for the superseded port open to close', async ({page
             },
         };
         w.testPort = port;
-        Object.defineProperty(navigator, 'serial', {value: {getPorts: async () => [port]}});
+        Object.defineProperty(navigator, 'serial', {value: {getPorts: async () => [port], addEventListener() {}, removeEventListener() {}}});
     });
     await page.goto(baseURL);
     await expect(page.getByRole('banner')).toBeVisible();

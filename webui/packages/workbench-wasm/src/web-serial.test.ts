@@ -68,10 +68,15 @@ class Port {
 
 let port: Port;
 let serial: WebSerial;
+let disconnect: ((e: Event) => void) | undefined;
 
 beforeEach(async () => {
     port = new Port();
-    vi.stubGlobal('navigator', {serial: {getPorts: async () => [port]}});
+    vi.stubGlobal('navigator', {serial: {
+        getPorts: async () => [port],
+        addEventListener: (_: string, cb: (e: Event) => void) => { disconnect = cb; },
+        removeEventListener: () => { disconnect = undefined; },
+    }});
     serial = new WebSerial();
     await serial.listPorts();
 });
@@ -108,9 +113,20 @@ it('delivers buffered bytes before a terminal error', async () => {
 });
 
 it('refuses a port whose device has disconnected', async () => {
+    expect(serial.portGone('serial:1')).toBe(false);
     port.connected = false;
+    expect(serial.portGone('serial:1')).toBe(true);
     await expect(serial.open('serial:1', 38400)).rejects.toThrow('The device has disconnected');
     expect(port.opens).toEqual([]);
+});
+
+it('reports a port gone on its disconnect event, before connected changes', async () => {
+    const seen: string[] = [];
+    serial.onPortGone(d => seen.push(d));
+    disconnect!({target: port} as unknown as Event);
+    expect(seen).toEqual(['serial:1']);
+    expect(serial.portGone('serial:1')).toBe(true);
+    await expect(serial.open('serial:1', 38400)).rejects.toThrow('The device has disconnected');
 });
 
 it('holds ownership until an aborted delayed open is closed', async () => {

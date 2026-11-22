@@ -4,7 +4,7 @@ import {transport} from './transport';
 import type {ConnState, MsgFileTag, PortInfo} from './transport';
 import type {TimeMsg, SurveyMsg, SatellitesMsg, SVInfo, SignalInfo} from '@satpulse/gps/gpsprot';
 import type {ConfigProps} from '@satpulse/gps/configtarget';
-import {ConnectionPanel} from './connection-panel';
+import {ConnectionPanel, DeviceGoneDialog} from './connection-panel';
 import {CollapsibleSection} from './collapsible-section';
 import {ConfigPanel, signalMapToSet} from './config-panel';
 import {PacketPanel} from './packet-panel';
@@ -114,6 +114,14 @@ export function App() {
     const [readOnly, setReadOnly] = useState(false);
     const [connState, setConnState] = useState<ConnState>('disconnected');
     const [device, setDevice] = useState('');
+    const deviceRef = useRef(device);
+    deviceRef.current = device;
+    const [deviceGone, setDeviceGone] = useState(false);
+    // lostConn is set while the last connection ended other than by
+    // Disconnect and the user has not yet answered the device-gone dialog.
+    const lostConn = useRef(false);
+    const disconnecting = useRef(false);
+    const lastState = useRef<ConnState>('disconnected');
     const [speed, setSpeed] = useState(9600);
     const [ports, setPorts] = useState<PortInfo[]>([]);
     const [receiver, setReceiver] = useState<ReceiverState>({status: 'disconnected'});
@@ -307,6 +315,16 @@ export function App() {
         const offState = transport.eventsOn('gps:state', (state: ConnState) => {
             connStateSeen.current = true;
             setConnState(state);
+            // A connection that ended because its device disappeared cannot be
+            // reopened; offer to choose the device again.
+            if (state === 'disconnected') {
+                if (lastState.current !== 'disconnected' && !disconnecting.current) lostConn.current = true;
+                disconnecting.current = false;
+            } else {
+                lostConn.current = false;
+            }
+            lastState.current = state;
+            setDeviceGone(lostConn.current && !!transport.connection?.portGone?.(deviceRef.current));
             if (state === 'configuring' || state === 'disconnected') {
                 respSessionRef.current = 0;
             }
@@ -465,7 +483,10 @@ export function App() {
             setPorts(ps);
             setDevice(conn.device || (ps.length === 1 ? ps[0].device : ''));
             if (!connSpeedSeen.current && conn.speed !== undefined) setSpeed(conn.speed);
-            if (!connStateSeen.current) setConnState(conn.state);
+            if (!connStateSeen.current) {
+                setConnState(conn.state);
+                lastState.current = conn.state;
+            }
             if (conn.state === 'disconnected' || req !== signalCatalogRequest.current) return;
             const r = await transport.getReceiverState();
             if (req !== signalCatalogRequest.current) return;
@@ -517,14 +538,45 @@ export function App() {
         }
     }, [addToast, refreshPorts]);
 
+    // The device can be reported gone after the connection has already ended.
+    useEffect(() => transport.connection?.onPortGone?.(d => {
+        if (lostConn.current && d === deviceRef.current) setDeviceGone(true);
+    }), []);
+
+    const handleCancelReconnect = useCallback(() => {
+        lostConn.current = false;
+        setDeviceGone(false);
+    }, []);
+
+    const handleReconnect = useCallback(async () => {
+        const conn = transport.connection;
+        if (!conn?.choosePort) return;
+        try {
+            const p = await conn.choosePort();
+            if (!p) return;
+            lostConn.current = false;
+            setDeviceGone(false);
+            if (!deviceSelectable.current) return;
+            setDevice(p.device);
+            refreshPorts();
+            await conn.connect(p.device, speed);
+        } catch (e) {
+            lostConn.current = false;
+            setDeviceGone(false);
+            addToast(e instanceof Error ? e.message : 'Could not reconnect', 'error');
+        }
+    }, [speed, addToast, refreshPorts]);
+
     const handleConnect = useCallback(async () => {
         const conn = transport.connection;
         if (!conn) return;
         if (connState !== 'disconnected') {
             respSessionRef.current = 0;
+            disconnecting.current = true;
             try {
                 await conn.disconnect();
             } catch (e) {
+                disconnecting.current = false;
                 addToast(e instanceof Error ? e.message : 'Disconnect failed', 'error');
             }
             return;
@@ -533,6 +585,12 @@ export function App() {
             await conn.connect(device, speed);
             // connection status visible via indicator dot
         } catch (e) {
+            // A gone device fails the connection; the dialog explains it.
+            if (conn.portGone?.(device)) {
+                lostConn.current = true;
+                setDeviceGone(true);
+                return;
+            }
             addToast(e instanceof Error ? e.message : 'Connection failed', 'error');
         }
     }, [connState, device, speed, addToast]);
@@ -577,6 +635,7 @@ export function App() {
                 onRefreshPorts={refreshPorts}
                 onChoosePort={transport.connection?.choosePort ? handleChoosePort : undefined}
             />
+            {deviceGone && <DeviceGoneDialog onReconnect={handleReconnect} onCancel={handleCancelReconnect} />}
 
             {/* Tab bar */}
             <div class="flex shrink-0 border-b border-border-subtle bg-surface-2">
