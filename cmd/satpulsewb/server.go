@@ -363,15 +363,12 @@ var (
 // port was opened. Reading the snapshot also retains that speed for the next
 // disconnected view.
 func (s *server) connection() connectionInfo {
-	state := s.sess.State()
-	activeSpeed := s.sess.Speed()
 	s.connMu.Lock()
-	if activeSpeed != 0 {
-		s.speed = activeSpeed
+	defer s.connMu.Unlock()
+	if speed := s.sess.Speed(); speed != 0 {
+		s.speed = speed
 	}
-	info := connectionInfo{State: state, Device: s.device, Speed: s.speed}
-	s.connMu.Unlock()
-	return info
+	return connectionInfo{State: s.sess.State(), Device: s.device, Speed: s.speed}
 }
 
 func (s *server) handleConnection(w http.ResponseWriter, _ *http.Request) {
@@ -423,7 +420,9 @@ func (s *server) handleConnect(w http.ResponseWriter, r *http.Request) {
 
 // connect is the single connection path for both command-line startup and
 // the connection bar. It records the chosen values before opening so a failed
-// attempt remains visible and editable in a newly loaded browser window.
+// attempt remains visible and editable in a newly loaded browser window. It
+// holds connMu until Connect returns: until then the session may still report
+// the previous connection's speed, which a snapshot must not adopt.
 func (s *server) connect(device string, speed int) error {
 	if device == "" {
 		return errDeviceRequired
@@ -432,9 +431,9 @@ func (s *server) connect(device string, speed int) error {
 		return errInvalidSpeed
 	}
 	s.connMu.Lock()
+	defer s.connMu.Unlock()
 	s.device = device
 	s.speed = speed
-	s.connMu.Unlock()
 	return s.sess.Connect(session.SerialOpener{Device: device, Speed: speed}, s.vendors)
 }
 
