@@ -11,7 +11,9 @@
 #   pw useradd satpulse -c "SatPulse daemon" -d /nonexistent \
 #       -s /usr/sbin/nologin -G dialer
 #
-# Then enable and start the service:
+# Set device in the [serial] table of /usr/local/etc/satpulse.toml, or
+# use one daemon per receiver as described below. Then enable and start
+# the service:
 #
 #   sysrc satpulsed_enable=YES
 #   service satpulsed start
