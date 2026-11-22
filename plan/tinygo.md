@@ -213,15 +213,22 @@ a list of packages to skip:
   tagging files out would discard the ones that work. Each instead routes its
   file-system use through a single helper that skips on a `hasFS` constant:
   `tempDir` and `loadTestFile` in `msgfile`, `readCapture` in septentrio,
-  where eighteen tests skip and the other fifty-two still run. `go:embed`
-  cannot reach outside a package directory, so embedding the packet logs
-  instead would need more thought.
+  where eighteen tests skip and the other fifty-two still run. `gps/app/ubxsim`
+  skips the three tests that load a personality file. `go:embed` cannot reach
+  outside a package directory, so embedding the packet logs instead would need
+  more thought.
 - **No network.** `net.Listen` returns "Netdev not set", so `gps/app/ntrip`'s
   caster fixture cannot serve. `newFixture` skips on a `hasNet` constant
-  before it starts anything.
-- **No `testing/synctest`.** TinyGo has no implementation, and this one fails
-  to *link*, so it takes every test in the package with it. The files using it
-  carry `!tinygo`.
+  before it starts anything, as do `gps/app/stream`'s Ntrip listener and UDP
+  tests and the one `gps/app/session` test that serves corrections.
+- **No `reflect.Select`.** `bcast` uses it, and TinyGo panics at run time, on
+  wasm too. In `gps/app/session`, `gps/app/stream` and `gps/app/ntrip`, the
+  helpers and tests that run a `Bcast` skip on a `hasBcast` constant, false
+  under the `tinygo` tag. The adapter above supplies `reflect.Select`, and
+  the change that adds it removes the constant and the skips with it.
+- **`testing/synctest`** was missing until TinyGo 0.43.0, and failed to *link*,
+  taking every test in the package with it. Those test files no longer need
+  excluding.
 - **Host-only by nature.** `gps/ts` generates TypeScript and `gps/lib/wakeup`
   measures Linux wake-up latency. Their test files carry `!baremetal`.
 

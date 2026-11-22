@@ -1,5 +1,3 @@
-//go:build !tinygo
-
 package stream
 
 import (
@@ -96,6 +94,9 @@ func runPush(t *testing.T, ctx context.Context, dest Destination,
 	pktTag gpsprot.Tag,
 	onState func(State, error)) (chan<- scan.Packet, func(), func() error) {
 	t.Helper()
+	if !hasBcast {
+		t.Skip("no bcast to push from")
+	}
 	pktCh := make(chan scan.Packet)
 	b := bcast.New((<-chan scan.Packet)(pktCh))
 	bcastDone := make(chan struct{})
@@ -123,6 +124,9 @@ func runPush(t *testing.T, ctx context.Context, dest Destination,
 func runUDPPush(t *testing.T, ctx context.Context, addr string,
 	pktTag gpsprot.Tag) (chan<- scan.Packet, func(), func() error) {
 	t.Helper()
+	if !hasBcast {
+		t.Skip("no bcast to push from")
+	}
 	pktCh := make(chan scan.Packet)
 	b := bcast.New((<-chan scan.Packet)(pktCh))
 	bcastDone := make(chan struct{})
@@ -218,6 +222,9 @@ func waitUDPPushReady(t *testing.T, pktCh chan<- scan.Packet, conn *net.UDPConn,
 
 func startUDPQueueForTest(t *testing.T, sink *UDPSink, writerCh chan scan.Packet) chan<- scan.Packet {
 	t.Helper()
+	if !hasBcast {
+		t.Skip("no bcast to push from")
+	}
 	pktCh := make(chan scan.Packet)
 	packets := bcast.New((<-chan scan.Packet)(pktCh))
 	bCtx, bCancel := context.WithCancel(context.Background())
@@ -318,6 +325,9 @@ func TestPushPacketsFlowToDestination(t *testing.T) {
 }
 
 func TestUDPPushNoFilterSendsEverything(t *testing.T) {
+	if !hasNet {
+		t.Skip("no network stack to receive UDP on")
+	}
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
 		t.Fatalf("ListenUDP: %v", err)
@@ -344,6 +354,9 @@ func TestUDPPushNoFilterSendsEverything(t *testing.T) {
 }
 
 func TestUDPPushFilterRequiresTagAndValidChecksum(t *testing.T) {
+	if !hasNet {
+		t.Skip("no network stack to receive UDP on")
+	}
 	conn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.ParseIP("127.0.0.1")})
 	if err != nil {
 		t.Fatalf("ListenUDP: %v", err)

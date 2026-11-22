@@ -1,5 +1,3 @@
-//go:build !tinygo
-
 package ubxsim
 
 import (
@@ -863,6 +861,9 @@ func (p *fakeOutPort) Direct() bool                { return true }
 // reporting UART1 and a signal set proves both paths work against the
 // simulator.
 func TestConfiguratorPortDiscovery(t *testing.T) {
+	if !hasFS {
+		t.Skip("no file system to load the personality from")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		p, err := LoadPersonality("testdata/f9p/f9p-personality.ubx")
 		if err != nil {
