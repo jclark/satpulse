@@ -204,7 +204,7 @@ and delete the comment.
 
 ## What bare metal cannot do, and how the tests say so
 
-Four facilities are missing, and each is expressed in the code rather than in
+Three facilities are missing, and each is expressed in the code rather than in
 a list of packages to skip:
 
 - **No file system.** `gps/msgfile`'s tests write a temporary file and load it
@@ -221,11 +221,6 @@ a list of packages to skip:
   caster fixture cannot serve. `newFixture` skips on a `hasNet` constant
   before it starts anything, as do `gps/app/stream`'s Ntrip listener and UDP
   tests and the one `gps/app/session` test that serves corrections.
-- **No `reflect.Select`.** `bcast` uses it, and TinyGo panics at run time, on
-  wasm too. In `gps/app/session`, `gps/app/stream` and `gps/app/ntrip`, the
-  helpers and tests that run a `Bcast` skip on a `hasBcast` constant, false
-  under the `tinygo` tag. The adapter above supplies `reflect.Select`, and
-  the change that adds it removes the constant and the skips with it.
 - **`testing/synctest`** was missing until TinyGo 0.43.0, and failed to *link*,
   taking every test in the package with it. Those test files no longer need
   excluding.
