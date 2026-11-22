@@ -31,7 +31,8 @@
 # /usr/local/etc/satpulse.d/cuaU0.toml and /usr/local/etc/satpulse.toml
 # that exists.
 #
-# rc.conf variables, where NAME is satpulsed or satpulsed_<port>:
+# rc.conf variables, where NAME is satpulsed or satpulsed_<port>, with any
+# dot in <port> replaced by an underscore (satpulsed_cuaU0_1 for cuaU0.1):
 #
 # NAME_enable (bool):    Set to "YES" to enable the service. Default "NO".
 # NAME_user (str):       User to run satpulsed as. Default "satpulse".
@@ -48,20 +49,31 @@
 
 . /etc/rc.subr
 
+# service -e and -R take a script's name and rcvar by evaluating its
+# unindented name= and rcvar lines with $file set to the script, so those
+# lines must work alone, and end in ";" since service(8) joins them.
+name="$file" ;
+
 case "$0" in
 /etc/rc*)
 	# During boot and shutdown $0 is the rc driver script; the name of
 	# this script, or of the symlink it was reached by, is in $_file.
 	name="$_file"
 	;;
+*/service)
+	# service -e and -R source the script from service(8) with $file set.
+	;;
 *)
 	name="$0"
 	;;
 esac
-name="${name##*/}"
+name="${name:-satpulsed}" ;
+name="${name##*/}" ;
 port="${name#satpulsed}"
 port="${port#_}"
-
+# A multi-port USB serial device such as cuaU0.1 has a dot in its name,
+# which an rc.conf variable name cannot.
+name="$(echo "$name" | tr . _)" ;
 rcvar="${name}_enable"
 
 load_rc_config "$name"
