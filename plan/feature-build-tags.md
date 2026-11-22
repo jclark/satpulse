@@ -147,7 +147,25 @@ a stub that registers nothing.
 it, so the `nohttp` stub is a function that returns an error when it is
 given a non-empty endpoint list and nil otherwise. An HTTP endpoint in
 the config then fails startup with a clear message, and a config with no
-endpoints runs unchanged. Nothing else is needed.
+endpoints runs unchanged.
+
+The Ntrip caster is the other server. `gps/app/ntrip/caster.go` is that
+package's only use of `net/http`, and #553 builds it only without
+`nohttp`, for the browser Workbench, which links the package for stream
+configuration and source-table records but never runs the caster. Those
+stay in both builds, and the raw-TCP Ntrip client and upload do not use
+`net/http`. A native `nohttp` daemon additionally needs a stub
+`ntrip.Start` with the same signature that returns an error, so a
+configured caster fails startup the same way a configured HTTP endpoint
+does.
+
+`satpulsetool` also reaches `net/http` through `github.com/jaypipes/pcidb`,
+used by `internal/sdpcmd` for PCI device names: the library imports it
+for an optional database download that is off by default. A `nohttp`
+build leaves the library out, keeping the sysfs inspection and showing
+numeric PCI IDs.
+
+`satpulsewb` is an HTTP server and has no `nohttp` build.
 
 ## Step 3: observers own their endpoints, then Prometheus
 
@@ -228,17 +246,15 @@ profile edits every guarded file.
 `make test` only exercises the default build, so the excluded
 combinations are covered by compiling them, not by running the suite
 under tags. Two builds are enough to catch the common breakage: all
-features off, and one vendor only.
+features off, and one vendor only. For `nohttp`, also check that `go list
+-deps` of each command built with the tag no longer contains `net/http`,
+since a new import anywhere can bring it back without breaking the build.
 
 ## Open decisions
 
 - Which profiles to name, and whether they strip. Stripping is per-build
   and the trade is field debuggability, so an OpenWrt or device build can
   strip while the normal Linux packages do not.
-- Whether `nohttp` also implies dropping the Ntrip caster's config keys
-  or leaves them parseable and inert. The caster cannot exist without
-  `net/http`, so the same startup-error treatment as `startHTTP` is the
-  consistent answer.
 
 ## Out of scope
 
