@@ -37,6 +37,8 @@ export function ConnectionPanel({
 }: Props) {
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
+    // Choosing from the list unmounts the focused entry; keep focus in the bar.
+    const focusToggle = () => wrapRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Select port"]')?.focus();
 
     useEffect(() => {
         if (!open) return;
@@ -60,6 +62,7 @@ export function ConnectionPanel({
         (p: PortInfo) => {
             setDevice(p.device);
             setOpen(false);
+            focusToggle();
         },
         [setDevice],
     );
@@ -106,13 +109,15 @@ export function ConnectionPanel({
                             {ports.length === 0 && <li class="px-2 py-1.5 text-xs italic text-text-muted">{onChoosePort ? 'No devices added' : 'No ports found'}</li>}
                             {ports.map(p => (
                                 <li key={p.device}>
-                                    <button
+                                    <Button
                                         type="button"
-                                        class="w-full cursor-pointer px-2 py-1.5 text-left text-xs text-text-primary hover:bg-surface-3"
+                                        variant="ghost"
+                                        class="w-full justify-start rounded-none"
+                                        disabled={connected || readOnly}
                                         onClick={() => selectPort(p)}
                                     >
                                         {p.display}
-                                    </button>
+                                    </Button>
                                 </li>
                             ))}
                             {onChoosePort && (
@@ -125,8 +130,7 @@ export function ConnectionPanel({
                                         onClick={() => {
                                             setOpen(false);
                                             onChoosePort();
-                                            // This button unmounts with the list; keep focus in the bar.
-                                            wrapRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Select port"]')?.focus();
+                                            focusToggle();
                                         }}
                                     >
                                         Add a device...
