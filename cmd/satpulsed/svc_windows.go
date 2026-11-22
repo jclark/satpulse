@@ -4,6 +4,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -59,7 +60,11 @@ func registerPlatformFlags(flags *pflag.FlagSet, vars *flagVars) {
 func platformMain(progName string, vars *flagVars) {
 	p := &vars.platform
 	var err error
-	if p.unregister {
+	if (p.register && p.unregister) || (p.winSvc && (p.register || p.unregister)) {
+		err = errors.New("only one of --register, --unregister and --win-svc can be specified")
+	} else if p.copyDir != "" && !p.register {
+		err = errors.New("--copy can only be used with --register")
+	} else if p.unregister {
 		err = unregisterService()
 	} else if p.register {
 		err = registerService(vars)
