@@ -14,8 +14,8 @@ interface BrowserPort {
 interface BrowserSerial {
     getPorts(): Promise<BrowserPort[]>;
     requestPort(): Promise<BrowserPort>;
-    addEventListener(type: 'disconnect', listener: (e: Event) => void): void;
-    removeEventListener(type: 'disconnect', listener: (e: Event) => void): void;
+    addEventListener(type: 'connect' | 'disconnect', listener: (e: Event) => void): void;
+    removeEventListener(type: 'connect' | 'disconnect', listener: (e: Event) => void): void;
 }
 
 function serialAPI(): BrowserSerial {
@@ -46,8 +46,10 @@ export class WebSerial {
     private available = new Map<BrowserPort, Promise<void>>();
     private connections = new Set<SerialConnection>();
     private closed = false;
-    // Disconnect events cover browsers without SerialPort.connected and
-    // reach listeners even if the attribute changes after the connection ends.
+    // Disconnect events reach listeners even if the device goes after the
+    // connection has ended. They also stand in for SerialPort.connected in a
+    // browser without it, until a connect event: a Bluetooth port can come
+    // back as the same object.
     private gone = new WeakSet<BrowserPort>();
     private goneListeners = new Set<(device: string) => void>();
     private watching = false;
@@ -56,6 +58,9 @@ export class WebSerial {
         this.gone.add(port);
         const device = [...this.ports].find(([, p]) => p === port)?.[0];
         if (device) for (const cb of this.goneListeners) cb(device);
+    };
+    private onConnect = (e: Event) => {
+        this.gone.delete(e.target as unknown as BrowserPort);
     };
 
     async listPorts(): Promise<PortInfo[]> {
@@ -116,7 +121,8 @@ export class WebSerial {
     // opens again.
     portGone(device: string): boolean {
         const port = this.ports.get(device);
-        return !!port && (port.connected === false || this.gone.has(port));
+        if (!port) return false;
+        return port.connected === undefined ? this.gone.has(port) : !port.connected;
     }
 
     // onPortGone calls cb with the device of each chosen port whose device
@@ -128,13 +134,17 @@ export class WebSerial {
 
     async close(): Promise<void> {
         this.closed = true;
-        if (this.watching) serialAPI().removeEventListener('disconnect', this.onDisconnect);
+        if (this.watching) {
+            serialAPI().removeEventListener('disconnect', this.onDisconnect);
+            serialAPI().removeEventListener('connect', this.onConnect);
+        }
         await Promise.allSettled([...this.connections].map(c => c.close()));
     }
 
     private remember(port: BrowserPort): PortInfo {
         if (!this.watching) {
             serialAPI().addEventListener('disconnect', this.onDisconnect);
+            serialAPI().addEventListener('connect', this.onConnect);
             this.watching = true;
         }
         let device = [...this.ports].find(([, p]) => p === port)?.[0];

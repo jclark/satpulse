@@ -19,7 +19,7 @@ class Port {
     writes: number[][] = [];
     barrier?: Promise<void>;
     failOpen = false;
-    connected = true;
+    connected?: boolean = true;
 
     get readable() {
         if (this.replace && !this.stream?.locked) {
@@ -68,14 +68,14 @@ class Port {
 
 let port: Port;
 let serial: WebSerial;
-let disconnect: ((e: Event) => void) | undefined;
+let serialListeners: Record<string, (e: Event) => void> = {};
 
 beforeEach(async () => {
     port = new Port();
     vi.stubGlobal('navigator', {serial: {
         getPorts: async () => [port],
-        addEventListener: (_: string, cb: (e: Event) => void) => { disconnect = cb; },
-        removeEventListener: () => { disconnect = undefined; },
+        addEventListener: (type: string, cb: (e: Event) => void) => { serialListeners[type] = cb; },
+        removeEventListener: (type: string) => { delete serialListeners[type]; },
     }});
     serial = new WebSerial();
     await serial.listPorts();
@@ -123,12 +123,15 @@ it('explains a failed open of a port whose device has disconnected', async () =>
     await c.close();
 });
 
-it('reports a port gone on its disconnect event, before connected changes', async () => {
+it('reports disconnect events and uses them without SerialPort.connected', async () => {
     const seen: string[] = [];
     serial.onPortGone(d => seen.push(d));
-    disconnect!({target: port} as unknown as Event);
+    port.connected = undefined;
+    serialListeners.disconnect({target: port} as unknown as Event);
     expect(seen).toEqual(['serial:1']);
     expect(serial.portGone('serial:1')).toBe(true);
+    serialListeners.connect({target: port} as unknown as Event);
+    expect(serial.portGone('serial:1')).toBe(false);
 });
 
 it('holds ownership until an aborted delayed open is closed', async () => {
