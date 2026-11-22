@@ -284,9 +284,11 @@ export class SerialConnection {
                 this.released();
             }
         })();
-        if (!this.reopenPending) return this.closing;
-        // The port stays reserved until the reopen settles and is closed,
-        // but the caller need not wait for an open that may never complete.
+        if (!this.reopenPending && !this.pendingWrites) return this.closing;
+        // The port stays reserved until the reopen or write settles and the
+        // port is closed, but the caller need not wait for an open or write
+        // that may never complete: aborting a stream waits for a write in
+        // progress.
         this.closing.catch(() => {});
         return Promise.resolve();
     }
