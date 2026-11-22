@@ -107,10 +107,11 @@ func (c *Configurator) generateSatsReqs(flags gpsprot.SatsMsgFlags) {
 // NAV-PV/NAV2-PVH carries geodetic pos+vel; NAV-TIMEUTC/NAV2-TIMEUTC
 // carries UTC time; NAV-DOP/NAV2-DOP the full DOP set; TIM-TP (V5)
 // carries the time of the next pulse and TIM2-TPX (V6) the time of
-// the pulse that occurred; TIM2-LS (V6) and MSG-GPSUTC (V5) carry
-// leap second events; TIM2-TIMEPOS (V6 only) carries survey progress.
-// Epoch markers have no CASIC message. Without the off flag the
-// request is incremental: unneeded messages are left alone.
+// the pulse that occurred; TIM2-LS (V6) carries leap second events;
+// TIM2-TIMEPOS (V6 only) carries survey progress. Epoch markers have
+// no CASIC message, and neither do leap seconds on V5: the MSG class
+// (GPSUTC/BDSUTC) is acknowledged but never emitted. Without the off
+// flag the request is incremental: unneeded messages are left alone.
 func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 	pv, sol, timeUTC, dop := casbin.NavPvID, casbin.NavSolID, casbin.NavTimeUTCID, casbin.NavDopID
 	if c.family == familyV6 {
@@ -164,8 +165,6 @@ func (c *Configurator) generatePVTReqs(flags gpsprot.PVTMsgFlags) {
 		if c.ConfigSupport()&gpsprot.ConfigSupportSurveyMsg != 0 {
 			set(casbin.Tim2TimePosID, flags&gpsprot.PVTMsgSurvey != 0 && c.survey)
 		}
-	} else {
-		set(casbin.MsgGPSUTCID, flags&gpsprot.PVTMsgLeapSecond != 0)
 	}
 	c.generateTimTPReqs(tp, off)
 }

@@ -198,7 +198,7 @@ func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObser
 }
 
 func skipEpochRecords(s *bufio.Scanner, n int, context string) error {
-	for i := 0; i < n; i++ {
+	for range n {
 		if !s.Scan() {
 			if err := s.Err(); err != nil {
 				return err

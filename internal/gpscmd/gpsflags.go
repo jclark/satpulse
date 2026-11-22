@@ -137,6 +137,9 @@ const defaultSurveyTime = 2000
 const defaultSurveyAcc = 20 * gpsprot.Meter
 const defaultFixedPosAcc = 20 * gpsprot.Meter
 
+// minAccuracyMm is gpsprot.MinAccuracy in mm, for error messages.
+const minAccuracyMm = float64(gpsprot.MinAccuracy) / float64(gpsprot.Millimeter)
+
 // TODO: add PropIDBaudRate to showProps so --show-config reports the current configured speed.
 // Would need regeneration of the *-noop replay-test traces.
 const showProps = gpsprot.PropIDSignalsEnabled |
@@ -346,11 +349,10 @@ func (p *flagParser) resolve(cmdName string, usage func(string) string) (*flagVa
 	if err := p.resolveSave(cmdName, configChanged); err != nil {
 		return nil, nil, err
 	}
-	doConfigure, err := p.resolveConfigure(cmdName, configChanged)
-	if err != nil {
+	if err := p.resolveConfigure(cmdName, configChanged); err != nil {
 		return nil, nil, err
 	}
-	if err := p.resolveMsgFile(configChanged, doConfigure); err != nil {
+	if err := p.resolveMsgFile(configChanged); err != nil {
 		return nil, nil, err
 	}
 	return vars, nil, nil
@@ -539,14 +541,17 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 	if p.survey || vars.configOpts.SetStatic {
 		configChanged = true
 		vars.configOpts.Survey.MinDur = time.Duration(p.surveyTime) * time.Second
-		if gpsprot.Length(p.surveyAcc) < gpsprot.Millimeter {
-			return false, fmt.Errorf("--survey-acc must be at least 0.001 (1 mm)")
+		if gpsprot.Length(p.surveyAcc) < gpsprot.MinAccuracy {
+			return false, fmt.Errorf("--survey-acc must be at least %v (%v mm)", gpsprot.MinAccuracy, minAccuracyMm)
 		}
 		vars.configOpts.Survey.AccLimit = gpsprot.Length(p.surveyAcc)
 		if p.survey {
 			vars.configSupport.require(gpsprot.ConfigSupportSurvey, "--survey")
 			if flags.Lookup("survey-acc").Changed {
 				vars.configSupport.require(gpsprot.ConfigSupportSurveyAcc, "--survey-acc")
+			}
+			if flags.Lookup("survey-time").Changed {
+				vars.configSupport.require(gpsprot.ConfigSupportSurveyDur, "--survey-time")
 			}
 			vars.configOpts.Survey.Flags |= gpsprot.SurveyAgain
 			vars.mode.Set(gpsprot.Mode{Static: true})
@@ -585,8 +590,8 @@ func (p *flagParser) resolveMode(cmdName string) (bool, error) {
 
 func (p *flagParser) resolveFixedPos(cmdName, flagName string, mode gpsprot.Mode) error {
 	vars := &p.vars
-	if gpsprot.Length(p.fixedPosAcc) < gpsprot.Millimeter {
-		return fmt.Errorf("--fixed-pos-acc must be at least 0.001 (1 mm)")
+	if gpsprot.Length(p.fixedPosAcc) < gpsprot.MinAccuracy {
+		return fmt.Errorf("--fixed-pos-acc must be at least %v (%v mm)", gpsprot.MinAccuracy, minAccuracyMm)
 	}
 	vars.configSupport.require(gpsprot.ConfigSupportFixedPos, flagName)
 	if p.flags.Lookup("fixed-pos-acc").Changed {
@@ -701,25 +706,23 @@ func (p *flagParser) resolveSave(cmdName string, configChanged bool) error {
 	return nil
 }
 
-func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) (bool, error) {
+func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) error {
 	vars := &p.vars
-	// tests whether configurator needs to run
-	doConfigure := p.save || p.saveAll || p.reset || p.reload || p.showConfig || p.showPort || configChanged
+	action := p.save || p.saveAll || p.reset || p.reload || p.showConfig || p.showPort || configChanged
 	if p.factoryReset {
-		if doConfigure {
-			return false, fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
+		if action {
+			return fmt.Errorf("%s command must not use --factory-reset with --save, --save-all, --reset, --reload, --show-config, --show-port or configuration changes", cmdName)
 		}
-		doConfigure = true
 		vars.configOpts.Reset = gpsprot.ResetFactory
 	} else if p.reset || p.reload {
 		if configChanged && !p.save && !p.saveAll {
-			return false, fmt.Errorf("--reset or --reload without saving would lose configuration changes")
+			return fmt.Errorf("--reset or --reload without saving would lose configuration changes")
 		}
 		if p.showConfig || p.showPort {
-			return false, fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
+			return fmt.Errorf("cannot use --reset or --reload with --show-config or --show-port")
 		}
 		if p.reset && p.reload {
-			return false, fmt.Errorf("cannot use both --reset and --reload")
+			return fmt.Errorf("cannot use both --reset and --reload")
 		}
 		if p.reload {
 			vars.configSupport.require(gpsprot.ConfigSupportReload, "--reload")
@@ -727,14 +730,14 @@ func (p *flagParser) resolveConfigure(cmdName string, configChanged bool) (bool,
 		} else {
 			vars.configOpts.Reset = gpsprot.ResetCold
 		}
-		doConfigure = true
-	} else if vars.showReceiver {
-		doConfigure = true
 	}
-	return doConfigure, nil
+	if !action && !p.factoryReset && vars.msgFilePath == "" {
+		vars.showReceiver = true
+	}
+	return nil
 }
 
-func (p *flagParser) resolveMsgFile(configChanged, doConfigure bool) error {
+func (p *flagParser) resolveMsgFile(configChanged bool) error {
 	vars := &p.vars
 	flags := p.flags
 	if vars.msgFilePath != "" {
@@ -762,12 +765,6 @@ func (p *flagParser) resolveMsgFile(configChanged, doConfigure bool) error {
 		}
 		if flags.Lookup("port").Changed {
 			return fmt.Errorf("--port requires --msg-file")
-		}
-		if !doConfigure && !vars.capture.IsSet() {
-			vars.showReceiver = true
-		}
-		if vars.jsonOut && !doConfigure && !vars.showReceiver {
-			return fmt.Errorf("--json cannot be used with passive packet capture")
 		}
 	}
 	return nil
@@ -813,15 +810,15 @@ func validateTarget(target *gpsprot.ConfigTarget) error {
 		if s.MinDur < 0 {
 			return fmt.Errorf("survey minimum duration must not be negative")
 		}
-		if s.AccLimit < gpsprot.Millimeter {
-			return fmt.Errorf("survey accuracy limit must be at least 1 mm")
+		if s.AccLimit < gpsprot.MinAccuracy {
+			return fmt.Errorf("survey accuracy limit must be at least %v mm", minAccuracyMm)
 		}
 	}
 	// FixedPosAcc 0 means no accuracy stated - the value a readback
 	// reports on receivers that store no accuracy - and must round-trip.
 	if m, ok := props.GetMode(); ok && m.PosType != gpsprot.PosTypeNone &&
-		m.FixedPosAcc != 0 && m.FixedPosAcc < gpsprot.Millimeter {
-		return fmt.Errorf("fixed position accuracy must be at least 1 mm")
+		m.FixedPosAcc != 0 && m.FixedPosAcc < gpsprot.MinAccuracy {
+		return fmt.Errorf("fixed position accuracy must be at least %v mm", minAccuracyMm)
 	}
 	return nil
 }

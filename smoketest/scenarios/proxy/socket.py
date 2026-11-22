@@ -1,9 +1,7 @@
 """Read-only Unix-socket serial proxy, filtered to UNCB (Unicore binary).
 
-Read with satpulsetool gps --socket --capture --packet-log, which also
-exercises that tool's passive-capture path and the proxy's support for a
-non-u-blox protocol filter. The check confirms only UNCB is forwarded and
-every captured packet exists in the source packet log.
+The check reads the socket directly and confirms that its bytes are a slice
+of the source log's UNCB stream.
 """
 
 import common
@@ -14,5 +12,5 @@ FACTOR = 6
 
 
 def run(ctx: common.SmokeContext) -> None:
-    proxy.check_socket_capture(ctx, protocol="UNCB", capture_seconds=7.0)
+    proxy.check_socket(ctx, protocol="UNCB", read_seconds=7.0)
     ctx.wait_replay()

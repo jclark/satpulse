@@ -61,18 +61,32 @@ func TestCorReportRTCMInputMetrics(t *testing.T) {
 	obs.CorReport(&gpsprot.CorReportMsg{
 		Source:        gpsprot.CorReportSourcePull,
 		Tag:           rtcmTag,
-		MsgID:         "1077",
+		MsgID:         "1074",
 		NBytes:        opt.Make(100),
 		ChecksumOK:    opt.Make(true),
-		FinalFragment: opt.Make(false),
+		FinalInEpoch:  opt.Make(false),
 		RTCMRefBaseID: opt.Make(uint16(12)),
 	}, tRead)
 	obs.CorReport(&gpsprot.CorReportMsg{
-		Source:        gpsprot.CorReportSourcePull,
-		Tag:           rtcmTag,
-		MsgID:         "1077",
-		NBytes:        opt.Make(120),
-		FinalFragment: opt.Make(true),
+		Source:       gpsprot.CorReportSourcePull,
+		Tag:          rtcmTag,
+		MsgID:        "1077",
+		NBytes:       opt.Make(60),
+		FinalInEpoch: opt.Make(false),
+	}, tRead)
+	obs.CorReport(&gpsprot.CorReportMsg{
+		Source:       gpsprot.CorReportSourcePull,
+		Tag:          rtcmTag,
+		MsgID:        "1077",
+		NBytes:       opt.Make(60),
+		FinalInEpoch: opt.Make(true),
+	}, tRead)
+	obs.CorReport(&gpsprot.CorReportMsg{
+		Source:       gpsprot.CorReportSourcePull,
+		Tag:          rtcmTag,
+		MsgID:        "1077",
+		NBytes:       opt.Make(80),
+		FinalInEpoch: opt.Make(true),
 	}, tRead)
 	obs.CorReport(&gpsprot.CorReportMsg{
 		Source: gpsprot.CorReportSourcePull,
@@ -135,11 +149,13 @@ func TestCorReportRTCMInputMetrics(t *testing.T) {
 	}, tRead)
 
 	mf = scrape(t, obs)
-	assertCounterLabel(t, mf, "satpulse_rtcm_input_packets_observed_total", "msg_id", "1077", 2)
+	assertCounterLabel(t, mf, "satpulse_rtcm_input_packets_observed_total", "msg_id", "1074", 1)
+	assertCounterLabel(t, mf, "satpulse_rtcm_input_packets_observed_total", "msg_id", "1077", 3)
 	assertCounterLabel(t, mf, "satpulse_rtcm_input_packets_observed_total", "msg_id", "1005", 1)
-	assertCounterLabel(t, mf, "satpulse_rtcm_input_messages_total", "msg_id", "1077", 1)
+	assertCounterLabel(t, mf, "satpulse_rtcm_input_messages_total", "msg_id", "1074", 1)
+	assertCounterLabel(t, mf, "satpulse_rtcm_input_messages_total", "msg_id", "1077", 2)
 	assertCounterLabel(t, mf, "satpulse_rtcm_input_messages_total", "msg_id", "1005", 1)
-	assertCounter(t, mf, "satpulse_rtcm_input_bytes_total", 300)
+	assertCounter(t, mf, "satpulse_rtcm_input_bytes_total", 380)
 	assertCounter(t, mf, "satpulse_rtcm_input_errors_observed_total", 1)
 	assertCounterLabel(t, mf, "satpulse_rtcm_input_packets_reported_total", "msg_id", "1077", 2)
 	assertCounterLabel(t, mf, "satpulse_rtcm_input_packets_reported_total", "msg_id", "1005", 1)

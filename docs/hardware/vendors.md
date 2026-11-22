@@ -11,6 +11,7 @@ toc: false
 * [FS](https://www.fs.com/) make some inexpensive switches with PTP support.
 * [gnss.store](https://gnss.store/) are in Latvia. They make some USB dongle with SMA connectors for antenna and time pulse out.
 * [Leo Bodnar Electronics](https://www.leobodnar.com/shop/) are a UK company, which makes some GNSS and timing products.
+* [Seeed Studio](https://www.seeedstudio.com/) are in China. They make the BeagleY-AI with BeagleBoard.org, and sell it in their own store.
 * [SparkFun Electronics](https://www.sparkfun.com/) make a variety of GNSS boards. I haven't used them much because their US location is not convenient for me.
 * [Star River](http://www.sragps.com/) is a Chinese company that make a number of GNSS boards that are inexpensive and work well in a CM4/5.
 They have stores on [AliExpress](https://xinghewei.aliexpress.com) and on [Taobao](https://sragps.taobao.com). The Taobao shop seems to have a wider range.
