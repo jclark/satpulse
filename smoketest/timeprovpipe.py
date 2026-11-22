@@ -170,7 +170,7 @@ class PipeServer:
             finally:
                 self.k32.CloseHandle(handle)
 
-    def _wait(self, handle: int, should_stop: StopFn) -> bool:
+    def _wait(self, handle: int, ov: _Overlapped, should_stop: StopFn) -> bool:
         """Wait for the pending overlapped operation; False when stopping."""
         while True:
             w = self.k32.WaitForSingleObject(self.event, 500)
@@ -179,7 +179,11 @@ class PipeServer:
             if w != WAIT_TIMEOUT:
                 raise _winerr("WaitForSingleObject")
             if should_stop():
+                # Cancellation is asynchronous: wait for the operation to
+                # finish before the caller lets go of ov and its buffer.
                 self.k32.CancelIo(handle)
+                n = ctypes.c_uint32()
+                self.k32.GetOverlappedResult(handle, ctypes.byref(ov), ctypes.byref(n), True)
                 return False
 
     def _start(self, handle: int) -> _Overlapped:
@@ -200,19 +204,20 @@ class PipeServer:
                 return False
             if err != ERROR_IO_PENDING:
                 raise _winerr("ConnectNamedPipe")
-            if not self._wait(handle, should_stop):
+            if not self._wait(handle, ov, should_stop):
                 return False
         return not should_stop()
 
     def _read_loop(self, handle: int, on_record: Callable[[bytes], None],
                    should_stop: StopFn) -> None:
         buf = ctypes.create_string_buffer(512)
+        msg = b""
         while not should_stop():
             ov = self._start(handle)
             if not self.k32.ReadFile(handle, buf, len(buf), None, ctypes.byref(ov)):
                 err = ctypes.get_last_error()
                 if err == ERROR_IO_PENDING:
-                    if not self._wait(handle, should_stop):
+                    if not self._wait(handle, ov, should_stop):
                         return
                 elif err not in (ERROR_MORE_DATA,):
                     return  # client disconnected or pipe error
@@ -220,12 +225,13 @@ class PipeServer:
             if not self.k32.GetOverlappedResult(handle, ctypes.byref(ov), ctypes.byref(n), False):
                 err = ctypes.get_last_error()
                 if err == ERROR_MORE_DATA:
-                    # Oversized message: the chunks are delivered and
-                    # rejected by size, so just keep reading.
-                    on_record(buf.raw[: n.value])
+                    # Oversized message: collect its chunks so that it is
+                    # reported once, whole, and rejected by size.
+                    msg += buf.raw[: n.value]
                     continue
                 return
-            on_record(buf.raw[: n.value])
+            on_record(msg + buf.raw[: n.value])
+            msg = b""
         self.k32.DisconnectNamedPipe(handle)
 
 
