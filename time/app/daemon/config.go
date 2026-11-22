@@ -264,6 +264,15 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
+	if tp := cfg.NTP.Timeprov; tp != nil {
+		if cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "" {
+			return configErrorf("sock and timeprov in the [ntp] table cannot both be specified")
+		}
+		// Written so that NaN is rejected too.
+		if !(tp.Dispersion >= 0) {
+			return configErrorf("dispersion in the [ntp.timeprov] table must not be negative")
+		}
+	}
 	users, err := cfg.userSet()
 	if err != nil {
 		return &configError{err: err}
@@ -348,18 +357,14 @@ func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
 // chrony SOCK refclock for [ntp.sock], or the w32time pipe-timeprov
 // refclock for [ntp.timeprov].
 func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
-	hasSock := cfg.Sock != nil && cfg.Sock.Path != ""
 	if cfg.Timeprov != nil {
-		if hasSock {
-			return nil, errors.New("[ntp] cannot configure both sock and timeprov")
-		}
 		rc, err := timeprov.New(cfg.Timeprov.Pipe, cfg.Timeprov.dispersion())
 		if err != nil {
 			return nil, err
 		}
 		return refclock.NewLoggingSockRefClock(lg, rc), nil
 	}
-	if !hasSock {
+	if cfg.Sock == nil || cfg.Sock.Path == "" {
 		return nil, nil
 	}
 	rc, err := sockrefclock.New(cfg.Sock.Path)
@@ -372,7 +377,7 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
 // dispersion returns the per-sample measurement error to report,
 // defaulting to 1 ms, a conservative bound for a serial PPS source.
 func (cfg *NTPTimeprovConfig) dispersion() time.Duration {
-	if cfg.Dispersion <= 0 {
+	if cfg.Dispersion == 0 {
 		return time.Millisecond
 	}
 	return time.Duration(cfg.Dispersion * float64(time.Second))

@@ -275,6 +275,56 @@ device = "/dev/ptp_tic"
 	}
 }
 
+func TestNTPTimeprovConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		expectErr string
+	}{
+		{
+			name:  "pipe only",
+			input: "[ntp]\ntimeprov.pipe = '\\\\.\\pipe\\pipetimeprov'\n",
+		},
+		{
+			name:  "dispersion",
+			input: "[ntp]\ntimeprov.dispersion = 0.01\n",
+		},
+		{
+			name:      "sock conflict",
+			input:     "[ntp]\nsock.path = \"/run/chrony.sock\"\ntimeprov.dispersion = 0.01\n",
+			expectErr: "sock and timeprov in the [ntp] table cannot both be specified",
+		},
+		{
+			name:      "negative dispersion",
+			input:     "[ntp]\ntimeprov.dispersion = -0.001\n",
+			expectErr: "dispersion in the [ntp.timeprov] table must not be negative",
+		},
+		{
+			name:      "nan dispersion",
+			input:     "[ntp]\ntimeprov.dispersion = nan\n",
+			expectErr: "dispersion in the [ntp.timeprov] table must not be negative",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tc.input))
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if tc.expectErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.expectErr) || exitCode(err) != exitConfig {
+				t.Fatalf("Validate error = %v, want config error %q", err, tc.expectErr)
+			}
+		})
+	}
+}
+
 func TestSerialPPSKernelMethodPin(t *testing.T) {
 	pins := gpsio.KernelPPSPins()
 	for _, pin := range []gpsio.SerialPin{gpsio.SerialPinCTS, gpsio.SerialPinDCD, gpsio.SerialPinRI} {
