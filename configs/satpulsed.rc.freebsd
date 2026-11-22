@@ -35,6 +35,7 @@
 # dot in <port> replaced by an underscore (satpulsed_cuaU0_1 for cuaU0.1):
 #
 # NAME_enable (bool):    Set to "YES" to enable the service. Default "NO".
+# NAME_flags (str):      Extra satpulsed options. Default "".
 # NAME_user (str):       User to run satpulsed as. Default "satpulse".
 # NAME_configfile (str): Configuration files to pass with -f; satpulsed
 #                        uses the first one that exists. Default as
@@ -106,11 +107,16 @@ command_args="-f -R 5 -P ${pidfile} -o ${_logfile} \
 start_precmd="satpulsed_precmd"
 
 # daemon(8) runs as ${name}_user, which cannot create files in /var/run
-# or /var/log, so pre-create its supervisor pidfile and log file.
+# or /var/log, so pre-create its supervisor pidfile and log file, and the
+# default directory for satpulsed's own logs. rc.subr would put
+# ${name}_flags before command_args, on daemon(8); they belong to satpulsed.
 satpulsed_precmd()
 {
 	[ -e "${pidfile}" ] || install -o "${_runuser}" -m 644 /dev/null "${pidfile}"
 	[ -e "${_logfile}" ] || install -o "${_runuser}" -m 640 /dev/null "${_logfile}"
+	[ -d /var/log/satpulse ] || install -d -o "${_runuser}" -m 750 /var/log/satpulse
+	command_args="${command_args} ${rc_flags}"
+	rc_flags=""
 }
 
 run_rc_command "$1"
