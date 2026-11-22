@@ -12,3 +12,4 @@ update-deps:
 
 typecheck:
 	uv run --extra dev mypy $(PY_FILES)
+	uv run --extra dev mypy --platform win32 timeprovpipe.py
