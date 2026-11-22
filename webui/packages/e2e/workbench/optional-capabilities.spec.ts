@@ -1,4 +1,11 @@
 import {test, expect} from '../harness';
+import type {Page} from '@playwright/test';
+
+async function chooseDevice(page: Page) {
+    await page.getByRole('button', {name: 'Select port', exact: true}).click();
+    await expect(page.locator('header ul li').last()).toHaveText('Add a device...');
+    await page.getByRole('button', {name: 'Add a device...', exact: true}).click();
+}
 
 test.describe('optional transport capabilities', () => {
     test('omits corrections controls and subscriptions without the capability', async ({page, mockWorkbench}) => {
@@ -40,5 +47,54 @@ test.describe('optional transport capabilities', () => {
         await panel.getByRole('button', {name: 'Disconnect', exact: true}).click();
         await expect(panel.getByRole('button', {name: 'Connect', exact: true})).toBeEnabled();
         expect(await page.evaluate(() => window.workbenchTest.calls.filter(c => c.method === 'stopCorrections').length)).toBe(1);
+    });
+
+    test('adds the chosen device, refreshes choices and uses it for Connect', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=select'));
+        await chooseDevice(page);
+        const device = page.locator('header input').first();
+        await expect(device).toHaveValue('serial:1');
+        await expect(device).toHaveJSProperty('readOnly', true);
+        await expect(page.getByRole('button', {name: 'Add a device...', exact: true})).toHaveCount(0);
+        expect(await page.evaluate(() => window.workbenchTest.calls.filter(c => c.method === 'choosePort').length)).toBe(1);
+        // The refresh after choosing, not the one that reopening the list does.
+        await expect.poll(() => page.evaluate(() => {
+            const methods = window.workbenchTest.calls.map(c => c.method);
+            return methods.indexOf('listPorts', methods.indexOf('choosePort')) >= 0;
+        })).toBe(true);
+        await expect(page.getByRole('button', {name: 'Select port', exact: true})).toBeFocused();
+        await page.getByRole('banner').getByRole('button', {name: 'Connect', exact: true}).click();
+        expect(await page.evaluate(() => window.workbenchTest.calls.find(c => c.method === 'connect')?.args)).toEqual(['serial:1', 38400]);
+        await page.getByRole('button', {name: 'Select port', exact: true}).click();
+        await expect(page.locator('header ul')).toContainText('Receiver');
+        await page.getByRole('button', {name: 'Receiver', exact: true}).click();
+        await expect(page.getByRole('button', {name: 'Select port', exact: true})).toBeFocused();
+    });
+
+    test('picker cancellation preserves the selected device', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=cancel&device=serial:1'));
+        await expect(page.locator('header input').first()).toHaveValue('serial:1');
+        await chooseDevice(page);
+        expect(await page.evaluate(() => window.workbenchTest.calls.filter(c => c.method === 'choosePort').length)).toBe(1);
+        await expect(page.locator('header input').first()).toHaveValue('serial:1');
+        await expect(page.getByRole('banner').getByRole('button', {name: 'Connect', exact: true})).toBeEnabled();
+    });
+
+    test('picker errors are visible and preserve the selected device', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=error&device=serial:1'));
+        await expect(page.locator('header input').first()).toHaveValue('serial:1');
+        await chooseDevice(page);
+        await expect(page.getByText('Permission denied', {exact: true})).toBeVisible();
+        await expect(page.locator('header input').first()).toHaveValue('serial:1');
+    });
+
+    test('without a picker the device path stays editable and there is no add action', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=none&device=/dev/ttyTEST'));
+        const device = page.locator('header input').first();
+        await expect(device).toHaveValue('/dev/ttyTEST');
+        await expect(device).toHaveJSProperty('readOnly', false);
+        await expect(device).toHaveAttribute('placeholder', 'device path');
+        await page.getByRole('button', {name: 'Select port', exact: true}).click();
+        await expect(page.getByRole('button', {name: 'Add a device...', exact: true})).toHaveCount(0);
     });
 });
