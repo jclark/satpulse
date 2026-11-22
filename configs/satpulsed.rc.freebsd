@@ -18,6 +18,9 @@
 #   sysrc satpulsed_enable=YES
 #   service satpulsed start
 #
+# Like other FreeBSD services, satpulsed is not restarted if it exits, for
+# example when its USB receiver is unplugged; start it again with service.
+#
 # The plain satpulsed service reads its serial device from
 # /usr/local/etc/satpulse.toml. To run one daemon per receiver instead,
 # link the script once per serial port; the port name after "satpulsed_"
@@ -101,7 +104,7 @@ done
 
 pidfile="/var/run/${name}.pid"
 command="/usr/sbin/daemon"
-command_args="-f -R 5 -P ${pidfile} -o ${_logfile} \
+command_args="-f -P ${pidfile} -o ${_logfile} \
     /usr/local/sbin/satpulsed --wait ${device_args} ${config_args}"
 
 start_precmd="satpulsed_precmd"
