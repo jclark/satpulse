@@ -257,11 +257,20 @@ unaffected, and are the bulk of what Workbench is for.
 This branch starts from `non-unix`, which is already an ancestor. Merge that
 prerequisite again rather than cherry-picking if it moves.
 
-`Makefile.wasm` builds with standard Go for `js/wasm`, using `-trimpath` and
-`-ldflags '-s -w'`, copies the matching toolchain's `wasm_exec.js`, and assembles
+`Makefile.wasm` builds with standard Go for `js/wasm`, using `-trimpath`,
+`-ldflags '-s -w'` and `-tags nohttp`, copies the matching toolchain's `wasm_exec.js`, and assembles
 the site under `out/workbench-wasm`. `make -f Makefile.wasm compress` additionally
 writes gzip/Brotli assets and `sizes.json` using the new `measure.mjs` script.
 Plain rebuilds remove stale compressed counterparts.
+
+The `nohttp` tag leaves out `gps/app/ntrip/caster.go`. The browser shell
+reaches `gps/app/ntrip` through `session` and `stream` for stream
+configuration and source-table records, but never runs the caster, which is
+the build's only use of `net/http`; with it go the HTTP server and the TLS
+stack it roots. On the same source with Go 1.27 the tag took the module from
+14,640,217 to 12,920,332 bytes raw, 3,490,176 to 3,041,796 gzip and
+2,541,017 to 2,186,641 Brotli, about 14% compressed. Native builds do not set
+the tag, so the caster is unchanged there.
 
 The npm workspace adds `workbench-wasm` and `embed-workbench-wasm`. Frontend
 assets are generated under `cmd/satpulsewbwasm/dist`, which is ignored by Git;

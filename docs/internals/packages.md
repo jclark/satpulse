@@ -70,7 +70,7 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/stream` manages correction and packet streams. It pulls RTCM streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, pushes streams from the GPS receiver to a remote Ntrip network endpoint, and provides selected-GGA helpers for consumers that need current receiver position.
 
-`gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
+`gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`. The caster, the package's only use of `net/http`, is in `caster.go`, which a `nohttp` build leaves out; the browser Workbench builds that way.
 
 `gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener`, and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
 
