@@ -835,8 +835,13 @@ func TestPacketEventGating(t *testing.T) {
 					time.Sleep(100 * time.Millisecond)
 				}
 				synctest.Wait()
-				if got := fs.inPackets() > 0; got != tc.wantPacket {
-					t.Errorf("packet events emitted = %v, want %v", got, tc.wantPacket)
+				// Probe packets are outgoing, so only inbound ones show that
+				// the GGA packets themselves were emitted.
+				if tc.wantPacket && fs.inPackets() == 0 {
+					t.Errorf("no inbound packet events emitted")
+				}
+				if !tc.wantPacket && fs.count(EventPacket) != 0 {
+					t.Errorf("packet events emitted without a subscriber: %d", fs.count(EventPacket))
 				}
 				if fs.count(EventMsg) == 0 {
 					t.Errorf("no gps:msg events from the GGA packets")
@@ -1018,7 +1023,7 @@ func TestMsgFilePreselect(t *testing.T) {
 		name     string
 		vendors  []gpsreg.Vendor
 		detected string
-		want     string
+		expect   string
 	}{
 		{"asserted overrides detected", []gpsreg.Vendor{gpsreg.VendorZhongke}, "u-blox", "Zhongke"},
 		{"detected case insensitive", nil, "U-BLOX", "u-blox"},
@@ -1032,8 +1037,8 @@ func TestMsgFilePreselect(t *testing.T) {
 			if tc.detected != "" {
 				s.probe.Info.Set(gpsprot.ReceiverInfo{Vendor: tc.detected})
 			}
-			if got := s.MsgFilePreselect(names, tc.vendors); got != tc.want {
-				t.Fatalf("preselect = %q, want %q", got, tc.want)
+			if got := s.MsgFilePreselect(names, tc.vendors); got != tc.expect {
+				t.Errorf("preselect = %q, expect %q", got, tc.expect)
 			}
 		})
 	}

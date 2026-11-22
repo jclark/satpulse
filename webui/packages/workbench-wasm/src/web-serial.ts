@@ -63,9 +63,6 @@ export class WebSerial {
         if (this.closed) throw new Error('Serial port is closed.');
         const port = this.ports.get(device);
         if (!port) throw new Error('Choose a serial port first.');
-        // A device that re-enumerates, for example after a receiver reset,
-        // comes back as a new SerialPort; this one never opens again.
-        if (port.connected === false) throw new Error('The device has disconnected. Use "Add a device..." to choose it again.');
         const previous = this.available.get(port) ?? Promise.resolve();
         let release!: () => void;
         const held = new Promise<void>(resolve => { release = resolve; });
@@ -87,7 +84,16 @@ export class WebSerial {
             release();
         });
         this.connections.add(c);
-        await c.open(signal);
+        try {
+            await c.open(signal);
+        } catch (e) {
+            // A device that re-enumerates, for example after a receiver reset,
+            // comes back as a new SerialPort; this one never opens again. Try
+            // the open first: an idle Bluetooth port is not connected until
+            // opened.
+            if (port.connected === false) throw new Error('The device has disconnected. Use "Add a device..." to choose it again.');
+            throw e;
+        }
         return c;
     }
 
@@ -129,6 +135,7 @@ export class SerialConnection {
     private opened = false;
     private stopping = new AbortController();
     private reopenPending = false;
+    private pendingWrites = 0;
 
     constructor(private port: BrowserPort, private speed: number, private released: () => void) {}
 
@@ -166,7 +173,12 @@ export class SerialConnection {
 
     async write(b: Uint8Array): Promise<void> {
         if (this.stopped || !this.writer) throw new Error('Serial port is closed.');
-        await this.writer.write(b);
+        // Stopping ends the wait, so a write the device never accepts cannot
+        // block Disconnect; closing then aborts the write.
+        const written = this.writer.write(b);
+        this.pendingWrites++;
+        written.catch(() => {}).finally(() => { this.pendingWrites--; });
+        await waitFor(written, this.stopping.signal);
         // Web Serial has no tcdrain. Keep a conservative 8N1 transmit estimate.
         this.transmitUntil = Math.max(performance.now(), this.transmitUntil) + b.length * 10000 / this.speed;
     }
@@ -296,7 +308,8 @@ export class SerialConnection {
         try {
             await reader?.cancel().catch(() => {});
             await this.pumping;
-            await writer?.close().catch(() => {});
+            if (this.pendingWrites) await writer?.abort().catch(() => {});
+            else await writer?.close().catch(() => {});
         } finally {
             writer?.releaseLock();
             this.reader = undefined;
