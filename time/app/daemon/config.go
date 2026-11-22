@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"time"
@@ -239,10 +240,10 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
 	}
-	// An explicitly selected method never falls back, and kernel PPS reports
-	// only DCD changes, so the combination could only fail at startup.
-	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != gpsio.SerialPinDCD {
-		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = %q in the [serial] table, got %q`, gpsio.SerialPinDCD, cfg.Serial.PPS.Pin)}
+	// An explicitly selected method never falls back, so a pin kernel PPS
+	// cannot report could only fail at startup.
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && !kernelPPSPin(cfg.Serial.PPS.Pin) {
+		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table does not support pps.pin = %q in the [serial] table on %s`, cfg.Serial.PPS.Pin, runtime.GOOS)}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
@@ -261,6 +262,13 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 }
 
 // wiring is the pulse wiring the table describes.
+// kernelPPSPin reports whether kernel PPS can report changes of pin: the
+// Linux PPS line discipline reports only DCD, while the FreeBSD uart(4) and
+// ucom(4) drivers capture CTS or DCD.
+func kernelPPSPin(pin gpsio.SerialPin) bool {
+	return pin == gpsio.SerialPinDCD || (runtime.GOOS == "freebsd" && pin == gpsio.SerialPinCTS)
+}
+
 func (cfg SerialPPSConfig) wiring() serialpps.Wiring {
 	w := serialpps.Wiring{Pin: cfg.Pin}
 	if cfg.InvertPolarity {
