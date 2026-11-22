@@ -239,10 +239,10 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
 	}
-	// An explicitly selected method never falls back, and kernel PPS reports
-	// only DCD changes, so the combination could only fail at startup.
-	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != gpsio.SerialPinDCD {
-		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = %q in the [serial] table, got %q`, gpsio.SerialPinDCD, cfg.Serial.PPS.Pin)}
+	// An explicitly selected method never falls back, so a pin kernel PPS
+	// cannot watch here could only fail at startup.
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && !gpsio.KernelPPSSupportsPin(cfg.Serial.PPS.Pin) {
+		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table does not support pps.pin = %q in the [serial] table on this platform`, cfg.Serial.PPS.Pin)}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}

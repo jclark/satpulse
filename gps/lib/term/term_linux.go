@@ -254,6 +254,12 @@ func (t *unixTerm) NewModemControlPinWatch(pin ModemControlPin) (ModemControlPin
 	return newWaitPinWatch(t, pin)
 }
 
+// KernelPPSSupportsPin reports whether kernel PPS can watch pin. The PPS line
+// discipline reports only DCD changes.
+func KernelPPSSupportsPin(pin ModemControlPin) bool {
+	return pin == ModemDCD
+}
+
 // NewKernelModemControlPinWatch creates a watch that uses kernel PPS to
 // timestamp DCD transitions.
 func (t *unixTerm) NewKernelModemControlPinWatch(pin ModemControlPin) (ModemControlPinWatch, error) {
