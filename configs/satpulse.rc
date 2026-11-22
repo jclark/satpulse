@@ -1,7 +1,7 @@
 #!/bin/sh
 
 # FreeBSD rc.d service script for satpulsed, to be installed as
-# /usr/local/etc/rc.d/satpulsed.
+# /usr/local/etc/rc.d/satpulse.
 #
 # Create the unprivileged user it runs as, in the dialer group so that
 # it can open the serial ports:
@@ -13,27 +13,27 @@
 # use one daemon per receiver as described below. Then enable and start
 # the service:
 #
-#   sysrc satpulsed_enable=YES
-#   service satpulsed start
+#   sysrc satpulse_enable=YES
+#   service satpulse start
 #
 # Like other FreeBSD services, satpulsed is not restarted if it exits, for
 # example when its USB receiver is unplugged; start it again with service.
 #
-# The plain satpulsed service reads its serial device from
+# The plain satpulse service reads its serial device from
 # /usr/local/etc/satpulse.toml. To run one daemon per receiver instead,
-# link the script once per serial port; the port name after "satpulsed_"
+# link the script once per serial port; the port name after "satpulse_"
 # selects the device and the configuration file:
 #
-#   ln -s satpulsed /usr/local/etc/rc.d/satpulsed_cuaU0
-#   sysrc satpulsed_cuaU0_enable=YES
-#   service satpulsed_cuaU0 start
+#   ln -s satpulse /usr/local/etc/rc.d/satpulse_cuaU0
+#   sysrc satpulse_cuaU0_enable=YES
+#   service satpulse_cuaU0 start
 #
 # runs satpulsed with --serial-device /dev/cuaU0 and the first of
 # /usr/local/etc/satpulse.d/cuaU0.toml and /usr/local/etc/satpulse.toml
 # that exists.
 #
-# rc.conf variables, where NAME is satpulsed or satpulsed_<port>, with any
-# dot in <port> replaced by an underscore (satpulsed_cuaU0_1 for cuaU0.1):
+# rc.conf variables, where NAME is satpulse or satpulse_<port>, with any
+# dot in <port> replaced by an underscore (satpulse_cuaU0_1 for cuaU0.1):
 #
 # NAME_enable (bool):    Set to "YES" to enable the service. Default "NO".
 # NAME_flags (str):      Extra satpulsed options. Default "".
@@ -44,7 +44,7 @@
 # NAME_logfile (str):    Log file for satpulsed output.
 #                        Default "/var/log/NAME.log".
 
-# PROVIDE: satpulsed
+# PROVIDE: satpulse
 # REQUIRE: NETWORKING DAEMON cleanvar devfs
 # BEFORE: ntpd
 # KEYWORD: shutdown
@@ -69,9 +69,9 @@ case "$0" in
 	name="$0"
 	;;
 esac
-name="${name:-satpulsed}" ;
+name="${name:-satpulse}" ;
 name="${name##*/}" ;
-port="${name#satpulsed}"
+port="${name#satpulse}"
 port="${port#_}"
 # A multi-port USB serial device such as cuaU0.1 has a dot in its name,
 # which an rc.conf variable name cannot.
@@ -105,13 +105,13 @@ command="/usr/sbin/daemon"
 command_args="-f -P ${pidfile} -o ${_logfile} \
     /usr/local/sbin/satpulsed --wait ${device_args} ${config_args}"
 
-start_precmd="satpulsed_precmd"
+start_precmd="satpulse_precmd"
 
 # daemon(8) runs as ${name}_user, which cannot create files in /var/run
 # or /var/log, so pre-create its supervisor pidfile and log file, and the
 # default directory for satpulsed's own logs. rc.subr would put
 # ${name}_flags before command_args, on daemon(8); they belong to satpulsed.
-satpulsed_precmd()
+satpulse_precmd()
 {
 	[ -e "${pidfile}" ] || install -o "${_runuser}" -m 644 /dev/null "${pidfile}"
 	[ -e "${_logfile}" ] || install -o "${_runuser}" -m 640 /dev/null "${_logfile}"
