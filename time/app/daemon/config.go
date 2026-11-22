@@ -241,8 +241,18 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	}
 	// An explicitly selected method never falls back, so a pin kernel PPS
 	// cannot watch here could only fail at startup.
-	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && !gpsio.KernelPPSSupportsPin(cfg.Serial.PPS.Pin) {
-		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table does not support pps.pin = %q in the [serial] table on this platform`, cfg.Serial.PPS.Pin)}
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil {
+		pins := gpsio.KernelPPSPins()
+		if len(pins) == 0 {
+			return &configError{err: errors.New(`method = "kernel" in the [sample.serial.pps] table is not available on this platform`)}
+		}
+		if !slices.Contains(pins, cfg.Serial.PPS.Pin) {
+			quoted := make([]string, len(pins))
+			for i, p := range pins {
+				quoted[i] = fmt.Sprintf("%q", p)
+			}
+			return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin to be %s in the [serial] table, got %q`, strings.Join(quoted, " or "), cfg.Serial.PPS.Pin)}
+		}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
