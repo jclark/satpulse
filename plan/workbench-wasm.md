@@ -292,54 +292,67 @@ measurements; remeasure startup and size for release builds.
 
 ## Deployment
 
-Plan to publish the browser app at `https://app.satpulse.net/` from a separate
-GitHub Pages deployment repository. Application source stays in `satpulse`;
-the deployment repository holds the workflow, version configuration, and a
-README linking to the source. Build the wasm in Actions and deploy generated
-files as a Pages artifact, keeping wasm binaries out of Git history. This
-deployment has not been implemented. GitHub supports this through
-[custom Pages workflows](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages).
+The browser app is published at `https://workbench.satpulse.net/` from a
+separate deployment repository,
+[jclark/satpulse-workbench-web](https://github.com/jclark/satpulse-workbench-web).
+Application source stays in `satpulse`; the deployment repository holds a
+GitHub Actions workflow, a `deploy.json` file pinning the deployed builds, and
+a README. The workflow builds from a pinned commit and deploys the generated
+files as a Pages artifact through a
+[custom Pages workflow](https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages),
+keeping wasm binaries out of Git history.
 
-The site can host several versions under separate directories, for example:
+Deployments come from `workbench-web`, an integration branch in `satpulse`
+that receives only merges, so what the web app shows is chosen independently
+of `master` and of documentation deployments. Pushes to it run the two CI
+workflows that cover the browser build, Build (js/wasm) and Node tests.
 
-```text
-https://app.satpulse.net/0.3.0/
-https://app.satpulse.net/0.4.0-beta1/
-```
+The site serves two builds: production at the root and staging at
+`/staging/`. The workflow is run by hand with one of three actions:
 
-Each directory contains its own HTML, JavaScript, CSS, `wasm_exec.js`, and
-`workbench.wasm`. The existing frontend uses relative asset URLs, so it can
-load from a version directory. Always copy `wasm_exec.js` from the same Go
-toolchain that builds that version's wasm. Version-specific directories also
-keep assets from different releases apart in browser caches. The root may
-list available versions or redirect to a selected default; that choice remains
-open.
+- `stage` puts the head of `workbench-web` into staging, provided the required
+  CI workflows passed on that commit;
+- `promote` copies the staged build to production, once it has been tested at
+  `/staging/` with a receiver;
+- `redeploy` rebuilds from `deploy.json` as it is.
 
-Deployment configuration should map each published version to an immutable
-SatPulse source commit, recording the release tag and build toolchain versions.
-Use that checkout's frontend dependency lockfile. App releases are selected
-explicitly, independently of documentation deployments from `master`. Treat
-published version URLs as fixed builds; changes to a released build need a new
-build identifier rather than silently replacing its files.
+`deploy.json` records each build's source commit, Go version and output
+digest. The workflow commits it after each deployment, so its history shows
+what was in production when, and reverting a promotion rolls it back.
 
-Each deployment should assemble the complete site, including every retained
-version. Decide whether to rebuild those versions from pinned inputs or restore
-their outputs from persistent storage such as GitHub release assets. Ordinary
-Actions artifacts [expire](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)
-and should not be the only copy needed to retain an older version. The
-browser fetches files from Pages, not artifact download links.
+Each build is published in a directory named for its commit. The asset names
+(`app.js`, `style.css`, `wasm_exec.js`, `workbench.wasm`) are fixed, so the
+root and staging pages are copies of the build's `index.html` with a `<base>`
+element pointing into its directory: the page URLs stay the same, and a
+browser never combines cached files from different builds. Each build's
+`wasm_exec.js` comes from the Go toolchain that built its module.
 
-Configure the deployment repository's Pages custom domain as `app.satpulse.net`,
-[add a DNS CNAME](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site#configuring-a-subdomain)
-pointing to `jclark.github.io`, and enable HTTPS enforcement after certificate
-provisioning.
+The build is reproducible: two builds of the same commit with the same Go
+version are byte-identical, even from different checkout paths. So every
+deployment rebuilds both builds from their pinned commits instead of storing
+outputs, and a build whose digest is already recorded must reproduce it
+exactly. Production therefore serves the bytes that were tested in staging.
 
-Before publishing, verify startup from a version directory, including
-`?vendor=zhongke`, the wasm response's `application/wasm` content type, and
-actual transfer compression. Generated `.gz` or `.br` files alone do not
-establish how Pages will serve them. Account for the size of all retained
-versions against the [published-site limit](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)
-of 1 GB and the soft bandwidth limit of 100 GB/month.
+Pages serves every file with `Cache-Control: max-age=600` and an ETag and
+`Last-Modified` derived from the deployment time, not the file contents. Each
+deployment therefore makes every returning browser download `workbench.wasm`
+again, even when its bytes and URL are unchanged, so deployments are made by
+hand and kept infrequent. If that becomes a problem, the app could keep the
+wasm in Cache Storage, keyed by its commit-specific URL.
+
+DNS for `satpulse.net` is at Name.com: `workbench` is a CNAME to
+`jclark.github.io`, the deployment repository's Pages custom domain is
+`workbench.satpulse.net`, and HTTPS is enforced. The domain is verified for
+the account, which covers its immediate subdomains against takeover. A site
+deployed from Actions needs no `CNAME` file.
+
+Pages serves `workbench.wasm` as `application/wasm` and compresses it with
+gzip on request, but not with Brotli even when the browser offers it: the
+`nohttp` build transfers 3.15 MB of its 12.9 MB. Startup from `/staging/`,
+including `?vendor=zhongke`, works. The site is small against the
+[published-site limit](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)
+of 1 GB; traffic is still to be watched against the soft bandwidth limit of
+100 GB/month.
 
 ## Prerequisite branches
 
