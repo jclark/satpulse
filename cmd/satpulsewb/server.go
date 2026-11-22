@@ -365,8 +365,8 @@ var (
 // made as a new Connect starts cannot outlast that Connect.
 func (s *server) connection() connectionInfo {
 	s.connMu.Lock()
+	defer s.connMu.Unlock()
 	info := connectionInfo{State: s.sess.State(), Device: s.device, Speed: s.speed}
-	s.connMu.Unlock()
 	if speed := s.sess.Speed(); speed != 0 {
 		info.Speed = speed
 	}
