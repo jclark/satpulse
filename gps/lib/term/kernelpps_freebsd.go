@@ -37,10 +37,10 @@ type kernelPPSPinWatch struct {
 
 var _ KernelModemControlPinWatcher = (*unixTerm)(nil)
 
-// KernelPPSSupportsPin reports whether kernel PPS can watch pin. The uart(4)
-// and ucom(4) drivers capture CTS or DCD.
-func KernelPPSSupportsPin(pin ModemControlPin) bool {
-	return pin == ModemCTS || pin == ModemDCD
+// KernelPPSPins returns the pins kernel PPS can watch. The uart(4) and
+// ucom(4) drivers capture CTS or DCD.
+func KernelPPSPins() []ModemControlPin {
+	return []ModemControlPin{ModemCTS, ModemDCD}
 }
 
 // NewKernelModemControlPinWatch creates a watch that uses kernel PPS to
