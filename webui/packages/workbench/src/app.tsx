@@ -371,7 +371,9 @@ export function App() {
             setVelRows(evict);
             setTimeRows(evict);
         });
-        const offBaseARP = transport.eventsOn('gps:basearp', (evt: {stationID: number; ecef: [number, number, number]}) => {
+        // Both events come only from a correction stream, so a transport
+        // without the corrections capability is not asked for them.
+        const offBaseARP = transport.corrections && transport.eventsOn('gps:basearp', (evt: {stationID: number; ecef: [number, number, number]}) => {
             setBaseARPs(prev => {
                 const next = new Map(prev);
                 next.set(evt.stationID, evt.ecef);
@@ -381,7 +383,7 @@ export function App() {
         // The base ARP belongs to the active correction stream. Drop it when
         // a session starts fresh or stops, so a stale RTCM ARP doesn't linger
         // after switching to a source that sends no 1005/1006 (e.g. SPARTN).
-        const offCorrARP = transport.eventsOn('gps:corrections', (evt: {state: string}) => {
+        const offCorrARP = transport.corrections && transport.eventsOn('gps:corrections', (evt: {state: string}) => {
             if (evt.state === 'connecting' || evt.state === 'stopped') {
                 setBaseARPs(new Map());
             }
@@ -443,8 +445,8 @@ export function App() {
             offState();
             offInitialPos();
             offEpochPVT();
-            offBaseARP();
-            offCorrARP();
+            offBaseARP?.();
+            offCorrARP?.();
             offTime();
             offMsgSend();
             offResponse();
@@ -573,12 +575,12 @@ export function App() {
                 >
                     Packets
                 </button>
-                <button
+                {transport.corrections && <button
                     class={activeTab === 'corrections' ? tabBtnActive : tabBtnInactive}
                     onClick={() => handleTabChange('corrections')}
                 >
                     Corrections
-                </button>
+                </button>}
                 <button
                     class={configDisabled ? tabBtnDisabled : (activeTab === 'config' ? tabBtnActive : tabBtnInactive)}
                     onClick={() => { if (!configDisabled) handleTabChange('config'); }}
@@ -649,9 +651,9 @@ export function App() {
                 </div>
 
                 {/* Corrections tab */}
-                <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
-                    <CorrectionsPanel connState={connState} readOnly={readOnly} />
-                </div>
+                {transport.corrections && <div class={`h-full ${activeTab === 'corrections' ? '' : 'hidden'}`}>
+                    <CorrectionsPanel corrections={transport.corrections} connState={connState} readOnly={readOnly} />
+                </div>}
 
                 {/* Configuration tab */}
                 <div class={`h-full ${activeTab === 'config' ? '' : 'hidden'}`}>
