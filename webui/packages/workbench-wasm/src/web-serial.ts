@@ -129,6 +129,7 @@ export class SerialConnection {
     private opened = false;
     private stopping = new AbortController();
     private reopenPending = false;
+    private pendingWrites = 0;
 
     constructor(private port: BrowserPort, private speed: number, private released: () => void) {}
 
@@ -166,7 +167,12 @@ export class SerialConnection {
 
     async write(b: Uint8Array): Promise<void> {
         if (this.stopped || !this.writer) throw new Error('Serial port is closed.');
-        await this.writer.write(b);
+        // Stopping ends the wait, so a write the device never accepts cannot
+        // block Disconnect; closing then aborts the write.
+        const written = this.writer.write(b);
+        this.pendingWrites++;
+        written.catch(() => {}).finally(() => { this.pendingWrites--; });
+        await waitFor(written, this.stopping.signal);
         // Web Serial has no tcdrain. Keep a conservative 8N1 transmit estimate.
         this.transmitUntil = Math.max(performance.now(), this.transmitUntil) + b.length * 10000 / this.speed;
     }
@@ -296,7 +302,8 @@ export class SerialConnection {
         try {
             await reader?.cancel().catch(() => {});
             await this.pumping;
-            await writer?.close().catch(() => {});
+            if (this.pendingWrites) await writer?.abort().catch(() => {});
+            else await writer?.close().catch(() => {});
         } finally {
             writer?.releaseLock();
             this.reader = undefined;
