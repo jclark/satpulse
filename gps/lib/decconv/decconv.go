@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // MaxDecimals is the maximum supported number of decimal places.
@@ -18,7 +19,9 @@ var (
 	ErrOverflow = errors.New("overflow")
 
 	// Accept JSON number syntax only.
-	jsonNumberRE = regexp.MustCompile(`^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$`)
+	jsonNumberRE = sync.OnceValue(func() *regexp.Regexp {
+		return regexp.MustCompile(`^-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?$`)
+	})
 )
 
 // ParseInt64 parses s as a JSON number literal and returns the int64 nearest
@@ -34,7 +37,7 @@ func ParseInt64(s string, decimals int) (int64, error) {
 	if s == "" {
 		return 0, ErrInvalid
 	}
-	if !jsonNumberRE.MatchString(s) {
+	if !jsonNumberRE().MatchString(s) {
 		return 0, ErrInvalid
 	}
 

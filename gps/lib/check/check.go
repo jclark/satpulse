@@ -6,9 +6,12 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 )
 
-var ruleRE = regexp.MustCompile(`^(>=?|<=?)(.+)$`)
+var ruleRE = sync.OnceValue(func() *regexp.Regexp {
+	return regexp.MustCompile(`^(>=?|<=?)(.+)$`)
+})
 
 // Validate validates all fields in a struct based on their "check" tags.
 // Recursively validates nested structs and slices of structs, building qualified names using toml tags.
@@ -86,7 +89,7 @@ func validateField(name string, val reflect.Value, tag string) []string {
 		if part == "" {
 			continue
 		}
-		m := ruleRE.FindStringSubmatch(part)
+		m := ruleRE().FindStringSubmatch(part)
 		if m == nil {
 			panic(fmt.Sprintf("%s: invalid check tag: %q", name, part))
 		}

@@ -239,6 +239,9 @@ func (fs *fakeSink) count(name EventName) int {
 // at the end of the test, so a failing synctest test does not leave
 // blocked goroutines in the bubble.
 func testSession(t *testing.T, fs *fakeSink) *Session {
+	if !hasBcast {
+		t.Skip("no bcast to connect through")
+	}
 	s := New(slog.New(slog.DiscardHandler), fs, Options{})
 	t.Cleanup(s.Disconnect)
 	return s
@@ -510,6 +513,9 @@ func TestCancelledOpSkipsEndState(t *testing.T) {
 // cannot leave a stale final state event: an emission delayed past a
 // newer transition is followed by the newer state.
 func TestLifecycleEventOrder(t *testing.T) {
+	if !hasBcast {
+		t.Skip("no bcast to connect through")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		gs := &gatedSink{gate: make(chan struct{})}
 		s := New(slog.New(slog.DiscardHandler), gs, Options{})
@@ -545,6 +551,9 @@ func TestLifecycleEventOrder(t *testing.T) {
 }
 
 func TestStateEventReentrantDisconnect(t *testing.T) {
+	if !hasBcast {
+		t.Skip("no bcast to connect through")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		rs := &reentrantSink{}
 		s := New(slog.New(slog.DiscardHandler), rs, Options{})
@@ -740,6 +749,12 @@ func drainNtripCasterRequest(c net.Conn) {
 }
 
 func TestCorrectionsFailurePersistsAndRestartClearsError(t *testing.T) {
+	if !hasNet {
+		t.Skip("no network stack to serve corrections on")
+	}
+	if !hasBcast {
+		t.Skip("no bcast to pull corrections into")
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	conn := newFakeConn()
 	s := New(slog.New(slog.DiscardHandler), &fakeSink{}, Options{})

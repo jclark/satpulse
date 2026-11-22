@@ -27,7 +27,7 @@ func (dir testDir) Load(name string) (*Parsed, error) {
 // is given by slash-separated relative paths.
 func writeLibrary(t *testing.T, paths ...string) string {
 	t.Helper()
-	dir := t.TempDir()
+	dir := tempDir(t)
 	for _, p := range paths {
 		p = filepath.Join(dir, filepath.FromSlash(p))
 		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
@@ -196,7 +196,7 @@ func TestBuiltin(t *testing.T) {
 // loads includes natively, so a "../" include reaching outside the
 // search directory works, matching satpulsetool.
 func TestOSDirLoadIncludeEscapes(t *testing.T) {
-	root := t.TempDir()
+	root := tempDir(t)
 	if err := os.WriteFile(filepath.Join(root, "outside.toml"),
 		[]byte("[[line]]\ntext = \"OUTSIDE\"\ntag = \"out\"\n"), 0o644); err != nil {
 		t.Fatal(err)

@@ -45,6 +45,12 @@ type fixture struct {
 // top-level user registry; pass nil when no users are defined.
 func newFixture(t *testing.T, cfg Config, users map[string]string) *fixture {
 	t.Helper()
+	if !hasNet {
+		t.Skip("no network stack to serve the caster on")
+	}
+	if !hasBcast {
+		t.Skip("no bcast to stream from")
+	}
 	userSet := make(map[string]struct{}, len(users))
 	for name := range users {
 		userSet[name] = struct{}{}
@@ -654,6 +660,9 @@ func TestStreamDisconnectsLaggingClient(t *testing.T) {
 // streamLoop returns.  net.Pipe is unbuffered, so it models a socket
 // whose buffers are already full.
 func TestStreamLoopClientStops(t *testing.T) {
+	if !hasBcast {
+		t.Skip("no bcast to stream from")
+	}
 	synctest.Test(t, func(t *testing.T) {
 		var logs bytes.Buffer
 		lg := slog.New(slog.NewTextHandler(&logs, nil))

@@ -372,7 +372,11 @@ func primeSink(t *testing.T, client net.Conn, mw *mockWriter) {
 	t.Fatal("timed out warming up sink pipeline")
 }
 
-func newTestPull(src Source, mw *mockWriter, portLock gpsio.OutPortLock) *Pull {
+func newTestPull(t *testing.T, src Source, mw *mockWriter, portLock gpsio.OutPortLock) *Pull {
+	t.Helper()
+	if !hasBcast {
+		t.Skip("no bcast to pull into")
+	}
 	return NewPull(src, testLogger(), mw, portLock, []gpsprot.PacketFormat{rtcm.PacketFormat}, 0)
 }
 
@@ -382,7 +386,7 @@ func TestPacketsFlowToWriter(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(src, mw, portLock)
+	sink := newTestPull(t, src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	pkt1005 := makeRTCM(1005, 16)
@@ -745,7 +749,7 @@ func TestCleanShutdownOnCancel(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(src, mw, portLock)
+	sink := newTestPull(t, src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
@@ -771,7 +775,7 @@ func TestWriteErrorTriggersShutdown(t *testing.T) {
 	writeErr := errors.New("serial port gone")
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(src, mw, portLock)
+	sink := newTestPull(t, src, mw, portLock)
 	onState, connected := connectedCh()
 	done := make(chan error, 1)
 	go func() {
@@ -800,7 +804,7 @@ func TestWriteErrorEmitsFailed(t *testing.T) {
 	writeErr := errors.New("device is not writable")
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(src, mw, portLock)
+	sink := newTestPull(t, src, mw, portLock)
 	connected := make(chan struct{})
 	var once sync.Once
 	var mu sync.Mutex
@@ -853,7 +857,7 @@ func TestPortLockAcquiredPerWrite(t *testing.T) {
 	defer client.Close()
 	mw := &mockWriter{}
 	portLock := gpsio.NewOutPortLock(mockOutPort{})
-	sink := newTestPull(src, mw, portLock)
+	sink := newTestPull(t, src, mw, portLock)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	onState, connected := connectedCh()
@@ -892,7 +896,7 @@ func TestReconnectOnNetworkError(t *testing.T) {
 		rs := &reconnectSource{}
 		mw := &mockWriter{}
 		portLock := gpsio.NewOutPortLock(mockOutPort{})
-		sink := newTestPull(rs, mw, portLock)
+		sink := newTestPull(t, rs, mw, portLock)
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		var states []State
@@ -943,7 +947,7 @@ func TestReconnectOnNetworkError(t *testing.T) {
 
 func TestPullStopsOnFatalConnect(t *testing.T) {
 	src := &fatalSource{}
-	sink := newTestPull(src, &mockWriter{}, gpsio.NewOutPortLock(mockOutPort{}))
+	sink := newTestPull(t, src, &mockWriter{}, gpsio.NewOutPortLock(mockOutPort{}))
 	var gotFailed atomic.Bool
 	done := make(chan error, 1)
 	go func() {
@@ -1014,6 +1018,9 @@ type ntripListener struct {
 
 func newNtripListener(t *testing.T, respond func(conn net.Conn, req []byte)) *ntripListener {
 	t.Helper()
+	if !hasNet {
+		t.Skip("no network stack to listen on")
+	}
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("listen: %v", err)
@@ -1568,6 +1575,9 @@ func TestNtripCtxCancelMidHandshake(t *testing.T) {
 }
 
 func TestNtripConnectionRefused(t *testing.T) {
+	if !hasNet {
+		t.Skip("no network stack to connect with")
+	}
 	// Pick an unused port by listening and immediately closing.
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
