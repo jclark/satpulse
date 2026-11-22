@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/lib/check"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -220,6 +221,36 @@ jitter = 10.0`
 	t.Logf("correctly rejected unknown field: %v", err)
 }
 
+// TestValidateArrayEntries checks that Validate enforces the check tags on
+// the entries of the config's arrays of tables.
+func TestValidateArrayEntries(t *testing.T) {
+	tests := []struct {
+		name   string
+		modify func(*Config)
+		expect string
+	}{
+		{
+			name:   "outage duration",
+			modify: func(c *Config) { c.Fault.Outage = []OutageConfig{{Duration: -1}} },
+			expect: "fault.outage[0].duration: must be >= 0, got -1",
+		},
+		{
+			name:   "second outlier time",
+			modify: func(c *Config) { c.Fault.Outlier = []OutlierConfig{{}, {Time: -5}} },
+			expect: "fault.outlier[1].time: must be >= 0, got -5",
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			tc.modify(&cfg)
+			if err := cfg.Validate(); err == nil || err.Error() != tc.expect {
+				t.Errorf("Validate() = %v, want %q", err, tc.expect)
+			}
+		})
+	}
+}
+
 func TestLoadConfigMergesDefaults(t *testing.T) {
 	// Test that LoadConfig() merges TOML values with DefaultConfig()
 	// User specifies only sawtooth.amp, should get defaults for other fields
@@ -370,7 +401,7 @@ func TestWriteDefaultConfigRoundTrip(t *testing.T) {
 }
 
 func TestDefaultConfigArrayEntries(t *testing.T) {
-	// Test that default config has zero-valued array entries for documentation
+	// Test that default config has inactive array entries for documentation
 	cfg := DefaultConfig()
 
 	// PHC.Sinusoid should have one zero entry
@@ -403,6 +434,11 @@ func TestDefaultConfigArrayEntries(t *testing.T) {
 	}
 	if !cfg.GPS.IsZero() {
 		t.Errorf("GPS.IsZero() = false, want true (zero entries don't count)")
+	}
+	for _, s := range []any{cfg.PHC.Sinusoid[0], cfg.GPS.Sinusoid[0]} {
+		if errs := check.Validate(s); errs != nil {
+			t.Errorf("invalid default sinusoid %T: %v", s, errs)
+		}
 	}
 }
 

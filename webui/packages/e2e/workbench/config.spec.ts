@@ -234,15 +234,15 @@ test('time mode: validation flags bad coordinates and survey parameters', async 
   await inputAfter(page, 'Longitude (deg)').fill('100');
   await expect(applyButton(page)).toBeEnabled();
 
-  // Survey time of zero and a sub-millimetre accuracy are invalid.
+  // Survey time of zero and an accuracy below 0.1 mm are invalid.
   await page.getByRole('radio', { name: 'Survey-in' }).check();
   await page.getByPlaceholder('2000').fill('0');
   await expect(applyButton(page)).toBeDisabled();
   await page.getByPlaceholder('2000').fill('2000');
   await expect(applyButton(page)).toBeEnabled();
-  await inputAfter(page, 'Survey accuracy (m)').fill('0.0001');
+  await inputAfter(page, 'Survey accuracy (m)').fill('0.00009');
   await expect(applyButton(page)).toBeDisabled();
-  await inputAfter(page, 'Survey accuracy (m)').fill('20');
+  await inputAfter(page, 'Survey accuracy (m)').fill('0.0001');
   await expect(applyButton(page)).toBeEnabled();
 });
 

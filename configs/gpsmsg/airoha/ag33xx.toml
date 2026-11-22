@@ -1,0 +1,729 @@
+#:schema ../gpsmsg-schema.json
+# Airoha AG33xx PAIR configuration messages
+# Common to the AG3335 (such as the Quectel LC29H) and the AG3352 (such as
+# the Quectel LC76G). Included by ag3335.toml and ag3352.toml, which add the
+# commands of one chip, and by ../quectel/lc29h_lc76g.toml, which overrides
+# some of these tags with PQTM commands.
+#
+# Tested boards:
+#   LC29H(AA) A03S: Quectel LC29HAANR11A03S, AG3335M V3.0.4
+#   LC29H(AA) A05S: Quectel LC29HAANR11A05S, AG3335M V3.2.2
+#   LC29H(DA):      Quectel LC29HDANR11A03S_RSA, AG3335A V2.6.0
+#   LC76G(AB) A05S: Quectel LC76GABNR12A05S, AG3352Q V3.2.2
+# "Not tested" marks commands documented for both the LC29H and the LC76G
+# that were not sent because they disrupt the module.
+
+# Version
+
+# Verified PAIR020 response on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+[[nmea]]
+text = "PAIR020"
+tag = "get-version"
+description = "Get firmware version"
+
+# Chip variant: M on LC29H(AA), AD on LC29H(DA), Q on LC76G(AB)
+# Verified PAIR024 response on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+[[nmea]]
+text = "PAIR024"
+tag = "get-chip"
+description = "Get chip variant"
+
+# NMEA output rate (PAIR062): Type 0=GGA 1=GLL 2=GSA 3=GSV 4=RMC 5=VTG 6=ZDA.
+# Rate is the output interval in position fixes, 0 disables.
+# LC29H (BA, CA, DA, EA) only support types 0-5.
+# Verified ACK received for all types on LC29H(AA) A03S and LC29H(AA) A05S
+# Verified ACK received for types 0-5 on LC29H(DA); type 6 (ZDA) rejected
+# Verified each message appears after enable and stops after disable on
+# LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA) (except ZDA) and LC76G(AB) A05S
+
+# Verified PAIR063 response on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+# LC29H(DA) returns all rates in one sentence; the others return one sentence per type
+[[nmea]]
+text = "PAIR063,-1"
+tag = "get-nmea-rate"
+description = "Get output rate of all standard NMEA sentences"
+
+[[nmea]]
+text = "PAIR062,0,1"
+tag = "nmea-gga"
+description = "Enable NMEA GGA message"
+[[nmea]]
+text = "PAIR062,0,0"
+tag = "nmea-gga-off"
+description = "Disable NMEA GGA message"
+
+[[nmea]]
+text = "PAIR062,1,1"
+tag = "nmea-gll"
+description = "Enable NMEA GLL message"
+[[nmea]]
+text = "PAIR062,1,0"
+tag = "nmea-gll-off"
+description = "Disable NMEA GLL message"
+
+[[nmea]]
+text = "PAIR062,2,1"
+tag = "nmea-gsa"
+description = "Enable NMEA GSA message"
+[[nmea]]
+text = "PAIR062,2,0"
+tag = "nmea-gsa-off"
+description = "Disable NMEA GSA message"
+
+[[nmea]]
+text = "PAIR062,3,1"
+tag = "nmea-gsv"
+description = "Enable NMEA GSV message"
+[[nmea]]
+text = "PAIR062,3,0"
+tag = "nmea-gsv-off"
+description = "Disable NMEA GSV message"
+
+[[nmea]]
+text = "PAIR062,4,1"
+tag = "nmea-rmc"
+description = "Enable NMEA RMC message"
+[[nmea]]
+text = "PAIR062,4,0"
+tag = "nmea-rmc-off"
+description = "Disable NMEA RMC message"
+
+[[nmea]]
+text = "PAIR062,5,1"
+tag = "nmea-vtg"
+description = "Enable NMEA VTG message"
+[[nmea]]
+text = "PAIR062,5,0"
+tag = "nmea-vtg-off"
+description = "Disable NMEA VTG message"
+
+# Rejected with "sending failed" on LC29H(DA)
+[[nmea]]
+text = "PAIR062,6,1"
+tag = "nmea-zda"
+description = "Enable NMEA ZDA message"
+[[nmea]]
+text = "PAIR062,6,0"
+tag = "nmea-zda-off"
+description = "Disable NMEA ZDA message"
+
+# Disable GGA, GLL, GSA, GSV, RMC and VTG, the sentences output by default
+# Verified no standard NMEA messages remain on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+[[nmea]]
+text = "PAIR062,0,0"
+tag = "nmea-off"
+description = "Disable standard NMEA messages"
+[[nmea]]
+text = "PAIR062,1,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PAIR062,2,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PAIR062,3,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PAIR062,4,0"
+tag = "nmea-off"
+[[nmea]]
+text = "PAIR062,5,0"
+tag = "nmea-off"
+
+# Enable RMC, GGA, GSV and GSA (messages used by satpulse daemon)
+# Verified RMC, GGA, GSV and GSA appear after nmea-off on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+[[nmea]]
+text = "PAIR062,4,1"
+tag = "nmea-daemon"
+description = "Enable NMEA messages for satpulse daemon"
+[[nmea]]
+text = "PAIR062,0,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "PAIR062,3,1"
+tag = "nmea-daemon"
+[[nmea]]
+text = "PAIR062,2,1"
+tag = "nmea-daemon"
+
+# NMEA version (PAIR100,<NMEA_Mode>,<Res>): 1=V4.10, 2=V3.01
+# LC29H (BA, CA, DA, EA) always output V4.10.
+# Verified ACK received and get-nmea-ver returns the new value on
+# LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified per-constellation GSA and RMC without navigational status after
+# nmea-ver-3 on LC29H(AA) A03S and LC29H(AA) A05S
+# Verified output unchanged after nmea-ver-3 on LC29H(DA)
+# Verified ACK received and get-nmea-ver returns the new value on
+# LC76G(AB) A05S, but output stays V4.10 after nmea-ver-3; its factory
+# setting reads back as 0
+
+[[nmea]]
+text = "PAIR101"
+tag = "get-nmea-ver"
+description = "Get NMEA output version"
+[[nmea]]
+text = "PAIR100,1,0"
+tag = "nmea-ver-410"
+description = "Set NMEA version to 4.10"
+[[nmea]]
+text = "PAIR100,2,0"
+tag = "nmea-ver-3"
+description = "Set NMEA version to 3.01"
+
+# Fix interval (PAIR050,<Time ms>)
+# On LC29H (AA) an interval below 1000 ms needs the GNSS system powered off
+# and the configuration saved, and LC29H (DA) supports only 1000 ms. On
+# LC76G the range is 100-1000 ms and a new interval restarts the GNSS
+# system, keeping the configuration.
+# Verified PAIR051 response on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+# Verified PAIR011 restart, get-fix-rate returns 500 and GGA comes at 2 Hz
+# after fix-rate-2 on LC76G(AB) A05S; fix-rate-1 restores 1 Hz
+[[nmea]]
+text = "PAIR051"
+tag = "get-fix-rate"
+description = "Get position fix interval (ms)"
+[[nmea]]
+text = "PAIR050,1000"
+tag = "fix-rate-1"
+description = "Set fix rate to 1 Hz"
+[[nmea]]
+text = "PAIR050,500"
+tag = "fix-rate-2"
+description = "Set fix rate to 2 Hz"
+[[nmea]]
+text = "PAIR050,200"
+tag = "fix-rate-5"
+description = "Set fix rate to 5 Hz"
+[[nmea]]
+text = "PAIR050,100"
+tag = "fix-rate-10"
+description = "Set fix rate to 10 Hz"
+
+# Elevation mask (PAIR072, degrees); factory setting 5
+# Verified ACK received and get-min-elev returns the new value on
+# LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA) and LC76G(AB) A05S
+# Verified no satellite below 30 degrees in GSA after min-elev-30 on LC29H(AA) A05S
+
+[[nmea]]
+text = "PAIR073"
+tag = "get-min-elev"
+description = "Get elevation mask"
+[[nmea]]
+text = "PAIR072,0"
+tag = "min-elev-0"
+description = "Set elevation mask to 0 degrees"
+[[nmea]]
+text = "PAIR072,5"
+tag = "min-elev-5"
+description = "Set elevation mask to 5 degrees"
+[[nmea]]
+text = "PAIR072,10"
+tag = "min-elev-10"
+description = "Set elevation mask to 10 degrees"
+[[nmea]]
+text = "PAIR072,15"
+tag = "min-elev-15"
+description = "Set elevation mask to 15 degrees"
+[[nmea]]
+text = "PAIR072,20"
+tag = "min-elev-20"
+description = "Set elevation mask to 20 degrees"
+[[nmea]]
+text = "PAIR072,25"
+tag = "min-elev-25"
+description = "Set elevation mask to 25 degrees"
+[[nmea]]
+text = "PAIR072,30"
+tag = "min-elev-30"
+description = "Set elevation mask to 30 degrees"
+[[nmea]]
+text = "PAIR072,35"
+tag = "min-elev-35"
+description = "Set elevation mask to 35 degrees"
+[[nmea]]
+text = "PAIR072,40"
+tag = "min-elev-40"
+description = "Set elevation mask to 40 degrees"
+[[nmea]]
+text = "PAIR072,45"
+tag = "min-elev-45"
+description = "Set elevation mask to 45 degrees"
+
+# GNSS search mode (PAIR066): GPS,GLONASS,Galileo,BDS,QZSS,NavIC.
+# Each board accepts only certain combinations and rejects others with a
+# parameter error. GPS+GLONASS+Galileo+BDS+QZSS is the factory setting on
+# all tested boards. A hot start (PAIR004) follows PAIR066 because an
+# LC29H keeps using the old constellations until it restarts.
+# Verified GSV shows only GPS and BDS after gnss-gps-bds on LC29H(AA) A03S and LC29H(AA) A05S
+# Verified GSV unchanged after gnss-gps-bds on LC29H(DA): the LC29H(DA)
+# changes constellations only after the configuration is saved and the
+# module restarted
+# On LC76G a new constellation setting restarts the GNSS system by itself.
+
+# Verified PAIR067 response on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+[[nmea]]
+text = "PAIR067"
+tag = "get-gnss"
+description = "Get GNSS search mode"
+
+# Verified ACK received on LC29H(AA) A05S
+# Rejected on LC29H(AA) A03S and LC29H(DA)
+# Verified GSV shows only GPS and get-gnss returns 1,0,0,0,1,0 after
+# gnss-gps on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR066,1,0,0,0,1,0"
+tag = "gnss-gps"
+description = "Enable GPS and QZSS"
+[[nmea]]
+text = "PAIR004"
+tag = "gnss-gps"
+
+# Verified ACK received on LC29H(AA) A03S and LC29H(AA) A05S
+# Rejected on LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR066,0,0,0,1,0,0"
+tag = "gnss-bds"
+description = "Enable BDS only"
+[[nmea]]
+text = "PAIR004"
+tag = "gnss-bds"
+
+# Verified ACK received on LC29H(AA) A05S
+# Rejected on LC29H(AA) A03S and LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR066,1,1,0,0,1,0"
+tag = "gnss-gps-glo"
+description = "Enable GPS, GLONASS and QZSS"
+[[nmea]]
+text = "PAIR004"
+tag = "gnss-gps-glo"
+
+# Verified ACK received on LC29H(AA) A03S and LC29H(AA) A05S
+# Rejected on LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR066,1,0,1,0,1,0"
+tag = "gnss-gps-gal"
+description = "Enable GPS, Galileo and QZSS"
+[[nmea]]
+text = "PAIR004"
+tag = "gnss-gps-gal"
+
+# Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR066,1,0,0,1,1,0"
+tag = "gnss-gps-bds"
+description = "Enable GPS, BDS and QZSS"
+[[nmea]]
+text = "PAIR004"
+tag = "gnss-gps-bds"
+
+# Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR066,1,0,1,1,1,0"
+tag = "gnss-gps-gal-bds"
+description = "Enable GPS, Galileo, BDS and QZSS"
+[[nmea]]
+text = "PAIR004"
+tag = "gnss-gps-gal-bds"
+
+# Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified GPGSV, GLGSV, GAGSV and GBGSV return after gnss-all on LC29H(AA) A03S and LC29H(AA) A05S
+# Verified get-gnss returns the new setting and GSV shows only the
+# selected constellations on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR066,1,1,1,1,1,0"
+tag = "gnss-all"
+description = "Enable GPS, GLONASS, Galileo, BDS and QZSS"
+[[nmea]]
+text = "PAIR004"
+tag = "gnss-all"
+
+# PPS configuration query: answered by the AG3335M and AG3352Q but not the
+# AG3335A
+# Verified PAIR763 response on LC29H(AA) A03S, LC29H(AA) A05S and
+# LC76G(AB) A05S
+# Rejected as unsupported on LC29H(DA)
+[[nmea]]
+text = "PAIR763"
+tag = "get-pps"
+description = "Get PPS configuration"
+
+# PPS (PAIR752,<PPSType>,<PPSPulseWidth ms>): PPSType 0=disable,
+# 1=after first fix, 2=3D fix only, 3=2D/3D fix only, 4=always.
+# For LC29H (BA, CA) Quectel recommends keeping the default PPSType of 1.
+# Verified ACK received on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified PAIR763 returns the new setting on LC29H(AA) A03S and LC29H(AA) A05S
+# Verified PPS pulses stop after pps-off and resume after pps on
+# LC29H(AA) A03S, LC29H(DA) A03S_RSA and LC76G(AB) A05S
+# Verified PAIR763 returns the new setting on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR752,2,100"
+tag = "pps"
+description = "Enable PPS output (100 ms pulse, 3D fix only)"
+[[nmea]]
+text = "PAIR752,0,100"
+tag = "pps-off"
+description = "Disable PPS output"
+
+# RTCM output (PAIR432): -1=off, 0=MSM4, 1=MSM7, for each enabled
+# constellation (GPS, GLONASS, Galileo, QZSS, BDS).
+# Verified ACK received for all RTCM tags on LC29H(AA) A03S, LC29H(AA) A05S,
+# LC29H(DA) and LC76G(AB) A05S
+
+# Verified PAIR433 response on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+[[nmea]]
+text = "PAIR433"
+tag = "get-rtcm-out"
+description = "Get RTCM MSM output mode"
+
+# Verified 1074, 1084, 1094, 1114, 1124 appear on LC29H(AA) A03S, LC29H(AA) A05S,
+# LC29H(DA) and LC76G(AB) A05S
+[[nmea]]
+text = "PAIR432,0"
+tag = "rtcm-msm4"
+description = "Enable RTCM MSM4 output"
+
+# Verified 1077, 1087, 1097, 1117, 1127 appear on LC29H(AA) A03S, LC29H(AA) A05S,
+# LC29H(DA) and LC76G(AB) A05S
+[[nmea]]
+text = "PAIR432,1"
+tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 output"
+
+# RTCM antenna reference point (1005)
+# Verified 1005 appears after rtcm-arp and stops after rtcm-arp-off on
+# LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified 1005 appears after rtcm-arp and get-rtcm-arp returns 1 on
+# LC76G(AB) A05S
+[[nmea]]
+text = "PAIR435"
+tag = "get-rtcm-arp"
+description = "Get RTCM ARP (1005) output setting"
+[[nmea]]
+text = "PAIR434,1"
+tag = "rtcm-arp"
+description = "Enable RTCM ARP message (1005)"
+[[nmea]]
+text = "PAIR434,0"
+tag = "rtcm-arp-off"
+description = "Disable RTCM ARP message (1005)"
+
+# RTCM ephemeris (1019, 1020, 1042, 1044, 1046)
+# Verified 1019, 1020, 1042, 1044 and 1046 appear after rtcm-eph and stop
+# after rtcm-eph-off on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified 1019, 1020, 1042 and 1046 appear after rtcm-eph and
+# get-rtcm-eph returns 1 on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR437"
+tag = "get-rtcm-eph"
+description = "Get RTCM ephemeris output setting"
+[[nmea]]
+text = "PAIR436,1"
+tag = "rtcm-eph"
+description = "Enable RTCM ephemeris messages"
+[[nmea]]
+text = "PAIR436,0"
+tag = "rtcm-eph-off"
+description = "Disable RTCM ephemeris messages"
+
+# RTCM reference station ID (range 0-4095, factory setting 3335 on AG3335,
+# 3352 on AG3352Q)
+# Verified get-rtcm-base-id returns the new ID and RTCM MSM4 messages carry
+# it after rtcm-base-id-1234 on LC29H(AA) A03S, LC29H(AA) A05S and LC29H(DA)
+# Verified get-rtcm-base-id returns the new ID on LC76G(AB) A05S
+
+[[nmea]]
+text = "PAIR443"
+tag = "get-rtcm-base-id"
+description = "Get RTCM reference station ID"
+[[nmea]]
+text = "PAIR442,0"
+tag = "rtcm-base-id-0"
+description = "Set RTCM reference station ID to 0"
+[[nmea]]
+text = "PAIR442,1234"
+tag = "rtcm-base-id-1234"
+description = "Set RTCM reference station ID to 1234"
+
+# Disable all RTCM output
+# Verified no RTCM output remains on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+[[nmea]]
+text = "PAIR432,-1"
+tag = "rtcm-off"
+description = "Disable all RTCM messages"
+[[nmea]]
+text = "PAIR434,0"
+tag = "rtcm-off"
+[[nmea]]
+text = "PAIR436,0"
+tag = "rtcm-off"
+
+# UART (PAIR864/PAIR865,<PortType>,<PortIndex>): port type 0 = UART
+# A new baud rate is stored at once and takes effect when the module next
+# powers up; a restart of the GNSS system does not apply it. Restoring the
+# factory settings (PQTMRESTOREPAR or PAIR514) does not reset it.
+# Verified PAIR865 response on LC29H(AA) A03S, LC29H(AA) A05S, LC29H(DA)
+# and LC76G(AB) A05S
+# Verified get-uart returns 230400 at once and the module runs at 230400
+# after a power cycle following speed-230400 on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR865,0,0"
+tag = "get-uart"
+description = "Get UART baud rate"
+[[nmea]]
+text = "PAIR864,0,0,9600"
+tag = "speed-9600"
+description = "Set baud rate to 9600"
+[[nmea]]
+text = "PAIR864,0,0,19200"
+tag = "speed-19200"
+description = "Set baud rate to 19200"
+[[nmea]]
+text = "PAIR864,0,0,38400"
+tag = "speed-38400"
+description = "Set baud rate to 38400"
+[[nmea]]
+text = "PAIR864,0,0,57600"
+tag = "speed-57600"
+description = "Set baud rate to 57600"
+[[nmea]]
+text = "PAIR864,0,0,115200"
+tag = "speed-115200"
+description = "Set baud rate to 115200"
+[[nmea]]
+text = "PAIR864,0,0,230400"
+tag = "speed-230400"
+description = "Set baud rate to 230400"
+[[nmea]]
+text = "PAIR864,0,0,460800"
+tag = "speed-460800"
+description = "Set baud rate to 460800"
+[[nmea]]
+text = "PAIR864,0,0,921600"
+tag = "speed-921600"
+description = "Set baud rate to 921600"
+
+# Restarts
+# Verified ACK received and PAIR011 restart message on LC29H(AA) A03S,
+# LC29H(AA) A05S and LC29H(DA)
+# Verified RMC status V after warm-start and cold-start on LC29H(AA) A03S,
+# LC29H(AA) A05S and LC29H(DA)
+# Verified ACK received and PAIR011 restart message on LC76G(AB) A05S; the
+# fix returned within 1 s after hot-start and 2.4 s after warm-start
+
+[[nmea]]
+text = "PAIR004"
+tag = "hot-start"
+description = "Hot start (use available data in NVRAM)"
+[[nmea]]
+text = "PAIR005"
+tag = "warm-start"
+description = "Warm start (do not use ephemeris)"
+[[nmea]]
+text = "PAIR006"
+tag = "cold-start"
+description = "Cold start (do not use position, almanac or ephemeris)"
+
+# GNSS system power. The sleep lock (PAIR382) keeps the module responding
+# to commands while the GNSS system is off.
+# Verified output stops after subsys-off and the fix returns after
+# subsys-on on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR382,1"
+tag = "subsys-off"
+description = "Power off the GNSS system"
+delay = 0.5
+[[nmea]]
+text = "PAIR003"
+tag = "subsys-off"
+[[nmea]]
+text = "PAIR002"
+tag = "subsys-on"
+description = "Power on the GNSS system"
+delay = 0.5
+[[nmea]]
+text = "PAIR382,0"
+tag = "subsys-on"
+
+# Minimum SNR of satellites used (PAIR058, dB, 9-37); factory setting 9
+# Verified ACK received and get-min-snr returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-min-snr returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
+[[nmea]]
+text = "PAIR059"
+tag = "get-min-snr"
+description = "Get minimum SNR of satellites used"
+[[nmea]]
+text = "PAIR058,9"
+tag = "min-snr-9"
+description = "Set minimum SNR of satellites used to 9 dB"
+[[nmea]]
+text = "PAIR058,15"
+tag = "min-snr-15"
+description = "Set minimum SNR of satellites used to 15 dB"
+
+# Static navigation speed threshold (PAIR070, dm/s, 0-20; 0 disables);
+# factory setting 0
+# Verified ACK received and get-static-speed returns the new value on
+# LC76G(AB) A05S
+# Verified ACK received and get-static-speed returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
+[[nmea]]
+text = "PAIR071"
+tag = "get-static-speed"
+description = "Get static navigation speed threshold (dm/s)"
+[[nmea]]
+text = "PAIR070,0"
+tag = "static-speed-off"
+description = "Disable static navigation speed threshold"
+[[nmea]]
+text = "PAIR070,4"
+tag = "static-speed-4"
+description = "Set static navigation speed threshold to 0.4 m/s"
+
+# Active interference cancellation (PAIR074); factory setting on
+# Verified ACK received and get-aic returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-aic returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
+[[nmea]]
+text = "PAIR075"
+tag = "get-aic"
+description = "Get active interference cancellation status"
+[[nmea]]
+text = "PAIR074,1"
+tag = "aic"
+description = "Enable active interference cancellation"
+[[nmea]]
+text = "PAIR074,0"
+tag = "aic-off"
+description = "Disable active interference cancellation"
+
+# Navigation mode (PAIR080): 0=normal, 4=stationary; factory setting 0
+# Verified ACK received and get-nav-mode returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-nav-mode returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
+[[nmea]]
+text = "PAIR081"
+tag = "get-nav-mode"
+description = "Get navigation mode"
+[[nmea]]
+text = "PAIR080,0"
+tag = "nav-mode-normal"
+description = "Set normal navigation mode"
+[[nmea]]
+text = "PAIR080,4"
+tag = "nav-mode-stationary"
+description = "Set stationary navigation mode"
+
+# Binary debug log output (PAIR086)
+# Verified binary output appears and get-debug-log returns 1 after
+# debug-log on LC76G(AB) A05S
+# Verified get-debug-log response on LC29H(DA)
+[[nmea]]
+text = "PAIR087"
+tag = "get-debug-log"
+description = "Get debug log output setting"
+[[nmea]]
+text = "PAIR086,1"
+tag = "debug-log"
+description = "Enable binary debug log output"
+[[nmea]]
+text = "PAIR086,0"
+tag = "debug-log-off"
+description = "Disable binary debug log output"
+
+# Jamming detection (PAIR391), reported in PAIRSPF sentences
+# Verified PAIRSPF appears after jamming-detect and stops after
+# jamming-detect-off on LC76G(AB) A05S
+# Verified ACK received on LC29H(DA)
+[[nmea]]
+text = "PAIR391,1"
+tag = "jamming-detect"
+description = "Enable jamming detection (PAIRSPF)"
+[[nmea]]
+text = "PAIR391,0"
+tag = "jamming-detect-off"
+description = "Disable jamming detection"
+
+# DGPS correction source (PAIR400): 0=none, 2=SBAS, 3=SLAS; factory setting 2
+# Verified ACK received and get-dgps returns the new value on LC76G(AB) A05S
+# Verified GGA quality 1 after dgps-off on LC76G(AB) A05S; quality 2 returns
+# some minutes after dgps-sbas
+# Verified ACK received and get-dgps returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
+[[nmea]]
+text = "PAIR401"
+tag = "get-dgps"
+description = "Get DGPS correction source"
+[[nmea]]
+text = "PAIR400,2"
+tag = "dgps-sbas"
+description = "Use SBAS as DGPS correction source"
+[[nmea]]
+text = "PAIR400,0"
+tag = "dgps-off"
+description = "Use no DGPS correction source"
+
+# SBAS satellite search (PAIR410); factory setting on
+# Verified ACK received and get-sbas returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-sbas returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
+[[nmea]]
+text = "PAIR411"
+tag = "get-sbas"
+description = "Get SBAS search status"
+[[nmea]]
+text = "PAIR410,1"
+tag = "sbas"
+description = "Enable SBAS satellite search"
+[[nmea]]
+text = "PAIR410,0"
+tag = "sbas-off"
+description = "Disable SBAS satellite search"
+
+# SLAS (PAIR420); factory setting off
+# Verified ACK received and get-slas returns the new value on LC76G(AB) A05S
+# Verified ACK received and get-slas returns the new value on LC29H(AA) A03S
+# and LC29H(DA)
+[[nmea]]
+text = "PAIR421"
+tag = "get-slas"
+description = "Get SLAS status"
+[[nmea]]
+text = "PAIR420,1"
+tag = "slas"
+description = "Enable SLAS"
+[[nmea]]
+text = "PAIR420,0"
+tag = "slas-off"
+description = "Disable SLAS"
+
+# Save navigation data from RTC RAM to NVM
+# Verified ACK received on LC29H(DA); the effect is not tested
+[[nmea]]
+text = "PAIR511"
+tag = "save-nav-data"
+description = "Save navigation data to NVM"
+
+# Save configuration to NVM
+# Verified the saved elevation mask survives a power cycle on LC76G(AB) A05S
+[[nmea]]
+text = "PAIR513"
+tag = "save"
+description = "Save configuration to NVM"

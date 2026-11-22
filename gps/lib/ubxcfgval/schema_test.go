@@ -5,11 +5,10 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
-
-	"golang.org/x/exp/slices"
 )
 
 type marshalTestCase struct {

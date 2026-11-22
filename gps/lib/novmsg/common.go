@@ -94,11 +94,24 @@ func (ts TimeStatus) MarshalText() ([]byte, error) {
 }
 
 // MsgHdr is the parsed message header, parameterized on port type.
-// OEM7/ByNav use Port, Unicore uses UnicorePort, SinoGNSS uses SinoPort.
+// OEM7, Bynav and SinoGNSS use Port; Unicore uses UnicorePort.
 type MsgHdr[P ~uint8] struct {
-	Port P
+	// MessageType is the message type byte of the binary header: bits 0-4
+	// are the measurement source (bit 0 set for the secondary antenna of a
+	// dual antenna receiver), bits 5-6 the format and bit 7 the response
+	// bit. The format bits give the format the message was parsed from;
+	// a message parsed from ASCII has only the ASCII format bits set.
+	MessageType byte
+	Port        P
 	CommonHdr
 }
+
+// Message formats in bits 5-6 of MsgHdr.MessageType.
+const (
+	MsgFormatMask   byte = 0x60
+	MsgFormatBinary byte = 0x00
+	MsgFormatASCII  byte = 0x20
+)
 
 type CommonHdr struct {
 	Sequence           uint16     // Sequence number
@@ -196,6 +209,13 @@ func BinRegistry() map[MsgID]func() MsgBody { return msgIDMap }
 
 // AsciiRegistry returns the global ASCII message constructor map (by wire name).
 func AsciiRegistry() map[string]func() MsgBody { return msgNameMap }
+
+// regOtherMsg registers the name of a message that has no decoder, and
+// its ASCII wire name, so that AsciiMsgID knows it.
+func regOtherMsg(id MsgID, name string) {
+	idNameMap[id] = name
+	nameIDMap[name+"A"] = id
+}
 
 // regMsg registers a message type with its ID and name
 func regMsg[T any, PT interface {

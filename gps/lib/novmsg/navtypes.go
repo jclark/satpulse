@@ -80,7 +80,7 @@ func (s StationID) MarshalText() ([]byte, error) {
 	return out, nil
 }
 
-// SolStatus represents the solution status in NovAtel OEM7/ByNav messages.
+// SolStatus represents the solution status in NovAtel OEM7/Bynav messages.
 type SolStatus uint32
 
 const (
@@ -192,7 +192,7 @@ func (s SolStatus) MarshalText() ([]byte, error) {
 	return []byte(s.String()), nil
 }
 
-// PosType represents the position or velocity type in NovAtel OEM7/ByNav messages.
+// PosType represents the position or velocity type in NovAtel OEM7/Bynav messages.
 type PosType uint32
 
 // PosType constants are untyped so they work directly with any vendor's
@@ -201,15 +201,15 @@ const (
 	PosNone            = 0
 	PosFixedPos        = 1
 	PosFixedHeight     = 2
-	PosFloatConv       = 4  // OEM7/ByNav only
-	PosWideLane        = 5  // OEM7/ByNav only
-	PosNarrowLane      = 6  // OEM7/ByNav only
+	PosFloatConv       = 4  // OEM7/Bynav only
+	PosWideLane        = 5  // OEM7/Bynav only
+	PosNarrowLane      = 6  // OEM7/Bynav only
 	PosDopplerVelocity = 8
 	PosSingle          = 16
 	PosPSRDiff         = 17
-	PosWAAS            = 18 // OEM7/ByNav name
+	PosWAAS            = 18 // OEM7/Bynav name
 	PosSBAS            = 18 // Unicore/SinoGNSS name (same value)
-	PosPropagated      = 19 // OEM7/ByNav only
+	PosPropagated      = 19 // OEM7/Bynav only
 	PosL1Float         = 32
 	PosIonoFreeFloat   = 33
 	PosNarrowFloat     = 34
@@ -508,7 +508,8 @@ func (p SinoPosType) MarshalText() ([]byte, error) {
 
 // Pos contains the geodetic position fields shared between NovAtel BESTPOS
 // and Unicore BESTNAV. The binary layout is identical across vendors;
-// the SolStatus (S) and PosType (P) enum types vary by vendor.
+// the SolStatus (S) and PosType (P) enum types vary by vendor. The four
+// bytes that follow in each log differ by vendor: PosFlags or SinoPosFlags.
 type Pos[S, P ~uint32] struct {
 	PSolStatus    S         // position solution status
 	PosType       P         // position type
@@ -527,10 +528,25 @@ type Pos[S, P ~uint32] struct {
 	NumSolnSVs    uint8     // satellites in solution
 	NumSolnL1SVs  uint8     // satellites with L1/E1/B1 signals in solution
 	NumSolnMulti  uint8     // satellites with multi-frequency in solution
-	Reserved      uint8     // reserved
-	ExtSolStat    HexByte   // extended solution status
-	GalBDS3Sig    HexByte   // Galileo/BDS3 signal mask
-	GPSGLOBDS2Sig HexByte   // GPS/GLONASS/BDS2 signal mask
+}
+
+// PosFlags contains the four bytes that follow the Pos or XYZ fields in
+// OEM7, Bynav and Unicore logs.
+type PosFlags struct {
+	Reserved      uint8   // reserved
+	ExtSolStat    HexByte // extended solution status
+	GalBDS3Sig    HexByte // Galileo/BDS3 signal mask
+	GPSGLOBDS2Sig HexByte // GPS/GLONASS/BDS2 signal mask
+}
+
+// SinoPosFlags contains the four bytes that follow the Pos or XYZ fields in
+// SinoGNSS logs. Unlike PosFlags, they are printed in decimal in ASCII, and
+// the last two have different meanings.
+type SinoPosFlags struct {
+	Reserved    uint8 // reserved
+	ExtSolStat  uint8 // extended solution status
+	SolStatFlag uint8 // reserved solution status flag (manual Table 3-8)
+	SigMask     uint8 // signal usage mask (manual Table 3-9)
 }
 
 // Vel contains geodetic velocity fields shared between NovAtel BESTVEL
@@ -550,7 +566,8 @@ type Vel[P ~uint32] struct {
 // XYZ contains the ECEF position+velocity fields shared between NovAtel
 // BESTXYZ (ID 241) and Unicore BESTNAVXYZ (ID 240). The binary layout is
 // identical across vendors; the SolStatus (S) and PosType/VelType (P) enum
-// types vary by vendor.
+// types vary by vendor. The four bytes that follow in each log differ by
+// vendor: PosFlags or SinoPosFlags.
 type XYZ[S, P ~uint32] struct {
 	PSolStatus    S         // position solution status
 	PosType       P         // position type
@@ -576,8 +593,4 @@ type XYZ[S, P ~uint32] struct {
 	NumSolnSVs    uint8     // satellites in solution
 	NumSolnL1SVs  uint8     // satellites with L1/E1/B1 signals in solution
 	NumSolnMulti  uint8     // satellites with multi-frequency in solution
-	Reserved      uint8     // reserved
-	ExtSolStat    HexByte   // extended solution status
-	GalBDS3Sig    HexByte   // Galileo/BDS3 signal mask
-	GPSGLOBDS2Sig HexByte   // GPS/GLONASS/BDS2 signal mask
 }

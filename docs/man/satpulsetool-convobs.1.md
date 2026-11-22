@@ -6,7 +6,7 @@ satpulsetool-convobs - convert GNSS observation data
 
 **satpulsetool** [*global options*] **convobs** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-o**\|**\-\-output** *path*] [**\-H**\|**\-\-header\-file** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-r**\|**\-\-from** **raw**\|**ubx**\|**rtcm**\|**uncb**\|**unca**\|**rinex**\|**obsj**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-r**\|**\-\-from** **raw**\|**ubx**\|**rtcm**\|**uncb**\|**unca**\|**sbf**\|**rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log**] [**\-\-to** **rinex**\|**obsj**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-date** *YYYYMMDD*\|**\-\-recent**\|**\-f**\|**\-\-date\-from\-filename**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-interval** *seconds*] [**\-p**\|**\-\-ppp\-ar**]\
@@ -27,6 +27,7 @@ Currently, the following raw observation data formats are supported:
 
 * u-blox UBX-RXM-RAWX
 * Unicore OBSVM (in either binary or ASCII format)
+* Septentrio SBF MeasEpoch and MeasExtra
 * RTCM MSM7
 
 The *convobs* command also supports a JSON Lines format called `obsj`,
@@ -59,6 +60,9 @@ The following formats are supported:
 
   **uncb**, **unca**
   : Unicore OBSVM messages in binary or ASCII format
+
+  **sbf**
+  : Septentrio SBF MeasEpoch and MeasExtra blocks
 
   **raw**
   : Auto-select between the above formats based on which kind of packet occurs in the stream first

@@ -14,6 +14,37 @@ import (
 
 const configsDir = "../../../configs"
 
+func TestPHCPinOmittedVersusZero(t *testing.T) {
+	// Pinless PHCs accept an omitted pin but reject an explicitly selected
+	// pin, including zero. Preserve that distinction through loading.
+	for _, explicit := range []bool{false, true} {
+		name := "omitted"
+		config := "[phc]\ninterface = \"eth0\"\n"
+		if explicit {
+			name = "explicit zero"
+			config += "pin = 0\n"
+		}
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "satpulse.toml")
+			if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, _, err := LoadConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pin := cfg.PHC.PinDesc().PinIndex
+			if !explicit {
+				if pin != nil {
+					t.Fatalf("omitted pin resolved to %d, want nil", *pin)
+				}
+			} else if pin == nil || *pin != 0 {
+				t.Fatalf("explicit pin 0 must remain a non-nil pointer to zero, got %v", pin)
+			}
+		})
+	}
+}
+
 func TestLoadConfig(t *testing.T) {
 	cfgFiles, err := os.ReadDir(configsDir)
 	if err != nil {
@@ -154,32 +185,50 @@ ntrip.nmeaSend = true`
 
 func TestSerialPPSConfig(t *testing.T) {
 	tests := []struct {
-		pin string
-		ok  bool
+		pin       string
+		expect    gpsio.SerialPin
+		expectErr bool
 	}{
-		{pin: "cts", ok: true},
-		{pin: "dcd", ok: true},
-		{pin: "dsr", ok: true},
-		{pin: "ri", ok: true},
-		{pin: ""},
-		{pin: "CTS"},
-		{pin: "rts"},
+		{pin: "cts", expect: gpsio.SerialPinCTS},
+		{pin: "CTS", expect: gpsio.SerialPinCTS},
+		{pin: "dcd", expect: gpsio.SerialPinDCD},
+		{pin: "dsr", expect: gpsio.SerialPinDSR},
+		{pin: "ri", expect: gpsio.SerialPinRI},
+		{pin: "Ri", expect: gpsio.SerialPinRI},
+		{pin: "", expectErr: true},
+		{pin: "rts", expectErr: true},
 	}
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
 	for _, tc := range tests {
 		t.Run(tc.pin, func(t *testing.T) {
 			cfg, err := readConfig(strings.NewReader("[serial.pps]\npin = \"" + tc.pin + "\""))
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
 			if err != nil {
 				t.Fatalf("readConfig: %v", err)
 			}
-			if cfg.Serial.PPS == nil || cfg.Serial.PPS.Pin != tc.pin {
+			if cfg.Serial.PPS == nil || cfg.Serial.PPS.Pin != tc.expect {
 				t.Fatalf("serial PPS config = %+v", cfg.Serial.PPS)
 			}
-			err = cfg.Validate(lg)
-			if (err == nil) != tc.ok {
-				t.Fatalf("Validate error = %v, want success %v", err, tc.ok)
+			if err := cfg.Validate(lg); err != nil {
+				t.Fatalf("Validate: %v", err)
 			}
 		})
+	}
+}
+
+func TestSerialPPSConfigRequiresPin(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader("[serial.pps]\ninvertPolarity = true"))
+	if err != nil {
+		t.Fatalf("readConfig: %v", err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table must be specified") {
+		t.Fatalf("Validate error = %v, want missing pps.pin", err)
 	}
 }
 
@@ -205,8 +254,23 @@ interface = "eth0"
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface in the [phc] table") {
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface or device in the [phc] table") {
 		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
+	}
+}
+
+func TestPHCInterfaceAndDeviceConflict(t *testing.T) {
+	cfg, err := readConfig(strings.NewReader(`
+[phc]
+interface = "eth0"
+device = "/dev/ptp_tic"
+`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err == nil || !strings.Contains(err.Error(), "interface and device in the [phc] table cannot both be specified") {
+		t.Fatalf("Validate error = %v, want interface/device conflict", err)
 	}
 }
 
@@ -222,10 +286,10 @@ method = "kernel"
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "dcd"`) {
+	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "DCD"`) {
 		t.Fatalf("Validate error = %v, want the kernel method to require DCD", err)
 	}
-	cfg.Serial.PPS.Pin = "dcd"
+	cfg.Serial.PPS.Pin = gpsio.SerialPinDCD
 	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("Validate with dcd: %v", err)
 	}
@@ -251,7 +315,7 @@ func TestSerialPPSSampleConfig(t *testing.T) {
 method = "kernel"
 delayUncertainty = 0.01
 maxDelay = 0.7
-maxWakeupLatency = 10
+maxWakeupLatency = 10e-6
 `))
 	if err != nil {
 		t.Fatal(err)
@@ -265,8 +329,8 @@ maxWakeupLatency = 10
 	if got := cfg.Sample.Serial.PPS.Method; got != gpsio.PPSMethodKernel {
 		t.Errorf("configured method = %v, want %v", got, gpsio.PPSMethodKernel)
 	}
-	if got := cfg.Sample.Serial.PPS.MaxWakeupLatency; got == nil || *got != 10 {
-		t.Errorf("configured maxWakeupLatency = %v, want 10", got)
+	if got := cfg.Sample.Serial.PPS.MaxWakeupLatency; got == nil || *got != 10e-6 {
+		t.Errorf("configured maxWakeupLatency = %v, want 10e-6", got)
 	}
 	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
 		t.Fatalf("Validate: %v", err)
@@ -353,11 +417,16 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 		t.Fatalf("PHC-mode default SHM fixed precision = %v, want nil", *got)
 	}
 	cfg.PHC.Interface = ""
+	cfg.PHC.Device = "/dev/ptp_tic"
+	if got := cfg.shmFixedPrecision(); got != nil {
+		t.Fatalf("PHC device default SHM fixed precision = %v, want nil", *got)
+	}
+	cfg.PHC.Device = ""
 	got := cfg.shmFixedPrecision()
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)
 	}
-	cfg.Serial.PPS = &SerialPPSConfig{Pin: "cts"}
+	cfg.Serial.PPS = &SerialPPSConfig{Pin: gpsio.SerialPinCTS}
 	got = cfg.shmFixedPrecision()
 	if got == nil || *got != serialPPSSHMPrecision {
 		t.Fatalf("serial-PPS SHM fixed precision = %v, want %d", got, serialPPSSHMPrecision)

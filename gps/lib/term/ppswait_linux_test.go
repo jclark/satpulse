@@ -58,7 +58,7 @@ func TestNewModemControlPinWatchInvalidLine(t *testing.T) {
 
 func openTestWatcher(t *testing.T) ModemControlPinWatcher {
 	t.Helper()
-	term, err := Open(newTestPTY(t), RawMode)
+	term, _, err := Open(newTestPTY(t), RawMode)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
