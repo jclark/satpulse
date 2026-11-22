@@ -109,7 +109,7 @@ reading the given configuration file and writing the daemon log to the `--log-fi
 The executable you ran is registered in place;
 add `--copy 'C:\Program Files\SatPulse'` to first copy it to that directory and register the copy,
 so that the running service does not lock the binary you build.
-Start and stop the service with `sc start satpulsed` and `sc stop satpulsed`.
+Start and stop the service with `sc.exe start satpulsed` and `sc.exe stop satpulsed`.
 Service starts, stops, and any terminal error are recorded in the Windows Event Log under the source `satpulsed`.
 
 Remove the service registration with:

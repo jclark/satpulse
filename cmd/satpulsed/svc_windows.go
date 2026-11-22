@@ -83,7 +83,7 @@ func runService(vars *flagVars) error {
 	}
 	defer elog.Close()
 	if err := svc.Run(serviceName, &service{vars: vars, elog: elog}); err != nil {
-		return fmt.Errorf("cannot connect to the service control manager (--win-svc is for use by the SCM only; use --register and then 'sc start %s'): %w", serviceName, err)
+		return fmt.Errorf("cannot connect to the service control manager (--win-svc is for use by the SCM only; use --register and then 'sc.exe start %s'): %w", serviceName, err)
 	}
 	return nil
 }
