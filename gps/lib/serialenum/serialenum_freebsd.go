@@ -44,6 +44,9 @@ func List() ([]Port, error) {
 			names = append(names, entry.Name())
 		}
 	}
+	if len(names) == 0 {
+		return []Port{}, nil
+	}
 	meta, err := ucomMetadata()
 	if err != nil {
 		return nil, fmt.Errorf("enumerating serial ports: %w", err)
