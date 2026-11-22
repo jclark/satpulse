@@ -64,6 +64,8 @@ func platformMain(progName string, vars *flagVars) {
 		err = errors.New("only one of --register, --unregister and --win-svc can be specified")
 	} else if p.copyDir != "" && !p.register {
 		err = errors.New("--copy can only be used with --register")
+	} else if p.logFile != "" && !p.register && !p.winSvc {
+		err = errors.New("--log-file can only be used with --register or --win-svc")
 	} else if p.unregister {
 		err = unregisterService()
 	} else if p.register {
