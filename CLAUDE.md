@@ -46,6 +46,7 @@ Whenever you create a new package, add an entry describing it to the appropriate
 ### Simplicity
 - Prefer modest, targeted diffs; do not rewrite or reformat code beyond the requested change (no gofmt churn on untouched lines)
 - No premature generalization: generalize when the second case arrives, not before
+- Do not make production code more complicated just to make it testable without asking first
 - Do not create a new file for a small helper; put it in the existing file where it belongs
 - No backwards-compatibility shims or migration paths: this is a pre-1.0, sole-developer project
 - Keep tests proportional to the change; a trivial change does not need a battery of new tests
@@ -141,6 +142,10 @@ is only reported in the daemon log, which the smoke tests do not check. This
 works for `make` but not `allarch`: the detector does not support 32-bit arm.
 
 System testing on real hardware is doing using ansible in `systest/` directory.
+
+Never use `pkill -f` or `pgrep -f` with a pattern that also appears in the
+command you run: it matches the invoking shell and kills it. Use a bracketed
+pattern (`[s]atpulsewb`) or kill by PID.
 
 ## Code review
 
