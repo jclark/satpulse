@@ -3,7 +3,7 @@
 
 package timeprov
 
-// Input to cgo -godefs; see the go:generate line in timeprov.go.
+// Input to cgo -godefs; see the go:generate line in timeprov_windows.go.
 // wire.h is a verbatim copy of pipe-timeprov's src/wire.h, the
 // normative definition of the pipe record.
 
