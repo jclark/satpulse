@@ -97,6 +97,11 @@ func TestDescProduct(t *testing.T) {
 			expect: "Ralink 802.11 n WLAN",
 		},
 		{
+			name:   "vendor-specific class",
+			input:  "Silicon Labs CP2102 USB to UART Bridge Controller, rev 1.10/1.00, addr 4",
+			expect: "Silicon Labs CP2102 USB to UART Bridge Controller",
+		},
+		{
 			name:   "product text with comma",
 			input:  "Foo, Bar, class 0/0, rev 2.00/1.01, addr 3",
 			expect: "Foo, Bar",

@@ -145,8 +145,9 @@ func pnpinfoUSBID(vals map[string]string) USBID {
 }
 
 // descSuffix matches the trailing address details that usb_devinfo appends to
-// the string-descriptor text in a USB device's %desc.
-var descSuffix = regexp.MustCompile(`, class [0-9]+/[0-9]+, rev [0-9a-f.]+/[0-9a-f.]+, addr [0-9]+$`)
+// the string-descriptor text in a USB device's %desc. It leaves out the class
+// for a vendor-specific (0xff) device class.
+var descSuffix = regexp.MustCompile(`(, class [0-9]+/[0-9]+)?, rev [0-9a-f.]+/[0-9a-f.]+, addr [0-9]+$`)
 
 // descProduct extracts best-effort product display text from a %desc value.
 // A device that publishes no string descriptors gets numeric
