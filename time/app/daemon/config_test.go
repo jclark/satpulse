@@ -295,7 +295,7 @@ method = "kernel"
 			if len(pins) == 0 {
 				expectErr = "is not available on this platform"
 			} else if !slices.Contains(pins, pin) {
-				expectErr = "requires pps.pin to be"
+				expectErr = "supported pins are"
 			}
 			if expectErr == "" {
 				if err != nil {

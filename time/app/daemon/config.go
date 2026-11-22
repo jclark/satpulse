@@ -244,14 +244,14 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil {
 		pins := gpsio.KernelPPSPins()
 		if len(pins) == 0 {
-			return &configError{err: errors.New(`method = "kernel" in the [sample.serial.pps] table is not available on this platform`)}
+			return &configError{err: errors.New("kernel PPS method is not available on this platform")}
 		}
 		if !slices.Contains(pins, cfg.Serial.PPS.Pin) {
-			quoted := make([]string, len(pins))
+			names := make([]string, len(pins))
 			for i, p := range pins {
-				quoted[i] = fmt.Sprintf("%q", p)
+				names[i] = p.String()
 			}
-			return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin to be %s in the [serial] table, got %q`, strings.Join(quoted, " or "), cfg.Serial.PPS.Pin)}
+			return &configError{err: fmt.Errorf("kernel PPS method does not support %v pin; supported pins are %s", cfg.Serial.PPS.Pin, strings.Join(names, ", "))}
 		}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
