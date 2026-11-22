@@ -315,6 +315,30 @@ func TestFailedConnectClearsSpeed(t *testing.T) {
 	})
 }
 
+// TestSupersededRunReportsNoSpeed checks that a run cancelled by a newer
+// Connect while it is probing does not report its speed, which would
+// replace the speed of the connection superseding it.
+func TestSupersededRunReportsNoSpeed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &fakeSink{}
+		s := testSession(t, fs)
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		// The probe of the silent connection is now waiting; time does not
+		// advance until the test goroutine blocks.
+		synctest.Wait()
+		if err := s.Connect(op, nil); err == nil {
+			t.Fatalf("Connect succeeded with no connection left to open")
+		}
+		synctest.Wait()
+		if n := fs.count(EventSpeed); n != 0 {
+			t.Errorf("speed events from the superseded run = %d, expect 0", n)
+		}
+	})
+}
+
 // TestConnectSuperseded checks the supersession contract: a Connect or
 // Disconnect issued while another Connect's open is pending wins; the
 // pending attempt returns an error, closes its late-opened transport,

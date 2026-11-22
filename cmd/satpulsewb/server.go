@@ -36,7 +36,9 @@ type server struct {
 	msgDirs []msgfile.Dir   // message-file library search path
 	mux     *http.ServeMux
 	files   http.Handler // static SPA assets, served under /
-	bar     *connBar
+	connMu  sync.Mutex
+	device  string // current connection-bar device selection
+	speed   int    // current connection-bar speed selection
 	seatMu  sync.Mutex
 	seat    string
 	// Single-use launch token, minted only when a browser is auto-opened on a
@@ -48,8 +50,8 @@ type server struct {
 	singleUsed bool
 }
 
-func newServer(ctx context.Context, sess *session.Session, hub *sseHub, bar *connBar, lg *slog.Logger, token string, vendors []gpsreg.Vendor, msgDirs []msgfile.Dir) *server {
-	s := &server{ctx: ctx, sess: sess, hub: hub, bar: bar, lg: lg, token: token, vendors: vendors, msgDirs: msgDirs, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
+func newServer(ctx context.Context, sess *session.Session, hub *sseHub, lg *slog.Logger, token string, vendors []gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
+	s := &server{ctx: ctx, sess: sess, hub: hub, lg: lg, token: token, vendors: vendors, msgDirs: msgDirs, device: device, speed: speed, mux: http.NewServeMux(), files: http.FileServer(http.FS(webContent()))}
 	// Seed the writer broadcast with a no-holder value: after a restart with
 	// the token disabled, an old tab's EventSource reconnects and re-primes
 	// from this hub, and must learn that its previous seat is stale (flipping
@@ -356,44 +358,20 @@ var (
 	errInvalidSpeed   = errors.New("speed must be greater than zero")
 )
 
-// connection returns the complete connection-bar snapshot.
+// connection returns the complete connection-bar snapshot. While connected,
+// the session's speed is authoritative: configuration can change it after the
+// port was opened. Reading the snapshot also retains that speed for the next
+// disconnected view.
 func (s *server) connection() connectionInfo {
-	device, speed := s.bar.get()
-	return connectionInfo{State: s.sess.State(), Device: device, Speed: speed}
-}
-
-// connBar holds the connection bar's device and speed: the user's latest
-// choice, updated by each speed the session reports, since configuration
-// can change the speed after the port was opened. A window loaded after a
-// connection ends then shows the speed the receiver was left at. Tracking
-// reported speeds, rather than reading Session.Speed for each snapshot,
-// keeps a snapshot from adopting the previous connection's speed while a
-// new Connect has not yet cleared it.
-type connBar struct {
-	mu     sync.Mutex
-	device string
-	speed  int
-}
-
-func (b *connBar) choose(device string, speed int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.device, b.speed = device, speed
-}
-
-func (b *connBar) reported(speed int) {
-	if speed == 0 {
-		return
+	state := s.sess.State()
+	activeSpeed := s.sess.Speed()
+	s.connMu.Lock()
+	if activeSpeed != 0 {
+		s.speed = activeSpeed
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.speed = speed
-}
-
-func (b *connBar) get() (string, int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.device, b.speed
+	info := connectionInfo{State: state, Device: s.device, Speed: s.speed}
+	s.connMu.Unlock()
+	return info
 }
 
 func (s *server) handleConnection(w http.ResponseWriter, _ *http.Request) {
@@ -453,7 +431,10 @@ func (s *server) connect(device string, speed int) error {
 	if speed <= 0 {
 		return errInvalidSpeed
 	}
-	s.bar.choose(device, speed)
+	s.connMu.Lock()
+	s.device = device
+	s.speed = speed
+	s.connMu.Unlock()
 	return s.sess.Connect(session.SerialOpener{Device: device, Speed: speed}, s.vendors)
 }
 

@@ -75,21 +75,6 @@ func newSSEHub() *sseHub {
 	}
 }
 
-// barSink is the session's Sink: it records each speed the session
-// reports in the connection bar, then passes every event to the hub.
-type barSink struct {
-	*sseHub
-	bar *connBar
-}
-
-// Emit implements session.Sink.
-func (s barSink) Emit(ev session.Event) {
-	if speed, ok := ev.(session.SpeedEvent); ok {
-		s.bar.reported(int(speed))
-	}
-	s.sseHub.Emit(ev)
-}
-
 // Emit implements session.Sink. It must not block: a client that falls
 // behind is disconnected (its dead channel is closed) rather than blocked.
 func (h *sseHub) Emit(ev session.Event) {

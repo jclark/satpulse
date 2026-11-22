@@ -31,10 +31,9 @@ func newTestServerFull(token string, vendors []gpsreg.Vendor, msgDirs []msgfile.
 
 func newTestServerSettings(token string, vendors []gpsreg.Vendor, msgDirs []msgfile.Dir, device string, speed int) *server {
 	hub := newSSEHub()
-	bar := &connBar{device: device, speed: speed}
 	lg := slog.New(slog.NewTextHandler(io.Discard, nil))
-	sess := session.New(lg, barSink{hub, bar}, session.Options{})
-	return newServer(context.Background(), sess, hub, bar, lg, token, vendors, msgDirs)
+	sess := session.New(lg, hub, session.Options{})
+	return newServer(context.Background(), sess, hub, lg, token, vendors, msgDirs, device, speed)
 }
 
 func newTestRequest(method, target string, body io.Reader) *http.Request {
@@ -254,28 +253,6 @@ func TestConnectionInitialSettings(t *testing.T) {
 	}
 	if got, want := strings.TrimSpace(w.Body.String()), `{"state":"disconnected","device":"DEV","speed":38400}`; got != want {
 		t.Errorf("connection = %s, want %s", got, want)
-	}
-}
-
-// TestConnectionSpeed checks that the snapshot's speed follows each speed
-// the session reports, as configuration can change it, and that a later
-// choice replaces it.
-func TestConnectionSpeed(t *testing.T) {
-	s := newTestServerSettings("", nil, nil, "DEV", 38400)
-	connection := func() string {
-		w := httptest.NewRecorder()
-		s.mux.ServeHTTP(w, newTestRequest("GET", "/api/connection", nil))
-		return strings.TrimSpace(w.Body.String())
-	}
-	sink := barSink{s.hub, s.bar}
-	sink.Emit(session.SpeedEvent(115200))
-	sink.Emit(session.SpeedEvent(0))
-	if got, expect := connection(), `{"state":"disconnected","device":"DEV","speed":115200}`; got != expect {
-		t.Errorf("after reported speed: connection = %s, expect %s", got, expect)
-	}
-	s.bar.choose("DEV2", 4800)
-	if got, expect := connection(), `{"state":"disconnected","device":"DEV2","speed":4800}`; got != expect {
-		t.Errorf("after choice: connection = %s, expect %s", got, expect)
 	}
 }
 

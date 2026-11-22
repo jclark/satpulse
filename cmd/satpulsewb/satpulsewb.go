@@ -139,8 +139,7 @@ func run(v *flagVars) error {
 		defer f.Close()
 		opts.PacketLog = f
 	}
-	bar := &connBar{device: v.device, speed: v.speed}
-	sess := session.New(lg, barSink{hub, bar}, opts)
+	sess := session.New(lg, hub, opts)
 	ln, err := listen(v.listen)
 	if err != nil {
 		return err
@@ -150,7 +149,7 @@ func run(v *flagVars) error {
 		token = newToken()
 	}
 	printURLs(os.Stdout, lg, ln, v.listen, token)
-	srv := newServer(ctx, sess, hub, bar, lg, token, vendors, msgDirs())
+	srv := newServer(ctx, sess, hub, lg, token, vendors, msgDirs(), v.device, v.speed)
 	if v.autoConnect {
 		go func() {
 			if err := srv.connect(v.device, v.speed); err != nil {

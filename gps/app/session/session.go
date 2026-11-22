@@ -784,7 +784,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	rslt, err := gpscfg.Configure(runCtx, s.lg, procs,
 		gpsreg.CreateConfigProtocols(s.vendors), target, sub, conn)
 	portLock <- port
-	s.emitSpeed(conn)
+	s.emitSpeed(runCtx, conn)
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
 		if runCtx.Err() != nil {
 			return verdictDisconnect
@@ -850,7 +850,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 			rslt, err := gpscfg.Configure(req.ctx, s.lg, procs,
 				gpsreg.CreateConfigProtocols(s.vendors), req.target, sub, conn)
 			portLock <- port
-			s.emitSpeed(conn)
+			s.emitSpeed(runCtx, conn)
 			if reset && errors.Is(err, io.ErrUnexpectedEOF) {
 				// The reset killed the transport mid-run, as expected over
 				// USB: report success and let the manager reconnect.
@@ -1780,9 +1780,17 @@ func (s *Session) sendConfigRequest(ctx context.Context, target *gpsprot.ConfigT
 
 // emitSpeed reads the current host serial port speed and emits gps:speed.
 // Called after any gpscfg.Configure since that is the only path that can
-// change the host speed (via SerialConn.WriteThenChangeSpeed).
-func (s *Session) emitSpeed(conn gpsio.Conn) {
+// change the host speed (via
+// SerialConn.WriteThenChangeSpeed). A run that has been cancelled, for
+// example by a newer Connect, reports nothing: its speed would replace the
+// speed of the connection superseding it. closeLocked cancels runs under
+// s.mu, so checking under s.mu orders the two.
+func (s *Session) emitSpeed(runCtx context.Context, conn gpsio.Conn) {
 	s.mu.Lock()
+	if runCtx.Err() != nil {
+		s.mu.Unlock()
+		return
+	}
 	if sc, ok := conn.(*gpsio.SerialConn); ok {
 		s.speed = sc.Speed()
 	}
