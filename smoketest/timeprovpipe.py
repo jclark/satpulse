@@ -51,6 +51,7 @@ ERROR_IO_PENDING = 997
 ERROR_PIPE_CONNECTED = 535
 ERROR_BROKEN_PIPE = 109
 ERROR_MORE_DATA = 234
+ERROR_NO_DATA = 232
 WAIT_OBJECT_0 = 0
 WAIT_TIMEOUT = 0x102
 
@@ -193,6 +194,10 @@ class PipeServer:
             err = ctypes.get_last_error()
             if err == ERROR_PIPE_CONNECTED:
                 return True
+            if err == ERROR_NO_DATA:
+                # The client connected and closed again before this call;
+                # serve the next one on a fresh instance, as the provider does.
+                return False
             if err != ERROR_IO_PENDING:
                 raise _winerr("ConnectNamedPipe")
             if not self._wait(handle, should_stop):
