@@ -1,0 +1,107 @@
+#:schema ../gpsmsg-schema.json
+# Quectel LC29H(DA) configuration messages
+# Default baud rate: 115200
+# The messages common to the LC29H variants come from lc29h.toml; this file
+# adds the PQTM messages that Quectel documents for the LC29H(DA) but not
+# the LC29H(AA), and overrides the tags whose inherited form the LC29H(DA)
+# does not support.
+#
+# Tested board:
+#   LC29H(DA): firmware LC29HDANR11A03S_RSA (2024/03/19), AG3335A V2.6.0
+# The LC29H(DA) cannot output ZDA, does not support NMEA V3.01 (nmea-ver-3
+# is accepted but has no effect), and has a fixed 1 Hz fix rate. It rejects
+# PQTMHOT, PQTMWARM, PQTMCOLD and PQTMSRR as unsupported, although the
+# manual documents the first three for it.
+
+[[include]]
+src = "lc29h.toml"
+
+# Receiver mode (PQTMCFGRCVRMODE,W,<Mode>): 1=rover, 2=base station.
+# Takes effect after PQTMSAVEPAR and a restart. In base station mode the
+# module disables NMEA output and enables RTCM MSM4 and 1005 output.
+# Verified OK and get-mode returns the new mode on LC29H(DA)
+# (not saved, so the effect of base station mode was not seen)
+# Rejected as unsupported on LC29H(AA) A05S; no response on LC29H(AA) A03S
+
+[[nmea]]
+text = "PQTMCFGRCVRMODE,R"
+tag = "get-mode"
+description = "Get receiver mode (rover/base)"
+[[nmea]]
+text = "PQTMCFGRCVRMODE,W,2"
+tag = "mode-base"
+description = "Set base station mode"
+[[nmea]]
+text = "PQTMCFGRCVRMODE,W,1"
+tag = "mode-rover"
+description = "Set rover mode"
+
+# GNSS search mode (PQTMCFGCNST,W,<GPS>,<GLONASS>,<Galileo>,<BDS>,<QZSS>,
+# <NavIC>), then a warm start (PAIR005) to apply it; no save is needed.
+# The inherited PAIR066 form is supported only on LC29H (AA).
+# Verified OK, get-gnss returns the new setting and, after the warm start,
+# GSV shows only the selected constellations for each tag except
+# gnss-gps-glo and gnss-gps-gal on LC29H(DA); after gnss-gps-gal GSV
+# showed no BDS or GLONASS, but Galileo had not reappeared within 30 s
+# gnss-gps-glo is rejected with "invalid parameters" on LC29H(DA)
+[[nmea]]
+text = "PQTMCFGCNST,R"
+tag = "get-gnss"
+description = "Get GNSS search mode"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,0,0,1,0"
+tag = "gnss-gps"
+description = "Enable GPS and QZSS"
+[[nmea]]
+text = "PAIR005"
+tag = "gnss-gps"
+[[nmea]]
+text = "PQTMCFGCNST,W,0,0,0,1,0,0"
+tag = "gnss-bds"
+description = "Enable BDS only"
+[[nmea]]
+text = "PAIR005"
+tag = "gnss-bds"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,1,0,0,1,0"
+tag = "gnss-gps-glo"
+description = "Enable GPS, GLONASS and QZSS"
+[[nmea]]
+text = "PAIR005"
+tag = "gnss-gps-glo"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,1,0,1,0"
+tag = "gnss-gps-gal"
+description = "Enable GPS, Galileo and QZSS"
+[[nmea]]
+text = "PAIR005"
+tag = "gnss-gps-gal"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,0,1,1,0"
+tag = "gnss-gps-bds"
+description = "Enable GPS, BDS and QZSS"
+[[nmea]]
+text = "PAIR005"
+tag = "gnss-gps-bds"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,0,1,1,1,0"
+tag = "gnss-gps-gal-bds"
+description = "Enable GPS, Galileo, BDS and QZSS"
+[[nmea]]
+text = "PAIR005"
+tag = "gnss-gps-gal-bds"
+[[nmea]]
+text = "PQTMCFGCNST,W,1,1,1,1,1,0"
+tag = "gnss-all"
+description = "Enable GPS, GLONASS, Galileo, BDS and QZSS"
+[[nmea]]
+text = "PAIR005"
+tag = "gnss-all"
+
+# NMEA decimal places: on LC29H (BA, CA, DA, EA) the factory SPD_DP is 3
+# Verified get-nmea-dp returns 3,6,3,2,3,2 before any change, and OK and
+# get-nmea-dp returns it again after this tag, on LC29H(DA)
+[[nmea]]
+text = "PQTMCFGNMEADP,W,3,6,3,2,3,2"
+tag = "nmea-dp-default"
+description = "Set NMEA decimal places to the factory setting (3,6,3,2,3,2)"

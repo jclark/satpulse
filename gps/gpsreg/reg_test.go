@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nov"
 )
 
 func TestVendorString(t *testing.T) {
@@ -187,6 +188,28 @@ func TestCreatePacketFormats(t *testing.T) {
 	}
 }
 
+func TestNovVariant(t *testing.T) {
+	tests := []struct {
+		name    string
+		vendors []Vendor
+		expect  nov.Variant
+	}{
+		{"empty list", nil, nov.VariantOEM7},
+		{"bynav", []Vendor{VendorBynav}, nov.VariantBynav},
+		{"sinognss", []Vendor{VendorSinoGNSS}, nov.VariantSinoGNSS},
+		{"bynav with non-NovAtel vendor", []Vendor{VendorUblox, VendorBynav}, nov.VariantBynav},
+		{"two NovAtel-format vendors", []Vendor{VendorBynav, VendorUnicore}, nov.VariantOEM7},
+		{"no NovAtel-format vendor", []Vendor{VendorUblox}, nov.VariantOEM7},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NovVariant(tc.vendors); got != tc.expect {
+				t.Errorf("got %v, want %v", got, tc.expect)
+			}
+		})
+	}
+}
+
 func TestCreateConfigProtocols(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -196,6 +219,7 @@ func TestCreateConfigProtocols(t *testing.T) {
 		{"empty list is the default probe set", nil, 2},
 		{"u-blox", []Vendor{VendorUblox}, 1},
 		{"unicore", []Vendor{VendorUnicore}, 1},
+		{"zhongke", []Vendor{VendorZhongke}, 1},
 		{"both defaults", []Vendor{VendorUblox, VendorUnicore}, 2},
 		{"vendor without protocol", []Vendor{VendorAllystar}, 0},
 	}

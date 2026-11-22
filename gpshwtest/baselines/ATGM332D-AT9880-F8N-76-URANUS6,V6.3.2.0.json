@@ -1,0 +1,44 @@
+{
+  "limitations": {
+    "mode.fixedPosAcc": {"quantum": 0.001},
+    "mode.fixedPosECEF[0]": {"quantum": 0.01},
+    "mode.fixedPosECEF[1]": {"quantum": 0.01},
+    "mode.fixedPosECEF[2]": {"quantum": 0.01},
+    "mode.fixedPosLLH[0]": {"unsupported": true},
+    "mode.fixedPosLLH[1]": {"unsupported": true},
+    "mode.height": {"unsupported": true},
+    "pvtOut": {"missing": ["leap", "tp"]},
+    "rawOut": {
+      "missing": [{"missing": ["obs"], "request": ["obs"]}, {"missing": ["nav"], "request": ["nav"]}]
+    },
+    "reload": {"unsupported": true},
+    "rtcmBaseID": {"unsupported": true},
+    "rtcmOut": {
+      "missing": [
+        {"missing": ["1005", "1074", "1084", "1094", "1124", "1230"], "request": ["MSM4", "ARP"]},
+        {"missing": ["1077", "1087", "1097", "1127", "1230"], "request": ["MSM7"]}
+      ]
+    },
+    "saveGranularity": {"singleGroup": true},
+    "showPort": {"unsupported": true},
+    "signals": {
+      "signalSet": {
+        "BDS": ["B1C", "B1I", "B2a"],
+        "GAL": ["E1", "E5a"],
+        "GLO": ["L1"],
+        "GPS": ["L1", "L5"],
+        "NAVIC": ["L5"],
+        "QZSS": ["L1", "L5"],
+        "SBAS": ["L1"]
+      }
+    },
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "URANUS6,V6.3.2.0",
+    "hardware": "ATGM332D-AT9880-F8N-76",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC", "SBAS"],
+    "vendor": "Zhongke"
+  },
+  "supports": ["fixedPos", "fixedPosAcc", "signal", "speed", "survey", "surveyAcc"]
+}

@@ -99,7 +99,7 @@ func (m *ObsVM) Chunks() func(yield func(chunk any) bool) {
 			return
 		}
 		if len(m.Obs) == 0 && m.ObsNumber > 0 {
-			m.Obs = make([]ObsVMObs, m.ObsNumber)
+			m.Obs = make([]ObsVMObs, novmsg.ClampLen[ObsVMObs](m.ObsNumber))
 		}
 		for i := range m.Obs {
 			if !yield(&m.Obs[i]) {

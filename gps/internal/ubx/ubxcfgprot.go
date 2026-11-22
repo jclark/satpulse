@@ -19,7 +19,7 @@ func NewConfigProtocol() *ConfigProtocol {
 	return &ConfigProtocol{}
 }
 
-func (px *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+func (px *ConfigProtocol) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
 	if tag != Tag {
 		return nil
 	}

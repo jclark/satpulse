@@ -11,6 +11,29 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func TestRestoreExceptHardware(t *testing.T) {
+	saved := windows.DCB{
+		BaudRate: 9600, ByteSize: 7, Parity: windows.EVENPARITY, StopBits: windows.TWOSTOPBITS,
+		Flags:     dcbParity | dcbErrorChar | dcbNull | dcbOutxCtsFlow | dcbOutX | dcbInX,
+		ErrorChar: '?', EofChar: 4,
+		XonLim: 10, XoffLim: 20, XonChar: 17, XoffChar: 19,
+	}
+	current := windows.DCB{
+		BaudRate: 115200, ByteSize: 8, Parity: windows.NOPARITY, StopBits: windows.ONESTOPBIT,
+		Flags:  dcbBinary | dcbRtsControlMask | dcbDtrControlMask,
+		XonLim: 30, XoffLim: 40, XonChar: 1, XoffChar: 2,
+	}
+	want := saved
+	want.BaudRate = 115200
+	want.ByteSize = 8
+	want.Parity = windows.NOPARITY
+	want.StopBits = windows.ONESTOPBIT
+	want.Flags = dcbParity | dcbErrorChar | dcbNull | dcbOutX | dcbInX | dcbRtsControlMask | dcbDtrControlMask
+	if got := restoreExceptHardware(saved, current); got != want {
+		t.Errorf("restoreExceptHardware = %+v, want %+v", got, want)
+	}
+}
+
 func TestNoParity(t *testing.T) {
 	attr := Attr{
 		dcb: windows.DCB{
@@ -39,6 +62,73 @@ func TestRawModeLeavesParityChecking(t *testing.T) {
 	}
 	if attr.dcb.Flags&dcbParity == 0 {
 		t.Error("RawMode disabled input parity checking")
+	}
+}
+
+func TestCommEventMask(t *testing.T) {
+	tests := []struct {
+		name      string
+		pin       ModemControlPin
+		expect    uint32
+		expectErr bool
+	}{
+		{name: "CTS", pin: ModemCTS, expect: windows.EV_CTS},
+		{name: "DCD", pin: ModemDCD, expect: windows.EV_RLSD},
+		{name: "DSR", pin: ModemDSR, expect: windows.EV_DSR},
+		{name: "RI", pin: ModemRI, expect: windows.EV_RING},
+		{name: "invalid", pin: ModemControlPin(99), expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := commEventMask(tc.pin)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("commEventMask: %v", err)
+			}
+			if got != tc.expect {
+				t.Errorf("got  %d\nwant %d", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestCommWaitError(t *testing.T) {
+	tests := []struct {
+		name              string
+		err               error
+		expectUnavailable bool
+	}{
+		{name: "invalid function", err: windows.ERROR_INVALID_FUNCTION, expectUnavailable: true},
+		{name: "not supported", err: windows.ERROR_NOT_SUPPORTED, expectUnavailable: true},
+		{name: "invalid parameter", err: windows.ERROR_INVALID_PARAMETER, expectUnavailable: true},
+		{name: "other", err: windows.ERROR_ACCESS_DENIED},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := commWaitError(tc.err)
+			if errors.Is(got, ErrUnavailable) != tc.expectUnavailable {
+				t.Errorf("commWaitError(%v) = %v", tc.err, got)
+			}
+			if !errors.Is(got, tc.err) {
+				t.Errorf("commWaitError(%v) = %v, does not preserve the underlying error", tc.err, got)
+			}
+		})
+	}
+}
+
+// TestPinWatchCancel checks that cancellation is sticky and is observed
+// before WaitCommEvent: the watch holds an invalid handle, so anything
+// reaching the wait would fail with a handle error instead.
+func TestPinWatchCancel(t *testing.T) {
+	w := &pinWatch{handle: windows.InvalidHandle, pin: ModemCTS}
+	w.Cancel()
+	if c, missed, err := w.Wait(); !errors.Is(err, ErrCancelled) || c != (ModemControlPinChange{}) || missed != 0 {
+		t.Fatalf("ModemControlPinWatch.Wait after cancel = %+v, %d, %v; want zero change, 0, ErrCancelled", c, missed, err)
 	}
 }
 

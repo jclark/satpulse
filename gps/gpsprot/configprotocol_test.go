@@ -26,8 +26,9 @@ func TestConfigSupportFlagsItems(t *testing.T) {
 		ConfigSupportSurveyMsg |
 		ConfigSupportFixedPos |
 		ConfigSupportRTCMMSM7 |
-		ConfigSupportRTCMQZSS
-	want := []string{"signal", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS"}
+		ConfigSupportRTCMQZSS |
+		ConfigSupportReload
+	want := []string{"signal", "surveyMsg", "fixedPos", "rtcmMSM7", "rtcmQZSS", "reload"}
 	if got := flags.Items(); !slices.Equal(got, want) {
 		t.Errorf("Items() = %v, want %v", got, want)
 	}
@@ -49,8 +50,8 @@ func TestConfigSupportLast(t *testing.T) {
 }
 
 func TestConfigSupportFlagsString(t *testing.T) {
-	flags := ConfigSupportSpeed | ConfigSupportRaw | ConfigSupportRTCMBaseID
-	want := "speed, raw, rtcmBaseID"
+	flags := ConfigSupportSpeed | ConfigSupportRaw | ConfigSupportRTCMBaseID | ConfigSupportReload
+	want := "speed, raw, rtcmBaseID, reload"
 	if got := flags.String(); got != want {
 		t.Errorf("String() = %q, want %q", got, want)
 	}
@@ -62,7 +63,7 @@ func TestConfigSupportFlagsMarshalJSON(t *testing.T) {
 		want  string
 	}{
 		{0, `[]`},
-		{ConfigSupportSignal | ConfigSupportFixedPos | ConfigSupportRaw, `["signal","fixedPos","raw"]`},
+		{ConfigSupportSignal | ConfigSupportFixedPos | ConfigSupportRaw | ConfigSupportReload, `["signal","fixedPos","raw","reload"]`},
 	}
 	for _, tt := range tests {
 		b, err := json.Marshal(tt.flags)

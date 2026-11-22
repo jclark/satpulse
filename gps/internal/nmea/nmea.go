@@ -137,7 +137,10 @@ type ExtSentenceHandler interface {
 	//   - (nil, nil, err): recognized but parse failed.
 	//   - (msgs, sameEpoch, nil): handled; messages belong to the current epoch.
 	//   - (msgs, newEpoch, nil): handled; messages start a new epoch.
-	//   - (msgs, nil, nil): handled; end of epoch, flush.
+	//   - (msgs, nil, nil): handled; end of epoch, flush. The exception is
+	//     when msgs is non-empty and every message is a *gpsprot.CorReportMsg:
+	//     the messages are dispatched but the epoch is not affected, since a
+	//     report of corrections received is not part of any epoch.
 	HandleSentence(flags nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) ([]gpsprot.Msg, *NavEpoch, error)
 }
 
@@ -181,7 +184,9 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 			}
 			return msgID, err
 		}
-		p.handleEpoch(epoch, tRead)
+		if epoch != nil || !allCorReports(msgs) {
+			p.handleEpoch(epoch, tRead)
+		}
 		if h := p.mh; h != nil {
 			p.setTimeMsgReadDelay(msgs, tRead)
 			gpsprot.DispatchMsgs(msgs, h, tRead)
@@ -193,6 +198,17 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 		return msgID, nmh.NativeMsg(Tag, msgID, sen, tRead)
 	}
 	return msgID, nil
+}
+
+// allCorReports reports whether msgs is non-empty and every message is a
+// *gpsprot.CorReportMsg.
+func allCorReports(msgs []gpsprot.Msg) bool {
+	for _, m := range msgs {
+		if _, ok := m.(*gpsprot.CorReportMsg); !ok {
+			return false
+		}
+	}
+	return len(msgs) > 0
 }
 
 func (p *PacketProcessor) handleEpoch(epoch *NavEpoch, tRead time.Time) {

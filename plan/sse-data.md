@@ -112,7 +112,7 @@ in frontend).
 ### Frontend: path-based field mapping
 
 The gpsprot types are defined in `@satpulse/gps` (`gps/ts/`), which the web
-workspace depends on via `file:../gps/ts` (see `web-toolchain.md`). Frontend
+workspace depends on via `file:../gps/ts` (see `archive/web-toolchain.md`). Frontend
 code imports types from `@satpulse/gps/gpsprot`.
 
 The gpsprot types have nested structures (`Point3D`, `Accuracy`, `DOP`,
@@ -153,7 +153,7 @@ than flattened.
 
 `ModeChanged` should ideally be represented by serialization of the phcsync
 observability type used on the daemon observability bus. The current callback
-is `ModeChanged(oldMode, newMode phcsync.Mode)`, so this may require a named
+is `ModeChanged(oldMode, newMode phcsync.Mode, t time.Time)`, so this may require a named
 payload type before it can replace `ModeSSE`.
 
 ### Init session events
