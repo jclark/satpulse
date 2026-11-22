@@ -218,6 +218,15 @@ func registerService(vars *flagVars) error {
 		return fmt.Errorf("service %s is already registered", serviceName)
 	}
 	copied := ""
+	// On failure during or after the copy, remove it (and its directory if
+	// that leaves the directory empty) so a failed registration leaves
+	// nothing.
+	cleanup := func() {
+		if copied != "" {
+			os.Remove(copied)
+			os.Remove(filepath.Dir(copied))
+		}
+	}
 	if p.copyDir != "" {
 		dir, err := filepath.Abs(p.copyDir)
 		if err != nil {
@@ -228,17 +237,10 @@ func registerService(vars *flagVars) error {
 		}
 		copied = filepath.Join(dir, "satpulsed.exe")
 		if err := copyFile(exe, copied); err != nil {
+			cleanup()
 			return err
 		}
 		exe = copied
-	}
-	// On failure after the copy, remove it (and its directory if that
-	// leaves the directory empty) so a failed registration leaves nothing.
-	cleanup := func() {
-		if copied != "" {
-			os.Remove(copied)
-			os.Remove(filepath.Dir(copied))
-		}
 	}
 	args := []string{"--win-svc", "--log-file", logPath}
 	for _, f := range configPaths {
