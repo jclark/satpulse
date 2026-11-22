@@ -18,6 +18,7 @@ class Port {
     readers = 0;
     writes: number[][] = [];
     barrier?: Promise<void>;
+    writeBarrier?: Promise<void>;
     failOpen = false;
     connected = true;
 
@@ -42,7 +43,10 @@ class Port {
         }
         this.state = 'open';
         this.newStream();
-        this.writable = new WritableStream({write: b => { this.writes.push([...b]); }});
+        this.writable = new WritableStream({write: async b => {
+            this.writes.push([...b]);
+            await this.writeBarrier;
+        }});
     }
 
     async close() {
@@ -131,6 +135,23 @@ it('holds ownership until an aborted delayed open is closed', async () => {
     expect(port.opens).toEqual([38400, 115200]);
     expect(port.closes).toBe(1);
     await c.close();
+    expect(port.closes).toBe(2);
+});
+
+it('close does not wait for a stalled write but keeps the port until it settles', async () => {
+    const gate = deferred();
+    port.writeBarrier = gate.promise;
+    const c = await serial.open('serial:1', 38400);
+    const written = c.write(new Uint8Array([1]));
+    await vi.waitFor(() => expect(port.writes).toEqual([[1]]));
+    await c.close();
+    await expect(written).rejects.toThrow('Serial port is closed.');
+    expect(port.closes).toBe(0);
+    const next = serial.open('serial:1', 115200);
+    expect(port.opens).toEqual([38400]);
+    gate.resolve();
+    await (await next).close();
+    expect(port.opens).toEqual([38400, 115200]);
     expect(port.closes).toBe(2);
 });
 
