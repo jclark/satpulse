@@ -19,6 +19,7 @@ class Port {
     writes: number[][] = [];
     barrier?: Promise<void>;
     failOpen = false;
+    connected = true;
 
     get readable() {
         if (this.replace && !this.stream?.locked) {
@@ -104,6 +105,12 @@ it('delivers buffered bytes before a terminal error', async () => {
     expect([...(await c.read())!]).toEqual([1, 2]);
     await expect(c.read()).rejects.toMatchObject({name: 'NetworkError'});
     await expect(c.read()).rejects.toMatchObject({name: 'NetworkError'});
+});
+
+it('refuses a port whose device has disconnected', async () => {
+    port.connected = false;
+    await expect(serial.open('serial:1', 38400)).rejects.toThrow('The device has disconnected');
+    expect(port.opens).toEqual([]);
 });
 
 it('holds ownership until an aborted delayed open is closed', async () => {

@@ -214,6 +214,14 @@ The adapter makes the following choices:
   aborts the wait for a baud-change reopen; because Web Serial cannot abort
   the underlying open, a late completion is closed before the reservation is
   released, and `Close` returns without waiting for it.
+- **Re-enumeration.** A native-USB receiver that resets drops off the bus
+  and comes back as a new `SerialPort` object; the old one never opens
+  again (seen with a ZED-F9T in Chromium). On Linux and macOS Chromium keeps
+  the grant across a reconnect only for a USB device with a serial number,
+  and our u-blox receivers have none, so the new port usually needs a fresh
+  chooser grant. Opening a port whose `connected` is false fails at once
+  with an error telling the user to add the device again; Session's reopen
+  after a reset therefore gives up and reports it.
 - **Runtime failure.** The browser shell monitors Go throughout its lifetime,
   rejects pending and future calls on exit, closes JavaScript serial resources,
   and replaces the UI with a visible error. Promise rejection reasons retain
