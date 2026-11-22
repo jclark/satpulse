@@ -252,9 +252,9 @@ prerequisite again rather than cherry-picking if it moves.
 
 `Makefile.wasm` builds with standard Go for `js/wasm`, using `-trimpath` and
 `-ldflags '-s -w'`, copies the matching toolchain's `wasm_exec.js`, and assembles
-the site under `out/workbench-wasm`. `make -f Makefile.wasm compress` additionally
-writes gzip/Brotli assets and `sizes.json` using the new `measure.mjs` script.
-Plain rebuilds remove stale compressed counterparts.
+the site under `out/workbench-wasm`. `make -f Makefile.wasm sizes` builds and
+prints each asset's raw, gzip and Brotli size using the `sizes.mjs` script,
+without writing compressed files.
 
 The npm workspace adds `workbench-wasm` and `embed-workbench-wasm`. Frontend
 assets are generated under `cmd/satpulsewbwasm/dist`, which is ignored by Git;
