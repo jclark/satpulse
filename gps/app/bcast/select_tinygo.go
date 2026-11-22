@@ -18,10 +18,10 @@ import (
 // and runtime.alloc to hand, and would need neither the mirrored structs
 // below nor the version check.
 
-// These layouts and the linkname signatures mirror TinyGo 0.42.0's
+// These layouts and the linkname signatures mirror TinyGo 0.44.0's
 // src/runtime/chan.go. Before supporting another version, check them against
 // that runtime and run the select and broadcast tests on TinyGo.
-// https://github.com/tinygo-org/tinygo/blob/v0.42.0/src/runtime/chan.go
+// https://github.com/tinygo-org/tinygo/blob/v0.44.0/src/runtime/chan.go
 type tinygoSelectState struct {
 	ch    unsafe.Pointer
 	value unsafe.Pointer // nil for receive; otherwise points to the send value
@@ -41,8 +41,8 @@ func tinygoChanSelect(recvbuf unsafe.Pointer, states []tinygoSelectState, ops []
 func tinygoRandomIndex(n uint32) uint32
 
 func init() {
-	if version := runtime.Version(); version != "0.42.0" {
-		panic("bcast: select adapter requires TinyGo 0.42.0; got " + version)
+	if version := runtime.Version(); version != "0.44.0" {
+		panic("bcast: select adapter requires TinyGo 0.44.0; got " + version)
 	}
 }
 
@@ -75,7 +75,8 @@ func selectCases(cases []reflect.SelectCase) (int, reflect.Value, bool) {
 
 	states := make([]tinygoSelectState, len(cases))
 	order := make([]int, len(cases))
-	var receiveType reflect.Type
+	var receiveSize uintptr
+	receive := false
 	for i, c := range cases {
 		order[i] = i
 		if c.Dir == reflect.SelectDefault {
@@ -114,9 +115,8 @@ func selectCases(cases []reflect.SelectCase) (int, reflect.Value, bool) {
 			if typ.ChanDir() == reflect.SendDir {
 				panic("reflect.Select: RecvDir case using send-only channel")
 			}
-			if receiveType == nil || typ.Elem().Size() > receiveType.Size() {
-				receiveType = typ.Elem()
-			}
+			receive = true
+			receiveSize = max(receiveSize, typ.Elem().Size())
 		}
 	}
 
@@ -132,23 +132,23 @@ func selectCases(cases []reflect.SelectCase) (int, reflect.Value, bool) {
 		order[i], order[j] = order[j], order[i]
 	}
 
-	var receiveStorage reflect.Value
+	var receiveStorage []unsafe.Pointer
 	var recvbuf unsafe.Pointer
-	if receiveType != nil {
+	if receive {
 		// The runtime shares one receive buffer across all receive cases, so
-		// receiveType is whichever element type is largest. TinyGo 0.42.0
-		// implements reflect.New with runtime.alloc(size, nil), whose unknown
-		// GC layout scans every word: it safely retains pointers even when
-		// the selected element has a different layout from receiveType.
+		// it must hold the largest element and keep alive whatever pointers
+		// the selected one has, wherever they lie. A slice of pointers does
+		// both: the precise GC used on wasm treats every word as a possible
+		// pointer. reflect.New of the largest type would not, because it
+		// allocates with that type's own GC layout.
 		//
-		// Sizing by the largest type does not under-align the buffer for the
-		// others, even though the largest need not be the most strictly
-		// aligned. Every TinyGo allocator returns memory aligned for any Go
-		// type: on wasm, align() in arch_tinygowasm.go rounds to 16, the
-		// alignment of max_align_t, and the block GC's payload starts one
-		// objHeader into a block of 4 words, so 8 bytes on a 32-bit target.
-		receiveStorage = reflect.New(receiveType)
-		recvbuf = receiveStorage.UnsafePointer()
+		// Every TinyGo allocator returns memory aligned for any Go type: on
+		// wasm, align() in arch_tinygowasm.go rounds to 16, the alignment of
+		// max_align_t, and the block GC's payload starts at a block of 4
+		// words, so 16 bytes on a 32-bit target.
+		words := (receiveSize + unsafe.Sizeof(recvbuf) - 1) / unsafe.Sizeof(recvbuf)
+		receiveStorage = make([]unsafe.Pointer, max(words, 1))
+		recvbuf = unsafe.Pointer(unsafe.SliceData(receiveStorage))
 	}
 	// A nonempty ops slice tells the runtime to block when no case is ready.
 	ops := make([]tinygoChannelOp, len(states))
@@ -156,8 +156,8 @@ func selectCases(cases []reflect.SelectCase) (int, reflect.Value, bool) {
 	index := order[int(chosen)]
 	var recv reflect.Value
 	if c := cases[index]; c.Dir == reflect.SelectRecv {
-		// Recover the selected element's actual type, not the type used to
-		// size the shared buffer. New also uses an unknown GC layout here.
+		// Give the received value the selected element's own type, which
+		// New allocates with that type's GC layout.
 		recv = reflect.New(c.Chan.Type().Elem()).Elem()
 		n := int(recv.Type().Size())
 		copy(unsafe.Slice((*byte)(recv.Addr().UnsafePointer()), n), unsafe.Slice((*byte)(recvbuf), n))
