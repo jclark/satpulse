@@ -77,7 +77,9 @@ func ucomMetadata() (map[string]usbMeta, error) {
 		}
 		name, err := oidName(oid)
 		if err != nil {
-			if errors.Is(err, unix.ENOENT) {
+			// ENOMEM: a name longer than oidName's buffer, which no ttyname
+			// node of the dev.<driver>.<unit> form has.
+			if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ENOMEM) {
 				continue
 			}
 			return nil, fmt.Errorf("naming sysctl node: %w", err)
