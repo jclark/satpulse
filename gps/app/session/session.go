@@ -584,6 +584,7 @@ func (s *Session) connect(gen int, op Opener, vendors []gpsreg.Vendor) error {
 		return errors.New("connection attempt superseded")
 	}
 	s.setStateLocked(StateConnecting)
+	s.speed = 0
 	s.mu.Unlock()
 	s.lifecycleMu.Unlock()
 	s.emitStateChange()
@@ -783,7 +784,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 	rslt, err := gpscfg.Configure(runCtx, s.lg, procs,
 		gpsreg.CreateConfigProtocols(s.vendors), target, sub, conn)
 	portLock <- port
-	s.emitSpeed(conn)
+	s.emitSpeed(runCtx, conn)
 	if err != nil && !errors.Is(err, gpscfg.ErrNoProbeResponse) && !errors.Is(err, gpscfg.ErrNotDetected) {
 		if runCtx.Err() != nil {
 			return verdictDisconnect
@@ -849,7 +850,7 @@ func (s *Session) packetWorker(runCtx context.Context, conn gpsio.Conn, procs ma
 			rslt, err := gpscfg.Configure(req.ctx, s.lg, procs,
 				gpsreg.CreateConfigProtocols(s.vendors), req.target, sub, conn)
 			portLock <- port
-			s.emitSpeed(conn)
+			s.emitSpeed(runCtx, conn)
 			if reset && errors.Is(err, io.ErrUnexpectedEOF) {
 				// The reset killed the transport mid-run, as expected over
 				// USB: report success and let the manager reconnect.
@@ -1185,7 +1186,8 @@ func (s *Session) State() ConnState {
 }
 
 // Speed returns the host serial port speed, or 0 if the transport has
-// none.
+// none. After a connection ends it keeps that connection's last speed
+// until a later Connect starts to open a transport.
 func (s *Session) Speed() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -1779,14 +1781,23 @@ func (s *Session) sendConfigRequest(ctx context.Context, target *gpsprot.ConfigT
 // emitSpeed reads the current host serial port speed and emits gps:speed.
 // Called after any gpscfg.Configure since that is the only path that can
 // change the host speed (via SerialConn.WriteThenChangeSpeed).
-func (s *Session) emitSpeed(conn gpsio.Conn) {
+//
+// A run that has been cancelled still records its final speed, which a
+// later Connect clears only after closeLocked has waited for the run, but
+// does not emit it: clients would take it as the speed of a connection
+// superseding the run. closeLocked cancels runs under s.mu, so checking
+// under s.mu orders the two.
+func (s *Session) emitSpeed(runCtx context.Context, conn gpsio.Conn) {
 	s.mu.Lock()
 	if sc, ok := conn.(*gpsio.SerialConn); ok {
 		s.speed = sc.Speed()
 	}
 	speed := s.speed
+	cancelled := runCtx.Err() != nil
 	s.mu.Unlock()
-	s.emit(SpeedEvent(speed))
+	if !cancelled {
+		s.emit(SpeedEvent(speed))
+	}
 }
 
 // logHandler is an slog.Handler that emits "gps:log" events to the sink
