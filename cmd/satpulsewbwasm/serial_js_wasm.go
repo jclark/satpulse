@@ -42,7 +42,7 @@ func (o *serialOpener) Open(ctx context.Context, _ *slog.Logger) (session.Conn, 
 	v, err := await(o.serial.Call("open", o.device, speed, abort.Get("signal")))
 	close(done)
 	if err != nil {
-		if ctx.Err() != nil {
+		if e, ok := err.(*jsError); ok && e.name == "AbortError" && ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
 		return nil, err

@@ -131,6 +131,13 @@ export function App() {
     const signalCatalogRequest = useRef(0);
     const connStateSeen = useRef(false);
     const connSpeedSeen = useRef(false);
+    // deviceChosen is set once the user picks or types a device, which the
+    // startup snapshot must then not replace.
+    const deviceChosen = useRef(false);
+    const chooseDevice = useCallback((d: string) => {
+        deviceChosen.current = true;
+        setDevice(d);
+    }, []);
     const [logEntries, setLogEntries] = useState<LogEntry[]>([]);
     const [toasts, setToasts] = useState<Toast[]>([]);
     const [, setOperation] = useState<OperationState>({status: 'idle', label: ''});
@@ -480,8 +487,10 @@ export function App() {
             ? transport.connection.listPorts().catch(() => [] as PortInfo[])
             : Promise.resolve([] as PortInfo[]);
         Promise.all([transport.getConnection(), portsPromise]).then(async ([conn, ps]) => {
-            setPorts(ps);
-            setDevice(conn.device || (ps.length === 1 ? ps[0].device : ''));
+            if (!deviceChosen.current) {
+                setPorts(ps);
+                setDevice(conn.device || (ps.length === 1 ? ps[0].device : ''));
+            }
             if (!connSpeedSeen.current && conn.speed !== undefined) setSpeed(conn.speed);
             if (!connStateSeen.current) {
                 setConnState(conn.state);
@@ -530,13 +539,13 @@ export function App() {
         try {
             const p = await transport.connection?.choosePort?.();
             if (p && deviceSelectable.current) {
-                setDevice(p.device);
+                chooseDevice(p.device);
                 refreshPorts();
             }
         } catch (e) {
             addToast(e instanceof Error ? e.message : 'Could not choose port', 'error');
         }
-    }, [addToast, refreshPorts]);
+    }, [addToast, refreshPorts, chooseDevice]);
 
     // The device can be reported gone after the connection has already ended.
     useEffect(() => transport.connection?.onPortGone?.(d => {
@@ -626,7 +635,7 @@ export function App() {
                 readOnly={readOnly}
                 onUseHere={handleUseHere}
                 device={device}
-                setDevice={setDevice}
+                setDevice={chooseDevice}
                 speed={speed}
                 setSpeed={setSpeed}
                 onConnect={handleConnect}

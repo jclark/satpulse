@@ -267,7 +267,9 @@ The npm workspace adds `workbench-wasm` and `embed-workbench-wasm`. Frontend
 assets are generated under `cmd/satpulsewbwasm/dist`, which is ignored by Git;
 they are separate static files, not embedded inside the wasm module.
 The Go shell has a `go:generate` directive in a `generate`-tagged file, so
-frontend regeneration works on ordinary hosts. Native
+`go generate -tags generate ./cmd/satpulsewbwasm` regenerates the frontend on
+ordinary hosts, where the tag is needed because every other file in the
+package is js/wasm only. Native
 Workbench assets were also regenerated for the shared UI changes.
 
 The new Playwright project in `webui/packages/e2e/workbench-wasm` loads real
@@ -330,20 +332,21 @@ build identifier rather than silently replacing its files.
 Each deployment should assemble the complete site, including every retained
 version. Decide whether to rebuild those versions from pinned inputs or restore
 their outputs from persistent storage such as GitHub release assets. Ordinary
-Actions artifacts expire and should not be the only copy needed to retain an
-older version. The browser fetches files from Pages, not artifact download
-links. See [artifact retention](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts).
+Actions artifacts [expire](https://docs.github.com/en/actions/how-tos/manage-workflow-runs/download-workflow-artifacts)
+and should not be the only copy needed to retain an older version. The
+browser fetches files from Pages, not artifact download links.
 
 Configure the deployment repository's Pages custom domain as `app.satpulse.net`,
-add a DNS CNAME pointing to `jclark.github.io`, and enable HTTPS enforcement
-after certificate provisioning. See [custom subdomain setup](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site#configuring-a-subdomain).
+[add a DNS CNAME](https://docs.github.com/en/pages/configuring-a-custom-domain-for-your-github-pages-site/managing-a-custom-domain-for-your-github-pages-site#configuring-a-subdomain)
+pointing to `jclark.github.io`, and enable HTTPS enforcement after certificate
+provisioning.
 
 Before publishing, verify startup from a version directory, including
 `?vendor=zhongke`, the wasm response's `application/wasm` content type, and
 actual transfer compression. Generated `.gz` or `.br` files alone do not
 establish how Pages will serve them. Account for the size of all retained
-versions against the published-site limit of 1 GB and the soft bandwidth limit
-of 100 GB/month. See [Pages limits](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits).
+versions against the [published-site limit](https://docs.github.com/en/pages/getting-started-with-github-pages/github-pages-limits)
+of 1 GB and the soft bandwidth limit of 100 GB/month.
 
 ## Prerequisite branches
 

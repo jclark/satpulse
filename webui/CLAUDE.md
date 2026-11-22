@@ -9,7 +9,9 @@ binaries with `//go:embed`:
 - `packages/workbench` is a component library with no standalone app. It is
   consumed by `packages/workbench-http` and `packages/workbench-wasm`.
   The HTTP entry package is the `satpulsewb` UI, embedded via
-  `cmd/satpulsewb/embed.go`.
+  `cmd/satpulsewb/embed.go`. `packages/workbench/test` is a test-only entry
+  point that mounts the app on a mock transport; `packages/e2e` serves it for
+  the mock-transport checks and type-checks against it.
 - `packages/workbench-wasm` is the browser-only entry package. Its generated
   assets are ignored under `cmd/satpulsewbwasm/dist`; `Makefile.wasm` assembles them with
   the wasm module and matching Go runtime support into a static site.
@@ -37,6 +39,9 @@ After changing `packages/workbench/` or `packages/workbench-wasm/`, regenerate
 the standalone browser assets too:
 
     npm --prefix webui run embed-workbench-wasm
+
+(`go generate -tags generate ./cmd/satpulsewbwasm` runs the same command; the
+tag is needed because the package is otherwise js/wasm only.)
 
 Use `make -f Makefile.wasm` to build the complete browser site, and `make -f
 Makefile.wasm test-browser` to test it against the hardware-free simulator. The optional cold-start
