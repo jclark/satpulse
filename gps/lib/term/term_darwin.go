@@ -43,3 +43,9 @@ func (t *unixTerm) DevKind() DevKind {
 	}
 	return DevUnknown
 }
+
+// KernelPPSSupportsPin reports whether kernel PPS can watch pin, which it
+// cannot on macOS.
+func KernelPPSSupportsPin(pin ModemControlPin) bool {
+	return false
+}

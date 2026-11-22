@@ -5,7 +5,6 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -276,19 +275,11 @@ device = "/dev/ptp_tic"
 }
 
 func TestSerialPPSKernelMethodPin(t *testing.T) {
-	tests := []struct {
-		pin       string
-		expectErr bool
-	}{
-		{pin: "dcd"},
-		{pin: "cts", expectErr: runtime.GOOS != "freebsd"},
-		{pin: "ri", expectErr: true},
-	}
-	for _, tc := range tests {
-		t.Run(tc.pin, func(t *testing.T) {
+	for _, pin := range []gpsio.SerialPin{gpsio.SerialPinCTS, gpsio.SerialPinDCD, gpsio.SerialPinRI} {
+		t.Run(pin.String(), func(t *testing.T) {
 			cfg, err := readConfig(strings.NewReader(`
 [serial.pps]
-pin = "` + tc.pin + `"
+pin = "dcd"
 
 [sample.serial.pps]
 method = "kernel"
@@ -296,8 +287,9 @@ method = "kernel"
 			if err != nil {
 				t.Fatal(err)
 			}
+			cfg.Serial.PPS.Pin = pin
 			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-			if tc.expectErr {
+			if !gpsio.KernelPPSSupportsPin(pin) {
 				if err == nil || !strings.Contains(err.Error(), `method = "kernel"`) {
 					t.Fatalf("Validate error = %v, want the kernel method to reject the pin", err)
 				}
