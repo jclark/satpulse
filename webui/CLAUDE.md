@@ -40,6 +40,9 @@ the standalone browser assets too:
 
     npm --prefix webui run embed-workbench-wasm
 
+(`go generate -tags generate ./cmd/satpulsewbwasm` runs the same command; the
+tag is needed because the package is otherwise js/wasm only.)
+
 Use `make -f Makefile.wasm` to build the complete browser site, and `make -f
 Makefile.wasm test-browser` to test it against the hardware-free simulator. The optional cold-start
 benchmark is `make -f Makefile.wasm benchmark`; it is excluded from normal e2e.
