@@ -125,10 +125,14 @@ func ppsModeSysctl(path string) (string, error) {
 	return "", fmt.Errorf("%s: no pps_mode sysctl for this device", path)
 }
 
+// cancelCheck bounds each Fetch in Wait, so that a cancellation takes effect
+// within it without Cancel closing the source: the source's descriptor keeps
+// the port claimed until Close.
+const cancelCheck = 250 * time.Millisecond
+
 // Wait fetches the next kernel PPS event. The sequence numbers the watch has
 // already accounted for are the baseline Fetch waits past, so an edge that
-// arrived between calls is returned without waiting. kpps waits in bounded
-// slices, so a cancellation takes effect within one slice.
+// arrived between calls is returned without waiting.
 func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 	w.inWait.Store(true)
 	defer w.inWait.Store(false)
@@ -140,10 +144,13 @@ func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 			Assert: kpps.Edge{Sequence: w.seq.lastAssert},
 			Clear:  kpps.Edge{Sequence: w.seq.lastClear},
 		}
-		info, err := w.source.Fetch(previous, -1)
+		info, err := w.source.Fetch(previous, cancelCheck)
 		tRead := time.Now()
 		if w.cancelled.Load() {
 			return ModemControlPinChange{}, 0, ErrCancelled
+		}
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			continue
 		}
 		if err != nil {
 			return ModemControlPinChange{}, 0, err
@@ -154,12 +161,10 @@ func (w *kernelPPSPinWatch) Wait() (ModemControlPinChange, int, error) {
 	}
 }
 
-// Cancel is sticky. Closing the source makes a pending Fetch fail when its
-// current bounded slice ends; every current or subsequent Wait observes
-// cancelled.
+// Cancel is sticky. A pending Wait observes it when its current bounded
+// Fetch ends, and every subsequent Wait observes it at once.
 func (w *kernelPPSPinWatch) Cancel() {
 	w.cancelled.Store(true)
-	_ = w.closeSource()
 }
 
 func (w *kernelPPSPinWatch) Close() error {
