@@ -100,6 +100,8 @@ export async function newWasmTransport(onFatal: (error: Error) => void): Promise
         connection: {
             listPorts: () => serial.listPorts(),
             choosePort: () => serial.choosePort(),
+            portGone: device => serial.portGone(device),
+            onPortGone: cb => serial.onPortGone(cb),
             connect: (device, speed) => call('connect', {device, speed}),
             disconnect: () => call('disconnect'),
         },

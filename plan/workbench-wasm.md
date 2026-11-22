@@ -225,7 +225,14 @@ The adapter makes the following choices:
   and our u-blox receivers have none, so the new port usually needs a fresh
   chooser grant. Opening a port whose `connected` is false fails at once
   with an error telling the user to add the device again; Session's reopen
-  after a reset therefore gives up and reports it.
+  after a reset therefore gives up and reports it. A port also counts as
+  gone once `navigator.serial` reports its `disconnect`, which covers a
+  browser without `connected` and a removal reported after the connection
+  ended. When a connection ends other than by Disconnect and the
+  selected port is gone, or goes later, Workbench shows a modal dialog
+  whose Reconnect... button opens the chooser (its click is the user
+  gesture `requestPort` needs) and connects to the chosen port; Cancel
+  leaves Workbench disconnected.
 - **Runtime failure.** The browser shell monitors Go throughout its lifetime,
   rejects pending and future calls on exit, closes JavaScript serial resources,
   and replaces the UI with a visible error. Promise rejection reasons retain
