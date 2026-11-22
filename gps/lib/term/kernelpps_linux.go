@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -44,7 +43,7 @@ type kernelPPSPinWatch struct {
 // discipline is a property of the TTY, not the descriptor; N_PPS chains to
 // N_TTY, so normal data I/O continues while the watch is active.
 func newKernelPPSPinWatch(t *unixTerm, pin ModemControlPin) (*kernelPPSPinWatch, error) {
-	if !slices.Contains(KernelPPSPins(), pin) {
+	if pin != ModemDCD {
 		return nil, fmt.Errorf("%s: kernel PPS reports only DCD changes: %w", t.path, errors.ErrUnsupported)
 	}
 	fd, err := unix.FcntlInt(uintptr(t.fd), unix.F_DUPFD_CLOEXEC, 0)
