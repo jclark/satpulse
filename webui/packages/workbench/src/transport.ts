@@ -4,7 +4,7 @@
 // it. Connection management, message files and correction forwarding
 // are optional capabilities, implemented by backends that provide them.
 //
-// Implementations: fetch+SSE (satpulsewb) and Wails bindings (desktop).
+// Implementations: fetch+SSE (satpulsewb), Wails (desktop), wasm (browser).
 
 import type {ConfigProps, ConfigTarget} from '@satpulse/gps/configtarget';
 

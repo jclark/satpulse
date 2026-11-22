@@ -4,6 +4,7 @@
   "private": true,
   "scripts": {
     "e2e": "playwright test",
+    "benchmark": "playwright test --config playwright.benchmark.config.ts",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

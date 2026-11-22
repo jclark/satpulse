@@ -14,5 +14,5 @@
     "types": ["node"],
     "lib": ["es2022", "dom"]
   },
-  "include": ["harness.ts", "playwright.config.ts", "dashboard", "workbench", "../workbench/test"]
+  "include": ["harness.ts", "playwright.config.ts", "playwright.benchmark.config.ts", "dashboard", "workbench", "workbench-wasm", "../workbench/test"]
 }
