@@ -867,7 +867,7 @@ func TestMsgFilePreselect(t *testing.T) {
 		name     string
 		vendors  []gpsreg.Vendor
 		detected string
-		want     string
+		expect   string
 	}{
 		{"asserted overrides detected", []gpsreg.Vendor{gpsreg.VendorZhongke}, "u-blox", "Zhongke"},
 		{"detected case insensitive", nil, "U-BLOX", "u-blox"},
@@ -881,8 +881,8 @@ func TestMsgFilePreselect(t *testing.T) {
 			if tc.detected != "" {
 				s.probe.Info.Set(gpsprot.ReceiverInfo{Vendor: tc.detected})
 			}
-			if got := s.MsgFilePreselect(names, tc.vendors); got != tc.want {
-				t.Fatalf("preselect = %q, want %q", got, tc.want)
+			if got := s.MsgFilePreselect(names, tc.vendors); got != tc.expect {
+				t.Errorf("preselect = %q, expect %q", got, tc.expect)
 			}
 		})
 	}
