@@ -428,7 +428,7 @@ func TestEmitSpeedWithBlockedOutput(t *testing.T) {
 		synctest.Wait()
 		speedDone := make(chan struct{})
 		go func() {
-			s.emitSpeed(c)
+			s.emitSpeed(context.Background(), c)
 			close(speedDone)
 		}()
 		<-c.entered
@@ -441,6 +441,54 @@ func TestEmitSpeedWithBlockedOutput(t *testing.T) {
 		c.Stop()
 		pl.SemiClose()
 		<-logDone
+	})
+}
+
+// TestFailedConnectClearsSpeed checks that a Connect whose open fails
+// does not leave the previous connection's speed as the session speed,
+// which shells would report in place of the speed the user requested.
+func TestFailedConnectClearsSpeed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		s := testSession(t, &fakeSink{})
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		waitForState(t, s, StateConnected)
+		s.Disconnect()
+		if got := s.Speed(); got != 9600 {
+			t.Errorf("Speed() after Disconnect = %d, expect 9600", got)
+		}
+		if err := s.Connect(op, nil); err == nil {
+			t.Fatalf("Connect succeeded with no connection left to open")
+		}
+		if got := s.Speed(); got != 0 {
+			t.Errorf("Speed() after failed Connect = %d, expect 0", got)
+		}
+	})
+}
+
+// TestSupersededRunReportsNoSpeed checks that a run cancelled by a newer
+// Connect while it is probing does not report its speed, which would
+// replace the speed of the connection superseding it.
+func TestSupersededRunReportsNoSpeed(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		fs := &fakeSink{}
+		s := testSession(t, fs)
+		op := &fakeOpener{conns: []*fakeConn{newFakeConn()}}
+		if err := s.Connect(op, nil); err != nil {
+			t.Fatalf("Connect: %v", err)
+		}
+		// The probe of the silent connection is now waiting; time does not
+		// advance until the test goroutine blocks.
+		synctest.Wait()
+		if err := s.Connect(op, nil); err == nil {
+			t.Fatalf("Connect succeeded with no connection left to open")
+		}
+		synctest.Wait()
+		if n := fs.count(EventSpeed); n != 0 {
+			t.Errorf("speed events from the superseded run = %d, expect 0", n)
+		}
 	})
 }
 
