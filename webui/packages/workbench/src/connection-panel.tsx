@@ -165,3 +165,31 @@ export function ConnectionPanel({
         </header>
     );
 }
+
+// DeviceGoneDialog offers to choose the device again after it disappeared,
+// for example when a receiver reset re-enumerated its USB interface. It is a
+// modal dialog, so the page behind it is inert and Escape cancels it.
+export function DeviceGoneDialog({onReconnect, onCancel}: {onReconnect: () => void; onCancel: () => void}) {
+    const ref = useRef<HTMLDialogElement>(null);
+    useEffect(() => {
+        const d = ref.current!;
+        d.showModal();
+        d.querySelector<HTMLButtonElement>('button:last-child')?.focus();
+        return () => d.close();
+    }, []);
+    return (
+        <dialog
+            ref={ref}
+            aria-labelledby="device-gone-title"
+            class="m-auto w-110 max-w-[90vw] rounded-lg border border-border-subtle bg-surface-2 p-0 text-sm backdrop:bg-surface-1/70"
+            onCancel={e => { e.preventDefault(); onCancel(); }}
+            onClick={e => { if (e.target === ref.current) onCancel(); }}
+        >
+            <p id="device-gone-title" class="m-0 px-4 py-3 text-text-primary">The receiver's serial device has disconnected.</p>
+            <div class="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
+                <Button onClick={onCancel}>Cancel</Button>
+                <Button variant="primary" onClick={onReconnect}>Reconnect...</Button>
+            </div>
+        </dialog>
+    );
+}

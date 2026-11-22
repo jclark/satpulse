@@ -14,10 +14,12 @@ declare global {
         workbenchTest: {
             calls: typeof calls;
             subscriptions(): string[];
+            emit(name: string, data: unknown): void;
+            dropPort(device: string): void;
         };
     }
 }
-window.workbenchTest = {calls, subscriptions: () => [...listeners.keys()]};
+window.workbenchTest = {calls, subscriptions: () => [...listeners.keys()], emit, dropPort: () => {}};
 
 function record(method: string, ...args: unknown[]) {
     calls.push({method, args});
@@ -71,13 +73,17 @@ if (correctionsState !== null) {
 const picker = params.get('picker');
 if (picker !== null) {
     let ports: PortInfo[] = [];
+    let gone = params.get('gone');
     transport.getConnection = async () => ({state: 'disconnected', device: params.get('device') ?? '', speed: 38400});
     transport.connection = {
         listPorts: async () => {
             record('listPorts');
             return ports;
         },
-        connect: async (device, speed) => { record('connect', device, speed); },
+        connect: async (device, speed) => {
+            record('connect', device, speed);
+            if (device === gone) throw new Error('The device has disconnected.');
+        },
         disconnect: async () => {},
     };
     if (picker !== 'none') {
@@ -88,6 +94,16 @@ if (picker !== null) {
             const port = {device: 'serial:1', display: 'Receiver'};
             ports = [port];
             return port;
+        };
+        const goneListeners = new Set<(device: string) => void>();
+        transport.connection.portGone = device => device === gone;
+        transport.connection.onPortGone = cb => {
+            goneListeners.add(cb);
+            return () => { goneListeners.delete(cb); };
+        };
+        window.workbenchTest.dropPort = device => {
+            gone = device;
+            for (const cb of goneListeners) cb(device);
         };
     }
 }

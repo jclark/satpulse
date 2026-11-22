@@ -144,6 +144,13 @@ export interface ConnectionTransport {
     // choosePort runs a browser permission picker directly from a user gesture.
     // It resolves to null when the user cancels the picker.
     choosePort?(): Promise<PortInfo | null>;
+    // portGone reports whether the device behind a chosen port has
+    // disappeared, so that port can never be opened again and the device
+    // must be chosen anew. It comes with choosePort.
+    portGone?(device: string): boolean;
+    // onPortGone calls cb with the device of a chosen port when its device
+    // disappears, and returns a function that stops the calls.
+    onPortGone?(cb: (device: string) => void): () => void;
 }
 
 // MsgFileTransport is the message-file capability. A backend obtains the
