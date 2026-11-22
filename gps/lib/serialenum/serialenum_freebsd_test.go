@@ -131,9 +131,9 @@ func TestBuildPorts(t *testing.T) {
 	names := []string{"cuaU0", "cuaU1", "cuaU2.0", "cuaU2.1", "cuaU3", "cuaU9", "cuau0"}
 	expect := []Port{
 		{Device: "/dev/cuaU0", Display: "/dev/cuaU0", USB: USBID{VID: 0x0403, PID: 0x6014}},
-		{Device: "/dev/cuaU1", Display: "FTDI FT232R USB UART", USB: USBID{VID: 0x0403, PID: 0x6001}, Serial: "BG03SFLC"},
-		{Device: "/dev/cuaU2.0", Display: "Quad RS232-HS", USB: USBID{VID: 0x0403, PID: 0x6011}},
-		{Device: "/dev/cuaU2.1", Display: "Quad RS232-HS", USB: USBID{VID: 0x0403, PID: 0x6011}},
+		{Device: "/dev/cuaU1", Display: "/dev/cuaU1 (FTDI FT232R USB UART)", USB: USBID{VID: 0x0403, PID: 0x6001}, Serial: "BG03SFLC"},
+		{Device: "/dev/cuaU2.0", Display: "/dev/cuaU2.0 (Quad RS232-HS)", USB: USBID{VID: 0x0403, PID: 0x6011}},
+		{Device: "/dev/cuaU2.1", Display: "/dev/cuaU2.1 (Quad RS232-HS)", USB: USBID{VID: 0x0403, PID: 0x6011}},
 		{Device: "/dev/cuaU3", Display: "/dev/cuaU3 (u-blox gen 9)", USB: USBID{VID: 0x1546, PID: 0x01a9}},
 		{Device: "/dev/cuaU9", Display: "/dev/cuaU9"},
 		{Device: "/dev/cuau0", Display: "/dev/cuau0"},

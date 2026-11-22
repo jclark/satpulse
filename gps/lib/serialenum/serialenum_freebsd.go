@@ -179,9 +179,13 @@ func buildPorts(names []string, meta map[string]usbMeta) []Port {
 			}
 		}
 		device := filepath.Join(devDir, name)
+		display := device
+		if detail := portDetail(m.product, m.usb.VID, m.usb.PID); detail != "" {
+			display += " (" + detail + ")"
+		}
 		ports = append(ports, Port{
 			Device:  device,
-			Display: enumeratorDisplay(device, m.product, m.usb.VID, m.usb.PID),
+			Display: display,
 			USB:     m.usb,
 			Serial:  m.serial,
 		})
