@@ -4,23 +4,35 @@ import (
 	"context"
 	"errors"
 	"io"
+	"log/slog"
 	"net"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/lib/term"
 )
 
+func testLogger() *slog.Logger {
+	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
 type fakeIOFile struct {
 	closed bool
+	write  func([]byte) (int, error)
 }
 
 var _ ioFile = (*fakeIOFile)(nil)
 
 func (f *fakeIOFile) Read([]byte) (int, error) { return 0, io.EOF }
 
-func (f *fakeIOFile) Write(p []byte) (int, error) { return len(p), nil }
+func (f *fakeIOFile) Write(p []byte) (int, error) {
+	if f.write != nil {
+		return f.write(p)
+	}
+	return len(p), nil
+}
 
 func (f *fakeIOFile) Close() error {
 	f.closed = true
@@ -33,16 +45,18 @@ func (f *fakeIOFile) Buffered() (int, error) { return 0, nil }
 
 type fakeTerm struct {
 	fakeIOFile
-	speed       int
-	changeCalls int
-	restored    bool
+	speed          int
+	changeCalls    int
+	restored       bool
+	exceptHardware bool
+	changeSafe     time.Time
 }
 
 var _ term.Term = (*fakeTerm)(nil)
 
-func (f *fakeTerm) Change(...term.AttrSetter) error {
+func (f *fakeTerm) Change(...term.AttrSetter) (time.Time, error) {
 	f.changeCalls++
-	return nil
+	return f.changeSafe, nil
 }
 
 func (f *fakeTerm) Speed() int { return f.speed }
@@ -59,14 +73,15 @@ func (f *fakeTerm) Flush() error { return nil }
 
 func (f *fakeTerm) Drain() error { return nil }
 
-func (f *fakeTerm) Restore() error {
+func (f *fakeTerm) Restore(exceptHardware bool) error {
 	f.restored = true
+	f.exceptHardware = exceptHardware
 	return nil
 }
 
 func TestSerialConnUsesTermCapability(t *testing.T) {
 	f := &fakeTerm{speed: 4800}
-	c := newSerialConn(f, term.DevUART)
+	c := newSerialConn(testLogger(), f, term.DevUART)
 
 	if got := c.term(); got != f {
 		t.Fatalf("term() = %T, want fake terminal", got)
@@ -74,21 +89,22 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if got := c.Speed(); got != 4800 {
 		t.Errorf("Speed() = %d, want 4800", got)
 	}
-	state, err := c.ModemControlPinState()
+	state, err := c.SerialPinState()
 	if err != nil {
-		t.Fatalf("ModemControlPinState: %v", err)
+		t.Fatalf("SerialPinState: %v", err)
 	}
-	if !state.Asserted(ModemCTS) {
-		t.Error("ModemControlPinState did not report CTS asserted")
+	if !state.Asserted(SerialPinCTS) {
+		t.Error("SerialPinState did not report CTS asserted")
 	}
+	c.SetDetected()
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)
 	}
 	if f.changeCalls != 1 {
 		t.Errorf("Change calls = %d, want 1", f.changeCalls)
 	}
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
-		t.Errorf("WaitModemControlPinChange error = %v, want ErrUnsupported for a terminal that cannot wait", err)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("WaitSerialPinChange error = %v, want ErrUnsupported for a terminal that cannot wait", err)
 	}
 	if err := c.Close(); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -96,8 +112,80 @@ func TestSerialConnUsesTermCapability(t *testing.T) {
 	if !f.restored {
 		t.Error("Close did not restore terminal settings")
 	}
+	if f.exceptHardware {
+		t.Error("Close preserved hardware attributes after an unvalidated speed change")
+	}
 	if !f.closed {
 		t.Error("Close did not close terminal")
+	}
+}
+
+func TestSerialConnClosePreservesDetectedHardware(t *testing.T) {
+	f := &fakeTerm{speed: 4800}
+	c := newSerialConn(testLogger(), f, term.DevUART)
+	c.SetDetected()
+	if err := c.Close(); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if !f.exceptHardware {
+		t.Error("Close did not preserve hardware attributes after detection")
+	}
+}
+
+func TestSerialConnWaitsBeforeWrite(t *testing.T) {
+	tests := []struct {
+		name string
+		call func(*SerialConn) (int, error)
+	}{
+		{
+			name: "Write",
+			call: func(c *SerialConn) (int, error) { return c.Write([]byte("test")) },
+		},
+		{
+			name: "WritePacket",
+			call: func(c *SerialConn) (int, error) { return c.WritePacket([]byte("test"), nil) },
+		},
+		{
+			name: "WriteThenChangeSpeed",
+			call: func(c *SerialConn) (int, error) { return c.WriteThenChangeSpeed([]byte("test"), 115200) },
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				f := &fakeTerm{speed: 9600}
+				c := newSerialConn(testLogger(), f, term.DevUART)
+				defer c.Close()
+				deadline := time.Now().Add(20 * time.Millisecond)
+				c.safeWriteTime = deadline // supplied by OpenSerial after term.Open
+				writes := 0
+				f.write = func(p []byte) (int, error) {
+					if time.Now().Before(deadline) {
+						t.Error("wrote before the safe write time")
+					}
+					writes++
+					return len(p), nil
+				}
+				if _, err := tc.call(c); err != nil {
+					t.Fatal(err)
+				}
+				if writes != 1 || !c.safeWriteTime.IsZero() {
+					t.Fatalf("writes = %d, pending safe time = %v", writes, c.safeWriteTime)
+				}
+				// A speed change supplies a new deadline for the following write.
+				f.changeSafe = time.Now().Add(20 * time.Millisecond)
+				if _, err := c.WriteThenChangeSpeed(nil, 38400); err != nil {
+					t.Fatal(err)
+				}
+				deadline = f.changeSafe
+				if _, err := c.Write([]byte("next")); err != nil {
+					t.Fatal(err)
+				}
+				if !c.safeWriteTime.IsZero() {
+					t.Error("write did not consume the safe write time")
+				}
+			})
+		})
 	}
 }
 
@@ -189,10 +277,10 @@ func (f *slowWaitTerm) NewModemControlPinWatch(term.ModemControlPin) (term.Modem
 
 func TestSerialConnWaitDoesNotBlockReadsWhileCreatingWatch(t *testing.T) {
 	f := &slowWaitTerm{watch: newFakePinWatch(), creating: make(chan struct{}), release: make(chan struct{})}
-	c := newSerialConn(f, term.DevUART)
+	c := newSerialConn(testLogger(), f, term.DevUART)
 	errCh := make(chan error, 1)
 	go func() {
-		_, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait)
+		_, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait)
 		errCh <- err
 	}()
 	<-f.creating
@@ -204,7 +292,7 @@ func TestSerialConnWaitDoesNotBlockReadsWhileCreatingWatch(t *testing.T) {
 	c.Stop()
 	close(f.release)
 	if err := <-errCh; !errors.Is(err, net.ErrClosed) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want net.ErrClosed", err)
+		t.Fatalf("WaitSerialPinChange error = %v, want net.ErrClosed", err)
 	}
 	select {
 	case <-f.watch.closed:
@@ -221,11 +309,11 @@ func TestSerialConnWaitCapability(t *testing.T) {
 		missed: 2,
 	}
 	f := &fakeWaitTerm{watch: w}
-	c := newSerialConn(f, term.DevUSBtoUART)
+	c := newSerialConn(testLogger(), f, term.DevUSBtoUART)
 
-	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait)
+	change, missed, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait)
 	if err != nil || change.Timestamp != now || change.TRead != now || !change.Asserted || missed != 2 {
-		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 2, nil", change, missed, err)
+		t.Fatalf("WaitSerialPinChange = %+v, %d, %v; want supplied change, 2, nil", change, missed, err)
 	}
 	if got := w.waitCount(); got != 1 {
 		t.Errorf("waits = %d, want 1", got)
@@ -252,10 +340,10 @@ func TestSerialConnWaitCapability(t *testing.T) {
 func TestSerialConnWaitUnsupportedClosesWatch(t *testing.T) {
 	w := newFakePinWatch()
 	w.result <- fakeWatchResult{err: errors.ErrUnsupported}
-	c := newSerialConn(&fakeWaitTerm{watch: w}, term.DevUSBtoUART)
+	c := newSerialConn(testLogger(), &fakeWaitTerm{watch: w}, term.DevUSBtoUART)
 
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
 	}
 	select {
 	case <-w.closed:
@@ -269,17 +357,17 @@ func TestSerialConnWaitUnsupportedClosesWatch(t *testing.T) {
 
 func TestSerialConnWaitContextCancellation(t *testing.T) {
 	w := newFakePinWatch()
-	c := newSerialConn(&fakeWaitTerm{watch: w}, term.DevUSBtoUART)
+	c := newSerialConn(testLogger(), &fakeWaitTerm{watch: w}, term.DevUSBtoUART)
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, _, err := c.WaitModemControlPinChange(ctx, ModemCTS, PPSMethodWait)
+		_, _, err := c.WaitSerialPinChange(ctx, SerialPinCTS, PPSMethodWait)
 		done <- err
 	}()
 	<-w.waitStarted
 	cancel()
 	if err := <-done; !errors.Is(err, context.Canceled) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want context.Canceled", err)
+		t.Fatalf("WaitSerialPinChange error = %v, want context.Canceled", err)
 	}
 	select {
 	case <-w.cancelled:
@@ -295,7 +383,7 @@ func TestSerialConnWaitContextCancellation(t *testing.T) {
 
 func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	f := new(fakeIOFile)
-	c := newSerialConn(f, term.DevUnknown)
+	c := newSerialConn(testLogger(), f, term.DevUnknown)
 
 	if got := c.term(); got != nil {
 		t.Fatalf("term() = %T, want nil", got)
@@ -303,11 +391,11 @@ func TestSerialConnKeepsIOFileFallbackNonTerminal(t *testing.T) {
 	if got := c.Speed(); got != 0 {
 		t.Errorf("Speed() = %d, want 0", got)
 	}
-	if _, err := c.ModemControlPinState(); !errors.Is(err, term.ErrNotATTY) {
-		t.Errorf("ModemControlPinState error = %v, want ErrNotATTY", err)
+	if _, err := c.SerialPinState(); !errors.Is(err, term.ErrNotATTY) {
+		t.Errorf("SerialPinState error = %v, want ErrNotATTY", err)
 	}
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
-		t.Errorf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinCTS, PPSMethodWait); !errors.Is(err, errors.ErrUnsupported) {
+		t.Errorf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
 	}
 	if n, err := c.WriteThenChangeSpeed([]byte("test"), 9600); err != nil || n != 4 {
 		t.Fatalf("WriteThenChangeSpeed() = %d, %v; want 4, nil", n, err)
@@ -341,10 +429,10 @@ func TestSerialConnKernelMethod(t *testing.T) {
 		missed: 1,
 	}
 	f := &fakeKernelTerm{fakeWaitTerm: fakeWaitTerm{watch: w}}
-	c := newSerialConn(f, term.DevUART)
-	change, missed, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel)
+	c := newSerialConn(testLogger(), f, term.DevUART)
+	change, missed, err := c.WaitSerialPinChange(context.Background(), SerialPinDCD, PPSMethodKernel)
 	if err != nil || change.Timestamp != now || change.TRead != now || change.Asserted || missed != 1 {
-		t.Fatalf("WaitModemControlPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
+		t.Fatalf("WaitSerialPinChange = %+v, %d, %v; want supplied change, 1, nil", change, missed, err)
 	}
 	if f.kernelPin != term.ModemDCD {
 		t.Errorf("kernel-watched pin = %v, want DCD", f.kernelPin)
@@ -356,9 +444,9 @@ func TestSerialConnKernelMethod(t *testing.T) {
 }
 
 func TestSerialConnKernelMethodUnsupported(t *testing.T) {
-	c := newSerialConn(&fakeWaitTerm{watch: newFakePinWatch()}, term.DevUSBtoUART)
-	if _, _, err := c.WaitModemControlPinChange(context.Background(), ModemDCD, PPSMethodKernel); !errors.Is(err, errors.ErrUnsupported) {
-		t.Fatalf("WaitModemControlPinChange error = %v, want ErrUnsupported", err)
+	c := newSerialConn(testLogger(), &fakeWaitTerm{watch: newFakePinWatch()}, term.DevUSBtoUART)
+	if _, _, err := c.WaitSerialPinChange(context.Background(), SerialPinDCD, PPSMethodKernel); !errors.Is(err, errors.ErrUnsupported) {
+		t.Fatalf("WaitSerialPinChange error = %v, want ErrUnsupported", err)
 	}
 	if err := c.Close(); err != nil {
 		t.Fatalf("Close: %v", err)

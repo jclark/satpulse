@@ -5,10 +5,8 @@ import (
 	"encoding/json"
 	"log/slog"
 	"os"
-	"os/signal"
 	"sync"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/logfile"
@@ -60,9 +58,8 @@ func LogPackets(lg *slog.Logger, wg *sync.WaitGroup, logPath string, append bool
 }
 
 func doLogPackets(lg *slog.Logger, lf *logfile.LogFile, ch <-chan PacketLogEntry) {
-	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, syscall.SIGHUP)
+	notifyReopen(sig)
 	for {
 		select {
 		case entry, ok := <-ch:

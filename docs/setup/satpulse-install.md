@@ -9,6 +9,8 @@ Linux packages are available for:
 
 On macOS, SatPulse can be installed with Homebrew.
 
+On Windows, SatPulse is distributed as a zip file.
+
 Alternatively, you can install from source.
 
 ## Install on Linux from a package
@@ -20,7 +22,7 @@ Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then und
 | Debian-based (includes Raspberry Pi OS, Ubuntu) | `_amd64.deb` | `_arm64.deb` | `_armhf.deb` |
 | Fedora-based | `.x86_64.rpm` | `.aarch64.rpm` | none |
 
-The `_armhf.deb` package is for 32-bit ARM systems, such as the 32-bit version of Raspberry Pi OS. {% include new-in-03.html %}
+The `_armhf.deb` package is for 32-bit ARM systems, such as the 32-bit version of Raspberry Pi OS.
 Its binaries are built for ARMv6,
 so they work on every Raspberry Pi model, including the Pi Zero.
 
@@ -40,11 +42,17 @@ With rpm, use `-U` instead of `-i` if you are upgrading from an earlier version.
 
 ## Install on macOS with Homebrew
 
-On macOS, SatPulse builds and installs from source via the Homebrew tap
-[`jclark/satpulse`](https://github.com/jclark/homebrew-satpulse). {% include new-in-03.html %}
-The macOS port is still new, so use the prerelease channel;
-the tap's README gives the install commands,
-and covers running satpulsed as a service and where files are installed.
+See [Setup on macOS]({% link setup/macos.md %}#install-satpulse).
+
+## Install on Windows
+
+Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the `_windows_amd64.zip` file.
+The zip contains the executables and the documentation.
+There is no installer: unpack it into a folder of your choice and run the programs from a terminal.
+The program most useful on Windows at the moment is `satpulsewb.exe`, SatPulse Workbench,
+which is self-contained and needs nothing else from the zip.
+satpulsed does not yet have support for [running as a service](https://github.com/jclark/satpulse/pull/407) on Windows: it runs in the terminal that started it,
+and must be given its configuration file with `-f` or the `SATPULSE_CONFIG_FILE` environment variable.
 
 ## Install from source
 
@@ -71,7 +79,7 @@ After this, you will have:
 * the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
 * the systemd service template unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
 * the SatPulse command line tool installed as `/usr/local/bin/satpulsetool`
-* the GPS message files installed under `/usr/local/share/satpulse/gpsmsg`, organized by vendor directory {% include new-in-03.html %}
+* the GPS message files installed under `/usr/local/share/satpulse/gpsmsg`, organized by vendor directory
 
 ### macOS and FreeBSD
 

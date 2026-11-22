@@ -607,7 +607,7 @@ When `PVTMsgQuality` is set, the Unicore message configuration (`gps/internal/un
 
 ## NovAtel
 
-The NovAtel binary protocol is shared by NovAtel OEM7, ByNav, and SinoGNSS (K8/K9) receivers. All three vendors use identical binary message layouts; the `SolStatus` and `PosType` enum value sets vary by vendor. The `novmsg` package defines the superset of values across all three vendors (as untyped constants; see `novatel-variants.md`). All three are handled by a single `PacketProcessor` in `gps/internal/nov/`.
+The NovAtel binary protocol is shared by NovAtel OEM7, Bynav, and SinoGNSS (K8/K9) receivers. All three vendors use identical binary message layouts; the `SolStatus` and `PosType` enum value sets vary by vendor. The `novmsg` package defines the superset of values across all three vendors (as untyped constants; see `novatel-variants.md`). All three are handled by a single `PacketProcessor` in `gps/internal/nov/`.
 
 The NovAtel processor already emits `NavEpochMsg` with position/velocity accuracy via the `NavEpochManager` epoch mechanism. This plan adds solution quality metadata (FixLevel, FixDim, Correction, DOPs, satellite counts) to the existing epoch. The primary structural difference from Unicore is that NovAtel uses separate position and velocity messages (BESTPOS + BESTVEL) instead of a combined BESTNAV.
 
@@ -663,9 +663,9 @@ When `SolStatus` is `SOL_COMPUTED`, map `pos type` as follows:
 
 Notes:
 
-- **Values shared with Unicore**: Types 0-2, 8, 16-17, 32-34, 48-50, 53-56, 68-69 share the same binary values and semantically equivalent meanings. The mappings match the Unicore table. NovAtel calls value 18 WAAS (Unicore calls it SBAS); both mean SBAS corrections. Value 33 (IONOFREE_FLOAT) is supported by ByNav but reserved in OEM7.
-- **FLOATCONV (4)**: ByNav-specific. Floating carrier-phase ambiguity solution that has not yet converged.
-- **WIDELANE (5), NARROWLANE (6)**: Legacy NovAtel/ByNav types corresponding to WIDE_INT (49) and NARROW_INT (50) respectively. WIDELANE resolves wide-lane ambiguities to integers; NARROWLANE resolves narrow-lane ambiguities.
+- **Values shared with Unicore**: Types 0-2, 8, 16-17, 32-34, 48-50, 53-56, 68-69 share the same binary values and semantically equivalent meanings. The mappings match the Unicore table. NovAtel calls value 18 WAAS (Unicore calls it SBAS); both mean SBAS corrections. Value 33 (IONOFREE_FLOAT) is supported by Bynav but reserved in OEM7.
+- **FLOATCONV (4)**: Bynav-specific. Floating carrier-phase ambiguity solution that has not yet converged.
+- **WIDELANE (5), NARROWLANE (6)**: Legacy NovAtel/Bynav types corresponding to WIDE_INT (49) and NARROW_INT (50) respectively. WIDELANE resolves wide-lane ambiguities to integers; NARROWLANE resolves narrow-lane ambiguities.
 - **PROPAGATED (19)**: Position propagated by the Kalman filter without new GNSS observations. No current measurement, so FixLevel is FixLevelNone.
 - **RTK_DIRECT_INS (51)**: NovAtel SPAN product. RTK filter initialized directly from INS filter.
 - **INS_SBAS (52)**: Differs from Unicore's INS (52), which is pure inertial with no GNSS contribution. NovAtel's INS_SBAS indicates an INS solution with the last GNSS update being SBAS-corrected.
@@ -676,13 +676,13 @@ Notes:
 
 ### SinoGNSS differences
 
-SinoGNSS K8/K9 uses a reduced `PosType` set (no INS types, no PPP_BASIC, no UAL monitoring) and has three values that differ from NovAtel/ByNav. The variant mechanism in `novatel-variants.md` handles this: SinoGNSS uses `SinoPosType` with its own enum values, so the quality mapping operates on the correct vendor-specific types.
+SinoGNSS K8/K9 uses a reduced `PosType` set (no INS types, no PPP_BASIC, no UAL monitoring) and has three values that differ from NovAtel/Bynav. The variant mechanism in `novatel-variants.md` handles this: SinoGNSS uses `SinoPosType` with its own enum values, so the quality mapping operates on the correct vendor-specific types.
 
 The SinoGNSS-specific `pos type` values and their mappings:
 
 - **SINGLE_SMOOTH (9)**: Carrier-smoothed single-point solution. FixLevelCode + FixDim3D (carrier smoothing improves code precision but does not change the fundamental solution technique).
 - **FIX_DERIVATION (35)**: Derived/propagated solution. FixLevelCarrierFloat + FixDim3D + CorrBaseStation (a degraded RTK solution).
-- **SUPER_WIDE_LANE (51)**: Super wide-lane carrier-fixed solution. FixLevelCarrierFixed + FixDim3D + CorrPartialDualFreq. This value is RTK_DIRECT_INS in NovAtel/ByNav; the variant mechanism ensures the correct type is used for each vendor.
+- **SUPER_WIDE_LANE (51)**: Super wide-lane carrier-fixed solution. FixLevelCarrierFixed + FixDim3D + CorrPartialDualFreq. This value is RTK_DIRECT_INS in NovAtel/Bynav; the variant mechanism ensures the correct type is used for each vendor.
 
 ### Accuracy
 
@@ -699,7 +699,7 @@ Already populated by `gps/internal/nov/nav.go`: BESTPOS sigmas -> `Acc.Hor`, `Ac
 
 ### Shared PosType quality mapping
 
-NovAtel OEM7, ByNav, Unicore, and SinoGNSS share a large set of PosType numeric values with identical semantics (see `novatel-variants.md` Step 2 for the untyped constants in `novmsg`). Rather than duplicating the PosType-to-quality mapping in both `nov/` and `unc/`, a shared mapping function lives in `gps/internal/nov/` (since `unc/` already imports `nov/`).
+NovAtel OEM7, Bynav, Unicore, and SinoGNSS share a large set of PosType numeric values with identical semantics (see `novatel-variants.md` Step 2 for the untyped constants in `novmsg`). Rather than duplicating the PosType-to-quality mapping in both `nov/` and `unc/`, a shared mapping function lives in `gps/internal/nov/` (since `unc/` already imports `nov/`).
 
 **`gps/internal/nov/quality.go`**:
 

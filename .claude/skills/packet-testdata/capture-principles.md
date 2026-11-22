@@ -88,6 +88,14 @@ Fields:
 - `bin` or `ascii` -- hex-encoded binary data or ASCII text
 - `out` -- true for outgoing (transmitted) packets
 
+## Unrecognised chunks and zero bytes
+
+A packet log records exactly what was received; never edit it to remove anything.
+
+- Untagged chunks at the start and end of a capture are normal: they are the rest of a packet that was being sent when the port was opened, and a packet cut off when the capture ended. A lone `$`, `#` or sync byte among them is ordinary data, not a packet.
+- A USB serial adapter can insert a zero byte when the port was left unread and its receive buffer overflowed. The FTDI driver (`ftdi_sio`) inserts it before the first byte it delivers, so the capture starts with a short chunk such as `00 0a`. Unlike UART drivers such as 8250 and PL011, USB serial drivers ignore the IGNPAR and IGNBRK settings that suppress this, and the chunk only appears when a capture opens a port that has been idle for a while.
+- A zero byte anywhere else is a real problem: in an ASCII packet, in a mostly-text untagged chunk, or as an untagged chunk starting with a packet sync in the middle of a capture (a packet whose checksum failed). Check every capture for these.
+
 ## Naming convention
 
 File names indicate the content and baud rate:

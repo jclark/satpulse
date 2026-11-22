@@ -98,7 +98,7 @@ func TestGetInterfaceInfo(t *testing.T) {
 			expectErr: true,
 		},
 		{
-			name: "no pins - returns nil, nil",
+			name: "no pins and no channels",
 			fsys: fstest.MapFS{
 				"class/ptp/ptp0/n_pins": {Data: []byte("0\n")},
 				"class/ptp/ptp0/n_external_timestamps": {Data: []byte("0\n")},
@@ -106,10 +106,31 @@ func TestGetInterfaceInfo(t *testing.T) {
 			},
 			ifname:   "eth0",
 			phcIndex: 0,
-			expect:     nil,
+			expect: &InterfaceInfo{
+				Name:       "eth0",
+				ClockIndex: 0,
+				Pins:       []string{},
+			},
 		},
 		{
-			name: "missing n_pins file - returns nil, nil",
+			name: "channels but no pins (am65-cpts)",
+			fsys: fstest.MapFS{
+				"class/ptp/ptp0/n_programmable_pins": {Data: []byte("0\n")},
+				"class/ptp/ptp0/n_external_timestamps": {Data: []byte("4\n")},
+				"class/ptp/ptp0/n_periodic_outputs": {Data: []byte("2\n")},
+			},
+			ifname:   "eth0",
+			phcIndex: 0,
+			expect: &InterfaceInfo{
+				Name:              "eth0",
+				ClockIndex:        0,
+				Pins:              []string{},
+				NumExttsChannels:  4,
+				NumPeroutChannels: 2,
+			},
+		},
+		{
+			name: "missing n_pins file - no pins",
 			fsys: fstest.MapFS{
 				"class/ptp/ptp0/n_external_timestamps": {Data: []byte("4\n")},
 				"class/ptp/ptp0/n_periodic_outputs": {Data: []byte("4\n")},
@@ -117,7 +138,13 @@ func TestGetInterfaceInfo(t *testing.T) {
 			},
 			ifname:   "eth0",
 			phcIndex: 0,
-			expect:     nil,
+			expect: &InterfaceInfo{
+				Name:              "eth0",
+				ClockIndex:        0,
+				Pins:              []string{},
+				NumExttsChannels:  4,
+				NumPeroutChannels: 4,
+			},
 		},
 		{
 			name: "pins directory doesn't exist but n_pins > 0 - error",
@@ -132,7 +159,7 @@ func TestGetInterfaceInfo(t *testing.T) {
 			expect: &InterfaceInfo{
 				Name:              "eth0",
 				ClockIndex:        0,
-				Pins:              nil,
+				Pins:              []string{},
 				NumExttsChannels:  4,
 				NumPeroutChannels: 4,
 			},
@@ -147,7 +174,11 @@ func TestGetInterfaceInfo(t *testing.T) {
 			},
 			ifname:   "eth0",
 			phcIndex: 0,
-			expect:     nil, // n_pins is 0 because parse failed
+			expect: &InterfaceInfo{ // all counts 0 because parsing failed
+				Name:       "eth0",
+				ClockIndex: 0,
+				Pins:       []string{},
+			},
 		},
 		{
 			name: "whitespace handling in sysfs files",

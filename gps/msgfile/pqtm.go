@@ -24,6 +24,9 @@ func (pqtmClassifier) classifyRequest(payload string) requestAnalysis {
 	case qtmmsg.RequestQuery:
 		a.expectAck = ExpectAckOrNak
 		a.expectData = expectDataWithAck
+	case qtmmsg.RequestNoAck:
+		a.expectAck = ExpectAckNakOnly
+		a.expectData = expectDataNone
 	case qtmmsg.RequestVerno:
 		a.expectAck = ExpectAckNakOnly
 		a.expectData = expectDataSingle
