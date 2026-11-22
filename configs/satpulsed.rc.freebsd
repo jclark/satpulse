@@ -75,7 +75,8 @@ else
 	device_args=""
 fi
 
-eval _user="\$${name}_user"
+# Not _user: run_rc_command sets and unsets that global itself.
+eval _runuser="\$${name}_user"
 eval _logfile="\$${name}_logfile"
 eval _configfiles="\$${name}_configfile"
 config_args=""
@@ -94,8 +95,8 @@ start_precmd="satpulsed_precmd"
 # or /var/log, so pre-create its supervisor pidfile and log file.
 satpulsed_precmd()
 {
-	[ -e "${pidfile}" ] || install -o "${_user}" -m 644 /dev/null "${pidfile}"
-	[ -e "${_logfile}" ] || install -o "${_user}" -m 640 /dev/null "${_logfile}"
+	[ -e "${pidfile}" ] || install -o "${_runuser}" -m 644 /dev/null "${pidfile}"
+	[ -e "${_logfile}" ] || install -o "${_runuser}" -m 640 /dev/null "${_logfile}"
 }
 
 run_rc_command "$1"
