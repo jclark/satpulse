@@ -7,6 +7,16 @@ async function chooseDevice(page: Page) {
     await page.getByRole('button', {name: 'Add a device...', exact: true}).click();
 }
 
+// dropConnection drives the app through a connection that then ends on its own.
+async function dropConnection(page: Page, device: string) {
+    await expect(page.locator('header input').first()).toHaveValue(device);
+    const button = page.getByRole('banner').getByRole('button', {name: /^(Connect|Disconnect)$/});
+    await page.evaluate(() => window.workbenchTest.emit('gps:state', 'connected'));
+    await expect(button).toHaveText('Disconnect');
+    await page.evaluate(() => window.workbenchTest.emit('gps:state', 'disconnected'));
+    await expect(button).toHaveText('Connect');
+}
+
 test.describe('optional transport capabilities', () => {
     test('omits corrections controls and subscriptions without the capability', async ({page, mockWorkbench}) => {
         await page.goto(mockWorkbench.url());
@@ -86,6 +96,72 @@ test.describe('optional transport capabilities', () => {
         await chooseDevice(page);
         await expect(page.getByText('Permission denied', {exact: true})).toBeVisible();
         await expect(page.locator('header input').first()).toHaveValue('serial:1');
+    });
+
+    test('offers to choose a disappeared device again and connects to it', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=select&device=serial:0&gone=serial:0'));
+        await dropConnection(page, 'serial:0');
+        const dialog = page.getByRole('dialog', {name: "The receiver's serial device has disconnected."});
+        await expect(dialog).toBeVisible();
+        const reconnect = dialog.getByRole('button', {name: 'Reconnect...', exact: true});
+        await expect(reconnect).toBeFocused();
+        await reconnect.click();
+        await expect(dialog).toHaveCount(0);
+        await expect(page.locator('header input').first()).toHaveValue('serial:1');
+        expect(await page.evaluate(() => window.workbenchTest.calls.find(c => c.method === 'connect')?.args)).toEqual(['serial:1', 38400]);
+    });
+
+    test('cancel dismisses the disappeared-device dialog without choosing', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=select&device=serial:0&gone=serial:0'));
+        await dropConnection(page, 'serial:0');
+        const dialog = page.getByRole('dialog', {name: "The receiver's serial device has disconnected."});
+        await dialog.getByRole('button', {name: 'Cancel', exact: true}).click();
+        await expect(dialog).toHaveCount(0);
+        expect(await page.evaluate(() => window.workbenchTest.calls.filter(c => c.method === 'choosePort').length)).toBe(0);
+        await expect(page.locator('header input').first()).toHaveValue('serial:0');
+    });
+
+    test('a disconnect with the device still present shows no dialog', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=select&device=serial:1&gone=serial:0'));
+        await dropConnection(page, 'serial:1');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    test('a device reported gone after the connection ended opens a modal dialog', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=select&device=serial:1'));
+        await dropConnection(page, 'serial:1');
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+        await page.evaluate(() => window.workbenchTest.dropPort('serial:1'));
+        const dialog = page.getByRole('dialog', {name: "The receiver's serial device has disconnected."});
+        await expect(dialog).toBeVisible();
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        await page.keyboard.press('Tab');
+        expect(await dialog.evaluate(d => d.contains(document.activeElement))).toBe(true);
+        await page.keyboard.press('Escape');
+        await expect(dialog).toHaveCount(0);
+    });
+
+    test('no dialog after Disconnect even if the device then goes', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=select&device=serial:1'));
+        await expect(page.locator('header input').first()).toHaveValue('serial:1');
+        await page.evaluate(() => window.workbenchTest.emit('gps:state', 'connected'));
+        await page.getByRole('banner').getByRole('button', {name: 'Disconnect', exact: true}).click();
+        await page.evaluate(() => window.workbenchTest.emit('gps:state', 'disconnected'));
+        await expect(page.getByRole('banner').getByRole('button', {name: 'Connect', exact: true})).toBeVisible();
+        await page.evaluate(() => window.workbenchTest.dropPort('serial:1'));
+        await expect(page.getByRole('dialog')).toHaveCount(0);
+    });
+
+    test('Connect on a gone device after cancel shows the dialog, not an error', async ({page, mockWorkbench}) => {
+        await page.goto(mockWorkbench.url('?picker=select&device=serial:0&gone=serial:0'));
+        await dropConnection(page, 'serial:0');
+        const dialog = page.getByRole('dialog', {name: "The receiver's serial device has disconnected."});
+        await dialog.getByRole('button', {name: 'Cancel', exact: true}).click();
+        await expect(dialog).toHaveCount(0);
+        await page.getByRole('banner').getByRole('button', {name: 'Connect', exact: true}).click();
+        await expect(dialog).toBeVisible();
+        await expect(page.getByText('The device has disconnected.', {exact: true})).toHaveCount(0);
     });
 
     test('without a picker the device path stays editable and there is no add action', async ({page, mockWorkbench}) => {

@@ -14,6 +14,8 @@ interface BrowserPort {
 interface BrowserSerial {
     getPorts(): Promise<BrowserPort[]>;
     requestPort(): Promise<BrowserPort>;
+    addEventListener(type: 'connect' | 'disconnect', listener: (e: Event) => void): void;
+    removeEventListener(type: 'connect' | 'disconnect', listener: (e: Event) => void): void;
 }
 
 function serialAPI(): BrowserSerial {
@@ -44,6 +46,22 @@ export class WebSerial {
     private available = new Map<BrowserPort, Promise<void>>();
     private connections = new Set<SerialConnection>();
     private closed = false;
+    // Disconnect events reach listeners even if the device goes after the
+    // connection has ended. They also stand in for SerialPort.connected in a
+    // browser without it, until a connect event: a Bluetooth port can come
+    // back as the same object.
+    private gone = new WeakSet<BrowserPort>();
+    private goneListeners = new Set<(device: string) => void>();
+    private watching = false;
+    private onDisconnect = (e: Event) => {
+        const port = e.target as unknown as BrowserPort;
+        this.gone.add(port);
+        const device = [...this.ports].find(([, p]) => p === port)?.[0];
+        if (device) for (const cb of this.goneListeners) cb(device);
+    };
+    private onConnect = (e: Event) => {
+        this.gone.delete(e.target as unknown as BrowserPort);
+    };
 
     async listPorts(): Promise<PortInfo[]> {
         return (await serialAPI().getPorts()).map(p => this.remember(p));
@@ -91,18 +109,44 @@ export class WebSerial {
             // comes back as a new SerialPort; this one never opens again. Try
             // the open first: an idle Bluetooth port is not connected until
             // opened.
-            if (port.connected === false) throw new Error('The device has disconnected. Use "Add a device..." to choose it again.');
+            if (this.portGone(device)) throw new Error('The device has disconnected. Use "Add a device..." to choose it again.');
             throw e;
         }
         return c;
     }
 
+    // portGone reports whether the device behind a chosen port has disappeared.
+    // A device that re-enumerates, for example after a receiver reset, comes
+    // back as a new SerialPort, often needing a new grant; this one never
+    // opens again.
+    portGone(device: string): boolean {
+        const port = this.ports.get(device);
+        if (!port) return false;
+        return port.connected === undefined ? this.gone.has(port) : !port.connected;
+    }
+
+    // onPortGone calls cb with the device of each chosen port whose device
+    // disappears, and returns a function that stops the calls.
+    onPortGone(cb: (device: string) => void): () => void {
+        this.goneListeners.add(cb);
+        return () => { this.goneListeners.delete(cb); };
+    }
+
     async close(): Promise<void> {
         this.closed = true;
+        if (this.watching) {
+            serialAPI().removeEventListener('disconnect', this.onDisconnect);
+            serialAPI().removeEventListener('connect', this.onConnect);
+        }
         await Promise.allSettled([...this.connections].map(c => c.close()));
     }
 
     private remember(port: BrowserPort): PortInfo {
+        if (!this.watching) {
+            serialAPI().addEventListener('disconnect', this.onDisconnect);
+            serialAPI().addEventListener('connect', this.onConnect);
+            this.watching = true;
+        }
         let device = [...this.ports].find(([, p]) => p === port)?.[0];
         if (!device) {
             device = `serial:${this.ports.size + 1}`;
