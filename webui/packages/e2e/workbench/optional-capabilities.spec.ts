@@ -144,11 +144,11 @@ test.describe('optional transport capabilities', () => {
 
     test('no dialog after Disconnect even if the device then goes', async ({page, mockWorkbench}) => {
         await page.goto(mockWorkbench.url('?picker=select&device=serial:1'));
-        const button = page.getByRole('banner').getByRole('button', {name: /^(Connect|Disconnect)$/});
+        await expect(page.locator('header input').first()).toHaveValue('serial:1');
         await page.evaluate(() => window.workbenchTest.emit('gps:state', 'connected'));
-        await button.click();
+        await page.getByRole('banner').getByRole('button', {name: 'Disconnect', exact: true}).click();
         await page.evaluate(() => window.workbenchTest.emit('gps:state', 'disconnected'));
-        await expect(button).toHaveText('Connect');
+        await expect(page.getByRole('banner').getByRole('button', {name: 'Connect', exact: true})).toBeVisible();
         await page.evaluate(() => window.workbenchTest.dropPort('serial:1'));
         await expect(page.getByRole('dialog')).toHaveCount(0);
     });
