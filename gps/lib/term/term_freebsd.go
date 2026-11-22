@@ -31,9 +31,3 @@ var baudRates = []struct {
 func (t *unixTerm) DevKind() DevKind {
 	return DevUnknown
 }
-
-// KernelPPSSupportsPin reports whether kernel PPS can watch pin, which it
-// cannot on FreeBSD.
-func KernelPPSSupportsPin(pin ModemControlPin) bool {
-	return false
-}
