@@ -1,12 +1,10 @@
 #!/bin/sh
 
-# FreeBSD rc.d service script for satpulsed. Install it as
-# /usr/local/etc/rc.d/satpulsed, mode 755:
+# FreeBSD rc.d service script for satpulsed, to be installed as
+# /usr/local/etc/rc.d/satpulsed.
 #
-#   install -m 755 satpulsed.rc.freebsd /usr/local/etc/rc.d/satpulsed
-#
-# and create the unprivileged user it runs as, in the dialer group so
-# that it can open the serial ports:
+# Create the unprivileged user it runs as, in the dialer group so that
+# it can open the serial ports:
 #
 #   pw useradd satpulse -c "SatPulse daemon" -d /nonexistent \
 #       -s /usr/sbin/nologin -G dialer
