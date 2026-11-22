@@ -195,16 +195,24 @@ func registerService(vars *flagVars) error {
 	if err != nil {
 		return err
 	}
+	// Several config files are a fallback list, of which the daemon uses
+	// the first that exists, so only one of them need exist.
 	var configPaths []string
+	found := false
 	for _, f := range vars.configFiles {
 		a, err := filepath.Abs(f)
 		if err != nil {
 			return err
 		}
-		if _, err := os.Stat(a); err != nil {
+		if _, err := os.Stat(a); err == nil {
+			found = true
+		} else if !errors.Is(err, os.ErrNotExist) || len(vars.configFiles) == 1 {
 			return err
 		}
 		configPaths = append(configPaths, a)
+	}
+	if !found {
+		return fmt.Errorf("cannot find any of the configuration files: %s", strings.Join(configPaths, ", "))
 	}
 	exe, err := os.Executable()
 	if err != nil {
