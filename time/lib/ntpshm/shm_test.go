@@ -43,6 +43,9 @@ func TestAttachExisting(t *testing.T) {
 	const segment = 254
 	if id, err := shmID(segment); err == nil {
 		t.Skipf("NTP SHM test segment %d already exists as shmid %d", segment, id)
+	} else if errors.Is(err, unix.ENOSYS) {
+		// A FreeBSD jail without sysvshm access fails every SysV SHM call.
+		t.Skipf("SysV shared memory unavailable: %v", err)
 	} else if !errors.Is(err, unix.ENOENT) {
 		t.Fatalf("checking existing segment: %v", err)
 	}
