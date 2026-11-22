@@ -152,15 +152,20 @@ func pnpinfoUSBID(vals map[string]string) USBID {
 // for a vendor-specific (0xff) device class.
 var descSuffix = regexp.MustCompile(`(, class [0-9]+/[0-9]+)?, rev [0-9a-f.]+/[0-9a-f.]+, addr [0-9]+$`)
 
-// descProduct extracts best-effort product display text from a %desc value.
-// A device that publishes no string descriptors gets numeric
-// "vendor 0x... product 0x..." fallback text, which is no use for display.
+// descVendorFallback and descProductFallback match the numeric text that
+// usb_devinfo substitutes, independently, for a missing manufacturer or
+// product string descriptor.
+var (
+	descVendorFallback  = regexp.MustCompile(`^vendor 0x[0-9a-f]{4}( |$)`)
+	descProductFallback = regexp.MustCompile(`(^| )product 0x[0-9a-f]{4}$`)
+)
+
+// descProduct extracts best-effort product display text from a %desc value,
+// leaving out the numeric fallback text, which is no use for display.
 func descProduct(desc string) string {
 	s := descSuffix.ReplaceAllString(desc, "")
-	if strings.HasPrefix(s, "vendor 0x") {
-		return ""
-	}
-	return s
+	s = descVendorFallback.ReplaceAllString(s, "")
+	return descProductFallback.ReplaceAllString(s, "")
 }
 
 // buildPorts joins the /dev scan to the ucom metadata. A cuaU port matches

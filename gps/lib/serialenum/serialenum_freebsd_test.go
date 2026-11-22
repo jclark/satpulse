@@ -92,6 +92,16 @@ func TestDescProduct(t *testing.T) {
 			expect: "",
 		},
 		{
+			name:   "no manufacturer string",
+			input:  "vendor 0x1a86 USB Serial, rev 1.10/2.64, addr 5",
+			expect: "USB Serial",
+		},
+		{
+			name:   "no product string",
+			input:  "FTDI product 0x6014, class 0/0, rev 2.00/9.00, addr 61",
+			expect: "FTDI",
+		},
+		{
 			name:   "product text",
 			input:  "Ralink 802.11 n WLAN, class 0/0, rev 2.00/1.01, addr 3",
 			expect: "Ralink 802.11 n WLAN",
