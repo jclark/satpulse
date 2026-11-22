@@ -10,7 +10,8 @@ func TestPPSModeSysctl(t *testing.T) {
 	}{
 		{path: "/dev/cuau0", expect: "dev.uart.0.pps_mode"},
 		{path: "/dev/ttyu1", expect: "dev.uart.1.pps_mode"},
-		{path: "/dev/cuau12", expect: "dev.uart.12.pps_mode"},
+		{path: "/dev/cuaua", expect: "dev.uart.10.pps_mode"},
+		{path: "/dev/cuau10", expect: "dev.uart.32.pps_mode"},
 		{path: "/dev/cuaU0", expect: "hw.usb.ucom.pps_mode"},
 		{path: "/dev/cuaU1.2", expect: "hw.usb.ucom.pps_mode"},
 		{path: "/dev/ttyU0", expect: "hw.usb.ucom.pps_mode"},

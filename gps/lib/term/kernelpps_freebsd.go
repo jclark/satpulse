@@ -105,7 +105,8 @@ func checkPPSMode(path, pinName string, want uint32) error {
 
 // ppsModeSysctl maps a serial device path to the sysctl that selects its PPS
 // capture pin: dev.uart.N.pps_mode for a uart(4) port, or the global
-// hw.usb.ucom.pps_mode shared by every ucom(4) USB port.
+// hw.usb.ucom.pps_mode shared by every ucom(4) USB port. tty_makedev formats
+// the uart unit in the device name in base 32, so uart10 is cuaua.
 func ppsModeSysctl(path string) (string, error) {
 	if resolved, err := filepath.EvalSymlinks(path); err == nil {
 		path = resolved
@@ -113,8 +114,8 @@ func ppsModeSysctl(path string) (string, error) {
 	name := strings.TrimPrefix(path, "/dev/")
 	for _, prefix := range []string{"cuau", "ttyu"} {
 		if unit, ok := strings.CutPrefix(name, prefix); ok {
-			if _, err := strconv.Atoi(unit); err == nil {
-				return "dev.uart." + unit + ".pps_mode", nil
+			if n, err := strconv.ParseUint(unit, 32, 32); err == nil {
+				return "dev.uart." + strconv.FormatUint(n, 10) + ".pps_mode", nil
 			}
 		}
 	}
