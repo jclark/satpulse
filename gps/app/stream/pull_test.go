@@ -99,8 +99,8 @@ func TestCorReportFromPacket(t *testing.T) {
 	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
 		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
 	}
-	if msg.FinalFragment.IsSet() {
-		t.Errorf("FinalFragment set for non-MSM packet: %v", msg.FinalFragment.Get())
+	if msg.FinalInEpoch.IsSet() {
+		t.Errorf("FinalInEpoch set for non-MSM packet: %v", msg.FinalInEpoch.Get())
 	}
 	wantBaseID, ok := rtcmbin.ReferenceStationID(testRTCM1005)
 	if !ok {
@@ -145,7 +145,7 @@ func TestCorReportFromPacketInvalidChecksum(t *testing.T) {
 	}
 }
 
-func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
+func TestCorReportFromPacketMSMFinalInEpoch(t *testing.T) {
 	tests := []struct {
 		name string
 		mmb  bool
@@ -168,9 +168,9 @@ func TestCorReportFromPacketMSMFinalFragment(t *testing.T) {
 			if msg == nil {
 				t.Fatal("CorReportFromPacket returned nil")
 			}
-			if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() != tt.want {
-				t.Errorf("FinalFragment = (%v, %v), want set %v",
-					msg.FinalFragment.Get(), msg.FinalFragment.IsSet(), tt.want)
+			if !msg.FinalInEpoch.IsSet() || msg.FinalInEpoch.Get() != tt.want {
+				t.Errorf("FinalInEpoch = (%v, %v), want set %v",
+					msg.FinalInEpoch.Get(), msg.FinalInEpoch.IsSet(), tt.want)
 			}
 		})
 	}
@@ -201,8 +201,8 @@ func TestCorReportFromPacketSPARTN(t *testing.T) {
 	if !msg.ChecksumOK.IsSet() || !msg.ChecksumOK.Get() {
 		t.Errorf("ChecksumOK = (%v, %v), want set true", msg.ChecksumOK.Get(), msg.ChecksumOK.IsSet())
 	}
-	if msg.FinalFragment.IsSet() {
-		t.Errorf("FinalFragment set for SPARTN packet: %v", msg.FinalFragment.Get())
+	if msg.FinalInEpoch.IsSet() {
+		t.Errorf("FinalInEpoch set for SPARTN packet: %v", msg.FinalInEpoch.Get())
 	}
 	if msg.RTCMRefBaseID.IsSet() {
 		t.Errorf("RTCMRefBaseID set for SPARTN packet: %d", msg.RTCMRefBaseID.Get())

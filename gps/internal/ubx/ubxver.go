@@ -146,6 +146,7 @@ func (v *Version) rtcmSupport() rtcmSupport {
 // flag then applies to u-blox without editing this code.
 const ubxVariable = gpsprot.ConfigSupportSignal |
 	gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+	gpsprot.ConfigSupportSurveyDur |
 	gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
 	gpsprot.ConfigSupportFixedPosAcc | gpsprot.ConfigSupportRaw |
 	gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
@@ -163,6 +164,7 @@ func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
 	if tmode > 0 {
 		flags |= gpsprot.ConfigSupportSurvey |
 			gpsprot.ConfigSupportSurveyAcc |
+			gpsprot.ConfigSupportSurveyDur |
 			gpsprot.ConfigSupportFixedPos |
 			gpsprot.ConfigSupportFixedPosAcc
 		if v.protVerAtLeast(15, 0) && (tmode == 2 || tmode == 3) {

@@ -110,100 +110,100 @@ const (
 )
 
 func init() {
-	// Initialize idNameMap with all known message IDs
+	// Register the names of messages that have no decoder
 	// Navigation and position messages
-	idNameMap[ADRNavID] = "ADRNAV"
-	idNameMap[ADRNavHID] = "ADRNAVH"
-	idNameMap[ADRDOPID] = "ADRDOP"
-	idNameMap[ADRDOPHID] = "ADRDOPH"
+	regOtherMsg(ADRNavID, "ADRNAV")
+	regOtherMsg(ADRNavHID, "ADRNAVH")
+	regOtherMsg(ADRDOPID, "ADRDOP")
+	regOtherMsg(ADRDOPHID, "ADRDOPH")
 	// BestNavID and BestNavXYZID registered via regMsg in nav.go
-	idNameMap[BestNavHID] = "BESTNAVH"
-	idNameMap[BestNavXYZHID] = "BESTNAVXYZH"
-	idNameMap[BSLNEnuHD2ID] = "BSLNENUHD2"
-	idNameMap[BSLNXyzHD2ID] = "BSLNXYZHD2"
-	idNameMap[DOPHD2ID] = "DOPHD2"
-	idNameMap[MSPosID] = "MSPOS"
-	idNameMap[PPPDOPID] = "PPPDOP"
+	regOtherMsg(BestNavHID, "BESTNAVH")
+	regOtherMsg(BestNavXYZHID, "BESTNAVXYZH")
+	regOtherMsg(BSLNEnuHD2ID, "BSLNENUHD2")
+	regOtherMsg(BSLNXyzHD2ID, "BSLNXYZHD2")
+	regOtherMsg(DOPHD2ID, "DOPHD2")
+	regOtherMsg(MSPosID, "MSPOS")
+	regOtherMsg(PPPDOPID, "PPPDOP")
 	// PPPNavID registered via regMsg in nav.go
-	idNameMap[PVTSlnID] = "PVTSLN"
-	idNameMap[SPPDOPID] = "SPPDOP"
-	idNameMap[SPPDOPHID] = "SPPDOPH"
-	idNameMap[SPPNavID] = "SPPNAV"
-	idNameMap[SPPNavHID] = "SPPNAVH"
+	regOtherMsg(PVTSlnID, "PVTSLN")
+	regOtherMsg(SPPDOPID, "SPPDOP")
+	regOtherMsg(SPPDOPHID, "SPPDOPH")
+	regOtherMsg(SPPNavID, "SPPNAV")
+	regOtherMsg(SPPNavHID, "SPPNAVH")
 	// StaDOPID registered via regMsg in dop.go
-	idNameMap[StaDOPHID] = "STADOPH"
-	idNameMap[UniHeadingID] = "UNIHEADING"
-	idNameMap[UniHeading2ID] = "UNIHEADING2"
+	regOtherMsg(StaDOPHID, "STADOPH")
+	regOtherMsg(UniHeadingID, "UNIHEADING")
+	regOtherMsg(UniHeading2ID, "UNIHEADING2")
 
 	// Ephemeris messages
-	idNameMap[BD3EphID] = "BD3EPH"
-	idNameMap[BDSEphID] = "BDSEPH"
-	idNameMap[GALEphID] = "GALEPH"
-	idNameMap[GLOEphID] = "GLOEPH"
-	idNameMap[GPSEphID] = "GPSEPH"
-	idNameMap[IRNSSEphID] = "IRNSSEPH"
-	idNameMap[QZSSEphID] = "QZSSEPH"
+	regOtherMsg(BD3EphID, "BD3EPH")
+	regOtherMsg(BDSEphID, "BDSEPH")
+	regOtherMsg(GALEphID, "GALEPH")
+	regOtherMsg(GLOEphID, "GLOEPH")
+	regOtherMsg(GPSEphID, "GPSEPH")
+	regOtherMsg(IRNSSEphID, "IRNSSEPH")
+	regOtherMsg(QZSSEphID, "QZSSEPH")
 
 	// Ionosphere messages
-	idNameMap[BD3IonID] = "BD3ION"
-	idNameMap[BDSIonID] = "BDSION"
-	idNameMap[GALIonID] = "GALION"
-	idNameMap[GPSIonID] = "GPSION"
+	regOtherMsg(BD3IonID, "BD3ION")
+	regOtherMsg(BDSIonID, "BDSION")
+	regOtherMsg(GALIonID, "GALION")
+	regOtherMsg(GPSIonID, "GPSION")
 
 	// Observation messages
-	idNameMap[ObsvBaseID] = "OBSVBASE"
-	idNameMap[ObsvHID] = "OBSVH"
-	idNameMap[ObsvHCmpID] = "OBSVHCMP"
-	idNameMap[ObsvMID] = "OBSVM"
-	idNameMap[ObsvMCmpID] = "OBSVMCMP"
+	regOtherMsg(ObsvBaseID, "OBSVBASE")
+	regOtherMsg(ObsvHID, "OBSVH")
+	regOtherMsg(ObsvHCmpID, "OBSVHCMP")
+	regOtherMsg(ObsvMID, "OBSVM")
+	regOtherMsg(ObsvMCmpID, "OBSVMCMP")
 
 	// Status messages
-	idNameMap[AGCID] = "AGC"
-	idNameMap[AGNSSStatusID] = "AGNSSSTATUS"
-	idNameMap[BaseInfoID] = "BASEINFO"
-	idNameMap[BasePosID] = "BASEPOS"
-	idNameMap[EnvInfoID] = "ENVINFO"
-	idNameMap[EventFlagID] = "EVENTFLAG"
-	idNameMap[EventSlnID] = "EVENTSLN"
-	idNameMap[FreqJamStatusID] = "FREQJAMSTATUS"
-	idNameMap[HeadingStatusID] = "HEADINGSTATUS"
-	idNameMap[HWStatusID] = "HWSTATUS"
-	idNameMap[JamStatusID] = "JAMSTATUS"
-	idNameMap[RTCMStatusID] = "RTCMSTATUS"
-	idNameMap[RTKStatusID] = "RTKSTATUS"
-	idNameMap[RTKStatus2ID] = "RTKSTATUS2"
-	idNameMap[RTCStatusID] = "RTCSTATUS"
+	regOtherMsg(AGCID, "AGC")
+	regOtherMsg(AGNSSStatusID, "AGNSSSTATUS")
+	regOtherMsg(BaseInfoID, "BASEINFO")
+	regOtherMsg(BasePosID, "BASEPOS")
+	regOtherMsg(EnvInfoID, "ENVINFO")
+	regOtherMsg(EventFlagID, "EVENTFLAG")
+	regOtherMsg(EventSlnID, "EVENTSLN")
+	regOtherMsg(FreqJamStatusID, "FREQJAMSTATUS")
+	regOtherMsg(HeadingStatusID, "HEADINGSTATUS")
+	regOtherMsg(HWStatusID, "HWSTATUS")
+	regOtherMsg(JamStatusID, "JAMSTATUS")
+	regOtherMsg(RTCMStatusID, "RTCMSTATUS")
+	regOtherMsg(RTKStatusID, "RTKSTATUS")
+	regOtherMsg(RTKStatus2ID, "RTKSTATUS2")
+	regOtherMsg(RTCStatusID, "RTCSTATUS")
 
 	// PPP B2b messages
-	idNameMap[PPPB2bInfo1ID] = "PPPB2BINFO1"
-	idNameMap[PPPB2bInfo2ID] = "PPPB2BINFO2"
-	idNameMap[PPPB2bInfo3ID] = "PPPB2BINFO3"
-	idNameMap[PPPB2bInfo4ID] = "PPPB2BINFO4"
-	idNameMap[PPPB2bInfo5ID] = "PPPB2BINFO5"
-	idNameMap[PPPB2bInfo6ID] = "PPPB2BINFO6"
-	idNameMap[PPPB2bInfo7ID] = "PPPB2BINFO7"
+	regOtherMsg(PPPB2bInfo1ID, "PPPB2BINFO1")
+	regOtherMsg(PPPB2bInfo2ID, "PPPB2BINFO2")
+	regOtherMsg(PPPB2bInfo3ID, "PPPB2BINFO3")
+	regOtherMsg(PPPB2bInfo4ID, "PPPB2BINFO4")
+	regOtherMsg(PPPB2bInfo5ID, "PPPB2BINFO5")
+	regOtherMsg(PPPB2bInfo6ID, "PPPB2BINFO6")
+	regOtherMsg(PPPB2bInfo7ID, "PPPB2BINFO7")
 
 	// E6-HAS messages
-	idNameMap[E6BiasBlockID] = "E6CBIASBLOCK"
-	idNameMap[E6ClockFullBlockID] = "E6CLOCKFULLBLOCK"
-	idNameMap[E6ClockSubBlockID] = "E6CLOCKSUBBLOCK"
-	idNameMap[E6MaskBlockID] = "E6MASKBLOCK"
-	idNameMap[E6OrbitBlockID] = "E6ORBITBLOCK"
-	idNameMap[E6PBiasBlockID] = "E6PBIASBLOCK"
+	regOtherMsg(E6BiasBlockID, "E6CBIASBLOCK")
+	regOtherMsg(E6ClockFullBlockID, "E6CLOCKFULLBLOCK")
+	regOtherMsg(E6ClockSubBlockID, "E6CLOCKSUBBLOCK")
+	regOtherMsg(E6MaskBlockID, "E6MASKBLOCK")
+	regOtherMsg(E6OrbitBlockID, "E6ORBITBLOCK")
+	regOtherMsg(E6PBiasBlockID, "E6PBIASBLOCK")
 
 	// L6 MADOCA messages
-	idNameMap[L6MDCType1ID] = "L6MDCTYPE1"
-	idNameMap[L6MDCType2ID] = "L6MDCTYPE2"
-	idNameMap[L6MDCType3ID] = "L6MDCTYPE3"
-	idNameMap[L6MDCType4ID] = "L6MDCTYPE4"
-	idNameMap[L6MDCType5ID] = "L6MDCTYPE5"
-	idNameMap[L6MDCType7ID] = "L6MDCTYPE7"
+	regOtherMsg(L6MDCType1ID, "L6MDCTYPE1")
+	regOtherMsg(L6MDCType2ID, "L6MDCTYPE2")
+	regOtherMsg(L6MDCType3ID, "L6MDCTYPE3")
+	regOtherMsg(L6MDCType4ID, "L6MDCTYPE4")
+	regOtherMsg(L6MDCType5ID, "L6MDCTYPE5")
+	regOtherMsg(L6MDCType7ID, "L6MDCTYPE7")
 
 	// Other messages
-	idNameMap[AgricID] = "AGRIC"
-	idNameMap[InfoPart1ID] = "INFOPART1"
-	idNameMap[InfoPart2ID] = "INFOPART2"
-	idNameMap[SatECEFID] = "SATECEF"
-	idNameMap[SatelliteID] = "SATELLITE"
-	idNameMap[TropInfoID] = "TROPINFO"
+	regOtherMsg(AgricID, "AGRIC")
+	regOtherMsg(InfoPart1ID, "INFOPART1")
+	regOtherMsg(InfoPart2ID, "INFOPART2")
+	regOtherMsg(SatECEFID, "SATECEF")
+	regOtherMsg(SatelliteID, "SATELLITE")
+	regOtherMsg(TropInfoID, "TROPINFO")
 }

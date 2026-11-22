@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"math"
+	"math/rand"
 	"testing"
 	"time"
 
@@ -59,7 +60,7 @@ func TestSimulateLongStall(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if extra, limit := st.Queries-quiet.Queries, int(5/cfg.Host.Query.Duration); extra > limit {
+	if extra, limit := st.Queries-quiet.Queries, int(5/200e-6); extra > limit {
 		t.Errorf("a 60 s stall cost %d extra queries, want at most five seconds of continuous polling (%d)", extra, limit)
 	}
 }
@@ -91,7 +92,7 @@ func TestSimulateOutage(t *testing.T) {
 func TestSimulateLinuxUART(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sim.Duration = 300
-	cfg.Host.Query = QueryConfig{Duration: 10e-6, Jitter: 2e-6, Idle: IdleConfig{Factor: 1}}
+	cfg.Host.Query = QueryConfig{Time: Gaussian(10e-6, 2e-6), Idle: IdleConfig{Factor: 1}}
 	cfg.Host.Timer = TimerConfig{Resolution: 1e-3, Overshoot: 50e-6, OvershootJitter: 30e-6}
 	st, err := Simulate(cfg, testLog, nil)
 	if err != nil {
@@ -109,7 +110,7 @@ func TestSimulateLinuxUART(t *testing.T) {
 func TestSimulateCoarseQueries(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sim.Duration = 60
-	cfg.Host.Query = QueryConfig{Duration: 2e-3, Idle: IdleConfig{Factor: 1}}
+	cfg.Host.Query = QueryConfig{Time: Gaussian(2e-3, 0), Idle: IdleConfig{Factor: 1}}
 	cfg.Host.Timer = TimerConfig{}
 	st, err := Simulate(cfg, testLog, func(e EdgeRecord) {
 		if e.Forwarded != (e.Reject == "") {
@@ -124,6 +125,32 @@ func TestSimulateCoarseQueries(t *testing.T) {
 	}
 	if st.Forwarded < st.Pulses-5 || st.Acquiring == 0 || st.Wrong != 0 {
 		t.Errorf("coarse queries: %+v, want acquisition then usable tracking catches within their intervals", st)
+	}
+}
+
+// TestSimulateFrameDelays models a full-speed USB adapter on a host that
+// schedules its transactions poorly, as on a MacBook Air M3: queries of a
+// few hundred microseconds, to which whole milliseconds are often added,
+// giving poll widths between about 0.5 and 2.5 ms.
+func TestSimulateFrameDelays(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Sim.Duration = 300
+	base := Gaussian(400e-6, 100e-6)
+	cfg.Host.Query.Time = func(rng *rand.Rand) Seconds {
+		return base(rng) + float64(rng.Intn(3))*1e-3
+	}
+	st, err := Simulate(cfg, testLog, func(e EdgeRecord) {
+		if e.Err < -e.Uncertainty[1] || e.Err > e.Uncertainty[0] {
+			t.Errorf("edge at %g: error %g outside uncertainty %v", e.T, e.Err, e.Uncertainty)
+		}
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Log(st)
+	if st.Lost != 0 || st.Wrong != 0 || st.Forwarded < st.Pulses-15 {
+		t.Errorf("lost = %d wrong = %d forwarded = %d of %d, want no loss, none wrong and all but a few forwarded",
+			st.Lost, st.Wrong, st.Forwarded, st.Pulses)
 	}
 }
 
@@ -183,7 +210,7 @@ func TestSimulateJitter(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Sim.Duration = 60
 	cfg.Pulse.Jitter = 2e-3
-	cfg.Host.Query = QueryConfig{Duration: 10e-6, Idle: IdleConfig{Factor: 1}}
+	cfg.Host.Query = QueryConfig{Time: Gaussian(10e-6, 0), Idle: IdleConfig{Factor: 1}}
 	st, err := Simulate(cfg, testLog, func(e EdgeRecord) {
 		if e.Err < -e.Uncertainty[1] || e.Err > e.Uncertainty[0] {
 			t.Errorf("edge at %g: error %g outside uncertainty %v", e.T, e.Err, e.Uncertainty)

@@ -182,6 +182,7 @@ func (c *Configurator) supportedGNSS() gpsprot.GNSSSet {
 func (c *Configurator) ConfigSupport() gpsprot.ConfigSupportFlags {
 	flags := gpsprot.ConfigSupportSpeed |
 		gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+		gpsprot.ConfigSupportSurveyDur |
 		gpsprot.ConfigSupportFixedPos | gpsprot.ConfigSupportFixedPosAcc
 	if c.family == familyV6 {
 		// RTCM MSM output is not declared: no known CASIC firmware

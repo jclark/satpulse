@@ -210,6 +210,13 @@ func BinRegistry() map[MsgID]func() MsgBody { return msgIDMap }
 // AsciiRegistry returns the global ASCII message constructor map (by wire name).
 func AsciiRegistry() map[string]func() MsgBody { return msgNameMap }
 
+// regOtherMsg registers the name of a message that has no decoder, and
+// its ASCII wire name, so that AsciiMsgID knows it.
+func regOtherMsg(id MsgID, name string) {
+	idNameMap[id] = name
+	nameIDMap[name+"A"] = id
+}
+
 // regMsg registers a message type with its ID and name
 func regMsg[T any, PT interface {
 	ID() (MsgID, string)

@@ -538,7 +538,7 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 	}
 
 	// This ACK is for us - check if it's an error
-	if responseErr != "" {
+	if responseErr != "" && !isFirmwareOptionalMsgCmd(req.cmd) {
 		req.state = stateFailed
 		req.err = fmt.Errorf("command rejected: %s", responseErr)
 		return true
@@ -548,6 +548,27 @@ func (req *ConfigRequest) handleAck(cmd string, responseErr string, tRead time.T
 	req.updateProp()
 
 	return true
+}
+
+// firmwareOptionalMsgs are messages that some Nebulas IV firmware does not
+// implement: UM981 R4.10Build10598 rejects logging QZSSEPHB and RTCM1230
+// ("NO MATCHING FUNC") and unlogging QZSSEPHB. The manual gives no minimum
+// firmware version for either, so the configurator cannot avoid sending
+// them; message output is best effort, so a rejection of a command that
+// logs or unlogs one of these is ignored rather than failing the
+// configuration.
+var firmwareOptionalMsgs = []string{"QZSSEPHB", "RTCM1230"}
+
+// isFirmwareOptionalMsgCmd reports whether cmd logs or unlogs one of the
+// firmwareOptionalMsgs.
+func isFirmwareOptionalMsgCmd(cmd string) bool {
+	name, _, _ := strings.Cut(strings.TrimPrefix(cmd, "UNLOG "), " ")
+	for _, m := range firmwareOptionalMsgs {
+		if name == m {
+			return true
+		}
+	}
+	return false
 }
 
 // updateProp updates the tracked native state to reflect successful
