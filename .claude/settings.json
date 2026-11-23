@@ -3,5 +3,22 @@
     "commit": "",
     "pr": "",
     "sessionUrl": false
+  },
+  "autoMemoryEnabled": false,
+  "permissions": {
+    "allow": [
+      "Bash(.claude/skills/reviewing-code-with-codex/codex-companion.sh:*)"
+    ]
+  },
+  "enabledPlugins": {
+    "codex@openai-codex": true
+  },
+  "extraKnownMarketplaces": {
+    "openai-codex": {
+      "source": {
+        "source": "github",
+        "repo": "openai/codex-plugin-cc"
+      }
+    }
   }
 }

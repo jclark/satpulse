@@ -93,7 +93,7 @@ Turn off raw output
 satpulsetool gps --socket /var/run/satpulse.sock --raw-out none
 ```
 
-Now convert to RINEX using `satpulsetool convobs` {% include new-in-03.html %}
+Now convert to RINEX using `satpulsetool convobs`
 
 ```
 satpulsetool convobs -r ubx -o YYYYMMDD.obs YYYYMMDD.ubx

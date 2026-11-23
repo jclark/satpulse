@@ -1,0 +1,165 @@
+#:schema ../gpsmsg-schema.json
+# Allystar TAU13xx GPS message file
+# TAU13xx receivers use the TAU1201's divisor-1 message configuration
+# and add RTCM output support.
+
+[[include]]
+src = "tau1201.toml"
+
+# Default delay: protocol says to wait for ACK before sending next command
+[default.asbin]
+delay = 0.1
+
+# RTCM Message Control (CFG-MSG 0x06 0x01 with group 0xF8)
+
+# Enable RTCM ARP (1005) message
+[[asbin]]
+tag = "rtcm-arp"
+description = "Enable RTCM ARP message (1005)"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x05, 1]
+
+# Enable RTCM MSM7 messages for all constellations
+# Rate 1 = output every position fix
+# 1077 GPS MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+description = "Enable RTCM MSM7 messages for all constellations"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4D, 1]
+
+# 1087 GLONASS MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x57, 1]
+
+# 1097 Galileo MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x61, 1]
+
+# 1127 BeiDou MSM7
+[[asbin]]
+tag = "rtcm-msm7"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7F, 1]
+
+# Enable RTCM MSM4 messages for all constellations
+# 1074 GPS MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+description = "Enable RTCM MSM4 messages for all constellations"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4A, 1]
+
+# 1084 GLONASS MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x54, 1]
+
+# 1094 Galileo MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x5E, 1]
+
+# 1124 BeiDou MSM4
+[[asbin]]
+tag = "rtcm-msm4"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7C, 1]
+
+# Disable all RTCM messages (MSM4 + MSM7 + 1005)
+# 1005 ARP
+[[asbin]]
+tag = "rtcm-off"
+description = "Disable all RTCM messages"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x05, 0]
+
+# 1074 GPS MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4A, 0]
+
+# 1077 GPS MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x4D, 0]
+
+# 1084 GLONASS MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x54, 0]
+
+# 1087 GLONASS MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x57, 0]
+
+# 1094 Galileo MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x5E, 0]
+
+# 1097 Galileo MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x61, 0]
+
+# 1124 BeiDou MSM4
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7C, 0]
+
+# 1127 BeiDou MSM7
+[[asbin]]
+tag = "rtcm-off"
+class = 0x06
+id = 0x01
+payload.types = "U1U1U1"
+payload.values = [0xF8, 0x7F, 0]

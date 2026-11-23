@@ -14,7 +14,8 @@ const (
 // Contains both position (LLH) and velocity (ground speed + course) with
 // independent solution status for each.
 type BestNav struct {
-	novmsg.Pos[SolStatus, PosVelType] // position fields (PSolStatus through GPSGLOBDS2Sig)
+	novmsg.Pos[SolStatus, PosVelType] // position fields (PSolStatus through NumSolnMulti)
+	novmsg.PosFlags
 	VSolStatus   SolStatus            // velocity solution status
 	VelType      PosVelType           // velocity type
 	VLatency     float32        // velocity latency (seconds)
@@ -37,6 +38,7 @@ func (m *BestNav) ID() (MsgID, string) {
 // independent solution status for each.
 type BestNavXYZ struct {
 	novmsg.XYZ[SolStatus, PosVelType]
+	novmsg.PosFlags
 }
 
 // ID returns the message ID for BESTNAVXYZ
@@ -49,6 +51,7 @@ func (m *BestNavXYZ) ID() (MsgID, string) {
 // Field layout is identical to the position portion of BESTNAV (no velocity fields).
 type PPPNav struct {
 	novmsg.Pos[SolStatus, PosVelType]
+	novmsg.PosFlags
 }
 
 // ID returns the message ID for PPPNAV

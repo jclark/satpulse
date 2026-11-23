@@ -194,9 +194,10 @@ func handleListen(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg 
 }
 
 func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet], portLock gpsio.OutPortLock) {
-	lg.Info("accepted proxy connection", "remoteAddr", conn.RemoteAddr())
-	// XXX both the read and write workers are closing the connection.
-	// Not sure if it would better for just one of them to do so.
+	lg = lg.With("remoteAddr", conn.RemoteAddr())
+	lg.Info("accepted proxy connection")
+	// Both workers close conn when they exit, so that when one worker exits,
+	// the other returns too, even if it is blocked in a Read or Write on conn.
 	wg.Go(func() { connWriteWorker(ctx, lg, cfg, conn, b) })
 	// The connReadWorker reads from the connection and writes to the serial port.
 	// The readOnly config option says not to write to the serial port.
@@ -209,9 +210,64 @@ func handleConn(ctx context.Context, lg *slog.Logger, wg *sync.WaitGroup, cfg sv
 func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn net.Conn, b *bcast.Bcast[scan.Packet]) {
 	defer lg.Debug("about to exit proxy connection writing worker goroutine")
 	defer conn.Close()
+	// Close conn on ctx cancellation to unblock a Write to a client that has
+	// stopped reading. Closing conn also unblocks connReadWorker.
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-ctx.Done():
+			conn.Close()
+		case <-done:
+		}
+	}()
+	defer close(done)
 	ch := b.Subscribe()
 	defer b.Unsubscribe(ch)
+	// The queue goroutine drains ch even while Write is blocked,
+	// so a client that stops reading cannot make the bcast queue grow.
+	qCtx, qCancel := context.WithCancel(ctx)
+	qCh := make(chan scan.Packet)
+	var wg sync.WaitGroup
+	wg.Go(func() { connQueue(qCtx, lg, cfg, ch, qCh) })
+	defer wg.Wait()
+	defer qCancel()
+	for msg := range qCh {
+		_, err := conn.Write(([]byte)(msg.Data))
+		if err != nil {
+			logConnErr(lg, "error writing to proxy connection", err)
+			return
+		}
+	}
+}
+
+// maxPacketAge is how long after its first byte was read a packet
+// can stay in a connection's queue. When a client falls behind, the
+// oldest packets are dropped, so that when it reads again it gets
+// recent data. With one epoch per second, two seconds normally keeps
+// the latest complete epoch in the queue.
+const maxPacketAge = 2 * time.Second
+
+// connQueue sends the packets that cfg forwards from ch to writerCh,
+// queueing them while the writer is busy and dropping any packet
+// older than maxPacketAge, except the newest. It closes writerCh when
+// it returns.
+func connQueue(ctx context.Context, lg *slog.Logger, cfg svcConfig, ch <-chan scan.Packet, writerCh chan<- scan.Packet) {
+	defer close(writerCh)
+	const stoppedMsg = "stopped dropping packets for proxy client"
+	var q []scan.Packet
+	nDropped := 0
+	defer func() {
+		if nDropped > 0 {
+			lg.Info(stoppedMsg, "nDropped", nDropped)
+		}
+	}()
 	for {
+		// A nil sendCh disables the send case while q is empty.
+		var sendCh chan<- scan.Packet
+		var head scan.Packet
+		if len(q) > 0 {
+			sendCh, head = writerCh, q[0]
+		}
 		select {
 		case <-ctx.Done():
 			return
@@ -220,14 +276,27 @@ func connWriteWorker(ctx context.Context, lg *slog.Logger, cfg svcConfig, conn n
 				return
 			}
 			// when forwarding is restricted to a specific protocol, don't forward packets with an invalid checksum;
-			// forwarding in this case is semantic, so there's no point in forwarding a packeet that will be discarded
-			if !cfg.tag.IsZero() && (!msg.HasTag(cfg.tag) || !msg.ChecksumValid) {
-				continue
+			// forwarding in this case is semantic, so there's no point in forwarding a packet that will be discarded
+			if msg.Data != "" && (cfg.tag.IsZero() || (msg.HasTag(cfg.tag) && msg.ChecksumValid)) {
+				q = append(q, msg)
 			}
-			_, err := conn.Write(([]byte)(msg.Data))
-			if err != nil {
-				logConnErr(lg, "error writing to proxy connection", err)
-				return
+			// TRead is when the first byte of a packet was read, so on a slow link
+			// a long packet can arrive already older than maxPacketAge;
+			// never dropping the newest packet means it is still sent.
+			for len(q) > 1 && time.Since(q[0].TRead) > maxPacketAge {
+				if nDropped == 0 {
+					lg.Info("proxy client is not keeping up, dropping oldest packets")
+				}
+				nDropped++
+				q[0] = scan.Packet{}
+				q = q[1:]
+			}
+		case sendCh <- head:
+			q[0] = scan.Packet{}
+			q = q[1:]
+			if len(q) == 0 && nDropped > 0 {
+				lg.Info(stoppedMsg, "nDropped", nDropped)
+				nDropped = 0
 			}
 		}
 	}

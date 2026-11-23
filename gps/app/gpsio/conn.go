@@ -105,6 +105,21 @@ func (p SerialPin) termPin() term.ModemControlPin {
 	panic("gpsio: unspecified serial pin")
 }
 
+// serialPin returns the SerialPin for the term pin p.
+func serialPin(p term.ModemControlPin) SerialPin {
+	switch p {
+	case term.ModemCTS:
+		return SerialPinCTS
+	case term.ModemDCD:
+		return SerialPinDCD
+	case term.ModemDSR:
+		return SerialPinDSR
+	case term.ModemRI:
+		return SerialPinRI
+	}
+	panic("gpsio: invalid term pin")
+}
+
 // SerialPinState is the set of asserted modem control input pins.
 type SerialPinState int
 
@@ -230,9 +245,12 @@ func NewOutPortLock(port OutPort) OutPortLock {
 	return ch
 }
 
+// SerialOutPort is the serial output contract used by receiver configuration.
 type SerialOutPort interface {
 	OutPort
 	WriteThenChangeSpeed(p []byte, speed int) (int, error)
+	// SetDetected confirms receipt of a valid packet at the current settings.
+	SetDetected()
 }
 
 type Conn interface {
@@ -244,6 +262,12 @@ type Conn interface {
 	// Drain blocks until pending output has been transmitted. It is a
 	// no-op on connections with no serial output buffer.
 	Drain() error
+	// SetDetected records that a valid packet was received at the
+	// connection's current serial settings. Scan calls it for the first
+	// valid packet only; a speed change clears it, so code that changes the
+	// speed after that calls it again once a valid packet confirms the new
+	// speed. It is a no-op on connections with no serial hardware.
+	SetDetected()
 }
 
 const scanBufSize = 16
@@ -262,8 +286,13 @@ func Scan(ctx context.Context, lg *slog.Logger, conn Conn, ch chan<- scan.Packet
 		<-ctx.Done()
 		conn.Stop()
 	}()
+	detected := false
 	for {
 		pkt, err := scanner.Scan()
+		if !detected && pkt.ChecksumValid && pkt.Format != nil {
+			conn.SetDetected()
+			detected = true
+		}
 		ch <- pkt
 		if pLog != nil {
 			pLog.LogInput(pkt)

@@ -4,7 +4,7 @@ all:
     ansible_python_interpreter: auto_silent
     virtual_host: false  # Set to true for virtual hosts (multiple instances on same machine)
     instance: ttyAMA0  # Instance for systemd service
-    pin: 0             # PHC pin
+    pin: 0             # PHC pin; "" for a PHC without pins (no pin key is written)
     channel: 0         # PHC channel
     speed: 9600        # Baud rate
     interface: eth0    # Network interface
@@ -20,7 +20,10 @@ all:
       hosts:
         abondance.lan:
         abondance-ttySEP0.lan:
+        banon.lan:
         brie.lan:
+        burrata.lan:
+        caciocavallo.lan:
         chaource.lan:
         gubbeen.lan:
         maasdam.lan:
@@ -43,24 +46,32 @@ all:
       children:
         testing:
       hosts:
+        beaufort.lan:
+        chaource2.lan:
+        crottin.lan:
         edam.lan:
+        feta.lan:
         fontina.lan:
         montasio.lan:
+        ossau.lan:
         raschera.lan:
+        tomino.lan:
     virtual_hosts:
       hosts:
         abondance-ttySEP0.lan:
   
   hosts:
-    # BG7TBL CM55 on USB (PL2303)
-    vacherin.lan:
-      speed: 38400
-      instance: ttyUSB0
-
     # ZED-X20P on USB
-    roquefort.lan:
+    vacherin.lan:
       speed: 230400
       instance: ttyACM0
+
+    # Quectel LG290P on USB (Mozihao board, CH340)
+    roquefort.lan:
+      speed: 460800
+      instance: ttyUSB0
+      config: "false"
+      vendor: '"Quectel"'
 
     # LEA-6T
     pecorino.lan:
@@ -96,6 +107,13 @@ all:
       config_file: /etc/satpulse.d/ttySEP0.toml
       http_port: 2001
       sock_path: /var/run/chrony.satpulse.ttySEP0.sock
+
+    # Allystar TAU951M-P200 on UART; BeagleY-AI, PPS into the CPTS PHC (no pins)
+    banon.lan:
+      speed: 115200
+      config: "false"
+      vendor: '"Allystar"'
+      pin: ""
   
     # AT632-6T-30 on UART
     ricotta.lan:
@@ -106,9 +124,10 @@ all:
     venaco.lan:
       vendor: '"zhongke"'
 
-    # LEA-M8T over RS232
+    # BG7TBL CM55
     caciocavallo.lan:
       instance: ttyAMA3
+      speed: 38400
 
     # LEA-M8F in Timebeat sandwich board
     morbier.lan: # all default
@@ -126,11 +145,17 @@ all:
     mascarpone.lan:
       speed: 115200
 
-    # Quectel LG290P on a CM4
+    # Allystar TAU1201 on UART
     chaource.lan:
-      speed: 460800
+      speed: 115200
       config: "false"
-      vendor: '"Quectel"'
+      vendor: '"Allystar"'
+
+    # chaource's CM4 booting Raspberry Pi OS from SD; same Allystar TAU1201 on UART
+    chaource2.lan:
+      speed: 115200
+      config: "false"
+      vendor: '"Allystar"'
 
     # UM960 on UART
     wensleydale.lan:
@@ -164,15 +189,14 @@ all:
       interface: eth1
       speed: 38400
 
-    # NEO-F10N on FT232R USB adapter, PPS on CTS, feeding ntpd-rs (no PHC)
     edam.lan:
       interface: ""
       instance: ttyUSB0
-      speed: 38400
-      sock_path: /run/ntpd-rs/satpulse.ttyUSB0.sock
+      speed: 115200
     
     # Raspberry Pi 5
-    raschera.lan: # all defaults
+    raschera.lan:
+      interface: ""
     
     # Raspberry Pi 3
     montasio.lan:
@@ -180,3 +204,34 @@ all:
 
     fontina.lan:
       interface: ""
+
+    # Raspberry Pi 4
+    beaufort.lan:
+      interface: ""
+
+    # Zhongke F8N-76 on UART; CM4 running 32-bit Raspberry Pi OS (armhf userland on the 64-bit kernel)
+    burrata.lan:
+      vendor: '"casic"'
+      speed: 115200
+
+    feta.lan:
+      interface: ""
+
+    # Quectel LC29H(AA) on Waveshare HAT; Radxa ZERO 3E (PHC has no SDPs, PPS via GPIO)
+    tomino.lan:
+      interface: ""
+      instance: ttyS2
+      speed: 115200
+      vendor: '"Quectel"'
+
+    # Raspberry Pi 5, no receiver yet; PPS on GPIO 18 (header pin 12)
+    crottin.lan:
+      interface: ""
+      rpi_pps_gpio: 18
+
+    # Quectel LC29H(DA) on a Pi-style HAT; ODROID-M1 (RK3568; PHC has no SDPs, PPS via GPIO on header pin 12, UART on pins 8/10)
+    ossau.lan:
+      interface: ""
+      instance: ttyS0
+      speed: 115200
+      vendor: '"Quectel"'

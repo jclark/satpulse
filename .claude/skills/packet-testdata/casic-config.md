@@ -36,11 +36,29 @@ CASIC firmware acknowledges enabling messages it never emits, so the
 
 So: pulse-time, leap, survey, and raw captures come from the AT632;
 the F8N contributes PVT/satellite/NMEA/dual-band captures; the V5
-contributes the whole NAV-class side. No attached CASIC unit emits
-RTCM. (AT372-6P, measured 2026-07-22: raw emits - 60 RXM2-MEASX and
-418 RXM2-SFRBX in 60 s - but no TIM2-TIMEPOS appeared in 60 s with an
+contributes the whole NAV-class side. (AT372-6P, measured
+2026-07-22: raw emits - 60 RXM2-MEASX and 418 RXM2-SFRBX in 60 s - but no TIM2-TIMEPOS appeared in 60 s with an
 active survey; its baseline records no survey deficiency, a
 discrepancy unresolved until a re-characterization.)
+
+The AT372-F8P-36 (dual-band RTK; corpus `at372-f8p/`) behaves like
+the -6P for pulse time, leap and survey (acked, never emitted), but
+adds two captures no other unit gives:
+
+- Dual-band raw on every enabled constellation (`raw-obs-all`). It
+  needs CFG-NAVBAND `sigidMaskFix` 0: any `--gnss` writes it nonzero,
+  after which RXM2-MEASX arrives with `numMeas` 0 and enabled GSA/GSV
+  stop (issue #526). The setting survives a power cycle, so
+  check MEASX content, not just presence, before a raw capture, and
+  take the raw and GSV captures before any `--gnss` capture. Write
+  `sigidMaskFix` 0 with a CFG-NAVBAND message (types `U1U1U2U4U4`,
+  values `[sigBandAuto, 0, res2, 0, sigidMask]` from a `get-gnss`
+  readback), then re-send any GSA/GSV enables.
+- RTCM (`rtcm-msm7`, `rtcm-msm4`). The configurator does not enable
+  it; set CFG-RTCM (0x06 0x14; `rtcm_msg_en` 0x2A207D, `rtcm_msm_ver`
+  7 or 4) and the port protocol-mask RTCM-out bit (CFG-PRT 0x06 0x00,
+  protoMask 0xBB on both UARTs; 0x3B to undo). No GLONASS RTCM is
+  available.
 
 TIM2-LS on the AT632 is emitted (roughly once per second per monitored
 constellation) when `leap` is enabled and at least one non-GPS
@@ -199,6 +217,7 @@ Lib layer (`gps/lib/casbin`) and domain layer
 gps/testdata/packets/zhongke/atgm332d-f8n/   (V6 dual-band)
 gps/testdata/packets/zhongke/at632/          (V6 timing)
 gps/testdata/packets/zhongke/atgm332d-5n71/  (V5)
+gps/testdata/packets/zhongke/at372-f8p/      (V6 dual-band RTK)
 ```
 
 Device paths, verified identities, and speeds are in

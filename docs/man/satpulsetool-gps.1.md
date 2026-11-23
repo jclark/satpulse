@@ -45,7 +45,7 @@ A message file is a file in TOML format that defines a collection of named messa
 SatPulse provides a library of message files, which can be used to configure a wide variety of different GPS receivers.
 
 If no options other than connection options, `--packet-log` and `--capture` are specified,
-then it will detect the receiver and show information about it,
+then it probes the receiver to identify it and determine whether it supports high-level configuration,
 as if the `--show-receiver` option had been specified.
 
 # OPTIONS
@@ -77,7 +77,7 @@ This is for use with the `proxy.socket` table array in the TOML config file for 
 The following options query the receiver.
 
 **\-\-show\-receiver**
-: Detect the GPS receiver and show information about it.
+: Probe the GPS receiver to identify it and determine whether it supports high-level configuration.
 
 **\-c**, **\-\-show\-config**
 : Show the current configuration of the GPS receiver.
@@ -196,7 +196,7 @@ The following options control the time mode of the receiver. In time mode, the r
 : Set duration of the position survey (default: 2000).
 
 **\-\-survey\-acc** *meters*
-: Required survey accuracy in meters (default: 20.0). Minimum value is 0.001 (1 mm).
+: Required survey accuracy in meters (default: 20.0). Minimum value is 0.0001 (0.1 mm).
 
 **\-\-fixed\-pos\-ecef** *X,Y,Z*
 : Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The coordinates are comma-separated X, Y, and Z coordinates in meters in the Earth-Centered, Earth-Fixed coordinate system.
@@ -205,7 +205,7 @@ The following options control the time mode of the receiver. In time mode, the r
 : Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The values are comma-separated latitude and longitude in degrees and height in meters above the WGS84 ellipsoid. Latitude must be in [-90, 90], longitude in [-180, 180], and height in [-500, 10000]. Mutually exclusive with **\-\-fixed-pos-ecef**, **\-\-survey** and **\-\-mobile**.
 
 **\-\-fixed\-pos\-acc** *meters*
-: Set the accuracy of the fixed position in meters (default: 20.0). This value should reflect the actual uncertainty in the fixed position coordinates. Minimum value is 0.001 (1 mm).
+: Set the accuracy of the fixed position in meters (default: 20.0). This value should reflect the actual uncertainty in the fixed position coordinates. Minimum value is 0.0001 (0.1 mm).
 
 **\-\-mobile**
 : Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**, **\-\-fixed-pos-ecef** or **\-\-fixed-pos-llh**.
@@ -364,8 +364,8 @@ The following option restricts which configuration protocols are probed. It also
 
 **\-\-vendor** *name*
 : GPS receiver vendor name.
-  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke` (or `CASIC`), `other`.
-  In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `Septentrio`, `SkyTraq`, `Trimble`.
+  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `Septentrio`, `SinoGNSS`, `Techtotop`, `Zhongke` (or `CASIC`), `other`.
+  In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `SkyTraq`, `Trimble`.
   Values are case-insensitive.
   If not specified, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, no restrictions are applied.
 

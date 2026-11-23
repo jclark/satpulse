@@ -29,8 +29,9 @@ type Edge struct {
 
 // Info contains the most recently captured assert and clear edges and the
 // mode that was in effect when the source last processed an event. Mode is
-// zero until the first event. Assert and Clear are independent; they do not
-// necessarily belong to the same pulse.
+// zero until the first event, except on FreeBSD, where it is the mode in
+// effect when the information was fetched. Assert and Clear are independent;
+// they do not necessarily belong to the same pulse.
 type Info struct {
 	Assert Edge
 	Clear  Edge

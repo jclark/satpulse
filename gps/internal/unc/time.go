@@ -11,12 +11,14 @@ import (
 )
 
 func timeMsgFromRecTime(hdr *uncmsg.MsgHdr, recTime *uncmsg.RecTime, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
-	if recTime.ClockStatus != novmsg.ClockStatusValid {
-		return nil, nil
-	}
 	t := gpsprot.TimeMsg{
 		Tag:         tag,
 		NativeMsgID: "RECTIME",
+	}
+	// A TimeMsg with no time says the receiver has no valid time, as
+	// distinct from sending no time message.
+	if recTime.ClockStatus != novmsg.ClockStatusValid {
+		return &t, nil
 	}
 	if hdr.TimeStatus >= uncmsg.TimeStatusFine {
 		t.GNSS, t.TAITime = msgHdrTime(hdr)

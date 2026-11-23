@@ -18,6 +18,7 @@ interface Props {
     receiverIdent: string;
     ports: PortInfo[];
     onRefreshPorts: () => void;
+    onChoosePort?: () => void;
 }
 
 export function ConnectionPanel({
@@ -32,9 +33,12 @@ export function ConnectionPanel({
     receiverIdent,
     ports,
     onRefreshPorts,
+    onChoosePort,
 }: Props) {
     const [open, setOpen] = useState(false);
     const wrapRef = useRef<HTMLDivElement>(null);
+    // Choosing from the list unmounts the focused entry; keep focus in the bar.
+    const focusToggle = () => wrapRef.current?.querySelector<HTMLButtonElement>('button[aria-label="Select port"]')?.focus();
 
     useEffect(() => {
         if (!open) return;
@@ -58,6 +62,7 @@ export function ConnectionPanel({
         (p: PortInfo) => {
             setDevice(p.device);
             setOpen(false);
+            focusToggle();
         },
         [setDevice],
     );
@@ -83,7 +88,8 @@ export function ConnectionPanel({
                             value={device}
                             disabled={connected || readOnly}
                             onInput={e => setDevice((e.target as HTMLInputElement).value)}
-                            placeholder="device path"
+                            placeholder={onChoosePort ? 'select a device' : 'device path'}
+                            readOnly={!!onChoosePort}
                         />
                         <Button
                             type="button"
@@ -100,16 +106,37 @@ export function ConnectionPanel({
                     </div>
                     {open && (
                         <ul class="absolute right-0 left-0 z-50 mt-0.5 max-h-48 overflow-y-auto rounded border border-border-subtle bg-surface-2 shadow-sm">
-                            {ports.length === 0 && <li class="px-2 py-1.5 text-xs italic text-text-muted">No ports found</li>}
+                            {ports.length === 0 && <li class="px-2 py-1.5 text-xs italic text-text-muted">{onChoosePort ? 'No devices added' : 'No ports found'}</li>}
                             {ports.map(p => (
-                                <li
-                                    key={p.device}
-                                    class="cursor-pointer px-2 py-1.5 text-xs text-text-primary hover:bg-surface-3"
-                                    onClick={() => selectPort(p)}
-                                >
-                                    {p.display}
+                                <li key={p.device}>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        class="w-full justify-start rounded-none"
+                                        disabled={connected || readOnly}
+                                        onClick={() => selectPort(p)}
+                                    >
+                                        {p.display}
+                                    </Button>
                                 </li>
                             ))}
+                            {onChoosePort && (
+                                <li>
+                                    <Button
+                                        type="button"
+                                        variant="ghost"
+                                        class="w-full justify-start rounded-none"
+                                        disabled={connected || readOnly}
+                                        onClick={() => {
+                                            setOpen(false);
+                                            onChoosePort();
+                                            focusToggle();
+                                        }}
+                                    >
+                                        Add a device...
+                                    </Button>
+                                </li>
+                            )}
                         </ul>
                     )}
                 </div>
@@ -136,5 +163,33 @@ export function ConnectionPanel({
                 </Button>
             </div>
         </header>
+    );
+}
+
+// DeviceGoneDialog offers to choose the device again after it disappeared,
+// for example when a receiver reset re-enumerated its USB interface. It is a
+// modal dialog, so the page behind it is inert and Escape cancels it.
+export function DeviceGoneDialog({onReconnect, onCancel}: {onReconnect: () => void; onCancel: () => void}) {
+    const ref = useRef<HTMLDialogElement>(null);
+    useEffect(() => {
+        const d = ref.current!;
+        d.showModal();
+        d.querySelector<HTMLButtonElement>('button:last-child')?.focus();
+        return () => d.close();
+    }, []);
+    return (
+        <dialog
+            ref={ref}
+            aria-labelledby="device-gone-title"
+            class="m-auto w-110 max-w-[90vw] rounded-lg border border-border-subtle bg-surface-2 p-0 text-sm backdrop:bg-surface-1/70"
+            onCancel={e => { e.preventDefault(); onCancel(); }}
+            onClick={e => { if (e.target === ref.current) onCancel(); }}
+        >
+            <p id="device-gone-title" class="m-0 px-4 py-3 text-text-primary">The receiver's serial device has disconnected.</p>
+            <div class="flex justify-end gap-2 border-t border-border-subtle px-4 py-3">
+                <Button onClick={onCancel}>Cancel</Button>
+                <Button variant="primary" onClick={onReconnect}>Reconnect...</Button>
+            </div>
+        </dialog>
     );
 }

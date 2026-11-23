@@ -15,18 +15,20 @@ In either case a configuration is necessary to run satpulsed.
 satpulsed needs access to the GPS serial device;
 it does not need root privileges unless it is synchronizing a PHC.
 satpulsed writes a log to stdout;
-see [Running as a service](#running-as-a-service) for how to access this when running under a service manager.
+see [Running as a service on Linux](#running-as-a-service-on-linux) for how to access this when running under a service manager on Linux.
+
+For macOS specifics, see the [macOS setup page]({% link setup/macos.md %}#configure-and-run-satpulsed).
+This page applies to macOS as well as Linux, except where otherwise stated.
 
 ## Configuration file
 
-The service expects the configuration file to be at: 
+On Linux, the service expects the configuration file to be at: 
 
-- on Linux, `/etc/satpulse.toml` if you installed from a package,
-  or `/usr/local/etc/satpulse.toml` if you installed from source
-- on macOS, `/opt/homebrew/etc/satpulse.toml`
+- `/etc/satpulse.toml` if you installed from a package, or
+- `/usr/local/etc/satpulse.toml` if you installed from source.
 
-satpulsed reads the configuration file when it starts,
-so restart it after changing the file.
+The configuration is read by satpulsed only when it starts,
+so any changes will not take effect until you restart satpulsed.
 
 The configuration file is in [TOML](https://toml.io/en/) format, which is inspired by the INI file format
 and can be edited with a normal text editor (e.g. `nano`).
@@ -120,9 +122,7 @@ unless the serial speed is at least 38400.
 
 See [GPS configuration]({%link setup/gps-config.md %}) for more information about using `satpulsetool gps`. 
 
-## Running as a service
-
-### Linux
+## Running as a service on Linux
 
 On Linux, satpulsed usually runs as a service using systemd.
 The service template name is `satpulse@.service` and the expected argument is the serial device name without `/dev/`.
@@ -184,8 +184,3 @@ Show only warnings and errors:
 sudo journalctl -u satpulse@ttyAMA0 -p 0..4
 ```
 
-### macOS
-
-On macOS, the service is managed with `brew services`,
-as described in the [Homebrew tap](https://github.com/jclark/homebrew-satpulse). {% include new-in-03.html %}
-The service writes the daemon's log output to files under `/opt/homebrew/var/log/satpulse/`.
