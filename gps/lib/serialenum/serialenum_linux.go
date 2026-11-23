@@ -260,16 +260,7 @@ func countUSBDevicePorts(ports []portInfo) map[string]int {
 // the list belong to the same USB device, so the interface number is needed
 // to tell them apart.
 func setDisplay(port *portInfo, multiport bool) {
-	deviceDetail := port.product
-	tag := ubloxTag(port.USB.VID, port.USB.PID)
-	if tag != "" && tag != "u-blox" {
-		// A generation tag is more informative than u-blox's generic USB
-		// product string.
-		deviceDetail = tag
-	} else if deviceDetail == "" {
-		deviceDetail = tag
-	}
-
+	deviceDetail := portDetail(port.product, port.USB.VID, port.USB.PID)
 	port.Display = port.Device
 	details := append([]string(nil), port.Aliases...)
 	if deviceDetail != "" {

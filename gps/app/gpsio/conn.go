@@ -105,6 +105,21 @@ func (p SerialPin) termPin() term.ModemControlPin {
 	panic("gpsio: unspecified serial pin")
 }
 
+// serialPin returns the SerialPin for the term pin p.
+func serialPin(p term.ModemControlPin) SerialPin {
+	switch p {
+	case term.ModemCTS:
+		return SerialPinCTS
+	case term.ModemDCD:
+		return SerialPinDCD
+	case term.ModemDSR:
+		return SerialPinDSR
+	case term.ModemRI:
+		return SerialPinRI
+	}
+	panic("gpsio: invalid term pin")
+}
+
 // SerialPinState is the set of asserted modem control input pins.
 type SerialPinState int
 

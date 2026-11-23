@@ -38,6 +38,17 @@ func enumeratorDisplay(name, product string, vid, pid uint16) string {
 	return name
 }
 
+// portDetail returns the device text for a display label in the format the
+// Linux and FreeBSD enumerators use: the product text, except that a u-blox
+// generation tag is more informative than u-blox's generic USB product string.
+func portDetail(product string, vid, pid uint16) string {
+	tag := ubloxTag(vid, pid)
+	if (tag != "" && tag != "u-blox") || product == "" {
+		return tag
+	}
+	return product
+}
+
 // ubloxTag returns a u-blox generation tag from USB VID/PID, or empty string.
 func ubloxTag(vid, pid uint16) string {
 	if vid != 0x1546 {
