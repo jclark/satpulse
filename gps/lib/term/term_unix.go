@@ -1,4 +1,4 @@
-//go:build !windows
+//go:build unix
 
 package term
 
@@ -127,6 +127,12 @@ func (t *unixTerm) Change(opts ...AttrSetter) (time.Time, error) {
 		return time.Time{}, err
 	}
 	if err := t.setAttrNow(&attr.ts); err != nil {
+		// The driver rejects a speed its clock cannot divide down to (FreeBSD
+		// uart(4) does so with EINVAL); EINVAL with the speed unchanged has
+		// some other cause.
+		if errors.Is(err, unix.EINVAL) && attr.speed() != old.speed() {
+			err = fmt.Errorf("%w: %w", ErrSpeedUnsupported, err)
+		}
 		return time.Time{}, err
 	}
 	safe := t.safeWriteTime(old, attr)
@@ -448,6 +454,7 @@ func (t *unixTerm) ModemControlPinState() (ModemControlPinState, error) {
 
 func (t *unixTerm) Restore(exceptHardware bool) error {
 	ts := t.tsSaved
+	ts.Lflag &^= unix.ECHO | unix.ECHONL
 	if exceptHardware {
 		current, err := t.getAttr()
 		if err != nil {

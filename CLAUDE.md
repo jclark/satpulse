@@ -46,6 +46,7 @@ Whenever you create a new package, add an entry describing it to the appropriate
 ### Simplicity
 - Prefer modest, targeted diffs; do not rewrite or reformat code beyond the requested change (no gofmt churn on untouched lines)
 - No premature generalization: generalize when the second case arrives, not before
+- Do not make production code more complicated just to make it testable without asking first
 - Do not create a new file for a small helper; put it in the existing file where it belongs
 - No backwards-compatibility shims or migration paths: this is a pre-1.0, sole-developer project
 - Keep tests proportional to the change; a trivial change does not need a battery of new tests
@@ -126,6 +127,7 @@ Testing:
 - Before committing a fix that changes Go code, always run the full test suite with `make test`
 - Test files follow `*_test.go` convention
 - Tests for `X.go` go in `X_test.go` by default; put them elsewhere only when that file would become very unwieldy
+- Unit tests must not wait in real time: slow tests are unacceptable. A test that depends on timeouts, deadlines, tickers or sleeps must run in a `testing/synctest` bubble, so the fake clock advances at once. Inside the bubble use in-memory connections such as `net.Pipe`, not loopback sockets: a goroutine blocked on real network I/O does not count as durably blocked, so the bubble's clock cannot advance. The exception is a test of real OS I/O, such as a PTY or a kernel file descriptor, which cannot run in a bubble; keep its waits short
 
 Black-box smoke tests of the real `satpulsed` binary live in `smoketest/`
 (daemon-level config wiring, endpoints, logging, Ntrip, shutdown; no root or GPS
@@ -140,6 +142,10 @@ is only reported in the daemon log, which the smoke tests do not check. This
 works for `make` but not `allarch`: the detector does not support 32-bit arm.
 
 System testing on real hardware is doing using ansible in `systest/` directory.
+
+Never use `pkill -f` or `pgrep -f` with a pattern that also appears in the
+command you run: it matches the invoking shell and kills it. Use a bracketed
+pattern (`[s]atpulsewb`) or kill by PID.
 
 ## Code review
 
@@ -175,6 +181,7 @@ System testing uses Ansible playbooks in `systest/`.
 - For prose the user is writing (docs, blog posts), fix typos, spelling, and grammar only; no rewrites or editorial improvements unless explicitly asked.
 - Give prose corrections as exact word-level replacements with line numbers, one at a time; do not emit rewritten paragraphs.
 - When editing an existing document, make minimal targeted edits that match the document's voice and style.
+- Link hypertext style, not print style: write a normal sentence and hyperlink the words it already contains that refer to the target. Never write cross-references such as "See [Section title](...)" or "see [here](...)".
 
 ## Release notes
 
@@ -198,7 +205,8 @@ written for an installed system; in this repo:
   `satpulsetool serial` before relying on it, discover unknown ports with
   `serial -a` and `gps --show-receiver`, ask the user for the receiver's name
   (they know it better than `--show-receiver` does, especially without
-  high-level support), and update `CLAUDE.local.md` with what you find.
+  high-level configuration support), and update `CLAUDE.local.md` with what
+  you find.
 - when an ad-hoc command sent with `gps -m -` proves generally useful,
   suggest adding it to the message files we ship in `configs/gpsmsg` (the
   `gps-msg-add` skill does this)

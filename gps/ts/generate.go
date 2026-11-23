@@ -119,7 +119,7 @@ func samples() []sample {
 			MsgID:         "1077",
 			NBytes:        opt.Make(42),
 			ChecksumOK:    opt.Make(true),
-			FinalFragment: opt.Make(true),
+			FinalInEpoch:  opt.Make(true),
 			Used:          opt.Make(false),
 			RTCMRefBaseID: opt.Make(uint16(123)),
 		}},
@@ -270,7 +270,7 @@ func Generate() ([]byte, error) {
 	}
 	buf.WriteString("} from './gpsprot';\n")
 	buf.WriteString("import type {PacketLogEntry} from './gpsio';\n")
-	buf.WriteString("import type {ConfigTarget, ConfigTargetVocabulary} from './configtarget';\n")
+	buf.WriteString("import type {ConfigTarget, ConfigTargetVocabulary, MinAccuracy} from './configtarget';\n")
 	buf.WriteString("\n")
 	for _, s := range samples() {
 		j, err := json.Marshal(s.value)
@@ -279,6 +279,13 @@ func Generate() ([]byte, error) {
 		}
 		fmt.Fprintf(&buf, "const _%s: %s = %s;\n", lcFirst(s.tsType), s.tsType, j)
 	}
+	// typeof gives the literal type of the hand-written constant, so tsc
+	// fails if its value differs from Go's.
+	j, err := json.Marshal(gpsprot.MinAccuracy)
+	if err != nil {
+		return nil, fmt.Errorf("marshal MinAccuracy: %w", err)
+	}
+	fmt.Fprintf(&buf, "const _minAccuracy: typeof MinAccuracy = %s;\n", j)
 	return buf.Bytes(), nil
 }
 

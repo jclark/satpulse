@@ -1,4 +1,4 @@
-PY_FILES = $(wildcard *.py)
+PY_FILES = $(wildcard *.py vendors/*.py)
 
 .PHONY: dev-deps update-deps typecheck
 

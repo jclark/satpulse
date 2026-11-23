@@ -20,15 +20,29 @@ For these modules, SatPulse supports:
 
 - decoding of the CASIC packet format (packet format tag is `CASBIN`)
 - conversion of messages into the SatPulse device-independent data model
-- high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified {% include new-in-03.html %}
+- high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified
 - low-level configuration
   - message files for configuration that high-level configuration does not cover
   - a `casbin` message type in message files, with correlation of responses
 
-SatPulse has been tested with the ATGM332D-5N series, ATGM332D-6N series, ATGM332D-F8N series, AT372-6P-34 and AT632-6T-30.
+SatPulse has been tested with the ATGM332D-5N series, ATGM332D-6N series, ATGM332D-F8N series, AT372-6P-34, AT372-F8P-36 and AT632-6T-30.
 The ATGM336H modules differ from the corresponding ATGM332D modules only in form factor.
 For ATGM332D or ATGM336H modules, the last two digits in the full module name e.g. ATGM332D-5N-71 indicate the supported constellations.
 Accordingly, SatPulse should work with any ATGM332D or ATGM336H module.
+
+## Saturated serial line
+
+The ATGM332D-5N and ATGM336H-5N have a default speed of 9600
+and with a good sky view the default message configuration generates output that exceeds capacity of the serial line at 9600.
+This can prevent SatPulse configuration from working.
+The fix is to first disconnect the antenna and wait a minute: this will reduce the amount of information transmitted.
+Then configure to use a higher speed, e.g.
+
+```
+satpulsetool gps -d /dev/ttyAMA0 -s 9600 --vendor zhongke --speed 38400 --save
+```
+
+After that you can reconnect the antenna.
 
 ## Supported messages
 
