@@ -16,11 +16,11 @@ type GPIOConfig struct {
 	// CPU, if non-nil, is the CPU the poller's thread is pinned to. It
 	// should not be a CPU that handles interrupts, above all the GPIO's
 	// own, whose handling interrupts the reads that bracket the edge.
-	CPU *int
+	CPU *int `toml:"cpu" check:">=0" comment:"CPU to pin the GPIO poller to; omit to leave it unpinned"`
 	// Priority, if nonzero, is the SCHED_FIFO priority, from 1 to 99, at
 	// which the poller's thread runs, so that its short polling windows
 	// preempt ordinary work.
-	Priority int
+	Priority int `toml:"priority" check:">=0,<100" comment:"SCHED_FIFO priority of the GPIO poller, 1 to 99; 0 leaves normal scheduling"`
 }
 
 // DetectGPIO polls pin for the rising edges of its PPS pulses and sends a

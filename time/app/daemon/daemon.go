@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/gpiomem"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/gpsevent"
@@ -336,6 +337,26 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Pin, err))
 			}
 			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
+		})
+	}
+	if cfg.PPS != nil {
+		gpio := cfg.PPS.GPIO
+		ppsGen = pps.NewGenerator(cfg.Sample.PPS.GeneratorConfig)
+		ch := make(chan pps.CandidateEdge, 1)
+		ppsCh = ch
+		wg.Go(func() {
+			defer close(ch)
+			lg.Debug("GPIO PPS goroutine started", "gpio", gpio)
+			pin, err := gpiomem.Open(gpio)
+			if err == nil {
+				defer pin.Close()
+				err = pps.DetectGPIO(ctx, lg, pin, cfg.Sample.PPS.GPIO, ch, nil)
+			}
+			if err != nil && ctx.Err() == nil {
+				lg.Error("GPIO PPS polling failed", "gpio", gpio, "err", err)
+				cancel(fmt.Errorf("GPIO PPS polling failed: %w", err))
+			}
+			lg.Debug("GPIO PPS goroutine exited", "gpio", gpio)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)

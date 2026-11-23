@@ -279,7 +279,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 					s.edge(usable, ce.Reject)
 				}
 			} else {
-				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
+				lg.Debug("PPS edge channel of event dispatcher goroutine was closed")
 				ppsCh = nil
 				sysPulseStartupDeadline = nil
 				d.sysPulseStartup = nil
@@ -315,9 +315,10 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 	}
 }
 
-// sysPulseStartup checks that serial PPS receives what it needs to produce
-// samples: a usable edge and a post-pulse time message with a UTC time,
-// which is what feeds the Generator. It reports once, at the startup timeout.
+// sysPulseStartup checks that PPS edge detection receives what it needs to
+// produce samples: a usable edge and a post-pulse time message with a UTC
+// time, which is what feeds the Generator. It reports once, at the startup
+// timeout.
 type sysPulseStartup struct {
 	rejected      map[pps.RejectReason]int
 	usableEdge    bool
@@ -341,9 +342,9 @@ func (s *sysPulseStartup) timeMsg(msg *gpsprot.TimeMsg) {
 func (s *sysPulseStartup) report(lg *slog.Logger) {
 	if !s.usableEdge {
 		if len(s.rejected) == 0 {
-			lg.Warn("no serial PPS edges being received")
+			lg.Warn("no PPS edges being received")
 		} else {
-			lg.Warn("no usable serial PPS edges being received", "rejected", s.rejected)
+			lg.Warn("no usable PPS edges being received", "rejected", s.rejected)
 		}
 	}
 	if !s.usableTimeMsg {
@@ -373,7 +374,7 @@ func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) bool {
 
 func (d *Dispatcher) sysPulseSample(edge pps.Edge) {
 	if d.ppsGen == nil {
-		panic("serial PPS edge channel wired without a Generator")
+		panic("PPS edge channel wired without a Generator")
 	}
 	sample, ok := d.ppsGen.Sample(edge)
 	if !ok {
@@ -455,7 +456,7 @@ type PHCPulseEdge struct {
 }
 
 // sysPulseEdgeType is the LogEvent.Type value for system-clock-timestamped
-// pulse-edge records produced by serial PPS detection.
+// pulse-edge records produced by serial or GPIO PPS detection.
 const sysPulseEdgeType = "sysPulseEdge"
 
 type SysPulseEdge struct {
