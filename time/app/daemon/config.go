@@ -24,6 +24,7 @@ import (
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
 	"github.com/jclark/satpulse/time/sockrefclock"
+	"github.com/jclark/satpulse/time/timeprov"
 	"github.com/pelletier/go-toml/v2"
 )
 
@@ -103,12 +104,18 @@ type PTP4LConfig struct {
 }
 
 type NTPConfig struct {
-	Sock *NTPSockConfig `toml:"sock"`
-	SHM  *NTPSHMConfig  `toml:"shm"`
+	Sock     *NTPSockConfig     `toml:"sock"`
+	SHM      *NTPSHMConfig      `toml:"shm"`
+	Timeprov *NTPTimeprovConfig `toml:"timeprov"`
 }
 
 type NTPSockConfig struct {
 	Path string `toml:"path"`
+}
+
+type NTPTimeprovConfig struct {
+	Pipe       string  `toml:"pipe"`
+	Dispersion float64 `toml:"dispersion"`
 }
 
 type NTPSHMConfig struct {
@@ -257,6 +264,15 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
 	}
+	if tp := cfg.NTP.Timeprov; tp != nil {
+		if cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "" {
+			return configErrorf("sock and timeprov in the [ntp] table cannot both be specified")
+		}
+		// Written so that NaN is rejected too.
+		if !(tp.Dispersion >= 0) {
+			return configErrorf("dispersion in the [ntp.timeprov] table must not be negative")
+		}
+	}
 	users, err := cfg.userSet()
 	if err != nil {
 		return &configError{err: err}
@@ -337,7 +353,17 @@ func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
 	return ptime.LeapSecondOnDate(cfg.Date.AsTime((time.UTC)), int16(cfg.Before), int16(cfg.After))
 }
 
+// NewRefClock creates the configured SOCK-style refclock sink: the
+// chrony SOCK refclock for [ntp.sock], or the w32time pipe-timeprov
+// refclock for [ntp.timeprov].
 func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
+	if cfg.Timeprov != nil {
+		rc, err := timeprov.New(cfg.Timeprov.Pipe, cfg.Timeprov.dispersion())
+		if err != nil {
+			return nil, err
+		}
+		return refclock.NewLoggingSockRefClock(lg, rc), nil
+	}
 	if cfg.Sock == nil || cfg.Sock.Path == "" {
 		return nil, nil
 	}
@@ -346,6 +372,15 @@ func (cfg *NTPConfig) NewRefClock(lg *slog.Logger) (refclock.RefClock, error) {
 		return nil, err
 	}
 	return refclock.NewLoggingSockRefClock(lg, rc), nil
+}
+
+// dispersion returns the per-sample measurement error to report,
+// defaulting to 1 ms, a conservative bound for a serial PPS source.
+func (cfg *NTPTimeprovConfig) dispersion() time.Duration {
+	if cfg.Dispersion == 0 {
+		return time.Millisecond
+	}
+	return time.Duration(cfg.Dispersion * float64(time.Second))
 }
 
 // NewSHMWriter attaches to the configured NTP SHM segment.

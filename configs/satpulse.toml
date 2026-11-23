@@ -89,6 +89,8 @@ speed = 9600
 #sock.path = "/var/run/chrony.satpulse.sock"
 # Uncomment to use the NTP SHM protocol; segment is the SHM segment index (0-255)
 #shm.segment = 2
+# Uncomment on Windows to send samples to the Windows Time service through the pipe-timeprov time provider
+#timeprov.pipe = '\\.\pipe\pipetimeprov'
 
 ################ Monitoring ################
 

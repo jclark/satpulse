@@ -3,6 +3,7 @@ package refclock
 import (
 	"errors"
 	"io"
+	"io/fs"
 	"log/slog"
 	"os"
 	"syscall"
@@ -17,10 +18,12 @@ type RefClock interface {
 	Sample(sys ntime.Time, offset float64, leap ptime.LeapSecondKind) error
 }
 
-// SockRefClock is the interface to a chrony SOCK protocol speaker such
-// as sockrefclock.SockRefClock. Its Sample takes the wire-level leap
-// value; LoggingSockRefClock converts from the domain-level
-// ptime.LeapSecondKind, keeping the wire format hidden from producers.
+// SockRefClock is the interface to a SOCK-style refclock sample sink:
+// chrony's SOCK protocol (sockrefclock.SockRefClock) or the w32time
+// pipe-timeprov bridge (timeprov.TimeProv). Its Sample takes the
+// wire-level leap value; LoggingSockRefClock converts from the
+// domain-level ptime.LeapSecondKind, keeping the wire format hidden
+// from producers.
 type SockRefClock interface {
 	io.Closer
 	Sample(sys ntime.Time, offset float64, leap sockrefclock.Leap) error
@@ -96,7 +99,7 @@ func (rc *LoggingSockRefClock) Sample(sys ntime.Time, offset float64, leap ptime
 	lg := rc.lg
 	path := rc.sock.RemotePath()
 	if err != nil {
-		if errors.Is(err, syscall.ENOENT) || errors.Is(err, syscall.ECONNREFUSED) {
+		if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ECONNREFUSED) {
 			if rc.sockOK {
 				lg.Info("the refclock socket is not ready", "path", path)
 				rc.sockOK = false

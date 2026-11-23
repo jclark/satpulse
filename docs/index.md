@@ -36,7 +36,7 @@ In particular, you can:
 
 SatPulse consists of three programs:
 
-* satpulsed, a program that runs as a service: it transfers time from a GPS receiver to an NTP or PTP time server (this does not yet work on Windows);
+* satpulsed, a program that runs as a service: it transfers time from a GPS receiver to an NTP or PTP time server;
   it supports monitoring through a Web dashboard and Prometheus metrics;
   it can work as an RTK base station;
 * satpulsewb, [SatPulse Workbench]({% link workbench/index.md %}): a web-based, graphical interface for GNSS receiver configuration and monitoring; it includes an Ntrip client allowing use of RTK positioning
