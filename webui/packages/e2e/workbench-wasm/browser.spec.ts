@@ -199,7 +199,7 @@ test('browser wasm runs the session, configuration, messages and serial lifecycl
     }
 });
 
-test('vendor URL enables Zhongke probes on every connection and rejects unknown vendors', async ({page}) => {
+test('vendor URL narrows probing to its vendor on every connection, the default probes every vendor, and unknown vendors are rejected', async ({page}) => {
     await page.addInitScript(() => {
         const port = {
             readable: null as ReadableStream<Uint8Array> | null,
@@ -231,7 +231,8 @@ test('vendor URL enables Zhongke probes on every connection and rejects unknown 
         for (let i = 0; i < 2; i++) {
             await page.evaluate(() => { (window as any).testPort.writes = []; });
             await page.getByRole('button', {name: 'Connect', exact: true}).click();
-            // CFG-RATE is CASIC's identifying poll. Default probing excludes it.
+            // CFG-RATE is CASIC's identifying poll. An asserted vendor probes
+            // only its own config protocol, so no UBX goes out.
             await expect.poll(() => page.evaluate(() => (window as any).testPort.writes.some((b: number[]) =>
                 b[0] === 0xba && b[1] === 0xce && b[4] === 0x06 && b[5] === 0x04))).toBe(true);
             expect(await page.evaluate(() => (window as any).testPort.writes.some((b: number[]) => b[0] === 0xb5 && b[1] === 0x62))).toBe(false);
@@ -239,6 +240,17 @@ test('vendor URL enables Zhongke probes on every connection and rejects unknown 
             await expect(page.getByText('Disconnected', {exact: true})).toBeVisible();
         }
     }
+    // Without a vendor, every config protocol is probed, experimental ones included.
+    await page.goto(baseURL);
+    await page.evaluate(() => { (window as any).testPort.writes = []; });
+    await page.getByRole('button', {name: 'Connect', exact: true}).click();
+    await expect.poll(() => page.evaluate(() => {
+        const writes: number[][] = (window as any).testPort.writes;
+        return writes.some(b => b[0] === 0xba && b[1] === 0xce && b[4] === 0x06 && b[5] === 0x04) &&
+            writes.some(b => b[0] === 0xb5 && b[1] === 0x62);
+    })).toBe(true);
+    await page.getByRole('button', {name: 'Disconnect', exact: true}).click();
+    await expect(page.getByText('Disconnected', {exact: true})).toBeVisible();
     await page.goto(`${baseURL}?vendor=not-a-vendor`);
     await expect(page.getByText('unknown vendor: "not-a-vendor"', {exact: true})).toBeVisible();
     await expect(page.getByRole('banner')).toHaveCount(0);
