@@ -35,12 +35,16 @@ func SetFIFO(priority int) error {
 
 // SetTimerSlack sets the calling OS thread's timer slack, which the kernel
 // adds to every sleep the thread makes so that wakeups can be coalesced,
-// and returns the previous slack. The default is 50 us; a slack of zero
-// restores the default. slack must not be negative. A real-time thread has
-// no timer slack, and the kernel ignores the setting for it.
+// and returns the previous slack. A slack of zero restores the thread's
+// default, which it inherited from the thread that created it, normally
+// 50 us. slack must not be negative. A real-time thread has no timer slack,
+// and the kernel ignores the setting for it.
 func SetTimerSlack(slack time.Duration) (prev time.Duration, err error) {
 	if slack < 0 {
 		panic("osthread: negative timer slack")
+	}
+	if time.Duration(uintptr(slack)) != slack {
+		return 0, fmt.Errorf("timer slack %v: too large for this platform", slack)
 	}
 	ns, err := unix.PrctlRetInt(unix.PR_GET_TIMERSLACK, 0, 0, 0, 0)
 	if err != nil {
@@ -49,5 +53,6 @@ func SetTimerSlack(slack time.Duration) (prev time.Duration, err error) {
 	if err := unix.Prctl(unix.PR_SET_TIMERSLACK, uintptr(slack), 0, 0, 0); err != nil {
 		return 0, err
 	}
-	return time.Duration(ns), nil
+	// The slack is an unsigned long, which PrctlRetInt returns as an int.
+	return time.Duration(uint(ns)), nil
 }
