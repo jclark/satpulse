@@ -23,11 +23,11 @@ type SoC interface {
 	// Compatible returns the device-tree compatible strings of the GPIO
 	// controllers the family handles.
 	Compatible() []string
-	// Resolve finds the GPIO with the given name, which is upper-case
+	// Lookup finds the GPIO with the given name, which is upper-case
 	// ASCII, among ctrls, the controllers on the system that the family
 	// handles. It returns the index of the controller in ctrls and the
 	// GPIO's line on that controller.
-	Resolve(name string, ctrls []Controller) (ctrl int, line int, err error)
+	Lookup(name string, ctrls []Controller) (ctrl int, line int, err error)
 	// Level locates the register holding the level of line on ctrl: its
 	// offset from the start of the controller's first register range, and
 	// the line's bit in it.

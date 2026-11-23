@@ -24,20 +24,28 @@ type Pin struct {
 	device  string
 }
 
-// Open finds the GPIO called name, such as GPIO18, among the GPIO controllers
-// of the running system, maps its controller's registers and returns a
-// reader for its level.
+// Open identifies the SoC of the running system from its GPIO controllers,
+// finds the GPIO the SoC calls name, such as GPIO18, maps its controller's
+// registers and returns a reader for its level.
 func Open(name string) (*Pin, error) {
+	upper, err := upperName(name)
+	if err != nil {
+		return nil, err
+	}
 	ctrls, err := controllers()
 	if err != nil {
 		return nil, err
 	}
-	g, err := resolve(name, ctrls)
+	s, ctrls, err := findSoC(ctrls)
 	if err != nil {
 		return nil, err
 	}
-	offset, bit := g.soc.Level(g.ctrl, g.line)
-	device, length := g.soc.GPIOMem()
+	i, line, err := s.Lookup(upper, ctrls)
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", name, err)
+	}
+	offset, bit := s.Level(ctrls[i], line)
+	device, length := s.GPIOMem()
 	f, err := os.OpenFile(device, os.O_RDONLY|unix.O_SYNC, 0)
 	if err != nil {
 		return nil, err

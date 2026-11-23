@@ -3,12 +3,13 @@
 // is one bus transaction, taking about a microsecond on a Raspberry Pi 5.
 //
 // A GPIO is named as its SoC's documentation names it, such as GPIO18 on a
-// Raspberry Pi; the name is case-insensitive ASCII. The GPIO controllers on
-// the running system are the gpiochips whose device-tree nodes have a
-// compatible string that one of the SoC family packages under this package
-// handles; that package resolves the name to a controller and a line and
-// locates the line's level register. Currently the registers are mapped
-// through the gpiomem devices that Raspberry Pi OS provides.
+// Raspberry Pi; the name is case-insensitive ASCII. The SoC is identified
+// from the GPIO controllers of the running system: the gpiochips whose
+// device-tree nodes have a compatible string that one of the SoC family
+// packages under this package handles. That package looks up the controller
+// and line the name identifies and locates the line's level register.
+// Currently the registers are mapped through the gpiomem devices that
+// Raspberry Pi OS provides.
 //
 // The package does not configure the GPIO: it must already be an input, as
 // the pps-gpio overlay makes it. Opening a GPIO is implemented for 64-bit
@@ -30,28 +31,27 @@ import (
 // socs lists the supported SoC families.
 var socs = []soc.SoC{bcm2835.SoC{}, rp1.SoC{}}
 
-// A gpio is a resolved GPIO: the family of its controller, the controller,
-// and its line on that controller.
-type gpio struct {
-	soc  soc.SoC
-	ctrl soc.Controller
-	line int
-}
-
-// resolve finds the GPIO called name among ctrls, the GPIO controllers on
-// the system.
-func resolve(name string, ctrls []soc.Controller) (gpio, error) {
+// upperName checks that name is a non-empty ASCII string and returns it in
+// upper case, the form the SoC family packages parse.
+func upperName(name string) (string, error) {
 	if name == "" {
-		return gpio{}, errors.New("empty GPIO name")
+		return "", errors.New("empty GPIO name")
 	}
 	for i := 0; i < len(name); i++ {
 		if name[i] >= 0x80 {
-			return gpio{}, fmt.Errorf("GPIO name %q: not ASCII", name)
+			return "", fmt.Errorf("GPIO name %q: not ASCII", name)
 		}
 	}
-	upper := strings.ToUpper(name)
-	var found []gpio
-	var errs []error
+	return strings.ToUpper(name), nil
+}
+
+// findSoC finds the SoC family whose controllers are among ctrls, the GPIO
+// controllers on the system, and returns it with those controllers. A system
+// has one SoC, so controllers of more than one family mean something has gone
+// badly wrong.
+func findSoC(ctrls []soc.Controller) (soc.SoC, []soc.Controller, error) {
+	var found soc.SoC
+	var foundCtrls []soc.Controller
 	for _, s := range socs {
 		var matched []soc.Controller
 		for _, c := range ctrls {
@@ -62,23 +62,16 @@ func resolve(name string, ctrls []soc.Controller) (gpio, error) {
 		if len(matched) == 0 {
 			continue
 		}
-		i, line, err := s.Resolve(upper, matched)
-		if err != nil {
-			errs = append(errs, err)
-			continue
+		if found != nil {
+			c, d := foundCtrls[0], matched[0]
+			return nil, nil, fmt.Errorf("GPIO controllers of more than one SoC family: %s is %s and %s is %s", c.Chip, c.Compatible[0], d.Chip, d.Compatible[0])
 		}
-		found = append(found, gpio{s, matched[i], line})
+		found, foundCtrls = s, matched
 	}
-	if len(found) == 1 {
-		return found[0], nil
+	if found == nil {
+		return nil, nil, unsupportedError(ctrls)
 	}
-	if len(found) > 1 {
-		return gpio{}, fmt.Errorf("%s: ambiguous; found on %s and %s", name, found[0].ctrl.Chip, found[1].ctrl.Chip)
-	}
-	if len(errs) == 0 {
-		return gpio{}, unsupportedError(ctrls)
-	}
-	return gpio{}, fmt.Errorf("%s: %w", name, errors.Join(errs...))
+	return found, foundCtrls, nil
 }
 
 // unsupportedError reports that none of ctrls is a supported controller,

@@ -11,7 +11,7 @@ var (
 	pi4 = soc.Controller{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}}
 )
 
-func TestResolve(t *testing.T) {
+func TestLookup(t *testing.T) {
 	tests := []struct {
 		name       string
 		gpio       string
@@ -29,7 +29,7 @@ func TestResolve(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			ctrl, line, err := SoC{}.Resolve(tc.gpio, tc.ctrls)
+			ctrl, line, err := SoC{}.Lookup(tc.gpio, tc.ctrls)
 			if tc.expectErr {
 				if err == nil {
 					t.Fatalf("expected error")

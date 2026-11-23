@@ -2,6 +2,7 @@ package gpiomem
 
 import (
 	"reflect"
+	"slices"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/lib/gpiomem/bcm2835"
@@ -33,29 +34,22 @@ var (
 	}
 )
 
-func TestResolve(t *testing.T) {
+func TestUpperName(t *testing.T) {
 	tests := []struct {
 		name      string
-		gpio      string
-		ctrls     []soc.Controller
-		expect    gpio
+		input     string
+		expect    string
 		expectErr bool
 	}{
-		{name: "Pi 5", gpio: "GPIO18", ctrls: pi5Ctrls, expect: gpio{rp1.SoC{}, pi5Ctrls[0], 18}},
-		{name: "lower case", gpio: "gpio18", ctrls: pi5Ctrls, expect: gpio{rp1.SoC{}, pi5Ctrls[0], 18}},
-		{name: "mixed case", gpio: "Gpio27", ctrls: pi5Ctrls, expect: gpio{rp1.SoC{}, pi5Ctrls[0], 27}},
-		{name: "Pi 4", gpio: "GPIO57", ctrls: pi4Ctrls, expect: gpio{bcm2835.SoC{}, pi4Ctrls[0], 57}},
-		{name: "Pi 3", gpio: "GPIO18", ctrls: pi3Ctrls, expect: gpio{bcm2835.SoC{}, pi3Ctrls[0], 18}},
-		{name: "Pi 3 out of range", gpio: "GPIO57", ctrls: pi3Ctrls, expectErr: true},
-		{name: "number only", gpio: "18", ctrls: pi5Ctrls, expectErr: true},
-		{name: "non-ASCII folding to ASCII", gpio: "gp\u0131o18", ctrls: pi5Ctrls, expectErr: true},
-		{name: "empty", gpio: "", ctrls: pi5Ctrls, expectErr: true},
-		{name: "unsupported controller", gpio: "GPIO3_D0", ctrls: rk3568Ctrls, expectErr: true},
-		{name: "no controllers", gpio: "GPIO18", expectErr: true},
+		{name: "upper case", input: "GPIO18", expect: "GPIO18"},
+		{name: "lower case", input: "gpio18", expect: "GPIO18"},
+		{name: "mixed case", input: "Gpio3_d0", expect: "GPIO3_D0"},
+		{name: "non-ASCII folding to ASCII", input: "gp\u0131o18", expectErr: true},
+		{name: "empty", input: "", expectErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			g, err := resolve(tc.gpio, tc.ctrls)
+			got, err := upperName(tc.input)
 			if tc.expectErr {
 				if err == nil {
 					t.Fatalf("expected error")
@@ -65,8 +59,42 @@ func TestResolve(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if !reflect.DeepEqual(g, tc.expect) {
-				t.Errorf("got  %+v\nwant %+v", g, tc.expect)
+			if got != tc.expect {
+				t.Errorf("got %q, want %q", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestFindSoC(t *testing.T) {
+	tests := []struct {
+		name        string
+		ctrls       []soc.Controller
+		expect      soc.SoC
+		expectCtrls []soc.Controller
+		expectErr   bool
+	}{
+		{name: "Pi 5", ctrls: pi5Ctrls, expect: rp1.SoC{}, expectCtrls: pi5Ctrls[:1]},
+		{name: "Pi 4", ctrls: pi4Ctrls, expect: bcm2835.SoC{}, expectCtrls: pi4Ctrls[:1]},
+		{name: "Pi 3", ctrls: pi3Ctrls, expect: bcm2835.SoC{}, expectCtrls: pi3Ctrls[:1]},
+		{name: "two families", ctrls: append(slices.Clone(pi5Ctrls), pi4Ctrls...), expectErr: true},
+		{name: "unsupported controller", ctrls: rk3568Ctrls, expectErr: true},
+		{name: "no controllers", expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, ctrls, err := findSoC(tc.ctrls)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if s != tc.expect || !reflect.DeepEqual(ctrls, tc.expectCtrls) {
+				t.Errorf("got  %T %+v\nwant %T %+v", s, ctrls, tc.expect, tc.expectCtrls)
 			}
 		})
 	}

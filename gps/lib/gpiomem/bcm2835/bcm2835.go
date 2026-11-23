@@ -32,8 +32,8 @@ func (SoC) Compatible() []string {
 	return s
 }
 
-// Resolve finds GPIO<n> on the system's one BCM2835-family controller.
-func (SoC) Resolve(name string, ctrls []soc.Controller) (int, int, error) {
+// Lookup finds GPIO<n> on the system's one BCM2835-family controller.
+func (SoC) Lookup(name string, ctrls []soc.Controller) (int, int, error) {
 	n, ok := soc.GPIONumber(name)
 	if !ok {
 		return 0, 0, fmt.Errorf("expected a name of the form GPIO<n>")
