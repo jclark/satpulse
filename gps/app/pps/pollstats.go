@@ -128,11 +128,11 @@ func (s *PollStats) Log(lg *slog.Logger) {
 		return
 	}
 	summary := s.summary()
-	lg.Info("serial PPS polling statistics",
+	lg.Info("PPS polling statistics",
 		slog.Group("acquire", "windows", summary.Acquire.Windows, "edges", summary.Acquire.Edges),
 		slog.Group("track", "windows", summary.Track.Windows, "edges", summary.Track.Edges, "anomalous", summary.Track.Anomalous))
-	logDurationStats(lg, "serial PPS state read times", summary.PollDuration)
-	logDurationStats(lg, "serial PPS between-read times", summary.PollGap)
+	logDurationStats(lg, "PPS poll state read times", summary.PollDuration)
+	logDurationStats(lg, "PPS poll between-read times", summary.PollGap)
 }
 
 func logDurationStats(lg *slog.Logger, msg string, stats durationStats) {

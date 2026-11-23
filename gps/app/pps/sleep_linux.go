@@ -9,18 +9,21 @@ import (
 // Linux's epoll_pwait timeout has whole-millisecond resolution. The Go
 // runtime rounds a sub-millisecond timer up to one millisecond and a
 // fractional-millisecond timer up to the next millisecond, so ask it only for
-// the whole milliseconds and leave the rest to sleepRemainder, or to the
+// the whole milliseconds and leave the rest to sleepUntil, or to the
 // state reads where the wait is not precise. See https://go.dev/issue/53824.
 func sleepDuration(d time.Duration) time.Duration {
 	return d.Truncate(time.Millisecond)
 }
 
-// sleepRemainder sleeps until t, the part of a wait sleepDuration truncated,
-// and reports whether the sleep succeeded. This covers the whole wait when
-// it is shorter than the runtime timer's resolution. The deadline is absolute
-// because the runtime's preemption signal interrupts the sleep, and the Go
-// monotonic clock is CLOCK_MONOTONIC, so resuming needs no arithmetic.
-func sleepRemainder(t time.Time) bool {
+// sleepUntil sleeps the calling OS thread until t with clock_nanosleep, so
+// that the kernel wakes the thread itself rather than through the runtime's
+// timers, and reports whether the sleep succeeded; it returns false at once
+// if t has passed. waitUntil uses it for the part of a wait sleepDuration
+// truncated, which is the whole wait when it is shorter than the runtime
+// timer's resolution, and the GPIO source for every wait. The deadline is
+// absolute because the runtime's preemption signal interrupts the sleep, and
+// the Go monotonic clock is CLOCK_MONOTONIC, so resuming needs no arithmetic.
+func sleepUntil(t time.Time) bool {
 	d := time.Until(t)
 	if d <= 0 {
 		return false
