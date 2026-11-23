@@ -6,6 +6,7 @@
     "packages/dashboard",
     "packages/workbench",
     "packages/workbench-http",
+    "packages/workbench-wasm",
     "packages/e2e"
   ],
   "dependencies": {
@@ -19,6 +20,7 @@
     "build": "npm run build --workspace=packages/dashboard && npm run build --workspace=packages/workbench-http",
     "embed": "npm run build --workspace=packages/dashboard -- --outDir ../../../time/internal/web/dist --emptyOutDir",
     "embed-workbench": "npm run build --workspace=packages/workbench-http -- --outDir ../../../cmd/satpulsewb/dist --emptyOutDir",
+    "embed-workbench-wasm": "npm run build --workspace=packages/workbench-wasm -- --outDir ../../../cmd/satpulsewbwasm/dist --emptyOutDir",
     "test": "npm run test --workspaces --if-present",
     "typecheck": "npm run typecheck --workspaces --if-present"
   }

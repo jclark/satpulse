@@ -43,3 +43,9 @@ func (t *unixTerm) DevKind() DevKind {
 	}
 	return DevUnknown
 }
+
+// KernelPPSPins returns the pins kernel PPS can watch, which are none on
+// macOS.
+func KernelPPSPins() []ModemControlPin {
+	return nil
+}

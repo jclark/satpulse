@@ -1,5 +1,7 @@
 // Package ntrip implements an Ntrip caster that serves RTCM correction
-// data from a GPS receiver to connecting Ntrip clients (rovers).
+// data from a GPS receiver to connecting Ntrip clients (rovers), and the
+// stream configuration and source-table records it shares with
+// gps/app/stream. A nohttp build has only the latter.
 package ntrip
 
 import (
