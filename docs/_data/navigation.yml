@@ -87,6 +87,8 @@ docs:
     children:
       - title: "Getting started"
         url: "/workbench/index.html"
+      - title: "Zero-install"
+        url: "/workbench/zero-install.html"
       - title: "Monitor"
         url: "/workbench/monitor.html"
       - title: "Packets"
