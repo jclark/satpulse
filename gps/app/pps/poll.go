@@ -2,10 +2,12 @@ package pps
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/osthread"
 	"github.com/jclark/satpulse/time/lib/median"
 )
 
@@ -112,10 +114,11 @@ const widthHistory = 31
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if restore, err := tightenTimerSlack(); err != nil {
+	// The default 50 us timer slack is several times the wakeup delay itself.
+	if prev, err := osthread.SetTimerSlack(time.Nanosecond); err == nil {
+		defer osthread.SetTimerSlack(prev)
+	} else if !errors.Is(err, errors.ErrUnsupported) {
 		lg.Debug("serial PPS could not tighten timer slack", "err", err)
-	} else {
-		defer restore()
 	}
 	stats.begin()
 	if params.InitialPolls == 0 {

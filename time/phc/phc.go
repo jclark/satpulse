@@ -244,20 +244,37 @@ func (clk *Clock) PeroutEnable(chanIndex uint32, period, width, startOffset time
 	return clk.wrapErr(unix.IoctlPtpPeroutRequest(clk.fd, &req), "ioctl(PTP_PEROUT_REQUEST2)")
 }
 
-func (clk *Clock) SysOffset(nSamples int) (MultiSample, error) {
+// sysOffsetFuncs lists the ways SysOffset can sample the PHC and system
+// clocks, most precise first.
+var sysOffsetFuncs = []func(*Clock, int) (MultiSample, error){
+	(*Clock).SysOffsetPrecise,
+	(*Clock).SysOffsetExtended,
+	(*Clock).sysOffsetBasic,
+}
+
+// SysOffset samples the PHC and system clocks with the most precise of
+// PTP_SYS_OFFSET_PRECISE, PTP_SYS_OFFSET_EXTENDED and PTP_SYS_OFFSET that
+// works. It uses an ioctl for good once it has worked and every ioctl before
+// it is unsupported. An ioctl that fails for another reason is tried again
+// on the next call, since the failure may be transient.
+func (clk *Clock) SysOffset(nSamples int) (ms MultiSample, err error) {
 	if clk.sysOffsetFunc != nil {
 		return clk.sysOffsetFunc(clk, nSamples)
 	}
-	ms, err := clk.SysOffsetPrecise(nSamples)
-	if err == nil {
-		clk.sysOffsetFunc = (*Clock).SysOffsetPrecise
-		return ms, nil
+	unsupported := true
+	for _, f := range sysOffsetFuncs {
+		ms, err = f(clk, nSamples)
+		if err == nil {
+			if unsupported {
+				clk.sysOffsetFunc = f
+			}
+			return
+		}
+		// The kernel returns EOPNOTSUPP when the driver lacks the operation the ioctl
+		// needs, and ENOTTY when it does not know the ioctl.
+		unsupported = unsupported && (errors.Is(err, unix.EOPNOTSUPP) || errors.Is(err, unix.ENOTTY))
 	}
-	// According to the ioctl man page, I think it should be returning ENOTTY in this case, but it actually returns EOPNOTSUPP.
-	if errors.Is(err, unix.ENOTTY) || errors.Is(err, unix.EOPNOTSUPP) {
-		clk.sysOffsetFunc = (*Clock).SysOffsetExtended
-	}
-	return clk.SysOffsetExtended(nSamples)
+	return
 }
 
 func (clk *Clock) SysOffsetExtended(nSamples int) (MultiSample, error) {
@@ -288,6 +305,27 @@ func (clk *Clock) SysOffsetPrecise(_ int) (MultiSample, error) {
 	}
 	ms.PHC = []ptime.Time{ptpClockTimeToTimePHC(buf.Device)}
 	ms.Sys = []time.Time{ptpClockTimeToTimeSys(buf.Realtime)}
+	return ms, nil
+}
+
+// sysOffsetBasic uses PTP_SYS_OFFSET, which works with every driver: the kernel
+// brackets each read of the PHC with reads of the system clock.
+func (clk *Clock) sysOffsetBasic(nSamples int) (MultiSample, error) {
+	ms := MultiSample{}
+	if nSamples <= 0 || nSamples > unix.PTP_MAX_SAMPLES {
+		return ms, unix.EINVAL
+	}
+	buf, err := ioctlPtpSysOffset(clk.fd, uint32(nSamples))
+	if err != nil {
+		return ms, clk.wrapErr(err, "ioctl(PTP_SYS_OFFSET)")
+	}
+	ms.PHC = make([]ptime.Time, nSamples)
+	ms.Sys = make([]time.Time, nSamples+1)
+	for i := 0; i < nSamples; i++ {
+		ms.Sys[i] = ptpClockTimeToTimeSys(buf.Ts[i*2])
+		ms.PHC[i] = ptpClockTimeToTimePHC(buf.Ts[i*2+1])
+	}
+	ms.Sys[nSamples] = ptpClockTimeToTimeSys(buf.Ts[nSamples*2])
 	return ms, nil
 }
 

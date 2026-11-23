@@ -257,7 +257,7 @@ func (c *GPSConfig) getDelay(cp *gpsprot.ConfigProps) error {
 		return nil
 	}
 	if !(math.Abs(delay) <= maxAntennaCableDelay) {
-		return configErrorf("invalid cable delay %v (cable delay is in nanoseconds)", c.AntennaCableDelay)
+		return configErrorf("invalid cable delay %v (cable delay is in nanoseconds)", delay)
 	}
 	cp.SetAntennaCableDelay(time.Duration(delay))
 	return nil
