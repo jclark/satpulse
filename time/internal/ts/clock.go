@@ -21,6 +21,9 @@ type Clock struct {
 	chanIndex   uint32
 	w           *ifwait.IfWaiter
 	DriverFlags phc.DriverFlags
+	// exttsLatency is how much later the hardware captures an external timestamp than the edge
+	// arrived at the pin; it is subtracted from every timestamp so that they refer to the edge itself.
+	exttsLatency time.Duration
 }
 
 type Event struct {
@@ -53,7 +56,7 @@ type PinDesc struct {
 	ChanIndex uint32
 }
 
-func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinDesc, wait bool) (*Clock, error) {
+func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinDesc, wait bool, exttsLatency time.Duration) (*Clock, error) {
 	var (
 		w   *ifwait.IfWaiter
 		err error
@@ -109,7 +112,7 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 			return nil, err
 		}
 	}
-	clk, err := openPath(phc.ClockPath(phcIndex), ifName, pinDesc)
+	clk, err := openPath(phc.ClockPath(phcIndex), ifName, pinDesc, exttsLatency)
 	if err != nil {
 		return nil, err
 	}
@@ -124,21 +127,22 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 // OpenDeviceClock opens the PHC with the given device path, for a PHC
 // that is not named by a network interface. Nothing is derived from an
 // interface: there are no driver flags and no carrier handling.
-func OpenDeviceClock(path string, pinDesc PinDesc) (*Clock, error) {
-	return openPath(path, "", pinDesc)
+func OpenDeviceClock(path string, pinDesc PinDesc, exttsLatency time.Duration) (*Clock, error) {
+	return openPath(path, "", pinDesc, exttsLatency)
 }
 
 // openPath opens the PHC with the given device path; ifName is the
 // interface through which it was named, or empty.
-func openPath(path, ifName string, pinDesc PinDesc) (*Clock, error) {
+func openPath(path, ifName string, pinDesc PinDesc, exttsLatency time.Duration) (*Clock, error) {
 	pc, err := phc.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	clk := Clock{
-		Clock:     *pc,
-		ifName:    ifName,
-		chanIndex: pinDesc.ChanIndex,
+		Clock:        *pc,
+		ifName:       ifName,
+		chanIndex:    pinDesc.ChanIndex,
+		exttsLatency: exttsLatency,
 	}
 	if pinDesc.PinIndex != nil {
 		clk.pinIndex = *pinDesc.PinIndex
@@ -234,6 +238,10 @@ func (clk *Clock) validatePinDesc(pinGiven bool) error {
 
 func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, error) {
 	attrs := []any{"device", clk.Path()}
+	err := clk.ExttsMaskSingle(clk.chanIndex)
+	if err != nil {
+		return nil, err
+	}
 	if clk.HasPins() {
 		err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
 		if err != nil {
@@ -341,7 +349,7 @@ func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- E
 			continue
 		}
 		tClock := phctime.Time{
-			T:   t,
+			T:   t.Add(-clk.exttsLatency),
 			Era: clk.eraCounter.load(),
 		}
 		if tClock.Era != era && !tClock.Era.Uncertain() {

@@ -1,6 +1,7 @@
 package gpsreg
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -116,13 +117,13 @@ func TestEnvVendors(t *testing.T) {
 		{"CASIC alias", "CASIC", []Vendor{VendorZhongke}, false},
 		{"list", "u-blox,Unicore", []Vendor{VendorUblox, VendorUnicore}, false},
 		{"list with alias", "ublox,comnav", []Vendor{VendorUblox, VendorSinoGNSS}, false},
-		{"all", "all", allVendors, false},
+		{"all", "all", AllVendors(), false},
 		{"all mixed with names", "all,u-blox", nil, true},
 		{"unknown name", "bogus", nil, true},
 		{"duplicates dropped in order", "u-blox,ublox,Unicore", []Vendor{VendorUblox, VendorUnicore}, false},
 		{"empty element", "u-blox,,Unicore", nil, true},
 		{"whitespace around names", " u-blox, Unicore ", []Vendor{VendorUblox, VendorUnicore}, false},
-		{"whitespace around all", " all ", allVendors, false},
+		{"whitespace around all", " all ", AllVendors(), false},
 		{"whitespace only", "  ", nil, false},
 	}
 	for _, tc := range tests {
@@ -214,19 +215,25 @@ func TestCreateConfigProtocols(t *testing.T) {
 	tests := []struct {
 		name    string
 		vendors []Vendor
-		expect  int
+		expect  []string
 	}{
-		{"empty list is the default probe set", nil, 2},
-		{"u-blox", []Vendor{VendorUblox}, 1},
-		{"unicore", []Vendor{VendorUnicore}, 1},
-		{"zhongke", []Vendor{VendorZhongke}, 1},
-		{"both defaults", []Vendor{VendorUblox, VendorUnicore}, 2},
-		{"vendor without protocol", []Vendor{VendorAllystar}, 0},
+		{"empty list is the default probe set", nil, []string{"*ubx.ConfigProtocol", "*unc.ConfigProtocol"}},
+		{"u-blox", []Vendor{VendorUblox}, []string{"*ubx.ConfigProtocol"}},
+		{"unicore", []Vendor{VendorUnicore}, []string{"*unc.ConfigProtocol"}},
+		{"zhongke", []Vendor{VendorZhongke}, []string{"*casic.ConfigProtocol"}},
+		{"vendor order ignored", []Vendor{VendorUnicore, VendorZhongke, VendorUblox},
+			[]string{"*ubx.ConfigProtocol", "*casic.ConfigProtocol", "*unc.ConfigProtocol"}},
+		{"all vendors", AllVendors(), []string{"*ubx.ConfigProtocol", "*casic.ConfigProtocol", "*unc.ConfigProtocol"}},
+		{"vendor without protocol", []Vendor{VendorAllystar}, nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if n := len(CreateConfigProtocols(tc.vendors)); n != tc.expect {
-				t.Errorf("got %d config protocols, want %d", n, tc.expect)
+			var got []string
+			for _, p := range CreateConfigProtocols(tc.vendors) {
+				got = append(got, fmt.Sprintf("%T", p))
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
 			}
 		})
 	}

@@ -1,3 +1,8 @@
+//go:build !nohttp
+
+// The caster is this package's only use of net/http, so a nohttp build, such
+// as the browser Workbench, leaves it out along with the HTTP and TLS stacks.
+
 package ntrip
 
 import (

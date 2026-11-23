@@ -17,3 +17,9 @@ func IsValidSpeed(speed int) bool {
 	i := sort.SearchInts(baudRates, speed)
 	return i < len(baudRates) && baudRates[i] == speed
 }
+
+// KernelPPSPins returns the pins kernel PPS can watch, which are none on
+// this platform.
+func KernelPPSPins() []ModemControlPin {
+	return nil
+}

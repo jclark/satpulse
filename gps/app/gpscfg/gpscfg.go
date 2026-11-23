@@ -523,7 +523,7 @@ func (mh *msgHandler) configure(ctx context.Context, prot gpsprot.ConfigProtocol
 		return nil, nil, 0, err
 	}
 	director := gpsprot.NewConfigDirector(cfgtor, maxTries)
-	serPort, _ := port.(*gpsio.SerialConn)
+	serPort, _ := port.(gpsio.SerialOutPort)
 	var knownErr error // error that we know how to handle
 	for action := range director.Actions() {
 		director.AdvanceTimeTo(time.Now())

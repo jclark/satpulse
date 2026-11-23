@@ -1,0 +1,123 @@
+#!/bin/sh
+
+# FreeBSD rc.d service script for satpulsed, to be installed as
+# /usr/local/etc/rc.d/satpulse.
+#
+# Create the unprivileged user it runs as, in the dialer group so that
+# it can open the serial ports:
+#
+#   pw useradd satpulse -c "SatPulse daemon" -d /nonexistent \
+#       -s /usr/sbin/nologin -G dialer
+#
+# Set device in the [serial] table of /usr/local/etc/satpulse.toml, or
+# use one daemon per receiver as described below. Then enable and start
+# the service:
+#
+#   sysrc satpulse_enable=YES
+#   service satpulse start
+#
+# Like other FreeBSD services, satpulsed is not restarted if it exits, for
+# example when its USB receiver is unplugged; start it again with service.
+#
+# The plain satpulse service reads its serial device from
+# /usr/local/etc/satpulse.toml. To run one daemon per receiver instead,
+# link the script once per serial port; the port name after "satpulse_"
+# selects the device and the configuration file:
+#
+#   ln -s satpulse /usr/local/etc/rc.d/satpulse_cuaU0
+#   sysrc satpulse_cuaU0_enable=YES
+#   service satpulse_cuaU0 start
+#
+# runs satpulsed with --serial-device /dev/cuaU0 and the first of
+# /usr/local/etc/satpulse.d/cuaU0.toml and /usr/local/etc/satpulse.toml
+# that exists.
+#
+# rc.conf variables, where NAME is satpulse or satpulse_<port>, with any
+# dot in <port> replaced by an underscore (satpulse_cuaU0_1 for cuaU0.1):
+#
+# NAME_enable (bool):    Set to "YES" to enable the service. Default "NO".
+# NAME_flags (str):      Extra satpulsed options. Default "".
+# NAME_user (str):       User to run satpulsed as. Default "satpulse".
+# NAME_configfile (str): Configuration files to pass with -f; satpulsed
+#                        uses the first one that exists. Default as
+#                        described above.
+# NAME_logfile (str):    Log file for satpulsed output.
+#                        Default "/var/log/NAME.log".
+
+# PROVIDE: satpulse
+# REQUIRE: NETWORKING DAEMON cleanvar devfs
+# BEFORE: ntpd
+# KEYWORD: shutdown
+
+. /etc/rc.subr
+
+# service -e and -R take a script's name and rcvar by evaluating its
+# unindented name= and rcvar lines with $file set to the script, so those
+# lines must work alone, and end in ";" since service(8) joins them.
+name="$file" ;
+
+case "$0" in
+/etc/rc*)
+	# During boot and shutdown $0 is the rc driver script; the name of
+	# this script, or of the symlink it was reached by, is in $_file.
+	name="$_file"
+	;;
+*/service)
+	# service -e and -R source the script from service(8) with $file set.
+	;;
+*)
+	name="$0"
+	;;
+esac
+name="${name:-satpulse}" ;
+name="${name##*/}" ;
+port="${name#satpulse}"
+port="${port#_}"
+# A multi-port USB serial device such as cuaU0.1 has a dot in its name,
+# which an rc.conf variable name cannot.
+name="$(echo "$name" | tr . _)" ;
+rcvar="${name}_enable"
+
+load_rc_config "$name"
+
+eval ": \${${name}_enable:=NO}"
+eval ": \${${name}_user:=satpulse}"
+eval ": \${${name}_logfile:=/var/log/${name}.log}"
+if [ -n "$port" ]; then
+	eval ": \${${name}_configfile:=\"/usr/local/etc/satpulse.d/${port}.toml /usr/local/etc/satpulse.toml\"}"
+	device_args="--serial-device /dev/${port}"
+else
+	eval ": \${${name}_configfile:=/usr/local/etc/satpulse.toml}"
+	device_args=""
+fi
+
+# Not _user: run_rc_command sets and unsets that global itself.
+eval _runuser="\$${name}_user"
+eval _logfile="\$${name}_logfile"
+eval _configfiles="\$${name}_configfile"
+config_args=""
+for f in $_configfiles; do
+	config_args="$config_args -f $f"
+done
+
+pidfile="/var/run/${name}.pid"
+command="/usr/sbin/daemon"
+command_args="-f -P ${pidfile} -o ${_logfile} \
+    /usr/local/sbin/satpulsed --wait ${device_args} ${config_args}"
+
+start_precmd="satpulse_precmd"
+
+# daemon(8) runs as ${name}_user, which cannot create files in /var/run
+# or /var/log, so pre-create its supervisor pidfile and log file, and the
+# default directory for satpulsed's own logs. rc.subr would put
+# ${name}_flags before command_args, on daemon(8); they belong to satpulsed.
+satpulse_precmd()
+{
+	[ -e "${pidfile}" ] || install -o "${_runuser}" -m 644 /dev/null "${pidfile}"
+	[ -e "${_logfile}" ] || install -o "${_runuser}" -m 640 /dev/null "${_logfile}"
+	[ -d /var/log/satpulse ] || install -d -o "${_runuser}" -m 750 /var/log/satpulse
+	command_args="${command_args} ${rc_flags}"
+	rc_flags=""
+}
+
+run_rc_command "$1"

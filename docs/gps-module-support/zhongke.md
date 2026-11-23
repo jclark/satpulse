@@ -25,7 +25,7 @@ For these modules, SatPulse supports:
   - message files for configuration that high-level configuration does not cover
   - a `casbin` message type in message files, with correlation of responses
 
-SatPulse has been tested with the ATGM332D-5N series, ATGM332D-6N series, ATGM332D-F8N series, AT372-6P-34 and AT632-6T-30.
+SatPulse has been tested with the ATGM332D-5N series, ATGM332D-6N series, ATGM332D-F8N series, AT372-6P-34, AT372-F8P-36 and AT632-6T-30.
 The ATGM336H modules differ from the corresponding ATGM332D modules only in form factor.
 For ATGM332D or ATGM336H modules, the last two digits in the full module name e.g. ATGM332D-5N-71 indicate the supported constellations.
 Accordingly, SatPulse should work with any ATGM332D or ATGM336H module.

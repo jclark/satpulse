@@ -16,6 +16,7 @@ type Term interface {
 	Buffered() (int, error)
 	// Change returns the earliest safe write time after a speed change.
 	// A zero time means no wait is needed. The caller must delay writes until then.
+	// The error wraps ErrSpeedUnsupported if the device rejects a new speed.
 	Change(...AttrSetter) (time.Time, error)
 	Speed() int
 	TransmitTime(int) time.Duration
@@ -35,6 +36,11 @@ type Term interface {
 // ErrNotATTY is returned when a device does not support termios.
 // Callers can check for it with errors.Is.
 var ErrNotATTY = errors.New("not a serial device")
+
+// ErrSpeedUnsupported is returned when the device rejects a speed that the
+// platform can express, such as one beyond the reach of the UART's clock.
+// Callers can check for it with errors.Is.
+var ErrSpeedUnsupported = errors.New("speed not supported by device")
 
 // ErrCancelled is returned when a pin watch has been cancelled.
 // Callers can check for it with errors.Is.
