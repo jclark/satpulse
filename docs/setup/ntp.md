@@ -19,7 +19,7 @@ There are two different approaches depending on how your PPS signal is wired up:
 
 ## PPS signal connected via serial port
 
-This approach uses a modem control line to carry a PPS signal. {% include new-in-03.html %}
+This approach uses a modem control line to carry a PPS signal.
 An RS-232 style serial interface supports modem control signals in addition to TXD and RXD signals.
 These signals have a direction.
 The ones relevant to PPS are ones that go from the DCE (the GPS receiver in our case) to the DTE (the host computer). These are

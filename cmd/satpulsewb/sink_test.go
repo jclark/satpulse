@@ -59,6 +59,14 @@ func TestHubPrimeCache(t *testing.T) {
 			},
 		},
 		{
+			name: "connecting drops the previous connection's state",
+			events: []session.Event{
+				session.SpeedEvent(115200),
+				session.StateConnecting,
+			},
+			expect: []sse.Event{mustMake(t, "gps:state", session.StateConnecting)},
+		},
+		{
 			name: "corrections stop drops stale base ARP",
 			events: []session.Event{
 				session.BaseARPEvent{StationID: 1},

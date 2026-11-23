@@ -10,7 +10,7 @@ But for configuration it needs a 2-way connection where it can also send data to
 
 ## Determining the device name and speed
 
-`satpulsetool serial` can find both the device name and the speed. {% include new-in-03.html %}
+`satpulsetool serial` can find both the device name and the speed.
 It only reads from the serial port; it never sends anything to the GPS module.
 
 Run it with no arguments to list the serial ports:

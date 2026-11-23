@@ -24,6 +24,7 @@ type testResponse struct {
 func TestConfigSupport(t *testing.T) {
 	want := gpsprot.ConfigSupportSignal |
 		gpsprot.ConfigSupportSurvey |
+		gpsprot.ConfigSupportSurveyDur |
 		gpsprot.ConfigSupportFixedPos |
 		gpsprot.ConfigSupportRaw |
 		gpsprot.ConfigSupportRTCMMSM4 |
@@ -1027,6 +1028,32 @@ func TestRepeatAckAbsorption(t *testing.T) {
 			}
 			if repeat.state != tt.expectRepeat {
 				t.Errorf("repeat state = %v, want %v", repeat.state, tt.expectRepeat)
+			}
+		})
+	}
+}
+
+func TestFirmwareOptionalMsgRejected(t *testing.T) {
+	t0 := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		cmd    string
+		expect configRequestState
+	}{
+		{"QZSSEPHB ONCHANGED", stateSucceeded},
+		{"UNLOG QZSSEPHB", stateSucceeded},
+		{"RTCM1230 1", stateSucceeded},
+		{"GPSEPHB ONCHANGED", stateFailed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.cmd, func(t *testing.T) {
+			req := &ConfigRequest{cmd: tt.cmd, state: stateAwaitingAck, tBase: t0}
+			c := &Configurator{reqs: []*ConfigRequest{req}}
+			err := c.commandResponse([]string{tt.cmd, "response: PARSING FAILD NO MATCHING FUNC"}, t0.Add(100*time.Millisecond))
+			if err != nil {
+				t.Fatalf("commandResponse failed: %v", err)
+			}
+			if req.state != tt.expect {
+				t.Errorf("state = %v, want %v", req.state, tt.expect)
 			}
 		})
 	}
