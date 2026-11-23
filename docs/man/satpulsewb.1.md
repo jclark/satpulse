@@ -5,8 +5,8 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 # SYNOPSIS
 
 **satpulsewb** [**\-h**\|**\-\-help**] [**\-V**\|**\-\-version**] [**\-v**\|**\-\-verbose**] [**\-L**\|**\-\-listen** *host:port*] [**\-\-token**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*] [**\-\-vendor** *name*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-packet\-log** *path*]
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-n**\|**\-\-no\-open\-browser**] [**\-t**\|**\-\-tui**] [**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-vendor** *name*] [**\-\-packet\-log** *path*]
 
 # DESCRIPTION
 
@@ -14,6 +14,7 @@ satpulsewb - serve SatPulse Workbench, a browser GUI for GPS receivers
 It prints one URL per network interface and serves the Workbench while it is running; Ctrl-C stops it.
 
 The Workbench offers device-independent receiver configuration, along with live monitoring (position, time, satellites, signals), a packet inspector, sending configuration message files chosen from the message-file library (see ENVIRONMENT), and correction stream (Ntrip or TCP) forwarding.
+With **\-\-tui**, **satpulsewb** instead runs a terminal UI covering the same ground in the invoking terminal, with no web server and no browser.
 
 With no options, **satpulsewb** binds all interfaces on its default port (15754), falling back to an OS-picked port if it is taken, and protects the session with a token generated for this run.
 The printed URLs carry the token as a query parameter; the frontend strips it from the URL bar, so the URL to copy is the printed one.
@@ -62,6 +63,11 @@ Without **\-\-listen** this is the default.
 
 **\-n**, **\-\-no\-open\-browser**
 : Do not open a browser at startup.
+
+**\-t**, **\-\-tui**
+: Run a terminal UI in the invoking terminal instead of serving the web application.
+No HTTP server is started and no browser is opened.
+Cannot be combined with **\-\-listen** or **\-\-token**.
 
 **\-d**, **\-\-serial\-device** *path*
 : Prefill for the device control in the connection bar.
