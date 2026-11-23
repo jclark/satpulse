@@ -12,14 +12,6 @@ import (
 	"strings"
 )
 
-// Device describes a kernel PPS device as sysfs registers it.
-type Device struct {
-	Path       string // the device node, /dev/ppsN
-	Name       string // the sysfs name attribute: the source name the driver registered
-	SourcePath string // the sysfs path attribute: the source's device path, such as a tty; empty for most drivers
-	Mode       Mode   // the sysfs mode attribute: the capabilities, as GetCap reports them
-}
-
 const sysClassPPS = "/sys/class/pps"
 
 // ListDevices returns the kernel PPS devices in /sys/class/pps, in name
