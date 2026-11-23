@@ -15,24 +15,22 @@ The goal of the SatPulse project is to provide a suite of open-source software f
 It has an emphasis on precision timing
 and has especially deep support for the Raspberry Pi, from the Pi Zero to the Pi 5.
 It supports a [wide range of GPS receivers]({% link gps-module-support/index.md %}).
-
-The SatPulse implementation is under intensive development.
-A [0.3 prerelease](https://github.com/jclark/satpulse/releases) is available,
-which brings a large set of [new features]({% link recent-changes.md %}).
-The rest of the website marks these with a {% include new-in-03.html %} marker.
-It now supports Linux, macOS and Windows.
-The [blog]({% link blog.md %}) also describes recent changes in SatPulse.
+It runs on Linux, macOS and Windows.
 
 The [Setup guide]({% link setup/index.md %}) describes how to get started with SatPulse.
 
-SatPulse supports not only timing, but also RTK positioning, and GPS receiver configuration, evaluation and monitoring.
+The [0.3 release](https://github.com/jclark/satpulse/releases/tag/v0.3)
+brings a large set of [new features]({% link recent-changes.md %}).
+See the [blog]({% link blog.md %}) for information about the latest developments.
+
+SatPulse now supports not only timing, but also RTK positioning, and GPS receiver configuration, evaluation and monitoring.
 In particular, you can:
 
 * run a stratum 1 NTP server using chrony, ntpd-rs or NTPsec on Linux
 * run a stratum 1 NTP server using chrony on macOS
-* run a PTP grandmaster with a Raspberry Pi CM4/CM5 or an Intel NIC using linuxptp
+* run a PTP grandmaster with a Raspberry Pi CM4/CM5, a BeagleY-AI or an Intel NIC using linuxptp
 * act as an RTK base station or rover
-* configure, monitor and evaluate a GPS receiver using a web-based GUI {% include new-in-03.html %}
+* configure, monitor and evaluate a GPS receiver using a web-based GUI
 
 {% include gallery id="home_gallery" %}
 
@@ -41,7 +39,7 @@ SatPulse consists of three programs:
 * satpulsed, a program that runs as a service: it transfers time from a GPS receiver to an NTP or PTP time server (this does not yet work on Windows);
   it supports monitoring through a Web dashboard and Prometheus metrics;
   it can work as an RTK base station;
-* satpulsewb, [SatPulse Workbench]({% link workbench/index.md %}): a web-based, graphical interface for GNSS receiver configuration and monitoring; it includes an Ntrip client allowing use of RTK positioning {% include new-in-03.html %}
+* satpulsewb, [SatPulse Workbench]({% link workbench/index.md %}): a web-based, graphical interface for GNSS receiver configuration and monitoring; it includes an Ntrip client allowing use of RTK positioning
 * satpulsetool, a suite of command-line tools: most important is the gps subcommand that does GPS configuration; other subcommands are intended to support the use of satpulsed and satpulsewb
 
 SatPulse has a distinctive approach to GPS configuration: it supports high-level configuration, which allows the intended configuration to be expressed in GNSS terms, independently of any vendor-specific configuration protocol.
@@ -53,11 +51,12 @@ A typical NTP stratum 1 server, running on, for example, a Raspberry Pi, connect
 SatPulse can take advantage of hardware designed for PTP (Precision Time Protocol).
 The key difference is that the PPS output of the GPS receiver is connected to a PPS input pin *on the ethernet controller*.
 This is supported only on Linux.
-The Raspberry Pi CM4 and CM5 have this capability when used with a suitable IO board.
+The Raspberry Pi CM4 and CM5 have this capability when used with a suitable IO board,
+as does the BeagleY-AI.
 For more details, see the [introduction to precision network timing]({% link intro/timing.md %}).
 Without this special hardware, SatPulse can still supply timing information to an NTP server.
 SatPulse can supply time-of-day information, leaving the NTP server to access the PPS device.
-Alternatively, SatPulse can make use of a PPS signal over the serial connection, including with USB serial adapters. {% include new-in-03.html %}
+Alternatively, SatPulse can make use of a PPS signal over the serial connection, including with USB serial adapters.
 This means that timing functionality is now available on macOS.
 
 The development of SatPulse started in 2022, before AI coding agents were a thing.

@@ -22,7 +22,7 @@ Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then und
 | Debian-based (includes Raspberry Pi OS, Ubuntu) | `_amd64.deb` | `_arm64.deb` | `_armhf.deb` |
 | Fedora-based | `.x86_64.rpm` | `.aarch64.rpm` | none |
 
-The `_armhf.deb` package is for 32-bit ARM systems, such as the 32-bit version of Raspberry Pi OS. {% include new-in-03.html %}
+The `_armhf.deb` package is for 32-bit ARM systems, such as the 32-bit version of Raspberry Pi OS.
 Its binaries are built for ARMv6,
 so they work on every Raspberry Pi model, including the Pi Zero.
 
@@ -46,7 +46,7 @@ See [Setup on macOS]({% link setup/macos.md %}#install-satpulse).
 
 ## Install on Windows
 
-Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the `_windows_amd64.zip` file. {% include new-in-03.html %}
+Go to the [Releases](https://github.com/jclark/satpulse/releases) page, then under Assets, select the `_windows_amd64.zip` file.
 The zip contains the executables and the documentation.
 There is no installer: unpack it into a folder of your choice and run the programs from a terminal.
 The program most useful on Windows at the moment is `satpulsewb.exe`, SatPulse Workbench,
@@ -79,7 +79,7 @@ After this, you will have:
 * the configuration file for the daemon installed as `/usr/local/etc/satpulse.toml`
 * the systemd service template unit file for the daemon installed as `/etc/systemd/system/satpulse@.service`
 * the SatPulse command line tool installed as `/usr/local/bin/satpulsetool`
-* the GPS message files installed under `/usr/local/share/satpulse/gpsmsg`, organized by vendor directory {% include new-in-03.html %}
+* the GPS message files installed under `/usr/local/share/satpulse/gpsmsg`, organized by vendor directory
 
 ### macOS and FreeBSD
 

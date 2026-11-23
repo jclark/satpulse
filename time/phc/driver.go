@@ -20,7 +20,8 @@ const intelFlags DriverFlags = DriverKnown | DriverBothEdges
 // cannot discover the edge count; it has to come from here.
 const am65Flags DriverFlags = DriverKnown | DriverOneEdge
 
-// stmmac (ethtool driver name st_gmac for GMAC and GMAC4 cores) has the same problem:
+// stmmac (ethtool driver name st_gmac for GMAC and GMAC4 cores, st_xgmac for XGMAC cores)
+// has the same problem:
 // the auxiliary snapshot inputs timestamp only the rising edge, but the driver does not set
 // supported_extts_flags.
 const stmmacFlags DriverFlags = DriverKnown | DriverOneEdge
@@ -49,7 +50,7 @@ func IfDriverNameFlags(driverName string) (DriverFlags, bool) {
 		return intelFlags, false
 	case "am65-cpsw-nuss":
 		return am65Flags, false
-	case "st_gmac":
+	case "st_gmac", "st_xgmac":
 		return stmmacFlags, false
 	case "bcmgenet", "macb":
 		return 0, true

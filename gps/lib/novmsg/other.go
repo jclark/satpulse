@@ -25,24 +25,24 @@ const (
 )
 
 func init() {
-	idNameMap[BdsEphemerisID] = "BDSEPHEMERIS"
+	regOtherMsg(BdsEphemerisID, "BDSEPHEMERIS")
 	// BestGNSSPosID registered in nav.go init()
-	idNameMap[GalEphemerisID] = "GALEPHEMERIS"
-	idNameMap[GloEphemerisID] = "GLOEPHEMERIS"
-	idNameMap[GloRawEphemID] = "GLORAWEPHEM"
-	idNameMap[GpsEphemID] = "GPSEPHEM"
-	idNameMap[HeadingID] = "HEADING"
-	idNameMap[Heading2ID] = "HEADING2"
-	idNameMap[MarkTimeID] = "MARKTIME"
+	regOtherMsg(GalEphemerisID, "GALEPHEMERIS")
+	regOtherMsg(GloEphemerisID, "GLOEPHEMERIS")
+	regOtherMsg(GloRawEphemID, "GLORAWEPHEM")
+	regOtherMsg(GpsEphemID, "GPSEPHEM")
+	regOtherMsg(HeadingID, "HEADING")
+	regOtherMsg(Heading2ID, "HEADING2")
+	regOtherMsg(MarkTimeID, "MARKTIME")
 	// PsrDopID registered in nav.go init()
 	// PsrPosID registered in nav.go init()
 	// PsrVelID registered in nav.go init()
-	idNameMap[QzssEphemerisID] = "QZSSEPHEMERIS"
-	idNameMap[RangeCmpID] = "RANGECMP"
-	idNameMap[RangeID] = "RANGE"
-	idNameMap[RawAlmID] = "RAWALM"
-	idNameMap[RawEphemID] = "RAWEPHEM"
-	idNameMap[RefStationID] = "REFSTATION"
-	idNameMap[TrackStatID] = "TRACKSTAT"
-	idNameMap[VersionID] = "VERSION"
+	regOtherMsg(QzssEphemerisID, "QZSSEPHEMERIS")
+	regOtherMsg(RangeCmpID, "RANGECMP")
+	regOtherMsg(RangeID, "RANGE")
+	regOtherMsg(RawAlmID, "RAWALM")
+	regOtherMsg(RawEphemID, "RAWEPHEM")
+	regOtherMsg(RefStationID, "REFSTATION")
+	regOtherMsg(TrackStatID, "TRACKSTAT")
+	regOtherMsg(VersionID, "VERSION")
 }

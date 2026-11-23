@@ -123,14 +123,14 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			"poll4Hz", phcFlags&phc.DriverPoll4Hz != 0)
 		defer func() {
 			clk.Close()
-			lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
+			lg.Debug("closed the PHC", "path", clk.Path())
 		}()
 	}
 	cfgSpeed := 0
 	if cfg.Serial.Speed != nil {
 		cfgSpeed = *cfg.Serial.Speed
 	}
-	conn, speed, err := gpsio.OpenSerial(lg, cfg.Serial.Device, cfgSpeed)
+	conn, err := gpsio.OpenSerial(lg, cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
 	}
@@ -140,6 +140,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return fmt.Errorf("serial PPS requires a TTY with modem-control pins: %w", err)
 		}
 	}
+	speed := conn.Speed()
 	if speed == 0 {
 		speed = cfgSpeed
 	}
@@ -474,7 +475,7 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 	if clk == nil {
 		return nil, nil
 	}
-	clockLogPath := cfg.Log.ClockPath(clk.IfName(), logobs.ClockLogExtension)
+	clockLogPath := cfg.Log.ClockPath(clk.Name(), logobs.ClockLogExtension)
 	if clockLogPath == "" {
 		return nil, nil
 	}

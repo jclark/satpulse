@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -254,29 +255,46 @@ interface = "eth0"
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface in the [phc] table") {
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface or device in the [phc] table") {
 		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
 	}
 }
 
-func TestSerialPPSKernelMethodRequiresDCD(t *testing.T) {
+func TestPHCInterfaceAndDeviceConflict(t *testing.T) {
 	cfg, err := readConfig(strings.NewReader(`
-[serial.pps]
-pin = "cts"
-
-[sample.serial.pps]
-method = "kernel"
+[phc]
+interface = "eth0"
+device = "/dev/ptp_tic"
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "DCD"`) {
-		t.Fatalf("Validate error = %v, want the kernel method to require DCD", err)
+	if err == nil || !strings.Contains(err.Error(), "interface and device in the [phc] table cannot both be specified") {
+		t.Fatalf("Validate error = %v, want interface/device conflict", err)
 	}
-	cfg.Serial.PPS.Pin = gpsio.SerialPinDCD
-	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
-		t.Fatalf("Validate with dcd: %v", err)
+}
+
+func TestSerialPPSKernelMethodPin(t *testing.T) {
+	pins := gpsio.KernelPPSPins()
+	for _, pin := range []gpsio.SerialPin{gpsio.SerialPinCTS, gpsio.SerialPinDCD, gpsio.SerialPinRI} {
+		t.Run(pin.String(), func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+pin = "dcd"
+
+[sample.serial.pps]
+method = "kernel"
+`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.Serial.PPS.Pin = pin
+			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if expectErr := !slices.Contains(pins, pin); (err != nil) != expectErr {
+				t.Fatalf("Validate error = %v, want error %v", err, expectErr)
+			}
+		})
 	}
 }
 
@@ -402,6 +420,11 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 		t.Fatalf("PHC-mode default SHM fixed precision = %v, want nil", *got)
 	}
 	cfg.PHC.Interface = ""
+	cfg.PHC.Device = "/dev/ptp_tic"
+	if got := cfg.shmFixedPrecision(); got != nil {
+		t.Fatalf("PHC device default SHM fixed precision = %v, want nil", *got)
+	}
+	cfg.PHC.Device = ""
 	got := cfg.shmFixedPrecision()
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)

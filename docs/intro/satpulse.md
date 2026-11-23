@@ -5,14 +5,14 @@ title: SatPulse
 The SatPulse software consists of three programs:
 
 - [`satpulsed`]({%link man/satpulsed.8.md%}) - an integrated daemon, which connects to a GPS receiver over a serial port; the functions it performs are controlled by a configuration file in [TOML format]({%link man/satpulse.toml.5.md%})
-- [`satpulsewb`]({%link man/satpulsewb.1.md%}) - a web-based GUI for GPS receiver configuration and monitoring, called SatPulse Workbench {% include new-in-03.html %}
+- [`satpulsewb`]({%link man/satpulsewb.1.md%}) - a web-based GUI for GPS receiver configuration and monitoring, called SatPulse Workbench
 - [`satpulsetool`]({%link man/satpulsetool.1.md%}) - a suite of command-line tools, usable with or without the daemon; there is a subcommand for each tool
 
 All three programs are written in Go and use a common Go library.
 
 ## Platform support
 
-All three programs run on Linux, macOS and Windows. {% include new-in-03.html %}
+All three programs run on Linux, macOS and Windows.
 On Linux, SatPulse is packaged for deb-based and rpm-based distributions;
 on macOS, it installs from the Homebrew tap;
 on Windows, it is distributed as a zip file.
@@ -30,14 +30,14 @@ When used without a PHC, SatPulse can provide timing information to an NTP daemo
 There are two different approaches depending on how the PPS signal is wired up:
 
 - based on serial messages alone: the NTP daemon reads PPS timestamps itself, and uses the timing information from SatPulse to identify which second each pulse corresponds to
-- based on serial PPS: when the PPS signal is wired to a modem control line of the serial port, satpulsed timestamps the pulses itself, and sends samples with sufficient information for the NTP daemon to synchronize the system clock without any additional input {% include new-in-03.html %}
+- based on serial PPS: when the PPS signal is wired to a modem control line of the serial port, satpulsed timestamps the pulses itself, and sends samples with sufficient information for the NTP daemon to synchronize the system clock without any additional input
 
 SatPulse supports two protocols for communicating with an NTP daemon:
 - the refclock SOCK protocol used by chrony, and now also supported by ntpd-rs
-- the traditional shared memory protocol (driver type 28) used by the reference NTP implementation {% include new-in-03.html %}
+- the traditional shared memory protocol (driver type 28) used by the reference NTP implementation
 
 `satpulsetool` provides the [`serial`]({%link man/satpulsetool-serial.1.md%}) tool for working with serial ports:
-it can detect the speed of a connected GPS receiver, and can also detect PPS pulses on a modem control line. {% include new-in-03.html %}
+it can detect the speed of a connected GPS receiver, and can also detect PPS pulses on a modem control line.
 
 Most of SatPulse's timing functionality is designed to support use of a PHC. `satpulsed`:
 
@@ -56,7 +56,7 @@ Most of SatPulse's timing functionality is designed to support use of a PHC. `sa
 
 ## Positioning
 
-SatPulse is designed to support the use of hardware RTK. {% include new-in-03.html %}
+SatPulse is designed to support the use of hardware RTK.
 `satpulsed` can
 
 - act as an Ntrip caster, serving RTCM corrections from the GPS receiver to Ntrip clients
@@ -67,7 +67,7 @@ SatPulse is designed to support the use of hardware RTK. {% include new-in-03.ht
 `satpulsetool` provides the `ntrip` tool for fetching correction data from an Ntrip caster.
 
 `satpulsetool` provides the [`convobs`]({%link man/satpulsetool-convobs.1.md%}) tool for converting raw observation data,
-in either RTCM MSM7 or vendor-specific formats, into RINEX. {% include new-in-03.html %}
+in either RTCM MSM7 or vendor-specific formats, into RINEX.
 RINEX files can be sent to a post-processing service such as CSRS-PPP,
 in order to get the most accurate possible position estimate.
 
@@ -108,7 +108,7 @@ so that the user can tell whether a message was accepted by the receiver.
 For example, if `satpulsed` is configured to synchronize a PHC, it will ensure PPS output and the needed timing messages are enabled.
 Configuration changes made by `satpulsed` are made only in RAM, and will be undone if the receiver is power cycled.
 
-SatPulse Workbench is a third frontend to the same configuration model (see [satpulsewb(1)]({%link man/satpulsewb.1.md%})). {% include new-in-03.html %}
+SatPulse Workbench is a third frontend to the same configuration model (see [satpulsewb(1)]({%link man/satpulsewb.1.md%})).
 Its Configuration tab is a graphical view of high-level configuration, edited as a form.
 Its Message file tab sends message files chosen from the installed library.
 

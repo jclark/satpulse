@@ -13,8 +13,7 @@ of the same kind and match it:
 
 The site reads as one engineer explaining to a capable peer what he
 has built and found out. The register is plain and declarative:
-short sentences, one point each, in the order the reader needs them,
-with the reasoning given rather than the conclusion asserted.
+short sentences, one point each, in the order the reader needs them.
 Opinions are personal recommendations with their grounds ("I
 recommend Raspberry Pi OS, since it is optimized for the Raspberry Pi
 hardware"; "the NEO-F10T is a cheaper alternative to the ZED-F9T: it
@@ -34,11 +33,14 @@ synchronize).
   write "I" for anything the author has not actually done or tested.
 - "you" is the reader doing the task. "we" appears occasionally when
   walking through reasoning ("we are trying to solve two problems").
-- Factual, specific, quantified: model numbers, prices, versions,
-  exact paths and flags. Where a fact will age, anchor it in time
-  ("At the time of writing, 2026Q2, ...").
+- Where a fact will age, anchor it in time ("At the time of
+  writing, 2026Q2, ...").
 - State limitations plainly and immediately ("This is imprecise but
   is useful when...", "The original author no longer maintains it").
+- One point per sentence, in normal word order. No "which is why",
+  no bracketed asides.
+- Say it directly: "cannot be used with X", not "is not for a board
+  doing X".
 
 ## Structure
 
@@ -68,12 +70,13 @@ synchronize).
 - The tutorial pages describe the current pre-release. The man pages
   are generated from master and carry their own whole-page banner
   (`man_prerelease_notice` in `_config.yml`).
-- Anything not in the latest stable release is marked "new in 0.3"
-  with `{% include new-in-03.html %}`, placed at the end of the first
-  sentence that introduces the feature, on the same line, never on a
-  heading. The label renders only while `prerelease_labels` is on in
-  `_config.yml`; when 0.3 final ships, the flag goes off and the
-  markup is removed from the pages.
+- Anything not in the latest stable release is marked with
+  `{% include new-in.html version="0.4" %}`, giving the version in
+  development, placed at the end of the first sentence that
+  introduces the feature, on the same line, never on a heading. The
+  label renders only while `version` equals `_includes/VERSION`, so
+  it disappears when VERSION is bumped after the release; the markup
+  is then removed from the pages.
 
 ## Agent tells to avoid
 
@@ -125,7 +128,7 @@ power cycled."
   something, when the pre-release has a new way, is not superseded
   until the next final release ships: it stays in the navigation
   with a notice at the top framing it as the stable-release path and
-  pointing at the new page (`howtos/rtk.md` is the model), and is
+  pointing at the new page, and is
   deleted with its redirect when the release switch is made.
 - When a superseded page is finally deleted, its old URL gets a
   `redirect_from` entry on whichever page replaces it.

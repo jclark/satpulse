@@ -38,33 +38,33 @@ func showAuto(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 		return nil, err
 	}
 	if sysfsPinCount(os.DirFS("/sys"), phcIndex) > 0 {
-		return showPinsByPHCIndex(cfg, phcIndex)
+		return showPinsByPath(cfg, phc.ClockPath(phcIndex))
 	}
 	return showIface(lg, cfg.Interface, phcIndex)
 }
 
 // showPins implements --show-pins mode
 func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
-	phcIndex, err := ifPHCIndex(cfg.Interface)
+	path, err := phcPath(cfg)
 	if err != nil {
 		return nil, err
 	}
-	return showPinsByPHCIndex(cfg, phcIndex)
+	return showPinsByPath(cfg, path)
 }
 
-// showPinsByPHCIndex shows the pins of the interface's PHC, whose index has
-// already been looked up
-func showPinsByPHCIndex(cfg *FlagConfig, phcIndex int) ([]Printer, error) {
+// showPinsByPath shows the pins of the PHC that cfg selects, whose device
+// path has already been looked up
+func showPinsByPath(cfg *FlagConfig, path string) ([]Printer, error) {
 	var result []Printer
 
-	clk, err := phc.Open(fmt.Sprintf("/dev/ptp%d", phcIndex))
+	clk, err := phc.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open PHC device for %s: %w", cfg.Interface, err)
+		return nil, fmt.Errorf("failed to open PHC device: %w", err)
 	}
 	defer clk.Close()
 
 	if !clk.HasPins() {
-		return nil, noPinsError(cfg.Interface)
+		return nil, noPinsError(cfg)
 	}
 
 	for i := range uint32(clk.PinCount()) {
@@ -87,7 +87,7 @@ func showPinsByPHCIndex(cfg *FlagConfig, phcIndex int) ([]Printer, error) {
 	}
 
 	if cfg.Pin != "" && len(result) == 0 {
-		return nil, fmt.Errorf("pin '%s' not found on interface %s", cfg.Pin, cfg.Interface)
+		return nil, fmt.Errorf("pin '%s' not found on %s", cfg.Pin, cfg.phcName())
 	}
 
 	return result, nil

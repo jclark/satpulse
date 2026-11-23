@@ -171,7 +171,14 @@ func (t *windowsTerm) Change(opts ...AttrSetter) (time.Time, error) {
 	}
 	err := windows.SetCommState(t.handle, &attr.dcb)
 	if err != nil {
-		return time.Time{}, t.wrapErr(err, "SetCommState")
+		err = t.wrapErr(err, "SetCommState")
+		// The driver rejects a rate it cannot produce within tolerance with
+		// STATUS_INVALID_PARAMETER, which SetCommState reports as
+		// ERROR_INVALID_PARAMETER; with the rate unchanged it has some other cause.
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) && attr.dcb.BaudRate != t.attr.dcb.BaudRate {
+			err = fmt.Errorf("%w: %w", ErrSpeedUnsupported, err)
+		}
+		return time.Time{}, err
 	}
 	err = windows.SetCommTimeouts(t.handle, &attr.timeouts)
 	if err != nil {

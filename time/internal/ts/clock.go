@@ -21,6 +21,9 @@ type Clock struct {
 	chanIndex   uint32
 	w           *ifwait.IfWaiter
 	DriverFlags phc.DriverFlags
+	// exttsLatency is how much later the hardware captures an external timestamp than the edge
+	// arrived at the pin; it is subtracted from every timestamp so that they refer to the edge itself.
+	exttsLatency time.Duration
 }
 
 type Event struct {
@@ -53,7 +56,7 @@ type PinDesc struct {
 	ChanIndex uint32
 }
 
-func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinDesc, wait bool) (*Clock, error) {
+func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinDesc, wait bool, exttsLatency time.Duration) (*Clock, error) {
 	var (
 		w   *ifwait.IfWaiter
 		err error
@@ -109,15 +112,37 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 			return nil, err
 		}
 	}
-	pc, err := phc.Open(phc.ClockPath(phcIndex))
+	clk, err := openPath(phc.ClockPath(phcIndex), ifName, pinDesc, exttsLatency)
+	if err != nil {
+		return nil, err
+	}
+	clk.DriverFlags = flags
+	if flags&phc.DriverCarrier != 0 {
+		clk.w = w
+		w = nil
+	}
+	return clk, nil
+}
+
+// OpenDeviceClock opens the PHC with the given device path, for a PHC
+// that is not named by a network interface. Nothing is derived from an
+// interface: there are no driver flags and no carrier handling.
+func OpenDeviceClock(path string, pinDesc PinDesc, exttsLatency time.Duration) (*Clock, error) {
+	return openPath(path, "", pinDesc, exttsLatency)
+}
+
+// openPath opens the PHC with the given device path; ifName is the
+// interface through which it was named, or empty.
+func openPath(path, ifName string, pinDesc PinDesc, exttsLatency time.Duration) (*Clock, error) {
+	pc, err := phc.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	clk := Clock{
-		Clock:       *pc,
-		ifName:      ifName,
-		chanIndex:   pinDesc.ChanIndex,
-		DriverFlags: flags,
+		Clock:        *pc,
+		ifName:       ifName,
+		chanIndex:    pinDesc.ChanIndex,
+		exttsLatency: exttsLatency,
 	}
 	if pinDesc.PinIndex != nil {
 		clk.pinIndex = *pinDesc.PinIndex
@@ -130,10 +155,6 @@ func OpenClock(ctx context.Context, lg *slog.Logger, ifName string, pinDesc PinD
 		clk.Close()
 		return nil, err
 	}
-	if flags&phc.DriverCarrier != 0 {
-		clk.w = w
-		w = nil
-	}
 	return &clk, nil
 }
 
@@ -145,8 +166,13 @@ func Close(c *Clock) error {
 	return errors.Join(c.Close(), err)
 }
 
-func (clk *Clock) IfName() string {
-	return clk.ifName
+// Name returns the name of the interface through which the PHC was
+// opened, or its device path if it was opened by path.
+func (clk *Clock) Name() string {
+	if clk.ifName != "" {
+		return clk.ifName
+	}
+	return clk.Path()
 }
 
 func waitIface(ctx context.Context, lg *slog.Logger, w *ifwait.IfWaiter, f func(net.Flags) bool, status string, timeout time.Duration) error {
@@ -197,7 +223,11 @@ func (clk *Clock) validatePinDesc(pinGiven bool) error {
 		if !pinGiven {
 			return nil
 		}
-		msg = fmt.Sprintf("the PTP hardware clock of interface %s has no pins; pin must not be specified", clk.ifName)
+		if clk.ifName != "" {
+			msg = fmt.Sprintf("the PTP hardware clock of interface %s has no pins; pin must not be specified", clk.ifName)
+		} else {
+			msg = fmt.Sprintf("PTP clock %s has no pins; pin must not be specified", clk.Path())
+		}
 	} else if clk.pinIndex >= uint32(clk.PinCount()) {
 		msg = fmt.Sprintf("pin index %d is out of range for PTP clock %s: maximum index is %d", clk.pinIndex, clk.Path(), clk.PinCount()-1)
 	} else {
@@ -208,6 +238,10 @@ func (clk *Clock) validatePinDesc(pinGiven bool) error {
 
 func StartWorker(ctx context.Context, clk *Clock, lg *slog.Logger) (<-chan Event, error) {
 	attrs := []any{"device", clk.Path()}
+	err := clk.ExttsMaskSingle(clk.chanIndex)
+	if err != nil {
+		return nil, err
+	}
 	if clk.HasPins() {
 		err := clk.PinSetFunc(clk.pinIndex, phc.PinFuncExtts, clk.chanIndex)
 		if err != nil {
@@ -315,7 +349,7 @@ func (clk *Clock) readWorker(ctx context.Context, lg *slog.Logger, tsCh chan<- E
 			continue
 		}
 		tClock := phctime.Time{
-			T:   t,
+			T:   t.Add(-clk.exttsLatency),
 			Era: clk.eraCounter.load(),
 		}
 		if tClock.Era != era && !tClock.Era.Uncertain() {

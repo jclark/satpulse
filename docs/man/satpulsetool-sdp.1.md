@@ -12,24 +12,29 @@ satpulsetool-sdp - manage software-defined pins on PTP hardware clocks
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-period** *seconds*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pin** *index*\|*name*] [**\-\-chan** *index*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-stale**] [**\-j**\|**\-\-jsonl**]\
-&nbsp;&nbsp;&nbsp;&nbsp;[*interface*]
+&nbsp;&nbsp;&nbsp;&nbsp;[*phc*]
 
 # DESCRIPTION
 
 The **satpulsetool** **sdp** command manages software-defined pins (SDP) on PTP hardware clocks (PHC).
 A pin can be configured for input, allowing timestamps of pulses received by the pin to be read,
-for example when the pin is connected the the PPS output of a GNSS receiver.
+for example when the pin is connected to the PPS output of a GNSS receiver.
 This is called external timestamping (extts).
 A pin can alternatively be configured for output, allowing periodic pulses aligned to the PHC
 to be generated, for example when the pin is connected to an oscilloscope.
 This is called periodic output (perout).
 
+The *phc* argument selects the PHC. Usually, it should be an interface name, e.g. **eth0**,
+which selects the PHC associated with that interface.
+For a PHC that is not associated with an interface,
+*phc* can be the path of the PHC device, e.g. **/dev/ptp1**.
+
 The mode of operation is determined by the **\-\-extts**, **\-\-perout**, **\-\-disable**,
 **\-\-show\-ifaces** and **\-\-show\-pins** options.
 At most one of these options can be specified.
-If none of them are specified, the command behaves as if **\-\-show\-pins** was specified
-when the *interface* argument is specified and its PHC has pins, and otherwise as if **\-\-show\-ifaces** was specified.
-In **\-\-show\-ifaces** mode, the *interface* is optional.
+If none of them are specified, the command behaves as if **\-\-show\-ifaces** was specified.
+However, if *phc* is specified, and the PHC has pins or *phc* is a path, it behaves as if **\-\-show\-pins** was specified.
+In **\-\-show\-ifaces** mode, the *phc* argument is optional.
 In other modes, it is required.
 Root privileges are required except in **\-\-show\-ifaces** mode.
 
@@ -43,8 +48,8 @@ Root privileges are required except in **\-\-show\-ifaces** mode.
 This reads timestamp events from the channel.
 If the PHC has pins, it first sets the function of the pin to external timestamping on the channel.
 It will show each timestamp as it is received.
-It will read timestamp events for the length of time specified by the **\-\-t** option; default is 2 seconds.
-if this is 0, it will read until interrupted.
+It will read timestamp events for the length of time specified by the **\-t** option; default is 2 seconds.
+If this is 0, it will read until interrupted.
 The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
 
@@ -55,7 +60,7 @@ If the PHC has pins, it first sets the function of the pin to periodic output on
 The period can be specified with **\-\-period**; it defaults to 1 second, resulting in a PPS signal.
 Some Ethernet drivers allow the width of the pulses to be specified using the **\-\-width** option.
 If **\-\-width** is not specified, the pulse width is chosen by the ethernet driver.
-For Intel igb and igc drivers, the width cannnot be specified, and is always half the period,
+For Intel igb and igc drivers, the width cannot be specified, and is always half the period,
 i.e. a duty cycle of 50%.
 The channel to be used is specified with the **\-\-chan** option; the default is channel 0.
 The pin to be used is specified with the **\-\-pin** option; the default is pin 0.
@@ -67,16 +72,16 @@ The pin to disable is specified with the **\-\-pin** option; the default is pin 
 
 **\-\-show\-ifaces**  
 : Show information about interfaces with a PHC.
-If the *interface* argument is specified, shows information about that interface.
+If the *phc* argument is specified, shows information about its interface.
 Otherwise, shows information about all interfaces with a PHC that has pins or channels.
 
 **\-\-show\-pins**  
-: Show the pins of the PHC of the *interface*.
+: Show the pins of *phc*.
 If **\-\-pin** is specified, shows information about that pin only.
 
 **\-t**, **\-\-timeout** *seconds*  
 : Length of time in seconds for which to read timestamp events. 
-Applies only when **\-\-extts** options is specified.
+Applies only when **\-\-extts** option is specified.
 The default is 2.
 
 **\-w**, **\-\-width** *seconds*  
@@ -102,7 +107,7 @@ The default is 0 when a pin is required.
 : Select the channel to be used by **\-\-extts** or **\-\-perout**. The default is 0.
 
 **\-\-show\-stale**  
-: Include stale timestamps in the output. By default, timestamps that were buffered before reading timestamp events started are not displayed. Applies only when **\-\-extts** options is specified.
+: Include stale timestamps in the output. By default, timestamps that were buffered before reading timestamp events started are not displayed. Applies only when **\-\-extts** option is specified.
 
 **\-j**, **\-\-jsonl**  
 : Output in JSON lines format instead of human-readable text.

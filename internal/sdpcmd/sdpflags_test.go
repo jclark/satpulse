@@ -382,7 +382,32 @@ func TestParseFlags(t *testing.T) {
 				Chan:      0,
 			},
 		},
+		{
+			name: "device only - show pins mode",
+			args: []string{"/dev/ptp_tic"},
+			expected: &FlagConfig{
+				Mode:    ModeShowPins,
+				Device:  "/dev/ptp_tic",
+				Timeout: 2 * time.Second,
+			},
+		},
+		{
+			name: "extts mode with relative device path",
+			args: []string{"-i", "--chan", "1", "./ptp0"},
+			expected: &FlagConfig{
+				Mode:    ModeExtts,
+				Device:  "./ptp0",
+				Timeout: 2 * time.Second,
+				Chan:    1,
+			},
+		},
 		// Error cases
+		{
+			name:         "show-ifaces with device",
+			args:         []string{"--show-ifaces", "/dev/ptp_tic"},
+			expectError:  true,
+			errorMessage: "showing interfaces is not supported with a device path",
+		},
 		{
 			name:        "show-pins without interface",
 			args:        []string{"--show-pins"},
@@ -397,7 +422,7 @@ func TestParseFlags(t *testing.T) {
 			name:         "pin without interface",
 			args:         []string{"--pin", "1"},
 			expectError:  true,
-			errorMessage: "interface name required for this mode",
+			errorMessage: "interface name or device path required for this mode",
 		},
 		{
 			name:         "empty pin",
@@ -601,6 +626,9 @@ func TestParseFlags(t *testing.T) {
 			}
 			if cfg.Interface != tt.expected.Interface {
 				t.Errorf("Interface: got %q, want %q", cfg.Interface, tt.expected.Interface)
+			}
+			if cfg.Device != tt.expected.Device {
+				t.Errorf("Device: got %q, want %q", cfg.Device, tt.expected.Device)
 			}
 			if cfg.JSONL != tt.expected.JSONL {
 				t.Errorf("JSONL: got %v, want %v", cfg.JSONL, tt.expected.JSONL)
