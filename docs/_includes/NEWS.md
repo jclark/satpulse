@@ -6,6 +6,7 @@ _Not yet released_
 - `satpulsed` can send NTP samples with PHC drivers that do not support `PTP_SYS_OFFSET_EXTENDED` (such as stmmac before Linux 7.4). (#547)
 - The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
 - FreeBSD support is improved. NTP SHM, kernel PPS and serial enumeration now support FreeBSD. There is also an rc.d script. (#426)
+- NTP SHM output also works on Windows: `[ntp.shm]` attaches to the named file mapping read by ntpd built for Windows. (#339)
 
 ## Changes in 0.3
 
