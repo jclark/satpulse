@@ -176,6 +176,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/gpiomem/rp1` describes the GPIO controller of the Raspberry Pi 5.
 
+`gps/lib/osthread` changes the scheduling settings of an OS thread. It is implemented for Linux.
+
 `gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; on FreeBSD it scans `/dev` for call-out devices and takes USB identity from the `dev.` sysctl tree; other platforms use go.bug.st/serial/enumerator.
 
 `gps/lib/decconv` converts between base-10 decimal strings and int64 scaled integers without floating point. It is used for exact parsing and formatting of physical quantities like angles and lengths.
