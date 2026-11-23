@@ -12,6 +12,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/term"
 	"github.com/jclark/satpulse/gps/scan"
 )
 
@@ -288,6 +289,39 @@ func TestWalkSpeedCandidates(t *testing.T) {
 		got, err := walkSpeedCandidates(nil, func(int) (trySpeedResult, bool, error) { return tryDetected, false, nil }, nil)
 		if err == nil || err.Error() != "no serial speed candidates" || got != (DetectResult{}) {
 			t.Fatalf("walkSpeedCandidates() = %+v, %v, want empty result and candidate error", got, err)
+		}
+	})
+	t.Run("unsupported speed skipped", func(t *testing.T) {
+		var order, triedAtStop []int
+		got, err := walkSpeedCandidates([]int{1, 2, 3, 4}, func(speed int) (trySpeedResult, bool, error) {
+			order = append(order, speed)
+			if speed == 2 {
+				return tryOther, false, fmt.Errorf("changing serial speed to 2: %w", term.ErrSpeedUnsupported)
+			}
+			return trySilent, false, nil
+		}, func(tried []int) bool {
+			triedAtStop = tried
+			return len(tried) == 2
+		})
+		if err != nil || got.Outcome != DetectSilent || fmt.Sprint(order) != "[1 2 3]" || fmt.Sprint(triedAtStop) != "[1 3]" {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v; order = %v; tried at stop = %v", got, err, order, triedAtStop)
+		}
+	})
+	t.Run("every speed unsupported", func(t *testing.T) {
+		got, err := walkSpeedCandidates([]int{1, 2}, func(int) (trySpeedResult, bool, error) {
+			return tryOther, false, term.ErrSpeedUnsupported
+		}, nil)
+		if !errors.Is(err, term.ErrSpeedUnsupported) || got != (DetectResult{}) {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v, want empty result and unsupported-speed error", got, err)
+		}
+	})
+	t.Run("other error stops walk", func(t *testing.T) {
+		errGone := errors.New("device gone")
+		got, err := walkSpeedCandidates([]int{1, 2}, func(int) (trySpeedResult, bool, error) {
+			return tryOther, false, errGone
+		}, nil)
+		if !errors.Is(err, errGone) || got != (DetectResult{}) {
+			t.Fatalf("walkSpeedCandidates() = %+v, %v, want empty result and device error", got, err)
 		}
 	})
 	t.Run("stream end stops walk", func(t *testing.T) {

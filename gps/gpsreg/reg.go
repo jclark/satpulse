@@ -90,14 +90,15 @@ var vendorNames = []string{
 	"Zhongke",
 }
 
-// allVendors lists every valid vendor value, one per vendorNames entry.
-var allVendors = func() []Vendor {
+// AllVendors returns a new slice of every valid vendor value, one per
+// vendorNames entry.
+func AllVendors() []Vendor {
 	vs := make([]Vendor, len(vendorNames))
 	for i := range vendorNames {
 		vs[i] = Vendor(i + 1)
 	}
 	return vs
-}()
+}
 
 // allVendorPacketFormats contains all vendor-specific (non-NMEA, non-RTCM) packet formats.
 var allVendorPacketFormats = []gpsprot.PacketFormat{
@@ -140,7 +141,7 @@ var allVendorPacketFormatsMap = map[Vendor][]gpsprot.PacketFormat{
 // panics.
 func CreatePacketFormats(vendors []Vendor) []gpsprot.PacketFormat {
 	if len(vendors) == 0 {
-		vendors = allVendors
+		vendors = AllVendors()
 	}
 	tags := make(map[gpsprot.Tag]struct{})
 	for _, v := range vendors {
@@ -223,7 +224,7 @@ func EnvVendors() ([]Vendor, error) {
 			if len(parts) != 1 {
 				return nil, fmt.Errorf("%s: \"all\" cannot be combined with other vendor names", envVendorsVar)
 			}
-			return append([]Vendor(nil), allVendors...), nil
+			return AllVendors(), nil
 		}
 		if name == "" {
 			return nil, fmt.Errorf("%s: empty vendor name", envVendorsVar)
@@ -337,44 +338,35 @@ func novVariantFor(v Vendor) nov.Variant {
 	}
 }
 
-// CreateConfigProtocol returns the config protocol for vendor, or nil
-// if it has none. This is the one place a new config protocol is wired
-// in: each config branch adds one case.
-func CreateConfigProtocol(vendor Vendor) gpsprot.ConfigProtocol {
-	switch vendor {
-	case VendorUblox:
-		return ubx.NewConfigProtocol()
-	case VendorUnicore:
-		return unc.NewConfigProtocol()
-	case VendorZhongke:
-		return casic.NewConfigProtocol()
-	case VendorSeptentrio:
-		return septentrio.NewConfigProtocol()
-	default:
-		return nil
-	}
+// configProtocols lists the config protocols in the order they are
+// probed. The order is ours to choose, not the caller's. An
+// experimental protocol is present in the build but probed only when
+// its vendor is asserted; graduation is clearing the flag. This is the
+// one place a new config protocol is wired in: each config branch adds
+// one row. The rows hold constructors because a config protocol keeps
+// per-connection state.
+var configProtocols = []struct {
+	vendor       Vendor
+	experimental bool
+	create       func() gpsprot.ConfigProtocol
+}{
+	{VendorUblox, false, func() gpsprot.ConfigProtocol { return ubx.NewConfigProtocol() }},
+	{VendorZhongke, true, func() gpsprot.ConfigProtocol { return casic.NewConfigProtocol() }},
+	{VendorUnicore, false, func() gpsprot.ConfigProtocol { return unc.NewConfigProtocol() }},
+	{VendorSeptentrio, true, func() gpsprot.ConfigProtocol { return septentrio.NewConfigProtocol() }},
 }
 
-// defaultConfigProtocolVendors is the probe set used when no vendor is
-// asserted: the non-experimental config protocols. A config protocol
-// whose vendor is not listed here is experimental - present in the
-// build but not probed by default. Graduation is adding the vendor.
-var defaultConfigProtocolVendors = []Vendor{VendorUblox, VendorUnicore}
-
-// CreateConfigProtocols returns the config protocols to probe with, one
-// per given vendor that has a config protocol; the list's order is
-// preserved. An empty list defaults to defaultConfigProtocolVendors, so
-// with nothing asserted the probe order stays ubx then unc. A vendor
-// with no config protocol contributes nothing, so an explicitly
-// specified one yields an empty result: listen-only detection.
+// CreateConfigProtocols returns the config protocols to probe with, in
+// configProtocols order: those of the given vendors, or with an empty
+// list the non-experimental ones. The order of vendors does not
+// matter. A vendor with no config protocol contributes nothing, so an
+// explicitly specified one yields an empty result: listen-only
+// detection.
 func CreateConfigProtocols(vendors []Vendor) []gpsprot.ConfigProtocol {
-	if len(vendors) == 0 {
-		vendors = defaultConfigProtocolVendors
-	}
 	var protos []gpsprot.ConfigProtocol
-	for _, v := range vendors {
-		if p := CreateConfigProtocol(v); p != nil {
-			protos = append(protos, p)
+	for _, cp := range configProtocols {
+		if len(vendors) == 0 && !cp.experimental || slices.Contains(vendors, cp.vendor) {
+			protos = append(protos, cp.create())
 		}
 	}
 	return protos

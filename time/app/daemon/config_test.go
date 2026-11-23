@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -274,24 +275,26 @@ device = "/dev/ptp_tic"
 	}
 }
 
-func TestSerialPPSKernelMethodRequiresDCD(t *testing.T) {
-	cfg, err := readConfig(strings.NewReader(`
+func TestSerialPPSKernelMethodPin(t *testing.T) {
+	pins := gpsio.KernelPPSPins()
+	for _, pin := range []gpsio.SerialPin{gpsio.SerialPinCTS, gpsio.SerialPinDCD, gpsio.SerialPinRI} {
+		t.Run(pin.String(), func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(`
 [serial.pps]
-pin = "cts"
+pin = "dcd"
 
 [sample.serial.pps]
 method = "kernel"
 `))
-	if err != nil {
-		t.Fatal(err)
-	}
-	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "DCD"`) {
-		t.Fatalf("Validate error = %v, want the kernel method to require DCD", err)
-	}
-	cfg.Serial.PPS.Pin = gpsio.SerialPinDCD
-	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
-		t.Fatalf("Validate with dcd: %v", err)
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.Serial.PPS.Pin = pin
+			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if expectErr := !slices.Contains(pins, pin); (err != nil) != expectErr {
+				t.Fatalf("Validate error = %v, want error %v", err, expectErr)
+			}
+		})
 	}
 }
 
