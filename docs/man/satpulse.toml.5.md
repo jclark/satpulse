@@ -110,9 +110,10 @@ It can have the following key:
   as the documentation of the board or SoC names it, such as `"GPIO18"` on a Raspberry Pi;
   the value is case-insensitive;
   the GPIO's level is polled directly from the GPIO controller's registers;
+  the rising edge of the pulse must mark the start of the second;
   the GPIO must already be an input, as the `pps-gpio` device tree overlay makes it;
   cannot be used with `pps.pin` in the `[serial]` table or with `interface` or `device` in the `[phc]` table;
-  currently supported only on 64-bit Linux on a Raspberry Pi 3, 4 or 5
+  currently supported only on a Raspberry Pi running 64-bit Linux
 
 Example using GPIO 18:
 
@@ -173,7 +174,8 @@ It can have the following keys:
   omitted by default, which leaves the poller unpinned
 * `priority` - an integer from 1 to 99 giving the `SCHED_FIFO` real-time priority at which to run the poller;
   the default is 0, which leaves it at normal priority;
-  needs the `CAP_SYS_NICE` capability, which the packaged systemd service allows
+  needs a real-time priority limit of at least the priority, or the `CAP_SYS_NICE` capability;
+  the packaged systemd service sets a limit of 99
 
 Example:
 

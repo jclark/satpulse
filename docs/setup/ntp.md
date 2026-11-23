@@ -91,10 +91,11 @@ If you can estimate this delay, then you can configure the NTP daemon to compens
 
 ### Polling the GPIO with satpulsed
 
-On a 64-bit Raspberry Pi, satpulsed can instead read the GPIO itself.{% include new-in.html version="0.4" %}
+On a Raspberry Pi running a 64-bit OS, satpulsed can instead read the GPIO itself.{% include new-in.html version="0.4" %}
 It polls the GPIO's level in a short window around each expected pulse.
-This locates the rising edge to within about a microsecond,
-and is not subject to the interrupt delay described above.
+This is not subject to the interrupt delay described above.
+On a Raspberry Pi 5, with the poller on its own CPU at real-time priority,
+it locates the rising edge to within about a microsecond.
 The samples satpulsed sends to the NTP daemon then have both the precise edge time and the second it belongs to,
 so the NTP daemon needs no PPS refclock of its own,
 and is configured as for the serial approach.
@@ -322,7 +323,7 @@ minimum-agreeing-sources = 1
 listen = "0.0.0.0:123"
 ```
 
-When satpulsed polls the GPIO, use this configuration too.
+When satpulsed polls the GPIO, use this configuration too, but with `precision = 2e-6`.
 
 ### GPIO approach
 

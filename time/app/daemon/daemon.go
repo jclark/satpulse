@@ -157,6 +157,23 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			lg.Debug("successfully closed the serial port", "path", serialDev)
 		}
 	}()
+	// The GPIO is opened before the receiver is configured, so that a wrong
+	// name or an unsupported platform stops the daemon at once. Retrying
+	// cannot fix such a failure, so it is a configuration error, unless it
+	// is a permission error. The pin is closed after the PPS goroutine
+	// stops, which the worker-wait defer below ensures.
+	var gpioPin *gpiomem.Pin
+	if cfg.PPS != nil {
+		if gpioPin, err = gpiomem.Open(cfg.PPS.GPIO); err != nil {
+			err = fmt.Errorf("GPIO PPS: %w", err)
+			if errors.Is(err, os.ErrPermission) {
+				return err
+			}
+			return &configError{err: err}
+		}
+		defer gpioPin.Close()
+		lg.Info("GPIO PPS polling", "gpio", cfg.PPS.GPIO, "device", gpioPin.Device())
+	}
 
 	var wg sync.WaitGroup
 	pktFormats := gpsreg.CreatePacketFormats(vendors)
@@ -347,14 +364,9 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 		wg.Go(func() {
 			defer close(ch)
 			lg.Debug("GPIO PPS goroutine started", "gpio", gpio)
-			pin, err := gpiomem.Open(gpio)
-			if err == nil {
-				defer pin.Close()
-				err = pps.DetectGPIO(ctx, lg, pin, cfg.Sample.PPS.GPIO, ch, nil)
-			}
-			if err != nil && ctx.Err() == nil {
+			if err := pps.DetectGPIO(ctx, lg, gpioPin, cfg.Sample.PPS.GPIO, ch, nil); err != nil && ctx.Err() == nil {
 				lg.Error("GPIO PPS polling failed", "gpio", gpio, "err", err)
-				cancel(fmt.Errorf("GPIO PPS polling failed: %w", err))
+				cancel(fmt.Errorf("GPIO PPS polling failed on %s: %w", gpio, err))
 			}
 			lg.Debug("GPIO PPS goroutine exited", "gpio", gpio)
 		})
