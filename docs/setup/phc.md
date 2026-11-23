@@ -32,6 +32,9 @@ These pins are often called Software Defined Pins (SDPs).
 They are numbered starting from 0 and also have a name.
 SatPulse defaults to using pin 0.
 So if there is only one pin, then there is no need to specify anything.
+Some PHCs, such as the TI am65-cpts on the BeagleY-AI, have no pins:
+the routing of the PPS input to a timestamping channel is fixed by the board's device tree.
+SatPulse then uses the channel directly, which defaults to channel 0, and there is no pin to specify.
 
 The ethernet controller will have a PTP Hardware Clock (PHC) device associated with it,
 which has an index which is a non-negative integer.
@@ -41,7 +44,7 @@ operations related to PPS input apply to the PHC rather than directly to the net
 
 satpulsetool provides a subcommand [sdp]({%link man/satpulsetool-sdp.1.md%}) which is useful for identifying the interface.
 
-* `satpulsetool sdp` with no arguments shows information about each interface that has one or more SDPs;
+* `satpulsetool sdp` with no arguments shows information about each interface whose PHC has one or more pins or timestamping channels;
 * `satpulsetool sdp -i --pin 0 eth0` checks for input on the specified interface and pin for 2 seconds by default; it prints out the timestamps it received as a number of seconds since the beginning of 1970; `--pin 0` is the default.
 
 Make sure the interface is in an UP state;
@@ -86,6 +89,40 @@ should print one or two numbers, like this
 ```
 
 This means it has received two timestamps, one second apart, so everything is working as expected.
+
+### BeagleY-AI
+
+On the BeagleY-AI with [Debian]({% link setup/bb-debian.md %}), the network interface is `eth0`.
+
+The routing between pins and channels is managed by the device-tree overlay rather than by the PHC subsystem.
+Accordingly `phc_ctl eth0` will report that `eth0` has no pins.
+The device-tree overlay routes header pin 33 to timestamp channel 0,
+which is what SatPulse uses by default.
+
+`satpulsetool sdp eth0` should show something like this:
+
+```
+Interface: eth0
+  Status: up, carrier
+  Driver: am65-cpsw-nuss
+  PCI: 8000000.ethernet
+  PTP clock device: /dev/ptp0
+  External timestamp channels: 4
+  Periodic output channels: 2
+```
+
+Doing
+
+```
+sudo satpulsetool sdp -i eth0
+```
+
+should print one or two numbers, like this
+
+```
+32.978236091
+33.978225423
+```
 
 ### Intel
 

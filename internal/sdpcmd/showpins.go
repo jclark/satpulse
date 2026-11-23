@@ -30,27 +30,44 @@ func (p *PinDesc) Print(f *os.File) {
 	}
 }
 
-// showPins implements --show mode when an an interface is specified
+// showAuto implements the default mode with an interface: the pins of its
+// PHC, or the interface record if the PHC has none
+func showAuto(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
+	phcIndex, err := ifPHCIndex(cfg.Interface)
+	if err != nil {
+		return nil, err
+	}
+	if sysfsPinCount(os.DirFS("/sys"), phcIndex) > 0 {
+		return showPinsByPath(cfg, phc.ClockPath(phcIndex))
+	}
+	return showIface(lg, cfg.Interface, phcIndex)
+}
+
+// showPins implements --show-pins mode
 func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
+	path, err := phcPath(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return showPinsByPath(cfg, path)
+}
+
+// showPinsByPath shows the pins of the PHC that cfg selects, whose device
+// path has already been looked up
+func showPinsByPath(cfg *FlagConfig, path string) ([]Printer, error) {
 	var result []Printer
 
-	phcIndex, err := phc.IfPhcIndex(cfg.Interface)
-	if err != nil || phcIndex < 0 {
-		return nil, fmt.Errorf("interface %s does not have a PTP hardware clock", cfg.Interface)
-	}
-
-	clk, err := phc.Open(fmt.Sprintf("/dev/ptp%d", phcIndex))
+	clk, err := phc.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open PHC device for %s: %w", cfg.Interface, err)
+		return nil, fmt.Errorf("failed to open PHC device: %w", err)
 	}
 	defer clk.Close()
 
-	nPins := clk.PinCount()
-	if nPins <= 0 {
-		return nil, fmt.Errorf("interface %s has no software-defined pins", cfg.Interface)
+	if !clk.HasPins() {
+		return nil, noPinsError(cfg)
 	}
 
-	for i := range uint32(nPins) {
+	for i := range uint32(clk.PinCount()) {
 		pinDesc, err := clk.PinGetFunc(i)
 		if err != nil {
 			return nil, fmt.Errorf("failed to get pin %d description: %w", i, err)
@@ -70,7 +87,7 @@ func showPins(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	}
 
 	if cfg.Pin != "" && len(result) == 0 {
-		return nil, fmt.Errorf("pin '%s' not found on interface %s", cfg.Pin, cfg.Interface)
+		return nil, fmt.Errorf("pin '%s' not found on %s", cfg.Pin, cfg.phcName())
 	}
 
 	return result, nil

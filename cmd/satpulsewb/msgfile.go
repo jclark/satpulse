@@ -2,7 +2,6 @@ package main
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/jclark/satpulse/gps/app/session"
 	"github.com/jclark/satpulse/gps/msgfile"
@@ -33,7 +32,7 @@ type msgFileResult struct {
 
 func (s *server) handleMsgCatalog(w http.ResponseWriter, _ *http.Request) {
 	names := msgfile.ListNames(s.msgDirs)
-	writeJSON(w, msgCatalog{Names: names, Preselect: s.msgPreselect(names)})
+	writeJSON(w, msgCatalog{Names: names, Preselect: s.sess.MsgFilePreselect(names, s.vendors)})
 }
 
 func (s *server) handleMsgSelect(w http.ResponseWriter, r *http.Request) {
@@ -78,34 +77,4 @@ func (s *server) handleMsgCancel(w http.ResponseWriter, _ *http.Request) {
 		return
 	}
 	writeJSON(w, struct{}{})
-}
-
-// msgPreselect returns the vendor the UI should preselect: the session
-// vendor (see sessionVendorName) matched by lowercased name against
-// the catalog's vendors; "" when nothing matches.
-func (s *server) msgPreselect(names []msgfile.Entry) string {
-	vendor := strings.ToLower(s.sessionVendorName())
-	if vendor == "" {
-		return ""
-	}
-	for _, e := range names {
-		if strings.ToLower(e.Vendor) == vendor {
-			return e.Vendor
-		}
-	}
-	return ""
-}
-
-// sessionVendorName returns the vendor name driving preselection: the
-// asserted vendor when the resolved list (--vendor or a singleton
-// SATPULSE_VENDORS declaration) names exactly one, otherwise the
-// vendor the probe detected (empty under passive detection).
-func (s *server) sessionVendorName() string {
-	if len(s.vendors) == 1 {
-		return s.vendors[0].String()
-	}
-	if r := s.sess.Receiver(); r.Info.IsSet() {
-		return r.Info.Get().Vendor
-	}
-	return ""
 }

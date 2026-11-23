@@ -1,6 +1,16 @@
-## Changes in 0.3
+## Changes in 0.4
 
 _Not yet released_
+
+- The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
+- `satpulsed` can send NTP samples with PHC drivers that do not support `PTP_SYS_OFFSET_EXTENDED` (such as stmmac before Linux 7.4). (#547)
+- The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
+- FreeBSD support is improved. NTP SHM, kernel PPS and serial enumeration now support FreeBSD. There is also an rc.d script. (#426)
+- `satpulsetool convobs` converts NovAtel-format RANGE raw observations to RINEX, with new `novb` and `nova` input formats and a `--vendor` option selecting the SinoGNSS variant; it has been tested with SinoGNSS receivers only. (#476)
+
+## Changes in 0.3
+
+_Released 2026-10-28_
 
 ### RTK and RTCM
 
@@ -52,7 +62,6 @@ _Not yet released_
 ### RINEX observation conversion
 
 - `satpulsetool` has a new `convobs` command, which converts raw GNSS observation data from u-blox UBX-RXM-RAWX, Unicore OBSVM, or RTCM MSM7 into RINEX observation files for PPP post-processing. It can decimate observations and set RINEX header metadata from command-line options or a TOML header file. `convobs` also supports a new JSON Lines observation format that follows RINEX semantics to enable convenient processing with modern tooling such as `jq`; it reads and writes this format, and can also read existing RINEX files, so it can convert freely between raw packets, RINEX, and the JSON Lines format. (#296)
-- `satpulsetool convobs` converts NovAtel-format RANGE raw observations to RINEX, with new `novb` and `nova` input formats and a `--vendor` option selecting the SinoGNSS variant; it has been tested with SinoGNSS receivers only. (#476)
 
 ### SatPulse Workbench
 
@@ -64,6 +73,7 @@ _Not yet released_
 - Passive serial packet logging has moved from `satpulsetool gps` to `satpulsetool serial`. The `gps` command now always probes or configures the receiver; `--show-receiver` is always implied when no operation is specified, even if `--capture` is specified. (#408)
 - `satpulsetool` has a new `pack` command, which reads a JSONL packet log and writes selected packets as a packet byte stream corresponding to the original packet contents. It can filter by packet `tag` and `msg`, and can preserve inter-packet timing for FIFO-based replay. (#247)
 - `satpulsetool` has a new `scan` command, which reads a raw GPS packet byte stream and writes a JSONL packet log that can be decoded with `satpulsetool annotate`. (#246)
+- Message files for Quectel modules using Airoha chipsets have been reworked. These modules use a mixture of Airoha-defined PAIR commands and Quectel-defined PQTM commands. There is now an airoha directory with message files using PAIR commands. The message files in the quectel directory include these and add PQTM commands. There are now separate message files for LC29H(AA) and LC29H(DA). Support for LC76G(AB) has been added, which will probably also mostly work with LC26G and LC86G. The supported Airoha chipsets are the AG3335 and AG3352.
 - Message files have a new `novatel` response pattern, which allows responses from Bynav receivers to be correlated with the commands sent.
 - `satpulsetool decode` and `satpulsetool annotate` have a new `--vendor` option, which decodes NovAtel-format packets using that vendor's variant of the protocol; without it, `SATPULSE_VENDORS` applies. SatPulse Workbench decodes packets using the vendors it was given in the same way.
 - `satpulsetool ntrip` has a new `--nmea-send-pos` option that takes `lat,lon[,hgt]` and sends a synthesized NMEA GGA sentence to the caster on connect, for Virtual Reference Station casters such as u-blox PointPerfect that need the client's position before they will stream. A companion `--nmea-send-interval` option sets the re-send period for casters that require a periodic GGA (default 5 seconds, matching the daemon; 0 sends once). (#325)
@@ -72,15 +82,16 @@ _Not yet released_
 
 - The default `satpulse.toml` no longer specifies a `phc.interface`, so `satpulsed` runs without a PHC by default; using a PHC now requires uncommenting and editing the `interface` line in the `[phc]` table. This will affect only fresh installs. (#309)
 - SatPulse now compiles and is tested on 32-bit architectures. Debian packages for `armhf` architecture are provided. These are built for ARMv6, and so will work on Raspberry Pi Zero with Raspberry Pi OS, as well as more powerful Raspberry Pi models which use ARMv7. (#305)
-- SatPulse can be installed on macOS using the [Homebrew](https://brew.sh/) package manager. See the [homebrew-satpulse](https://github.com/jclark/homebrew-satpulse) repository, which provides a tap. (#322)
+- SatPulse can be [installed on macOS]({% link setup/macos.md %}#install-satpulse) using the [Homebrew](https://brew.sh/) package manager and the tap provided by the [homebrew-satpulse](https://github.com/jclark/homebrew-satpulse) repository. (#322)
 - GPS message files are now installed by packages under `/usr/share/satpulse/gpsmsg`, and by `make install` under `/usr/local/share/satpulse/gpsmsg`. The files are organized by vendor directory. (#233)
 - The `satpulse@.service` has been improved so that if a USB GNSS receiver is unplugged, its `satpulse@...` service stops, and when the receiver is plugged back in, its service is automatically restarted, provided it was enabled. To take advantage of this after installing the new unit file, previously enabled instances need to be reenabled, for example with `systemctl reenable satpulse@ttyS0`. (#172)
 - The packaged `satpulse@.service` unit now runs with improved systemd security hardening. (#254)
 - The JSONL event log now uses a natural event shape with a `type` discriminator and a `data` payload, replacing the previous one-field-per-type record shape. The `nanos` integer field is replaced by a `mono` field holding monotonic elapsed seconds. This matches the envelope already emitted by `satpulsetool replay`. Existing event logs in the old format can be converted with the `migrate_log.go` tool in `time/internal/gpsevent`. (#277)
 - The `pulseEdge` event type in the JSONL event log has been renamed to `phcPulseEdge`, because SatPulse now supports two different kinds of pulse edge: PHC-timestamped and system-clock-timestamped. (#402)
-- On exit, if a GPS receiver has been successfully detected at some serial speed, the serial port is left at that speed rather than being restored to how it was before SatPulse started. This avoids an unnecessary speed change when the port is next opened, minimizing the risk of serial corruption on Raspberry Pi UARTs.
+- On exit, the serial port is no longer restored exactly to how it was before SatPulse started. If a GPS receiver has been successfully detected at some serial speed, the port is left at that speed; this avoids an unnecessary speed change when the port is next opened, minimizing the risk of serial corruption on Raspberry Pi UARTs. Echo is always left turned off, so that the receiver's output is not transmitted back to it while the port is being closed or next opened.
 - A new `SATPULSE_VENDORS` environment variable gives the possible vendors of the connected GPS receiver; it can be overridden by the `--vendor` option of `satpulsetool` and `satpulsewb` and by `satpulsed`'s `[gps]` `vendor` key. (#392)
 - Building from source now uses `make` on macOS and FreeBSD as well as Linux, replacing the `unix-build.sh` script. `make install` works there too, installing under `/usr/local` by default, or under a prefix given by `prefix=`. (#420)
+- `satpulsed` and `satpulsetool sdp` now work with PTP hardware clocks that have external timestamp channels but no pins, such as the TI am65-cpts on the BeagleY-AI, where the routing of signals to channels is fixed by the device tree. The channel is used directly, and `pin` must not be specified. `satpulsetool sdp --show` is replaced by `--show-ifaces` and `--show-pins`; with no mode option, `sdp` shows the pins of the interface's PHC, or the interface record if the PHC has none. (#504)
 
 ## Changes in 0.2
 

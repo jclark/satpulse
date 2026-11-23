@@ -1,4 +1,4 @@
-# ATGM332D-AT9880-F8N-76 (URANUS6 V6.3.2.0)
+# ATGM332D-F8N-76 (URANUS6 V6.3.2.0)
 
 Dual-band CASIC navigation receiver, UART at 115200. Characterized
 2026-06-13, re-characterized 2026-07-21 (disruptive); baseline

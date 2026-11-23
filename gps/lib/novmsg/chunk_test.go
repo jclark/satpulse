@@ -33,3 +33,46 @@ func TestChunkedHugeCount(t *testing.T) {
 		t.Errorf("allocated %d bytes", n)
 	}
 }
+
+func TestDecodeAsciiChunkedCount(t *testing.T) {
+	tests := []struct {
+		name      string
+		fields    []string
+		expectErr bool
+	}{
+		{
+			name:   "count matches records",
+			fields: []string{"1.5", "1.2", "0.8", "0.9", "0.7", "5.0", "2", "3", "7"},
+		},
+		{
+			name:      "count larger than records",
+			fields:    []string{"1.5", "1.2", "0.8", "0.9", "0.7", "5.0", "3", "3", "7"},
+			expectErr: true,
+		},
+		{
+			name:      "count smaller than records",
+			fields:    []string{"1.5", "1.2", "0.8", "0.9", "0.7", "5.0", "1", "3", "7"},
+			expectErr: true,
+		},
+		{
+			name:      "truncated initial chunk",
+			fields:    []string{"1.5", "1.2"},
+			expectErr: true,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			var m PsrDop
+			err := DecodeAsciiChunked(tc.fields, &m, "PSRDOPA")
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error, got %+v", m)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}

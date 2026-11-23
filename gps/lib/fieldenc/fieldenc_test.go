@@ -353,17 +353,6 @@ func TestDecode(t *testing.T) {
 		expected any
 	}{
 		{
-			name:   "fewer fields than struct",
-			fields: []string{"hello", "42"},
-			expected: BasicStruct{
-				Str:    "hello",
-				Int32:  42,
-				Uint64: 0,     // zero value
-				Float:  0,     // zero value
-				Bool:   false, // zero value
-			},
-		},
-		{
 			name:   "alternative bool formats",
 			fields: []string{"test", "0", "0", "0", "1"},
 			expected: BasicStruct{
@@ -427,16 +416,6 @@ func TestPartialDecode(t *testing.T) {
 		expectedValue    any
 	}{
 		{
-			name:             "consume all fields",
-			fields:           []string{"hello", "42"},
-			target:           &BasicStruct{},
-			expectedConsumed: 2,
-			expectedValue: BasicStruct{
-				Str:   "hello",
-				Int32: 42,
-			},
-		},
-		{
 			name:             "consume partial fields",
 			fields:           []string{"hello", "42", "123", "3.14", "true", "extra", "fields"},
 			target:           &BasicStruct{},
@@ -448,13 +427,6 @@ func TestPartialDecode(t *testing.T) {
 				Float:  3.14,
 				Bool:   true,
 			},
-		},
-		{
-			name:             "empty fields",
-			fields:           []string{},
-			target:           &BasicStruct{},
-			expectedConsumed: 0,
-			expectedValue:    BasicStruct{},
 		},
 		{
 			name:             "embedded struct partial",
@@ -524,7 +496,7 @@ func TestBlankFieldErrors(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test Decode
-			err := Decode([]string{"test"}, tt.target)
+			err := Decode([]string{"test", "1"}, tt.target)
 			if err == nil {
 				t.Error("expected error for _ field in Decode, got none")
 			}
@@ -533,7 +505,7 @@ func TestBlankFieldErrors(t *testing.T) {
 			}
 
 			// Test PartialDecode
-			_, err = PartialDecode([]string{"test"}, tt.target)
+			_, err = PartialDecode([]string{"test", "1"}, tt.target)
 			if err == nil {
 				t.Error("expected error for _ field in PartialDecode, got none")
 			}
@@ -573,6 +545,21 @@ func TestDecodeErrors(t *testing.T) {
 			name:   "custom type error",
 			fields: []string{"INVALID"},
 			target: &struct{ Status Status }{},
+		},
+		{
+			name:   "fewer fields than struct",
+			fields: []string{"hello", "42"},
+			target: &BasicStruct{},
+		},
+		{
+			name:   "fewer fields than embedded struct",
+			fields: []string{"BESTNAV", "1"},
+			target: &CompleteMessage{},
+		},
+		{
+			name:   "no fields",
+			fields: []string{},
+			target: &BasicStruct{},
 		},
 	}
 

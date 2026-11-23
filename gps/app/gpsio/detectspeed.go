@@ -225,6 +225,14 @@ func DetectSpeed(ctx context.Context, lg *slog.Logger, packetCh <-chan scan.Pack
 	attempt := func(speed int) (trySpeedResult, bool, error) {
 		if speed != currentSpeed {
 			if _, err := conn.WriteThenChangeSpeed(nil, speed); err != nil {
+				if errors.Is(err, term.ErrSpeedUnsupported) {
+					// A rejected speed never reaches trySpeed, which is where
+					// cancellation is otherwise noticed.
+					if err := ctx.Err(); err != nil {
+						return tryOther, false, err
+					}
+					lg.Info("skipped serial speed", "speed", speed, "error", err)
+				}
 				return tryOther, false, fmt.Errorf("changing serial speed to %d: %w", speed, err)
 			}
 			currentSpeed = speed
@@ -291,11 +299,14 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 	for len(remaining) > 0 {
 		speed := remaining[0]
 		remaining = remaining[1:]
-		tried = append(tried, speed)
 		result, streamEnded, err := attempt(speed)
+		if errors.Is(err, term.ErrSpeedUnsupported) {
+			continue
+		}
 		if err != nil {
 			return DetectResult{}, err
 		}
+		tried = append(tried, speed)
 		if result == tryDetected {
 			return DetectResult{Outcome: DetectFound, Speed: speed}, nil
 		}
@@ -313,7 +324,10 @@ func walkSpeedCandidates(candidates []int, attempt speedAttempt, stopSilent func
 			remaining[0], remaining[1] = remaining[1], remaining[0]
 		}
 	}
-	if allSilent && len(tried) > 0 {
+	if len(tried) == 0 {
+		return DetectResult{}, fmt.Errorf("no candidate serial speed: %w", term.ErrSpeedUnsupported)
+	}
+	if allSilent {
 		return DetectResult{Outcome: DetectSilent}, nil
 	}
 	return DetectResult{Outcome: DetectUnrecognized}, nil

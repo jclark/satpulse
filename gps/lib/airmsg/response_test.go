@@ -154,10 +154,46 @@ func TestClassifyRequest(t *testing.T) {
 			wantID:   "020",
 		},
 		{
+			name:     "exception: 024 is query despite even",
+			sent:     "PAIR024",
+			wantKind: RequestQuery,
+			wantID:   "024",
+		},
+		{
 			name:     "exception: 412 is query despite even",
 			sent:     "PAIR412",
 			wantKind: RequestQuery,
 			wantID:   "412",
+		},
+		{
+			name:     "exception: 391 is command despite odd",
+			sent:     "PAIR391,1",
+			wantKind: RequestCommand,
+			wantID:   "391",
+		},
+		{
+			name:     "exception: 751 is command despite odd",
+			sent:     "PAIR751,1",
+			wantKind: RequestCommand,
+			wantID:   "751",
+		},
+		{
+			name:     "exception: 754 is query despite even",
+			sent:     "PAIR754",
+			wantKind: RequestQuery,
+			wantID:   "754",
+		},
+		{
+			name:     "exception: 761 is command despite odd",
+			sent:     "PAIR761,1,0",
+			wantKind: RequestCommand,
+			wantID:   "761",
+		},
+		{
+			name:     "exception: 762 is query despite even",
+			sent:     "PAIR762",
+			wantKind: RequestQuery,
+			wantID:   "762",
 		},
 		{
 			name:     "normal even command 410",

@@ -500,7 +500,7 @@ func (m *Nav2SigFixed) NavEpoch() uint32 { return m.TOW }
 // Nav2SigInfo is a per-signal entry in NAV2-SIG (16 bytes each)
 type Nav2SigInfo struct {
 	GNSSID    GNSSID          `json:"gnssid"`
-	SVID      uint8           `json:"svid"`      // satellite ID (raw PRN, except QZSS=PRN-192)
+	SVID      uint8           `json:"svid"`      // satellite ID (raw PRN, except QZSS=PRN-192 and SBAS a 1-based index from PRN 120)
 	SigID     SigID           `json:"sigid"`     // signal band ID
 	FreqID    uint8           `json:"freqid"`    // GLONASS frequency ID; undefined for other constellations
 	PRRes     int16           `json:"prResi"`    // dm, pseudorange residual

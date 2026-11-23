@@ -1,4 +1,4 @@
-//go:build linux || darwin
+//go:build linux || darwin || freebsd
 
 package ntpshm
 
@@ -43,6 +43,9 @@ func TestAttachExisting(t *testing.T) {
 	const segment = 254
 	if id, err := shmID(segment); err == nil {
 		t.Skipf("NTP SHM test segment %d already exists as shmid %d", segment, id)
+	} else if errors.Is(err, unix.ENOSYS) {
+		// A FreeBSD jail without sysvshm access fails every SysV SHM call.
+		t.Skipf("SysV shared memory unavailable: %v", err)
 	} else if !errors.Is(err, unix.ENOENT) {
 		t.Fatalf("checking existing segment: %v", err)
 	}
@@ -87,7 +90,7 @@ func TestAttachExisting(t *testing.T) {
 }
 
 func shmID(segment uint8) (int, error) {
-	return unix.SysvShmGet(int(shmKey(segment)), expectedSize, 0)
+	return sysvShmGet(int(shmKey(segment)), expectedSize, 0)
 }
 
 func removeSHM(segment uint8) error {
@@ -98,6 +101,5 @@ func removeSHM(segment uint8) error {
 	if err != nil {
 		return err
 	}
-	_, err = unix.SysvShmCtl(id, unix.IPC_RMID, nil)
-	return err
+	return sysvShmRemove(id)
 }

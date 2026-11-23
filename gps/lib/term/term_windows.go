@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -41,14 +40,6 @@ const (
 )
 
 const maxDWORD = 0xffffffff
-
-// baudRates is used by IsValidSpeed so the set of accepted speeds matches
-// Unix. Windows accepts the baud rate value directly in DCB.BaudRate.
-var baudRates = []int{
-	50, 75, 110, 134, 150, 200, 300, 600, 1200, 1800,
-	2400, 4800, 9600, 19200, 38400, 57600, 115200,
-	230400, 460800, 921600,
-}
 
 type windowsTerm struct {
 	handle        windows.Handle
@@ -180,7 +171,14 @@ func (t *windowsTerm) Change(opts ...AttrSetter) (time.Time, error) {
 	}
 	err := windows.SetCommState(t.handle, &attr.dcb)
 	if err != nil {
-		return time.Time{}, t.wrapErr(err, "SetCommState")
+		err = t.wrapErr(err, "SetCommState")
+		// The driver rejects a rate it cannot produce within tolerance with
+		// STATUS_INVALID_PARAMETER, which SetCommState reports as
+		// ERROR_INVALID_PARAMETER; with the rate unchanged it has some other cause.
+		if errors.Is(err, windows.ERROR_INVALID_PARAMETER) && attr.dcb.BaudRate != t.attr.dcb.BaudRate {
+			err = fmt.Errorf("%w: %w", ErrSpeedUnsupported, err)
+		}
+		return time.Time{}, err
 	}
 	err = windows.SetCommTimeouts(t.handle, &attr.timeouts)
 	if err != nil {
@@ -685,9 +683,4 @@ func ReadTimeout(timeout time.Duration) AttrSetter {
 		a.timeouts.WriteTotalTimeoutConstant = 0
 		return nil
 	}
-}
-
-func IsValidSpeed(speed int) bool {
-	i := sort.SearchInts(baudRates, speed)
-	return i < len(baudRates) && baudRates[i] == speed
 }
