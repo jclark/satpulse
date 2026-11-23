@@ -1,0 +1,478 @@
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","pos"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:34.006009Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440d174a76f6000e0fd56208d09010022fefc485fadce3f77aa2ebcf51afc3fcf91b87ba4003ac0c605dbc15e5103bbb7709e3aa2a5523bf90295d0dedd65ee3133dfbfa213453e00001800ffffffffdd49325001000000320029026f026000"}
+{"t":"2026-11-21T06:42:34.006324Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:34.016553Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:34.041489Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:34.04209Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:34.042309Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:34.042976Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:34.043152Z","ascii":"setSBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:34.045825Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:34.045981Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:34.047026Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:34.047091Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:34.047652Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:34.047652Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:34.047861Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:34.047861Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:34.048281Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:34.048281Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:34.049084Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:34.049084Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:34.049956Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:34.049956Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:34.050089Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","vel"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:35.006157Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440497ea76f6000c80157208d090100ac0fd2495fadce3fc1af45bcf51afc3f44c9c31968003ac0c605dbc144a1babab8a7173961fad0b9f90295d08eb751ad0a30dfbfa420453e00001800ffffffffdd493250010000003400240266026000"}
+{"t":"2026-11-21T06:42:35.006405Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:35.016633Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:35.031812Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:35.03244Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:35.032591Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:35.033414Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:35.033491Z","ascii":"setSBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:35.035945Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:35.036118Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:35.03721Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:35.037283Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:35.037773Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:35.037773Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:35.037859Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:35.037859Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:35.038136Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:35.038136Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:35.038781Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:35.038781Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:35.039559Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:35.039559Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:35.039722Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","time"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:36.005981Z","tag":"SBF","msg":"PVTGeodetic","bin":"244069b0a76f6000b00557208d09010000eb14495fadce3f959f43bcf51afc3f3290746580003ac0c605dbc15a9f92ba08501cbb9cb3b2b6f90295d0ed31b63ae32cdfbf9fef443e00001800ffffffffdd49325001000000320026026a026000"}
+{"t":"2026-11-21T06:42:36.006344Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:36.016697Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:36.044801Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:36.045301Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:36.045607Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:36.046235Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:36.046382Z","ascii":"setSBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:36.04872Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:36.048871Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:36.049895Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:36.049938Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:36.050445Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:36.050445Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:36.050548Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:36.050548Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:36.05108Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:36.05108Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:36.052023Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:36.052023Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:36.05275Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:36.05275Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:36.052997Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","tp"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:37.005823Z","tag":"SBF","msg":"PVTGeodetic","bin":"24405790a76f6000980957208d090100b0af2b495fadce3f787052bcf51afc3f70c1e401a8003ac0c605dbc1bc48833a215a9eba653c4e39f90295d0a6cc6533bc29dfbfa816453e00001800ffffffffdd49325001000000320027026d026000"}
+{"t":"2026-11-21T06:42:37.00606Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:37.016304Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:37.031483Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:37.032131Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:37.032327Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:37.032854Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:37.032977Z","ascii":"setSBFOutput, Stream1, USB1, PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:37.035492Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic+xPPSOffset, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:37.035609Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:37.036652Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:37.036749Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:37.037129Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:37.037129Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:37.037242Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:37.037242Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:37.037647Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:37.037647Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:37.038235Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:37.038235Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:37.038972Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:37.038972Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:37.039124Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","leap"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:38.004351Z","tag":"SBF","msg":"xPPSOffset","bin":"24403f2117171400800d57208d090001bd2403bf"}
+{"t":"2026-11-21T06:42:38.00454Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:38.006449Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440cd54a76f6000800d57208d090100b2bb78485fadce3f898042bcf51afc3f6dde44ee6bff39c0c605dbc1d63a8dbad82f69bb17fbe33af90295d0de67ad139526dfbfdb2d453e00001800ffffffffdd4932500100000037002a0270026000"}
+{"t":"2026-11-21T06:42:38.014769Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:38.041208Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:38.041761Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.04197Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:38.042568Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, PVTGeodetic+xPPSOffset, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.04277Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:38.045531Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.045703Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:38.04682Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.046925Z","ascii":"exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n","out":true}
+{"t":"2026-11-21T06:42:38.047857Z","tag":"SBF","msg":"GPSUtc","bin":"2440a2140617280050c84e208d09080000008027000000000000103e00f000008e12890712f8978a"}
+{"t":"2026-11-21T06:42:38.048009Z","tag":"SBF","msg":"GALUtc","bin":"24406adfbf0f280048c356208d09630200000000000000000000000000e907008d12890712000000"}
+{"t":"2026-11-21T06:42:38.048164Z","tag":"SBF","msg":"BDSUtc","bin":"2440275a19102000809655208d098d00000000000000000000000000043d0604"}
+{"t":"2026-11-21T06:42:38.048583Z","tag":"SEPTR","msg":"R:","ascii":"$R: exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n  SBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.048643Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:38.049193Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.049193Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.049386Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.049386Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.049743Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.049743Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.050497Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.050497Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.05149Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.05149Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.051702Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","survey"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:38.205408Z","tag":"SBF","msg":"GALUtc","bin":"2440534dbf0f2800800d57208d09630200000000000000000000000000e907008d12890712072000"}
+{"t":"2026-11-21T06:42:38.205629Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:38.215875Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:38.20615Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:38.21705Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.217263Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:38.21769Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.217889Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:38.220376Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:38.220557Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:38.221396Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.221396Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.221498Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.221498Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.221739Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.221739Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.222425Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.222425Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.223062Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:38.223062Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:38.223232Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","pos,ecef"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:39.004496Z","tag":"SBF","msg":"xPPSOffset","bin":"2440c7fa17171400681157208d090001f478e4bb"}
+{"t":"2026-11-21T06:42:39.004725Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:39.00656Z","tag":"SBF","msg":"PVTGeodetic","bin":"244075b5a76f6000681157208d090100ccd728485fadce3fa9b946bcf51afc3ffc6673b820003ac0c605dbc1357b82bbda7d0dbbfdd0e53af90295d03a91c9ec6d23dfbf2c04453e00001800ffffffffdd49325001000000380042028c026000"}
+{"t":"2026-11-21T06:42:39.015142Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:39.035823Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:39.036402Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:39.03662Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:39.037307Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:39.037393Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:39.039791Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:39.039957Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:39.041322Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:39.041423Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:39.042323Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:39.042323Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:39.042506Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:39.042506Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:39.04283Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:39.04283Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:39.04351Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:39.04351Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:39.044201Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:39.044201Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:39.044289Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","vel,ecef"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:40.004324Z","tag":"SBF","msg":"xPPSOffset","bin":"2440716b17171400501557208d090001613b1ebf"}
+{"t":"2026-11-21T06:42:40.004568Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:40.006302Z","tag":"SBF","msg":"PVTCartesian","bin":"24408abda66f6000501557208d090100136bb6c3797731c1496837d8973b574123475c09acf33641c605dbc1b54bc53a4fbf403b49704d3af90295d0f1da66434720dfbf4308453e00001800ffffffffdd4932500100000037002e0272026000"}
+{"t":"2026-11-21T06:42:40.00659Z","tag":"SBF","msg":"PVTGeodetic","bin":"24406c60a76f6000501557208d090100373912495fadce3fe2f055bcf51afc3fb85f071c65003ac0c605dbc151021439e88d04bba081323bf90295d0f1da66434720dfbf4308453e00001800ffffffffdd493250010000003a002e0272026000"}
+{"t":"2026-11-21T06:42:40.014743Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:40.041382Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:40.042114Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:40.042307Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:40.043117Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:40.043341Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:40.045812Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:40.045926Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:40.046955Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:40.047054Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:40.047606Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:40.047606Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:40.047728Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:40.047728Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:40.048096Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:40.048096Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:40.048931Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:40.048931Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:40.049746Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:40.049746Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:40.05Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","time,tai"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:41.004389Z","tag":"SBF","msg":"xPPSOffset","bin":"2440611417171400381957208d09000167c6ee3d"}
+{"t":"2026-11-21T06:42:41.004653Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:41.006291Z","tag":"SBF","msg":"PVTCartesian","bin":"2440c251a66f6000381957208d0901003d4c69c3797731c198d645d8973b57413f128f08acf33641c605dbc12866e23a80aa243a5810653af90295d0af1b9aa7201ddfbff9fb443e00001800ffffffffdd49325001000000360026026a026000"}
+{"t":"2026-11-21T06:42:41.006517Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440f463a76f6000381957208d0901003815fd475fadce3fdb4f47bcf51afc3fc41df78c6c003ac0c605dbc19cf44b3a25b6edbaf454023af90295d0af1b9aa7201ddfbff9fb443e00001800ffffffffdd49325001000000390026026a026000"}
+{"t":"2026-11-21T06:42:41.015049Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:41.031512Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:41.032095Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:41.03235Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:41.032871Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:41.033055Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:41.035188Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:41.035358Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:41.036229Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:41.036386Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:41.03677Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:41.03677Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:41.036927Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:41.036927Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:41.037204Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:41.037204Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:41.037872Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:41.037872Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:41.038551Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:41.038551Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:41.038737Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","tp,tai"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:42.004384Z","tag":"SBF","msg":"xPPSOffset","bin":"244006f717171400201d57208d09000175800cbf"}
+{"t":"2026-11-21T06:42:42.004607Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:42.006304Z","tag":"SBF","msg":"PVTCartesian","bin":"244006c4a66f6000201d57208d090100320df5c3797731c1190e2dd8973b5741dab47d08acf33641c605dbc1a9b98f3b43daa0bbf738a6baf90295d0d253d5f6f919dfbf34fe443e00001800ffffffffdd493250010000003700220261026000"}
+{"t":"2026-11-21T06:42:42.006517Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440cf43a76f6000201d57208d0901007441fd475fadce3fa0a661bcf51afc3f71f3ce3cb6003ac0c605dbc14671dd3831145fbb6a38bdbbf90295d0d253d5f6f919dfbf34fe443e00001800ffffffffdd493250010000003900220261026000"}
+{"t":"2026-11-21T06:42:42.015061Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:42.045434Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:42.046115Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:42.046342Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:42.046964Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:42.047162Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:42.049711Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:42.049805Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:42.050758Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:42.050913Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:42.051558Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:42.051558Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:42.051688Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:42.051688Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:42.052105Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:42.052105Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:42.052959Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:42.052959Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:42.053776Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:42.053776Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:42.054057Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","tp,after"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:43.004504Z","tag":"SBF","msg":"xPPSOffset","bin":"2440357517171400082157208d0900016cfbfb3d"}
+{"t":"2026-11-21T06:42:43.004756Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:43.006513Z","tag":"SBF","msg":"PVTCartesian","bin":"2440baf3a66f6000082157208d09010049d54ac4797731c12ab664d8973b5741be8d9408acf33641c605dbc1ce27b5ba1dae733a32b9e2b7f90295d032467c28d316dfbf23fa443e00001800ffffffffdd493250010000003700240267026000"}
+{"t":"2026-11-21T06:42:43.00674Z","tag":"SBF","msg":"PVTGeodetic","bin":"24403010a76f6000082157208d09010016ebd0475fadce3f28f568bcf51afc3f86535be1ccff39c0c605dbc1823c9fb92b889b3a79fc933af90295d032467c28d316dfbf23fa443e00001800ffffffffdd493250010000003a00240267026000"}
+{"t":"2026-11-21T06:42:43.015219Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:43.03247Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:43.033072Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:43.033258Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:43.033817Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:43.034005Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:43.0363Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:43.036481Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:43.037691Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:43.037766Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:43.038133Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:43.038133Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:43.038316Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:43.038316Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:43.038628Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:43.038628Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:43.039296Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:43.039296Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:43.040038Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:43.040038Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:43.040217Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","tp,after,tai,leap,survey,off"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:44.004352Z","tag":"SBF","msg":"xPPSOffset","bin":"24408de317171400f02457208d090001df9408bf"}
+{"t":"2026-11-21T06:42:44.004599Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:44.006435Z","tag":"SBF","msg":"PVTCartesian","bin":"24405adfa66f6000f02457208d090100edfc7ac4797731c168896fd8973b5741cb024d08acf33641c605dbc179b5db393522b53bbab72fbbf90295d0bc86715dac13dfbfcb0e453e00001800ffffffffdd493250010000003700540297026000"}
+{"t":"2026-11-21T06:42:44.006547Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440863da76f6000f02457208d09010089c964475fadce3fb99c6fbcf51afc3f0a5f0de2abff39c0c605dbc165017ebb2ed1bbbacd9b953bf90295d0bc86715dac13dfbfcb0e453e00001800ffffffffdd493250010000003a00540297026000"}
+{"t":"2026-11-21T06:42:44.01505Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:44.041827Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:44.042357Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:44.042637Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:44.043302Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:44.043485Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:44.046327Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:44.04651Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:44.047608Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:44.047772Z","ascii":"exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n","out":true}
+{"t":"2026-11-21T06:42:44.04869Z","tag":"SBF","msg":"GPSUtc","bin":"2440996c0617280050c84e208d09080000008027000000000000103e00f000008e12890712072000"}
+{"t":"2026-11-21T06:42:44.048944Z","tag":"SBF","msg":"GALUtc","bin":"24409cb6bf0f2800800d57208d09630200000000000000000000000000e907008d12890712108002"}
+{"t":"2026-11-21T06:42:44.049138Z","tag":"SBF","msg":"BDSUtc","bin":"2440275a19102000809655208d098d00000000000000000000000000043d0604"}
+{"t":"2026-11-21T06:42:44.049501Z","tag":"SEPTR","msg":"R:","ascii":"$R: exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n  SBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:44.049658Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:44.050272Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:44.050272Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:44.050344Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:44.050344Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:44.05071Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:44.05071Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:44.051671Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:44.051671Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:44.052592Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:44.052592Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:44.052769Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","pos,vel,time"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:45.00425Z","tag":"SBF","msg":"xPPSOffset","bin":"2440fe5017171400d82857208d0900012bb1ce3d"}
+{"t":"2026-11-21T06:42:45.004527Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:45.014745Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:45.035161Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:45.035781Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:45.036026Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:45.036909Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:45.037119Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:45.039585Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:45.039776Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:45.041345Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:45.041488Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:45.042286Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:45.042286Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:45.042477Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:45.042477Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:45.042714Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:45.042714Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:45.043481Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:45.043481Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:45.044149Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:45.044149Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:45.044319Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","tp,after,tai"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:46.004375Z","tag":"SBF","msg":"xPPSOffset","bin":"244047e517171400c02c57208d09000199a11fbf"}
+{"t":"2026-11-21T06:42:46.004597Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:46.006407Z","tag":"SBF","msg":"PVTGeodetic","bin":"244094e9a76f6000c02c57208d090100265f11475fadce3f97dd88bcf51afc3f5395e62a44003ac0c605dbc1e0370bbb649198b9b64ec1b7f90295d02cce21765e0ddfbf2e04453e00001800ffffffffdd4932500100000037002c026a026000"}
+{"t":"2026-11-21T06:42:46.015081Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:46.040987Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:46.04183Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:46.042Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:46.042827Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:46.043038Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:46.04569Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:46.045818Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:46.046886Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:46.047048Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:46.047685Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:46.047685Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:46.047739Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:46.047739Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:46.04819Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:46.04819Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:46.049035Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:46.049035Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:46.049833Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:46.049833Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:46.050046Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","pos,vel,ecef"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:47.004507Z","tag":"SBF","msg":"xPPSOffset","bin":"2440560317171400a83057208d090001d9f400bd"}
+{"t":"2026-11-21T06:42:47.004695Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:47.006491Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440d673a76f6000a83057208d09010067653a485fadce3f3b0393bcf51afc3ff10c39892b003ac0c605dbc17ef7493be4ffecba371923baf90295d0eb9c1c20370adfbf49ff443e00001800ffffffffdd4932500100000038004b0299026000"}
+{"t":"2026-11-21T06:42:47.01492Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:47.031956Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:47.032611Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:47.032857Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:47.033992Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:47.034131Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:47.036725Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:47.036903Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:47.038247Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:47.038316Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:47.038858Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:47.038858Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:47.039064Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:47.039064Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:47.03928Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:47.03928Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:47.040007Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:47.040007Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:47.040656Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:47.040656Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:47.040814Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","time,tai,leap"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:48.004367Z","tag":"SBF","msg":"xPPSOffset","bin":"2440524917171400903457208d09000173bf2fbf"}
+{"t":"2026-11-21T06:42:48.004626Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:48.006303Z","tag":"SBF","msg":"PVTCartesian","bin":"24402cf7a66f6000903457208d090100a74ca9c4797731c106214ed8973b57411d34fd07acf33641c605dbc13fc2f83ac87b36b9d66e58bbf90295d0a3c3d5841007dfbfcd01453e00001800ffffffffdd493250010000003700250266026000"}
+{"t":"2026-11-21T06:42:48.00665Z","tag":"SBF","msg":"PVTGeodetic","bin":"2440b38ea76f6000903457208d0901001dc324475fadce3f877d7bbcf51afc3ff749511836003ac0c605dbc1d5214abbb443f0bac42aa9baf90295d0a3c3d5841007dfbfcd01453e00001800ffffffffdd493250010000003a00250266026000"}
+{"t":"2026-11-21T06:42:48.014954Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:48.046667Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:48.047173Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:48.047317Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:48.047833Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:48.047946Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:48.050486Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:48.050642Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:48.051899Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:48.052043Z","ascii":"exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n","out":true}
+{"t":"2026-11-21T06:42:48.053087Z","tag":"SBF","msg":"GPSUtc","bin":"2440efef0617280050c84e208d09080000008027000000000000103e00f000008e12890712000000"}
+{"t":"2026-11-21T06:42:48.053224Z","tag":"SBF","msg":"GALUtc","bin":"2440676abf0f2800800d57208d09630200000000000000000000000000e907008d12890712202020"}
+{"t":"2026-11-21T06:42:48.053411Z","tag":"SBF","msg":"BDSUtc","bin":"2440275a19102000809655208d098d00000000000000000000000000043d0604"}
+{"t":"2026-11-21T06:42:48.053752Z","tag":"SEPTR","msg":"R:","ascii":"$R: exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n  SBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:48.05384Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:48.054344Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:48.054344Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:48.054475Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:48.054475Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:48.054899Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:48.054899Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:48.055683Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:48.055683Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:48.056573Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:48.056573Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:48.056766Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}
+{"type":"env","args":["-d","/dev/ttySEP0","-s","115200","--vendor","septentrio","--test-log","septentrio/g5-pvt-out.jsonl","--pvt-out","pos,vel,time,tp,leap,survey"],"version":"satpulse version 0.4-pre.20261119.2a50cef1.dirty, build date 2026-11-21 06:42:02+00:00","hostname":"abondance"}
+{"t":"2026-11-21T06:42:49.004459Z","tag":"SBF","msg":"xPPSOffset","bin":"24404e6a17171400783857208d090001b002b53d"}
+{"t":"2026-11-21T06:42:49.004693Z","ascii":"SSSSSSSSSS\r\n","out":true}
+{"t":"2026-11-21T06:42:49.006499Z","tag":"SBF","msg":"PVTCartesian","bin":"244057b0a66f6000783857208d09010029b019c5797731c10c9976d8973b574106bda607acf33641c605dbc112dc353a7bedc7b94caca4baf90295d01601cfdfe903dfbfc4f9443e00001800ffffffffdd4932500100000038003c02aa026000"}
+{"t":"2026-11-21T06:42:49.006661Z","tag":"SBF","msg":"PVTGeodetic","bin":"24406a63a76f6000783857208d090100331d7d465fadce3fde1e89bcf51afc3f519f1ae99bff39c0c605dbc1965190bad14320ba6f3f4ebaf90295d01601cfdfe903dfbfc4f9443e00001800ffffffffdd493250010000003b003c02aa026000"}
+{"t":"2026-11-21T06:42:49.014908Z","ascii":"getReceiverCapabilities\r\n","out":true}
+{"t":"2026-11-21T06:42:49.032357Z","ascii":"USB1\u003e"}
+{"t":"2026-11-21T06:42:49.033081Z","tag":"SEPTR","msg":"R:","ascii":"$R: getReceiverCapabilities\r\n  ReceiverCapabilities, Main, GPSL1CA+GPSL2PY+GPSL2C+GPSL5+GPSL1C+GLOL1CA+GLOL2P+GLOL2CA+GLOL3+GALE1BC+GALE6BC+GALE5a+GALE5b+GEOL1+GEOL5+BDSB1I+BDSB2I+BDSB3I+BDSB1C+BDSB2a+BDSB2b+QZSL1CA+QZSL2C+QZSL5+QZSL6+QZSL1C+QZSL1S+QZSL1CB+NAVICL5, DSK1+COM1+COM2+USB1+USB2, SBAS+DGNSSRover+RTKRover+RTKBase+RTCMv3x+xPPSOutput+TimedEvent+InternalLogging+APME+RAIM+MovingBase+MeasAv+IM+DSK1+GalOSNMA+UnrestrictedMotion+PPPGalileoHAS-SIS, 50, 50\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:49.033277Z","ascii":"getSBFOutput, Stream1\r\n","out":true}
+{"t":"2026-11-21T06:42:49.033898Z","tag":"SEPTR","msg":"R:","ascii":"$R: getSBFOutput, Stream1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:49.034035Z","ascii":"setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n","out":true}
+{"t":"2026-11-21T06:42:49.036212Z","tag":"SEPTR","msg":"R:","ascii":"$R: setSBFOutput, Stream1, USB1, BDSUtc+GALUtc+GPSUtc+PVTCartesian+PVTGeodetic+xPPSOffset, sec1\r\n  SBFOutput, Stream1, USB1, GPSUtc+GALUtc+PVTCartesian+PVTGeodetic+xPPSOffset+BDSUtc, sec1\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:49.036295Z","ascii":"setDataInOut, USB1, , +SBF\r\n","out":true}
+{"t":"2026-11-21T06:42:49.037244Z","tag":"SEPTR","msg":"R:","ascii":"$R: setDataInOut, USB1, , +SBF\r\n  DataInOut, USB1, auto, SBF, (on)\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:49.037395Z","ascii":"exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n","out":true}
+{"t":"2026-11-21T06:42:49.038596Z","tag":"SBF","msg":"GPSUtc","bin":"2440efef0617280050c84e208d09080000008027000000000000103e00f000008e12890712000000"}
+{"t":"2026-11-21T06:42:49.038713Z","tag":"SBF","msg":"GALUtc","bin":"244025cebf0f2800800d57208d09630200000000000000000000000000e907008d12890712000000"}
+{"t":"2026-11-21T06:42:49.038902Z","tag":"SBF","msg":"BDSUtc","bin":"2440275a19102000809655208d098d00000000000000000000000000043d0604"}
+{"t":"2026-11-21T06:42:49.039157Z","tag":"SEPTR","msg":"R:","ascii":"$R: exeSBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\n  SBFOnce, USB1, GPSUtc+GALUtc+BDSUtc\r\nUSB1\u003e"}
+{"t":"2026-11-21T06:42:49.039301Z","ascii":"lstInternalFile, Identification\r\n","out":true}
+{"t":"2026-11-21T06:42:49.039724Z","tag":"SEPTR","msg":"R;","ascii":"$R; lstInternalFile, Identification\r\n----\u003e"}
+{"t":"2026-11-21T06:42:49.039724Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:49.039909Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 1 / 5\r\n\u003c?xml version=\"1.0\" encoding=\"ISO-8859-1\" ?\u003e\r\n\u003crxproduct xmlns=\"http://septentrio.com/ns/ProductDescription/2.9\"\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:49.039909Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:49.040181Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 2 / 5\r\n    \u003chwplatform product=\"mosaic-G5 P3\"\r\n                name=\"GRB0060\" serialnr=\"0100019577\"\r\n                rxfullid=\"SN25510100019577\"\u003e\r\n        \u003cmainboard type=\"GRB00601000AA0401\"/\u003e\r\n    \u003c/hwplatform\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:49.040181Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:49.040797Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 3 / 5\r\n    \u003cfirmware version=\"1.1.0\" date=\"260507\" rev=\"ge4d576\"\u003e\r\n        \u003cbootloader version=\"2025.04.1-g2b4d387\" date=\"250730\"/\u003e\r\n        \u003cos version=\"plp-2025.12.2-g83d1ca6\" date=\"260507\" type=\"ssn-plp\" model=\"KORE\" upgradebaud=\"scs\" sufformat=\"signed\"\u003e \r\n        \u003c/os\u003e \r\n        \u003cgnssfw version=\"2026.01.2-g83d1ca6770\" date=\"260507\" type=\"std\"\u003e\r\n        \u003c/gnssfw\u003e\r\n        \u003cfailsafe version=\"2025.04.6-g9fe4076\" date=\"250729\" type=\"ssn-plp\"/\u003e\r\n    \u003c/firmware\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:49.040797Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:49.041697Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 4 / 5\r\n    \u003cfiles\u003e\r\n        \u003cpermfile permid=\"20251217b-100019577-1\"/\u003e\r\n        \u003cantinfo  version=\"26.1.0\" format=\"antex 1.4\" ngs2bin=\"2.1\" antcount=\"1118\" antwnc=\"2412\" date=\"260401\"/\u003e\r\n    \u003c/files\u003e\r\n\r\n----\u003e"}
+{"t":"2026-11-21T06:42:49.041697Z","ascii":"\r\n"}
+{"t":"2026-11-21T06:42:49.041953Z","tag":"SEPTR","msg":"--","ascii":"$-- BLOCK 5 / 5\r\n\u003c/rxproduct\u003e\r\n\r\nUSB1\u003e"}
+{"type":"receiver","vendor":"Septentrio","hardware":"mosaic-G5 P3","firmware":"1.1.0","gnss":["GPS","GAL","BDS","GLO","QZSS","NAVIC","SBAS"]}
+{"type":"config","baudRate":0,"port":"USB1"}

@@ -3,6 +3,7 @@
 _Not yet released_
 
 - The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
+- Septentrio receivers now support high-level configuration: probing and `--show-receiver`/`--show-config`, GNSS and signal selection, time pulse, minimum elevation, antenna cable delay, OSNMA navigation-message authentication, survey, static and fixed-position modes, NMEA/binary/raw/RTCM output control, and save/reload/reset/factory-reset, through both `satpulsetool gps` and `satpulsed` auto-configuration. (#341)
 - `satpulsed` can send NTP samples with PHC drivers that do not support `PTP_SYS_OFFSET_EXTENDED` (such as stmmac before Linux 7.4). (#547)
 - The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
 - FreeBSD support is improved. NTP SHM, kernel PPS and serial enumeration now support FreeBSD. There is also an rc.d script. (#426)

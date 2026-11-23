@@ -261,18 +261,19 @@ func CreatePacketProcessors(vendors []Vendor) map[gpsprot.Tag]gpsprot.PacketProc
 	nmeaPP := nmea.NewPacketProcessor(mgr)
 	nmeaPP.AddExtHandler(quectel.NewHandler())
 	procs := map[gpsprot.Tag]gpsprot.PacketProcessor{
-		ubx.Tag:            ubx.NewPacketProcessor(mgr),
-		casic.Tag:          casic.NewPacketProcessor(mgr),
-		as.Tag:             as.NewPacketProcessor(mgr),
-		sdbp.Tag:           sdbp.NewPacketProcessor(mgr),
-		nmea.Tag:           nmeaPP,
-		rtcm.Tag:           rtcm.NewPacketProcessor(),
-		unc.TagBinary:      unc.NewBinPacketProcessor(mgr),
-		unc.TagAscii:       unc.NewAsciiPacketProcessor(mgr),
-		nov.TagBinary:      nov.NewBinPacketProcessor(mgr),
-		nov.TagAscii:       nov.NewAsciiPacketProcessor(mgr),
-		nov.TagAbbrevAscii: nov.NewAbbrevAsciiPacketProcessor(),
-		septentrio.Tag:     septentrio.NewPacketProcessor(mgr),
+		ubx.Tag:             ubx.NewPacketProcessor(mgr),
+		casic.Tag:           casic.NewPacketProcessor(mgr),
+		as.Tag:              as.NewPacketProcessor(mgr),
+		sdbp.Tag:            sdbp.NewPacketProcessor(mgr),
+		nmea.Tag:            nmeaPP,
+		rtcm.Tag:            rtcm.NewPacketProcessor(),
+		unc.TagBinary:       unc.NewBinPacketProcessor(mgr),
+		unc.TagAscii:        unc.NewAsciiPacketProcessor(mgr),
+		nov.TagBinary:       nov.NewBinPacketProcessor(mgr),
+		nov.TagAscii:        nov.NewAsciiPacketProcessor(mgr),
+		nov.TagAbbrevAscii:  nov.NewAbbrevAsciiPacketProcessor(),
+		septentrio.Tag:      septentrio.NewPacketProcessor(mgr),
+		septentrio.TagReply: septentrio.NewReplyProcessor(),
 	}
 	if len(vendors) == 1 {
 		SetVendor(procs, vendors[0])
@@ -352,6 +353,7 @@ var configProtocols = []struct {
 	{VendorUblox, false, func() gpsprot.ConfigProtocol { return ubx.NewConfigProtocol() }},
 	{VendorZhongke, true, func() gpsprot.ConfigProtocol { return casic.NewConfigProtocol() }},
 	{VendorUnicore, false, func() gpsprot.ConfigProtocol { return unc.NewConfigProtocol() }},
+	{VendorSeptentrio, true, func() gpsprot.ConfigProtocol { return septentrio.NewConfigProtocol() }},
 }
 
 // CreateConfigProtocols returns the config protocols to probe with, in
