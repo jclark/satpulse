@@ -198,7 +198,7 @@ contributions. Five vendor-keyed things have to move, not one:
 - `allVendorPacketFormatsMap`
 - the processor map in `CreatePacketProcessors`, including the Quectel
   NMEA extension handler
-- `CreateConfigProtocol`
+- the `configProtocols` table, including each row's `experimental` flag
 - `FindNMEASVNumbering`, which imports `as`, `sino` and `ubx` for NMEA
   satellite numbering
 - `novVariantFor`

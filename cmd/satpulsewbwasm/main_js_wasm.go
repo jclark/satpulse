@@ -43,7 +43,9 @@ func main() {
 		if err != nil {
 			return err.Error()
 		}
-		s.vendors = nil
+		// Without a vendor, probe every config protocol, experimental
+		// ones included, so those receivers work without a URL parameter.
+		s.vendors = gpsreg.AllVendors()
 		if v != 0 {
 			s.vendors = []gpsreg.Vendor{v}
 		}
