@@ -63,6 +63,9 @@ type captureRecord struct {
 // readCapture returns the decoded binary packets from a capture file.
 func readCapture(t *testing.T, name string) []captureRecord {
 	t.Helper()
+	if !hasFS {
+		t.Skip("no file system to read the capture from")
+	}
 	f, err := os.Open("../../testdata/packets/septentrio/mosaic-G5/" + name)
 	if err != nil {
 		t.Fatal(err)

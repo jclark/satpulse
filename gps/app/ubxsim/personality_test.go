@@ -85,6 +85,9 @@ func testMsm7(t *testing.T) string {
 }
 
 func TestLoadPersonality(t *testing.T) {
+	if !hasFS {
+		t.Skip("no file system to write a personality file to")
+	}
 	dir := t.TempDir()
 	personalityPath := filepath.Join(dir, "personality.ubx")
 	replayPath := filepath.Join(dir, "replay.jsonl")
@@ -159,6 +162,9 @@ func TestLoadPersonality(t *testing.T) {
 // TestLoadPersonalityF9P loads the checked-in ZED-F9P personality file
 // (HPG 1.51, captured with the capture kit).
 func TestLoadPersonalityF9P(t *testing.T) {
+	if !hasFS {
+		t.Skip("no file system to load the personality from")
+	}
 	p, err := LoadPersonality("testdata/f9p/f9p-personality.ubx")
 	if err != nil {
 		t.Fatalf("LoadPersonality: %v", err)

@@ -1,3 +1,5 @@
+//go:build !baremetal
+
 package gpsio
 
 import (
