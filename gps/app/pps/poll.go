@@ -6,6 +6,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/osthread"
 	"github.com/jclark/satpulse/time/lib/median"
 )
 
@@ -112,7 +113,7 @@ const widthHistory = 31
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if restore, err := tightenTimerSlack(); err != nil {
+	if restore, err := osthread.TightenTimerSlack(); err != nil {
 		lg.Debug("serial PPS could not tighten timer slack", "err", err)
 	} else {
 		defer restore()
@@ -640,8 +641,8 @@ func (p *poller) wait(t time.Time, precise bool) (bool, error) {
 // scheduled time was already past, or, for a wait that is not precise, nearer
 // than the runtime timer can sleep to. A precise wait always ends at the
 // deadline: the runtime timer takes the whole milliseconds, so the wait stays
-// cancellable, and sleepRemainder takes the rest, which is all of it when the
-// wait is shorter than the timer's resolution.
+// cancellable, and osthread.SleepUntil takes the rest, which is all of it
+// when the wait is shorter than the timer's resolution.
 func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	slept := false
 	if d := sleepDuration(time.Until(t)); d > 0 {
@@ -656,7 +657,7 @@ func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	} else if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if precise && sleepRemainder(t) {
+	if precise && osthread.SleepUntil(t) {
 		slept = true
 	}
 	return slept, nil
