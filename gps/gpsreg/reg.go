@@ -355,6 +355,7 @@ var configProtocols = []struct {
 	{VendorAllystar, true, func() gpsprot.ConfigProtocol { return as.NewConfigProtocol() }},
 	{VendorUnicore, false, func() gpsprot.ConfigProtocol { return unc.NewConfigProtocol() }},
 	{VendorSeptentrio, true, func() gpsprot.ConfigProtocol { return septentrio.NewConfigProtocol() }},
+	{VendorQuectel, true, func() gpsprot.ConfigProtocol { return quectel.NewConfigProtocol() }},
 }
 
 // CreateConfigProtocols returns the config protocols to probe with, in
