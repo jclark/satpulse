@@ -7,6 +7,19 @@ import (
 	"github.com/jclark/satpulse/gps/gpsreg"
 )
 
+// NovAtel abbreviated ASCII recv helper.
+
+type recvNOVAAEvent struct{ content string }
+
+func recvNOVAA(content string) recvNOVAAEvent {
+	return recvNOVAAEvent{content: content}
+}
+
+func (e recvNOVAAEvent) run(t *testing.T, tc *testContext) {
+	t.Helper()
+	tc.last = tc.cor.CorrelatePacket(gpsreg.TagNovAtelAbbrevAscii, e.content)
+}
+
 // Unicore ASCII recv helper.
 
 type recvUNCAEvent struct{ content string }
@@ -272,11 +285,11 @@ func TestCorrelatorUnicore(t *testing.T) {
 				sendEvent{},
 				recvNMEA("command,LOGLIST,response: OK"),
 				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
-				recvEmptyTag("<LOGLIST COM3 17548 95.000000 FINE 2413 3196.000000 42155794 830 18\r\n"),
+				recvNOVAA("<LOGLIST COM3 17548 95.000000 FINE 2413 3196.000000 42155794 830 18\r\n"),
 				expect{relevance: LevelMultiResponse},
-				recvEmptyTag("<\t1\r\n"),
+				recvNOVAA("<\t1\r\n"),
 				expect{relevance: LevelMultiResponse},
-				recvEmptyTag("<\tRECTIMEB COM3 1\r\n"),
+				recvNOVAA("<\tRECTIMEB COM3 1\r\n"),
 				expect{relevance: LevelMultiResponse},
 				checkDone{canAcceptMore: true},
 				checkMissing{},
@@ -290,6 +303,9 @@ func TestCorrelatorUnicore(t *testing.T) {
 				recvNMEA("command,LOGLIST,response: OK"),
 				expect{ack: AckAck},
 				recvEmptyTag("some random line\r\n"),
+				expect{relevance: LevelNotResponse},
+				// untagged '<' fragments no longer count as LOGLIST data
+				recvEmptyTag("<garbled fragment"),
 				expect{relevance: LevelNotResponse},
 			},
 		},

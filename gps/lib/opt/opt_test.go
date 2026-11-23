@@ -2,7 +2,9 @@ package opt
 
 import (
 	"encoding/json"
+	"math"
 	"reflect"
+	"strconv"
 	"testing"
 )
 
@@ -248,7 +250,7 @@ func TestTextRoundTrip(t *testing.T) {
 		{"int zero", int(0)},
 		{"int positive", int(42)},
 		{"int negative", int(-123)},
-		{"int max", int(9223372036854775807)},
+		{"int max", int(math.MaxInt)},
 		{"int8", int8(-128)},
 		{"int16", int16(32767)},
 		{"int32", int32(-2147483648)},
@@ -396,4 +398,35 @@ func TestTextRoundTrip(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestParseTextIntWidth checks that ParseText into a platform-width int/uint
+// does not silently truncate a value that exceeds the platform's int range.
+// On a 32-bit build (GOARCH=386/arm) int/uint are 32 bits, so a value past
+// 2^31 / 2^32 must be rejected, not wrapped.
+func TestParseTextIntWidth(t *testing.T) {
+	t.Run("int", func(t *testing.T) {
+		const s = "2147483648" // 2^31, one past int32 max
+		var n int
+		err := ParseText(s, &n)
+		if strconv.IntSize == 64 {
+			if err != nil || int64(n) != 2147483648 {
+				t.Fatalf("ParseText(%q) = (%d, %v), want (2147483648, nil)", s, n, err)
+			}
+		} else if err == nil {
+			t.Fatalf("ParseText(%q) into %d-bit int silently produced %d, want range error", s, strconv.IntSize, n)
+		}
+	})
+	t.Run("uint", func(t *testing.T) {
+		const s = "4294967296" // 2^32, one past uint32 max
+		var n uint
+		err := ParseText(s, &n)
+		if strconv.IntSize == 64 {
+			if err != nil || uint64(n) != 4294967296 {
+				t.Fatalf("ParseText(%q) = (%d, %v), want (4294967296, nil)", s, n, err)
+			}
+		} else if err == nil {
+			t.Fatalf("ParseText(%q) into %d-bit uint silently produced %d, want range error", s, strconv.IntSize, n)
+		}
+	})
 }

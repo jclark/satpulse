@@ -1,0 +1,4 @@
+vendor = "allystar"
+model = "TAU1201"
+firmware = "3.018.aab95e7"
+default-baud = 115200

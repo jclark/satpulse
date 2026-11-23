@@ -16,7 +16,6 @@ and with a restartable failure code.
 
 import common
 
-INPUT = "pty"
 SELF_SHUTDOWN = True
 PACKET_LOG = "gps/testdata/packets/u-blox/ZED-F9P/daemon.jsonl"
 FACTOR = 10

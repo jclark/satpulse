@@ -32,7 +32,7 @@ var baudRates = []struct {
 	{921600, 921600},
 }
 
-func (t *Term) DevKind() DevKind {
+func (t *unixTerm) DevKind() DevKind {
 	before, after, ok := strings.Cut(t.path, ".")
 	if ok && (before == "/dev/cu" || before == "/dev/tty") {
 		if strings.HasPrefix(after, "usbmodem") {
@@ -42,4 +42,10 @@ func (t *Term) DevKind() DevKind {
 		}
 	}
 	return DevUnknown
+}
+
+// KernelPPSPins returns the pins kernel PPS can watch, which are none on
+// macOS.
+func KernelPPSPins() []ModemControlPin {
+	return nil
 }

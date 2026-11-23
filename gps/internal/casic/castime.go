@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/ptime"
 )
 
@@ -16,8 +16,8 @@ func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 	if m.DateValid < casbin.NavDateFromSatellite || (m.Valid&casbin.NavTimeUTCTOWValid) == 0 {
 		return &t
 	}
-	// MsErr is residual error in ms after rounding to whole milliseconds
-	nanos := int32(math.Round(float64(m.MsErr) * 1e6))
+	// Ms is the rounded whole-millisecond part; MsErr is the residual in ms.
+	nanos := int32(math.Round((float64(m.Ms) + float64(m.MsErr)) * 1e6))
 	t.UTCTime.Set(ptime.UTC(m.Year, m.Month, m.Day, m.Hour, m.Min, m.Sec, nanos))
 	// TAcc is variance scaled by 1/c², so actual variance = TAcc * c²
 	// Convert to standard deviation: sqrt(TAcc) * c
@@ -30,13 +30,13 @@ func timeNavTimeUTC(m *casbin.NavTimeUTC) *gpsprot.TimeMsg {
 }
 
 // timeNavSol converts NavSol to TimeMsg.
-// Always returns a TimeMsg, but with zero TAITime when the solution is invalid.
+// Always returns a TimeMsg, but with no time when the solution is invalid.
 func timeNavSol(m *casbin.NavSol) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{NativeMsgID: "NAV-SOL"}
 	if m.PosValid < casbin.NavPos3D {
 		return &t
 	}
-	t.GNSS, t.TAITime = gnssTime(m.TimeSrc, m.Week, m.TOW)
+	setGNSSTime(&t, m.TimeSrc, m.Week, m.TOW)
 	return &t
 }
 
@@ -44,7 +44,7 @@ func timeNavSol(m *casbin.NavSol) *gpsprot.TimeMsg {
 // The TimTP message gives the time of the next pulse, emitted before the pulse.
 func timeTimTP(m *casbin.TimTP) *gpsprot.TimeMsg {
 	t := gpsprot.TimeMsg{Ref: gpsprot.PrePulse, NativeMsgID: "TIM-TP"}
-	t.GNSS, t.TAITime = gnssTime(m.RefTimeGNSS(), m.Wn, m.TOW)
+	setGNSSTime(&t, m.RefTimeGNSS(), m.Wn, m.TOW)
 	return &t
 }
 
@@ -97,19 +97,22 @@ func timeNav2Sol(m *casbin.Nav2Sol, gnss gpsprot.GNSS) *gpsprot.TimeMsg {
 	return &t
 }
 
-// gnssTime converts CASIC GNSS ID, week number, and TOW to gpsprot.GNSS and TAI time.
-// Returns zero GNSS and Time for unsupported GNSS IDs.
-func gnssTime(id casbin.GNSSID, week uint16, towSec float64) (gpsprot.GNSS, ptime.Time) {
+// setGNSSTime sets the GNSS and time of t from a CASIC GNSS ID, week number,
+// and TOW. It sets nothing for unsupported GNSS IDs.
+// The V5 specification does not say what time scale the GLONASS week and TOW
+// use; the ATGM332D-5N71 gives them aligned with UTC, so, as for the V6 TIM2
+// messages, they give UTCTime rather than TAITime.
+func setGNSSTime(t *gpsprot.TimeMsg, id casbin.GNSSID, week uint16, towSec float64) {
 	tow := ptime.Seconds(towSec)
 	switch id {
 	case casbin.GPS:
-		return gpsprot.GPS, ptime.GPS(int16(week), tow)
+		t.GNSS, t.TAITime = gpsprot.GPS, ptime.GPS(int16(week), tow)
 	case casbin.BDS:
-		return gpsprot.BDS, ptime.BeiDou(int16(week), tow)
+		t.GNSS, t.TAITime = gpsprot.BDS, ptime.BeiDou(int16(week), tow)
 	case casbin.GLN:
-		return gpsprot.GLO, ptime.GLONASSWeek(int16(week), tow)
+		t.GNSS = gpsprot.GLO
+		t.UTCTime.Set(ptime.GLONASSWeekUTC(week, tow))
 	}
-	return 0, 0
 }
 
 // timeNav2TimeUTC converts Nav2TimeUTC to TimeMsg.
@@ -189,6 +192,62 @@ func leapTim2TimeGNSS(m *casbin.Tim2TimeGNSS, gnss gpsprot.GNSS, taiMinusGNSS in
 		LeapSecond: ptime.LeapSecondOnDate(date, utcOffBefore, utcOffAfter),
 		GNSS:       gnss,
 	}
+}
+
+// leapTim2Ls extracts a LeapSecondMsg from Tim2Ls.
+// Returns nil when the message does not contain usable leap second data.
+func leapTim2Ls(m *casbin.Tim2Ls, now ptime.Time) *gpsprot.LeapSecondMsg {
+	if m.RaimType == casbin.Tim2RaimNoLsInfo && m.Dtls != m.Dtlsf {
+		return nil
+	}
+	if m.RaimType != casbin.Tim2RaimNoLsInfo && m.RaimType != casbin.Tim2RaimLsNormal {
+		return nil
+	}
+	g := ptime.GNSSLeapSecond{
+		WNLSF:    m.Wnlsf,
+		DN:       m.Dn,
+		DeltaLS:  m.Dtls,
+		DeltaLSF: m.Dtlsf,
+	}
+	var gnss gpsprot.GNSS
+	var ls ptime.LeapSecond
+	var err error
+	switch m.GNSSID {
+	case casbin.GPS:
+		gnss = gpsprot.GPS
+		ls, err = ptime.GPSLeapSecond(g, now)
+	case casbin.BDS:
+		gnss = gpsprot.BDS
+		ls, err = ptime.BeiDouLeapSecond(g, now)
+	case casbin.GAL:
+		gnss = gpsprot.GAL
+		ls, err = ptime.GalileoLeapSecond(g, now)
+	default:
+		return nil
+	}
+	if err != nil {
+		return nil
+	}
+	return &gpsprot.LeapSecondMsg{LeapSecond: ls, GNSS: gnss}
+}
+
+// surveyTim2TimePos converts TIM2-TIMEPOS to a SurveyMsg. The protocol
+// reports the survey running time and current accuracy but no
+// observation count; position validity flag 15 means the timing
+// position is fixed (survey complete or position set).
+func surveyTim2TimePos(m *casbin.Tim2TimePos) *gpsprot.SurveyMsg {
+	sv := &gpsprot.SurveyMsg{
+		Position: gpsprot.Point3D{
+			gpsprot.Meters(m.XTim),
+			gpsprot.Meters(m.YTim),
+			gpsprot.Meters(m.ZTim),
+		},
+		Accuracy:   gpsprot.Meters(float64(m.SurPacc)),
+		ObsTime:    gpsprot.Duration(time.Duration(m.SurTimer) * time.Second),
+		Valid:      m.FixFlag == casbin.PVTTimingFixed,
+		InProgress: m.FixFlag != casbin.PVTTimingFixed && m.SurTimer > 0,
+	}
+	return sv
 }
 
 // gnssIDToGNSS maps CASIC GNSSID to gpsprot.GNSS.

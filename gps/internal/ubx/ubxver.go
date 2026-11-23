@@ -138,18 +138,32 @@ func (v *Version) rtcmSupport() rtcmSupport {
 	return rtcmSupport{}
 }
 
+// ubxVariable are the capabilities that depend on the u-blox model or
+// protocol version. The rest of ConfigSupportFull is supported by every
+// u-blox receiver, so configSupport starts from full minus these and
+// adds back the ones a given version has - a new universally supported
+// flag then applies to u-blox without editing this code.
+const ubxVariable = gpsprot.ConfigSupportSignal |
+	gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc |
+	gpsprot.ConfigSupportSurveyDur |
+	gpsprot.ConfigSupportSurveyMsg | gpsprot.ConfigSupportFixedPos |
+	gpsprot.ConfigSupportFixedPosAcc | gpsprot.ConfigSupportRaw |
+	gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMMSM7 |
+	gpsprot.ConfigSupportRTCMBaseID | gpsprot.ConfigSupportRTCMQZSS
+
 func (v *Version) configSupport() gpsprot.ConfigSupportFlags {
 	if v == nil {
 		return 0
 	}
-	flags := gpsprot.ConfigSupportSpeed
+	flags := gpsprot.ConfigSupportFull &^ ubxVariable
 	if v.bandsConfigSupport() {
-		flags |= gpsprot.ConfigSupportBand
+		flags |= gpsprot.ConfigSupportSignal
 	}
 	tmode := v.tmodeLevel()
 	if tmode > 0 {
 		flags |= gpsprot.ConfigSupportSurvey |
 			gpsprot.ConfigSupportSurveyAcc |
+			gpsprot.ConfigSupportSurveyDur |
 			gpsprot.ConfigSupportFixedPos |
 			gpsprot.ConfigSupportFixedPosAcc
 		if v.protVerAtLeast(15, 0) && (tmode == 2 || tmode == 3) {

@@ -1,0 +1,64 @@
+{
+  "limitations": {
+    "mode.fixedPos": {"storedAs": "ECEF"},
+    "mode.fixedPosAcc": {"quantum": 0.001},
+    "mode.fixedPosECEF[0]": {"quantum": 0.01},
+    "mode.fixedPosECEF[1]": {"quantum": 0.01},
+    "mode.fixedPosECEF[2]": {"quantum": 0.01},
+    "mode.fixedPosLLH[0]": {"quantum": 1e-07},
+    "mode.fixedPosLLH[1]": {"quantum": 1e-07},
+    "mode.height": {"quantum": 0.01},
+    "rtcmBaseID": {"unsupported": true},
+    "saveGranularity": {
+      "anomalous": ["timeGNSS"],
+      "groups": [["antennaCableDelay", "timePulse.width"], ["messageOutput", "minElevation", "mode"]]
+    },
+    "signals": {
+      "observed": [
+        {
+          "gnss": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"],
+          "result": {"BDS": ["B1I"], "GAL": ["E1"], "GPS": ["L1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]}
+        },
+        {
+          "request": {
+            "BDS": ["B1I"],
+            "GAL": ["E1"],
+            "GLO": ["L1"],
+            "GPS": ["L1"],
+            "QZSS": ["L1", "L1S"],
+            "SBAS": ["L1"]
+          },
+          "result": {"BDS": ["B1I"], "GAL": ["E1"], "GPS": ["L1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]}
+        },
+        {
+          "request": {"BDS": ["B1I"], "GAL": ["E1"], "GLO": ["L1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]},
+          "result": {"BDS": ["B1I"], "GAL": ["E1"], "QZSS": ["L1", "L1S"], "SBAS": ["L1"]}
+        },
+        {
+          "request": {"BDS": ["B1I"], "GAL": ["E1"], "GLO": ["L1"]},
+          "result": {"BDS": ["B1I"], "GAL": ["E1"]}
+        },
+        {
+          "request": {"BDS": ["B1I"], "GLO": ["L1"], "GPS": ["L1"]},
+          "result": {"BDS": ["B1I"], "GPS": ["L1"]}
+        }
+      ],
+      "signalSet": {
+        "BDS": ["B1I"],
+        "GAL": ["E1"],
+        "GLO": ["L1"],
+        "GPS": ["L1"],
+        "QZSS": ["L1", "L1S"],
+        "SBAS": ["L1"]
+      }
+    },
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "TIM 1.10 PROTVER 22.0",
+    "hardware": "LEA-M8T-0",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "SBAS"],
+    "vendor": "u-blox"
+  },
+  "supports": ["fixedPos", "fixedPosAcc", "port", "raw", "speed", "survey", "surveyAcc", "surveyMsg"]
+}

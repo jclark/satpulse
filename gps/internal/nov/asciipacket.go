@@ -4,6 +4,7 @@ package nov
 
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
 
@@ -19,7 +20,7 @@ const TagAscii gpsprot.Tag = "NOVA"
 // 4. Before the CR/LF, the packet ends with '*' followed by exactly 8 lowercase hex digits (32-bit CRC)
 // 5. Contains only printable ASCII characters (0x20-0x7E) before the terminating CR/LF
 // 6. First field in header after message name starts with alphabetic character (port name)
-var AsciiPacketFormat gpsprot.PacketFormat = MakePacketFormat(TagAscii, isAlpha, false, normalizeAsciiName)
+var AsciiPacketFormat gpsprot.PacketFormat = MakePacketFormat(TagAscii, ascii.IsLetter, false, normalizeAsciiName)
 
 // normalizeAsciiName maps a NovAtel ASCII wire name to its canonical suffix-less
 // name (e.g. "BESTPOSA" -> "BESTPOS"), leaving unknown names unchanged.
@@ -100,7 +101,7 @@ func (f asciiPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 		if b == ',' {
 			return asciiStateHadComma
 		}
-		if isPrintableAscii(b) {
+		if ascii.IsPrint(b) {
 			return asciiStateStarted
 		}
 	case asciiStateHadComma:
@@ -112,33 +113,33 @@ func (f asciiPacketFormat) Next(state gpsprot.ScanState, buf []byte, nextScanInd
 		if b == ';' {
 			return asciiStateHadSemi
 		}
-		if isPrintableAscii(b) {
+		if ascii.IsPrint(b) {
 			return state
 		}
 	case asciiStateHadSemi:
 		if b == '*' {
 			return asciiStateHadStar
 		}
-		if isPrintableAscii(b) {
+		if ascii.IsPrint(b) {
 			return state
 		}
 	case asciiStateHadStar:
-		if isHexDigit(b) {
+		if ascii.IsHexDigit(b) {
 			return asciiStateHadChecksum1
 		}
 	case asciiStateHadChecksum1:
-		if isHexDigit(b) {
+		if ascii.IsHexDigit(b) {
 			return asciiStateHadChecksum2
 		}
 	case asciiStateHadChecksum2:
 		if b == '\r' && f.allow2DigitChecksum {
 			return asciiStateHadCR
 		}
-		if isHexDigit(b) {
+		if ascii.IsHexDigit(b) {
 			return asciiStateHadChecksum3
 		}
 	case asciiStateHadChecksum3, asciiStateHadChecksum4, asciiStateHadChecksum5, asciiStateHadChecksum6, asciiStateHadChecksum7:
-		if isHexDigit(b) {
+		if ascii.IsHexDigit(b) {
 			return state + 1
 		}
 	case asciiStateHadChecksum8:
@@ -224,41 +225,8 @@ func (f asciiPacketFormat) RescanOnBadChecksum(_ bool, _ []byte) bool {
 	return false
 }
 
-// isAlpha checks if a byte is an alphabetic character (for NovAtel port names)
-func isAlpha(b byte) bool {
-	return (b >= 'A' && b <= 'Z') || (b >= 'a' && b <= 'z')
-}
-
-func isPrintableAscii(b byte) bool {
-	return b >= 0x20 && b <= 0x7E
-}
-
-func isHexDigit(b byte) bool {
-	switch b {
-	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		return true
-	case 'a', 'b', 'c', 'd', 'e', 'f':
-		return true
-	case 'A', 'B', 'C', 'D', 'E', 'F':
-		return true
-	default:
-		return false
-	}
-}
-
 func hexByte(h []byte, i int) byte {
-	return (hexValue(h[i]) << 4) | hexValue(h[i+1])
-}
-
-func hexValue(b byte) byte {
-	switch b {
-	case '0', '1', '2', '3', '4', '5', '6', '7', '8', '9':
-		return b - '0'
-	case 'a', 'b', 'c', 'd', 'e', 'f':
-		return b - 'a' + 10
-	case 'A', 'B', 'C', 'D', 'E', 'F':
-		return b - 'A' + 10
-	default:
-		return 0
-	}
+	hi, _ := ascii.HexVal(h[i])
+	lo, _ := ascii.HexVal(h[i+1])
+	return hi<<4 | lo
 }

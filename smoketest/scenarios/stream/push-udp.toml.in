@@ -1,0 +1,6 @@
+# UDP push: the daemon forwards packet data to a UDP destination.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[[stream.push]]
+udp.address = "127.0.0.1:${SATPULSE_TEST_REMOTE_UDP_PORT}"

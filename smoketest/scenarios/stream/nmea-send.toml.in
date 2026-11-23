@@ -1,0 +1,15 @@
+# Ntrip NMEA send pull: the fake correction source waits for a post-handshake GGA
+# before streaming RTCM corrections to the daemon, which then re-sends GGA on the
+# nmeaSendInterval so the source records a periodic keepalive.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[stream.pull.ntrip]
+address = "127.0.0.1:${SATPULSE_TEST_REMOTE_CASTER_PORT}"
+mountpoint = "GGA"
+username = "smoke"
+password = "smoketest"
+nmeaSend = true
+# Shortest allowed interval (1 s) so the periodic GGA re-send is observable
+# quickly in the test.
+nmeaSendInterval = 1

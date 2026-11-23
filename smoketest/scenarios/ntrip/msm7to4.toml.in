@@ -1,0 +1,11 @@
+# Ntrip caster mountpoint that converts MSM7 observations to MSM4 before
+# sending. The receiver feed carries RTCM MSM7 (1077/1087/1097/1127).
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[ntrip]
+listen = "127.0.0.1:${SATPULSE_TEST_NTRIP_PORT}"
+
+[[ntrip.mountpoint]]
+name = "RTCM"
+msm7to4 = true

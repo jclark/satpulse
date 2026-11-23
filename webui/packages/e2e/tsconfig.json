@@ -1,0 +1,18 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "module": "commonjs",
+    "moduleResolution": "node",
+    "strict": true,
+    "jsx": "preserve",
+    "jsxFactory": "h",
+    "jsxFragmentFactory": "Fragment",
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": ["node"],
+    "lib": ["es2022", "dom"]
+  },
+  "include": ["harness.ts", "playwright.config.ts", "playwright.benchmark.config.ts", "dashboard", "workbench", "workbench-wasm", "../workbench/test"]
+}

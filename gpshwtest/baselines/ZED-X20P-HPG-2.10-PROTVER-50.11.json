@@ -1,0 +1,60 @@
+{
+  "limitations": {
+    "mode.fixedPosAcc": {"quantum": 0.0001},
+    "mode.fixedPosECEF[0]": {"quantum": 0.0001},
+    "mode.fixedPosECEF[1]": {"quantum": 0.0001},
+    "mode.fixedPosECEF[2]": {"quantum": 0.0001},
+    "mode.fixedPosLLH[0]": {"quantum": 1e-09},
+    "mode.fixedPosLLH[1]": {"quantum": 1e-09},
+    "mode.height": {"quantum": 0.0001},
+    "signals": {
+      "mutuallyExclusiveSignalGroups": [{"gnss": "GPS", "groups": [["L2C"], ["L5"]]}],
+      "observed": [
+        {"error": "refused", "request": {"BDS": ["B1I", "B2a", "B3I"]}},
+        {"request": {"BDS": ["B1C", "B2a", "B3I"]}, "result": {"BDS": ["B1C", "B1I", "B2a", "B3I"]}},
+        {"request": {"BDS": ["B1C"]}, "result": {"BDS": ["B1C", "B1I"]}},
+        {
+          "request": {"BDS": ["B1I"], "GAL": ["E1"], "GLO": ["L1"]},
+          "result": {"GAL": ["E1"], "GLO": ["L1"]}
+        },
+        {
+          "request": {"BDS": ["B1I"], "GLO": ["L1"], "GPS": ["L1", "L2C", "L5"]},
+          "result": {"GLO": ["L1"], "GPS": ["L1", "L2C", "L5"]}
+        },
+        {"request": {"BDS": ["B1I"], "GLO": ["L1"]}, "result": {"GLO": ["L1"]}}
+      ],
+      "requiresGNSS": {"QZSS": ["GPS"], "SBAS": ["BDS", "GAL", "GPS"]},
+      "requiresSignalAnyOf": {"BDS": [["B1C", "B1I"], ["B2a"]], "GAL": [["E1"]], "GLO": [["L1"]], "GPS": [["L1"]]},
+      "signalSet": {
+        "BDS": ["B1C", "B1I", "B2a", "B3I"],
+        "GAL": ["E1", "E5a", "E6"],
+        "GLO": ["L1", "L2"],
+        "GPS": ["L1", "L2C", "L5"],
+        "NAVIC": ["L5"],
+        "QZSS": ["L1", "L1S", "L2C", "L5"],
+        "SBAS": ["L1"]
+      }
+    },
+    "timePulse.width": {"quantum": 1e-06}
+  },
+  "receiver": {
+    "firmware": "HPG 2.10 PROTVER 50.11",
+    "hardware": "ZED-X20P",
+    "supportedGNSS": ["GPS", "GAL", "BDS", "GLO", "QZSS", "NAVIC", "SBAS"],
+    "vendor": "u-blox"
+  },
+  "supports": [
+    "fixedPos",
+    "fixedPosAcc",
+    "port",
+    "raw",
+    "rtcmBaseID",
+    "rtcmMSM4",
+    "rtcmMSM7",
+    "signal",
+    "speed",
+    "survey",
+    "surveyAcc",
+    "surveyMsg"
+  ]
+}

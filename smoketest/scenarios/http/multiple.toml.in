@@ -1,0 +1,14 @@
+# Two HTTP endpoints with independent configuration: the first serves the
+# full default (GUI, metrics, position); the second serves position only.
+# Exercises repeated [[http]] tables being parsed and wired per entry.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[[http]]
+listen = "127.0.0.1:${SATPULSE_TEST_HTTP_PORT}"
+
+[[http]]
+listen = "127.0.0.1:${SATPULSE_TEST_HTTP_PORT2}"
+gui = false
+metrics = false
+position = true

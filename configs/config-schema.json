@@ -55,6 +55,155 @@
         },
         "speed": {
           "type": "integer"
+        },
+        "pps": {
+          "type": "object",
+          "properties": {
+            "pin": {
+              "type": "string",
+              "enum": ["cts", "dcd", "dsr", "ri"]
+            },
+            "invertPolarity": {
+              "type": "boolean",
+              "default": false
+            }
+          },
+          "required": ["pin"]
+        }
+      }
+    },
+    "sample": {
+      "type": "object",
+      "properties": {
+        "serial": {
+          "type": "object",
+          "properties": {
+            "pps": {
+              "type": "object",
+              "properties": {
+                "delayUncertainty": {
+                  "description": "Uncertainty in measured pulse-to-message delay (s)",
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0.005
+                },
+                "maxDelay": {
+                  "description": "Maximum post-pulse message delay (s)",
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0.8
+                },
+                "maxWakeupLatency": {
+                  "description": "Maximum CPU wakeup latency while serial PPS is active (s)",
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1
+                },
+                "method": {
+                  "description": "PPS edge detection method: poll, wait, or kernel; omit for automatic selection",
+                  "type": "string",
+                  "enum": ["poll", "wait", "kernel"]
+                },
+                "pollPreWarm": {
+                  "description": "CPU busy-wait before each poll window (s); 0 disables",
+                  "type": "number",
+                  "minimum": 0,
+                  "exclusiveMaximum": 1,
+                  "default": 0
+                }
+              }
+            }
+          }
+        },
+        "phc": {
+          "description": "Parameters for generating samples from the PHC",
+          "type": "object",
+          "properties": {
+            "pulseWindow": {
+              "description": "Number of pulses for alignment analysis",
+              "type": "integer",
+              "default": 5,
+              "minimum": 3,
+              "exclusiveMaximum": 100
+            },
+            "pulseVariation": {
+              "description": "Max pulse interval variation (ppb)",
+              "type": "number",
+              "default": 500.0,
+              "minimum": 5,
+              "exclusiveMaximum": 1000000
+            },
+            "expectedDelay": {
+              "description": "Expected pulse-to-message delay (s)",
+              "type": "number",
+              "default": 0.15,
+              "minimum": 0.0,
+              "exclusiveMaximum": 1.0
+            },
+            "pulseWidthDetectLimit": {
+              "description": "Max auto-detectable pulse width (s)",
+              "type": "number",
+              "default": 0.45,
+              "minimum": 0.1,
+              "exclusiveMaximum": 0.5
+            },
+            "msgWindow": {
+              "description": "Message history retained (s)",
+              "type": "integer",
+              "default": 30,
+              "minimum": 5,
+              "maximum": 300
+            },
+            "maxMsgGap": {
+              "description": "Max gap since last message before samples stop (s)",
+              "type": "number",
+              "default": 10.0,
+              "minimum": 1.0,
+              "maximum": 300.0
+            },
+            "minMsgSpan": {
+              "description": "Min message window span for usable fit (s)",
+              "type": "number",
+              "default": 2.9,
+              "minimum": 1.0,
+              "maximum": 60.0
+            },
+            "clockRateLimit": {
+              "description": "Max clock rate mismatch [0,1]",
+              "type": "number",
+              "default": 0.1,
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0
+            },
+            "msgTimingVariation": {
+              "description": "Max median residual around fit [0,1]",
+              "type": "number",
+              "default": 0.2,
+              "exclusiveMinimum": 0.0,
+              "exclusiveMaximum": 1.0
+            },
+            "edgeSecondTolerance": {
+              "description": "Max edge distance from integer second [0,0.5)",
+              "type": "number",
+              "default": 0.4,
+              "exclusiveMinimum": 0.0,
+              "exclusiveMaximum": 0.5
+            },
+            "ignoreSawtoothCorrection": {
+              "description": "Ignore sawtooth corrections",
+              "type": "boolean",
+              "default": false
+            },
+            "discontinuityThreshold": {
+              "description": "PHC discontinuity detection threshold (s)",
+              "type": "number",
+              "default": 0.001,
+              "minimum": 1e-9,
+              "exclusiveMaximum": 1.0
+            }
+          }
         }
       }
     },
@@ -185,6 +334,9 @@
         "interface": {
           "type": "string"
         },
+        "device": {
+          "type": "string"
+        },
         "pin": {
           "type": "integer",
           "minimum": 0
@@ -196,6 +348,12 @@
         "wait": {
           "type": "boolean",
           "default": false
+        },
+        "exttsLatency": {
+          "type": "integer",
+          "default": 0,
+          "minimum": -1000000,
+          "maximum": 1000000
         },
         "sync": {
           "type": "boolean",
@@ -337,6 +495,15 @@
           "default": 150,
           "minimum": 0,
           "maximum": 1000
+        },
+        "offsetScaledLogVariance": {
+          "type": "integer",
+          "default": 65535,
+          "minimum": 0,
+          "maximum": 65535
+        },
+        "allanDeviation": {
+          "type": "number"
         },
         "domainNumber": {
           "type": "integer"
@@ -490,7 +657,7 @@
       "type": "object",
       "properties": {
         "pull": {
-          "description": "Network correction source written to the receiver. Exactly one of tcp or ntrip must be configured.",
+          "description": "Network correction source written to the receiver. Configure at most one of tcp or ntrip; an empty table leaves it disabled.",
           "type": "object",
           "properties": {
             "tcp": {
@@ -523,15 +690,26 @@
                 "password": {
                   "description": "Password for basic authentication",
                   "type": "string"
+                },
+                "nmeaSend": {
+                  "description": "Send the receiver position as NMEA GGA to the caster",
+                  "type": "boolean",
+                  "default": false
+                },
+                "nmeaSendInterval": {
+                  "description": "Seconds between NMEA GGA uploads; 0 sends once per connection",
+                  "type": "number",
+                  "default": 5,
+                  "oneOf": [
+                    {"const": 0},
+                    {"minimum": 1}
+                  ]
                 }
               },
               "required": ["address", "mountpoint"]
             }
           },
-          "oneOf": [
-            {"required": ["tcp"]},
-            {"required": ["ntrip"]}
-          ]
+          "not": {"required": ["tcp", "ntrip"]}
         },
         "push": {
           "description": "Outbound stream destinations. Each entry forwards scanned packets to a remote endpoint.",
@@ -540,7 +718,7 @@
             "type": "object",
             "properties": {
               "protocol": {
-                "description": "Packet format to forward (default: RTCM for ntrip transport)",
+                "description": "Packet format to forward",
                 "type": "string",
                 "enum": ["", "RTCM", "NMEA", "UBX", "CASBIN", "ASBIN", "SDBP", "UNCB", "UNCA", "NOVB", "NOVA"]
               },
@@ -578,9 +756,23 @@
                   }
                 },
                 "required": ["address", "mountpoint", "password"]
+              },
+              "udp": {
+                "description": "UDP packet stream destination",
+                "type": "object",
+                "properties": {
+                  "address": {
+                    "description": "host:port of the UDP destination",
+                    "type": "string"
+                  }
+                },
+                "required": ["address"]
               }
             },
-            "required": ["ntrip"],
+            "oneOf": [
+              {"required": ["ntrip"]},
+              {"required": ["udp"]}
+            ],
             "allOf": [
               {
                 "if": {
@@ -859,99 +1051,6 @@
               "type": "number",
               "default": 0.8,
               "exclusiveMinimum": 0,
-              "exclusiveMaximum": 1.0
-            }
-          }
-        }
-      }
-    },
-    "sample": {
-      "type": "object",
-      "properties": {
-        "phc": {
-          "description": "Parameters for generating samples from the PHC",
-          "type": "object",
-          "properties": {
-            "pulseWindow": {
-              "description": "Number of pulses for alignment analysis",
-              "type": "integer",
-              "default": 5,
-              "minimum": 3,
-              "exclusiveMaximum": 100
-            },
-            "pulseVariation": {
-              "description": "Max pulse interval variation (ppb)",
-              "type": "number",
-              "default": 500.0,
-              "minimum": 5,
-              "exclusiveMaximum": 1000000
-            },
-            "expectedDelay": {
-              "description": "Expected pulse-to-message delay (s)",
-              "type": "number",
-              "default": 0.15,
-              "minimum": 0.0,
-              "exclusiveMaximum": 1.0
-            },
-            "pulseWidthDetectLimit": {
-              "description": "Max auto-detectable pulse width (s)",
-              "type": "number",
-              "default": 0.45,
-              "minimum": 0.1,
-              "exclusiveMaximum": 0.5
-            },
-            "msgWindow": {
-              "description": "Message history retained (s)",
-              "type": "integer",
-              "default": 30,
-              "minimum": 5,
-              "maximum": 300
-            },
-            "maxMsgGap": {
-              "description": "Max gap since last message before samples stop (s)",
-              "type": "number",
-              "default": 10.0,
-              "minimum": 1.0,
-              "maximum": 300.0
-            },
-            "minMsgSpan": {
-              "description": "Min message window span for usable fit (s)",
-              "type": "number",
-              "default": 2.9,
-              "minimum": 1.0,
-              "maximum": 60.0
-            },
-            "clockRateLimit": {
-              "description": "Max clock rate mismatch [0,1]",
-              "type": "number",
-              "default": 0.1,
-              "exclusiveMinimum": 0.0,
-              "maximum": 1.0
-            },
-            "msgTimingVariation": {
-              "description": "Max median residual around fit [0,1]",
-              "type": "number",
-              "default": 0.2,
-              "exclusiveMinimum": 0.0,
-              "exclusiveMaximum": 1.0
-            },
-            "edgeSecondTolerance": {
-              "description": "Max edge distance from integer second [0,0.5)",
-              "type": "number",
-              "default": 0.4,
-              "exclusiveMinimum": 0.0,
-              "exclusiveMaximum": 0.5
-            },
-            "ignoreSawtoothCorrection": {
-              "description": "Ignore sawtooth corrections",
-              "type": "boolean",
-              "default": false
-            },
-            "discontinuityThreshold": {
-              "description": "PHC discontinuity detection threshold (s)",
-              "type": "number",
-              "default": 0.001,
-              "minimum": 1e-9,
               "exclusiveMaximum": 1.0
             }
           }

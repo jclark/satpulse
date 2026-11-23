@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/jclark/satpulse/time/lib/check"
+	"github.com/jclark/satpulse/gps/lib/check"
 )
 
 // Config contains tunable parameters for phcsample. Some field names

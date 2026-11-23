@@ -7,9 +7,10 @@ satpulsetool-gps - configure a GPS receiver
 **satpulsetool** [*global options*] **gps** [**\-h**\|**\-\-help**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-d**\|**\-\-serial\-device** *path*] [**\-s**\|**\-\-device\-speed** *bps*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-f**\|**\-\-config\-file** *path*] [**\-\-socket** *path*]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**] [**\-\-show\-port**]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-show\-receiver**] [**\-c**\|**\-\-show\-config**] [**\-\-show\-port**] [**\-\-json**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-g**\|**\-\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**\|**QZSS**\|**NAVIC**\|**SBAS**,...]\
-&nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...] [**\-\-min\-elev** *degrees*]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-b**\|**\-\-band** **L1**\|**L2**\|**L5**\|**E5**\|**L6**,...]\
+&nbsp;&nbsp;&nbsp;&nbsp;[**\-\-signal** *signal*,...] [**\-\-except\-signal** *signal*,...] [**\-\-min\-elev** *degrees*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-p**\|**\-\-pps** *width*] [**\-\-ant\-cable\-delay** *nanos*]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-time\-gnss** **GPS**\|**GAL**\|**BDS**\|**GLO**]\
 &nbsp;&nbsp;&nbsp;&nbsp;[**\-\-survey**] [**\-\-survey\-time** *seconds*] [**\-\-survey\-acc** *meters*]\
@@ -29,22 +30,22 @@ satpulsetool-gps - configure a GPS receiver
 # DESCRIPTION
 
 The **satpulsetool** **gps** command is used to configure a GPS receiver for use with satpulsed.
-It can also be used to capture packets from the receiver.
 Two kinds of configuration are supported, high-level and low-level;
 they cannot be performed simultaneously.
 
 With high-level configuration, configuration changes are requested with device-independent semantics;
 **satpulsetool** determines the best way to implement the request for the particular GPS receiver.
-High-level configuration is currently supported on two families of GPS receiver:
+High-level configuration is currently supported on three families of GPS receiver:
 u-blox receivers (from the u-blox 6 platform through to the X20 platform);
-Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960).
+Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960);
+Zhongke Microelectronics receivers using CASIC (such as the ATGM332D and ATGM336H).
 
 With low-level configuration, a *message file* is used.
 A message file is a file in TOML format that defines a collection of named messages.
 SatPulse provides a library of message files, which can be used to configure a wide variety of different GPS receivers.
 
-If no options other than connection options and `--packet-log` are specified,
-then it will detect the receiver and show information about it,
+If no options other than connection options, `--packet-log` and `--capture` are specified,
+then it probes the receiver to identify it and determine whether it supports high-level configuration,
 as if the `--show-receiver` option had been specified.
 
 # OPTIONS
@@ -76,7 +77,7 @@ This is for use with the `proxy.socket` table array in the TOML config file for 
 The following options query the receiver.
 
 **\-\-show\-receiver**
-: Detect the GPS receiver and show information about it.
+: Probe the GPS receiver to identify it and determine whether it supports high-level configuration.
 
 **\-c**, **\-\-show\-config**
 : Show the current configuration of the GPS receiver.
@@ -87,6 +88,19 @@ and, for UART ports, the serial speed in bits per second. The line for the seria
 for ports without a baud rate (**USB**, **I2C**, **SPI**).
 Useful for determining the value to pass to **\-\-port** for **\-\-msg\-file** entries that depend on the active port.
 Composes with **\-c**\|**\-\-show\-config**. Cannot be combined with **\-\-reset**, **\-\-reload**, **\-\-factory\-reset**, or **\-\-msg\-file**.
+
+The following option selects machine-readable output.
+
+**\-\-json**
+: Write the results of high-level configuration to stdout as a single JSON object
+instead of the human-readable output.
+The object can have the following fields, omitted when there is nothing to report:
+`receiver` (vendor, hardware, firmware, and supported GNSS constellations),
+`supports` (the configuration features the receiver supports, as listed by the `Supports:` line of **\-\-show\-receiver**),
+`packetFormats` (the packet formats detected),
+`config` (the configuration properties that were set or queried),
+and `error` (the error message when configuration fails; the exit code is unaffected).
+Applies to high-level configuration and the show options; cannot be combined with **\-\-msg\-file**.
 
 The following options control which satellites and signals the receiver uses.
 
@@ -115,7 +129,10 @@ The following options control which satellites and signals the receiver uses.
   : Satellite-Based Augmentation Systems (various countries)
 
 **\-b**, **\-\-band** *list*
-: List of frequency bands that should be enabled for the specified GNSS constellations. The *list* parameter is a comma-separated list of:
+: List of frequency bands that should be enabled for the GNSS constellations specified with **\-\-gnss**.
+Signals from those constellations are enabled only if they are in one of the listed bands;
+**\-\-band** does not affect what signals are enabled by **\-\-signal**.
+The *list* parameter is a comma-separated list of:
 
   **L1**
   : 1559-1610 MHz band, including L1 C/A, L1C, E1, B1C signals at 1575.42 MHz, GLONASS L1, and BeiDou B1I
@@ -134,6 +151,27 @@ The following options control which satellites and signals the receiver uses.
 
   **E6** or **L6**
   : 1260-1300 MHz band
+
+**\-\-signal** *list*
+: List of individual GNSS signals that should be enabled, in addition to the signals enabled by **\-\-gnss** and **\-\-band**.
+When **\-\-gnss** is not specified, the *list* specifies all the enabled signals.
+A signal name is the GNSS constellation name (as with **\-\-gnss**) immediately followed by the name of the signal.
+Signal names are case-insensitive.
+The *list* parameter is a comma-separated list of:
+**GPSL1**, **GPSL1C**, **GPSL2P**, **GPSL2C**, **GPSL5**,
+**GLOL1**, **GLOL1OC**, **GLOL2**, **GLOL2OC**, **GLOL3**,
+**GALE1**, **GALE5a**, **GALE5b**, **GALE6**,
+**BDSB1I**, **BDSB1C**, **BDSB2I**, **BDSB2b**, **BDSB2a**, **BDSB3I**,
+**QZSSL1**, **QZSSL1C**, **QZSSL1S**, **QZSSL2C**, **QZSSL5**, **QZSSL5S**, **QZSSL6**,
+**NAVICL1**, **NAVICL5**,
+**SBASL1**, **SBASL5**.
+The **GAL** and **BDS** prefixes can be omitted.
+**GPSL1**, **QZSSL1** and **SBASL1** mean the L1 C/A signal.
+
+**\-\-except\-signal** *list*
+: List of GNSS signals that should be excluded from the signals enabled by **\-\-gnss** and **\-\-band**.
+The *list* parameter is a comma-separated list of signal names, as with **\-\-signal**.
+Requires **\-\-gnss**.
 
 **\-\-min\-elev** *degrees*
 : Set the minimum elevation angle in degrees for satellites to be used. Satellites below this angle above the horizon are ignored.
@@ -158,7 +196,7 @@ The following options control the time mode of the receiver. In time mode, the r
 : Set duration of the position survey (default: 2000).
 
 **\-\-survey\-acc** *meters*
-: Required survey accuracy in meters (default: 20.0). Minimum value is 0.001 (1 mm).
+: Required survey accuracy in meters (default: 20.0). Minimum value is 0.0001 (0.1 mm).
 
 **\-\-fixed\-pos\-ecef** *X,Y,Z*
 : Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The coordinates are comma-separated X, Y, and Z coordinates in meters in the Earth-Centered, Earth-Fixed coordinate system.
@@ -167,7 +205,7 @@ The following options control the time mode of the receiver. In time mode, the r
 : Use the specified coordinates as the fixed position of the antenna, and then run in a mode that assumes the position of the antenna does not change. The values are comma-separated latitude and longitude in degrees and height in meters above the WGS84 ellipsoid. Latitude must be in [-90, 90], longitude in [-180, 180], and height in [-500, 10000]. Mutually exclusive with **\-\-fixed-pos-ecef**, **\-\-survey** and **\-\-mobile**.
 
 **\-\-fixed\-pos\-acc** *meters*
-: Set the accuracy of the fixed position in meters (default: 20.0). This value should reflect the actual uncertainty in the fixed position coordinates. Minimum value is 0.001 (1 mm).
+: Set the accuracy of the fixed position in meters (default: 20.0). This value should reflect the actual uncertainty in the fixed position coordinates. Minimum value is 0.0001 (0.1 mm).
 
 **\-\-mobile**
 : Run in a normal mode, where the position of the antenna may change. This undoes the effect of **\-\-survey**, **\-\-fixed-pos-ecef** or **\-\-fixed-pos-llh**.
@@ -301,6 +339,9 @@ The following option configures the receiver's serial port speed.
 
 **\-\-speed** *bps*
 : Configure the GPS receiver's serial speed in bits per second.
+The speed is part of the receiver configuration like any other property:
+combined with **\-\-save** or **\-\-save\-all**, the new speed is what is saved,
+and is the speed the receiver will use after a restart.
 
 The following options control use of the receiver's non-volatile memory.
 
@@ -323,10 +364,10 @@ The following option restricts which configuration protocols are probed. It also
 
 **\-\-vendor** *name*
 : GPS receiver vendor name.
-  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `SinoGNSS`, `Techtotop`, `Zhongke`, `other`.
-  In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `Septentrio`, `SkyTraq`, `Trimble`.
+  The following values are supported: `u-blox`, `Unicore`, `Allystar`, `Bynav`, `NovAtel`, `Quectel`, `Septentrio`, `SinoGNSS`, `Techtotop`, `Zhongke` (or `CASIC`), `other`.
+  In addition, the following values are allowed and currently treated as equivalent to `other`: `Furuno`, `MediaTek`, `SkyTraq`, `Trimble`.
   Values are case-insensitive.
-  If not specified, no restrictions are applied.
+  If not specified, the **SATPULSE_VENDORS** environment variable applies (see ENVIRONMENT), and if that too is unset, no restrictions are applied.
 
 ## Low-level configuration
 
@@ -379,6 +420,17 @@ Use `0` to capture indefinitely until interrupted.
 With low-level configuration (**\-m**), capture time is added after response waiting is complete.
 Requires **\-\-packet\-log** or **\-\-msg\-file**.
 
+# EXIT STATUS
+
+**0**
+: Success
+
+**1**
+: Error: the connection failed, a high-level configuration request could not be applied, or the receiver rejected a message from the message file
+
+**2**
+: Command-line usage error
+
 # EXAMPLES
 
 Show receiver information using device and speed from the satpulse configuration file:
@@ -405,10 +457,6 @@ Enable only NMEA RMC messages:
 
     satpulsetool gps -d /dev/ttyACM0 -s 19200 -nmea --nmea-out RMC
 
-Passively capture packets for 30 seconds without probing:
-
-    satpulsetool gps -d /dev/ttyUSB0 -s 9600 --packet-log capture.jsonl --capture 30
-
 Probe the receiver, then capture packets for 10 seconds:
 
     satpulsetool gps -d /dev/ttyACM0 -s 9600 --show-receiver --packet-log capture.jsonl --capture 10
@@ -434,6 +482,11 @@ Send an ad-hoc command from stdin using a here document:
     text = "CONFIG PPP ENABLE E6-HAS"
     TOML
 
+# ENVIRONMENT
+
+**SATPULSE_VENDORS**
+: The possible vendors of the connected GPS receiver, as a comma-separated list of vendor names (as accepted by **\-\-vendor**), or `all` for any vendor. It can be overridden by **\-\-vendor**.
+
 # FILES
 
 `/usr/share/satpulse/gpsmsg`
@@ -441,4 +494,4 @@ Send an ad-hoc command from stdin using a here document:
 
 # SEE ALSO
 
-**satpulsetool(1)**, **satpulsed(8)**
+**satpulsetool(1)**, **satpulsetool-serial(1)**, **satpulsed(8)**

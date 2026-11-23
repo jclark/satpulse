@@ -1,6 +1,8 @@
 package gpscmd
 
 import (
+	"encoding/json"
+	"fmt"
 	"os"
 	"reflect"
 	"slices"
@@ -20,6 +22,9 @@ type validFlagsTestCase struct {
 
 var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{}, flagVars{showReceiver: true}},
+	{"ttyS0", []string{"--json"}, flagVars{showReceiver: true, jsonOut: true}},
+	{"ttyS0", []string{"--show-config", "--json"}, flagVars{configGet: showProps, jsonOut: true}},
+	{"ttyS0", []string{"--json", "--gnss", "GPS"}, flagVars{jsonOut: true, enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS)}},
 	{"ttyS0", []string{"--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--nmea"}, flagVars{configOpts: gpsprot.ConfigOptions{
 		NMEAMsg: opt.Make(gpsprot.NMEAMsgRMC),
@@ -45,6 +50,8 @@ var validFlagsTestCases = []validFlagsTestCase{
 	{"ttyS0", []string{"--survey", "--survey-time", "300", "--survey-acc", "5.5"}, flagVars{mode: opt.Make(gpsprot.Mode{Static: true}), configOpts: gpsprot.ConfigOptions{Survey: gpsprot.Survey{Flags: gpsprot.SurveyAgain, MinDur: 300 * time.Second, AccLimit: gpsprot.Meters(5.5)}}}},
 	{"ttyS0", []string{"--speed", "9600"}, flagVars{baudRate: opt.Make(uint32(9600))}},
 	{"ttyS0", []string{"--device-speed", "9600"}, flagVars{localSpeed: 9600, showReceiver: true}},
+	{"ttyS0", []string{"--packet-log", "pkt.jsonl", "--capture", "10"}, flagVars{packetLogPath: "pkt.jsonl", capture: opt.Make(10 * time.Second), showReceiver: true}},
+	{"ttyS0", []string{"--json", "--packet-log", "pkt.jsonl", "--capture", "10"}, flagVars{packetLogPath: "pkt.jsonl", capture: opt.Make(10 * time.Second), showReceiver: true, jsonOut: true}},
 	{"ttyS0", []string{"--save-all", "--reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll, Reset: gpsprot.ResetCold}}},
 	{"ttyS0", []string{"--gnss", "GPS,GLO,GAL,BDS"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GLO, gpsprot.GAL, gpsprot.BDS),
@@ -85,6 +92,34 @@ var validFlagsTestCases = []validFlagsTestCase{
 	}},
 	{"ttyS0", []string{"-g", "GPS,GAL,BDS", "--band", "L1,L2,L5,E5,E6"}, flagVars{
 		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS, gpsprot.GAL, gpsprot.BDS),
+	}},
+	// --signal without --gnss specifies the exact signal set
+	{"ttyS0", []string{"--signal", "GPSL1,GALE1"}, flagVars{
+		enabledSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+	}},
+	{"ttyS0", []string{"--signal", "gpsl1, e1"}, flagVars{
+		enabledSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+	}},
+	// --signal with --gnss adds to the GNSS/band set
+	{"ttyS0", []string{"--gnss", "GPS", "--band", "L1", "--signal", "QZSSL1S"}, flagVars{
+		enabledSignals: gpsprot.BandL1.SignalSet(gpsprot.GPS) | gpsprot.SignalSetOf(gpsprot.SigQZSSL1S),
+	}},
+	// --except-signal removes from the GNSS/band set
+	{"ttyS0", []string{"--gnss", "GPS", "--except-signal", "GPSL1C"}, flagVars{
+		enabledSignals: gpsprot.BandAll.SignalSet(gpsprot.GPS) &^ gpsprot.SignalSetOf(gpsprot.SigGPSL1C),
+	}},
+	{"ttyS0", []string{"--gnss", "GPS,GAL", "--band", "L1,L5", "--signal", "B1C", "--except-signal", "GPSL1C,E5a"}, flagVars{
+		enabledSignals: ((gpsprot.BandL1|gpsprot.BandL5).SignalSet(gpsprot.GPS, gpsprot.GAL) |
+			gpsprot.SignalSetOf(gpsprot.SigBDSB1C)) &^ gpsprot.SignalSetOf(gpsprot.SigGPSL1C, gpsprot.SigGALE5a),
+	}},
+	// excluding a signal not in the base set is a no-op
+	{"ttyS0", []string{"--gnss", "GPS", "--band", "L1", "--except-signal", "GPSL2C"}, flagVars{
+		enabledSignals: gpsprot.BandL1.SignalSet(gpsprot.GPS),
+	}},
+	// --time-gnss is checked against the signal set from --signal
+	{"ttyS0", []string{"--signal", "GPSL1,GALE1", "--time-gnss", "GAL"}, flagVars{
+		enabledSignals: gpsprot.SignalSetOf(gpsprot.SigGPSL1CA, gpsprot.SigGALE1),
+		timeGNSS:       gpsprot.GAL,
 	}},
 	{"ttyS0", []string{"--save-all"}, flagVars{configOpts: gpsprot.ConfigOptions{Save: gpsprot.SaveAll}}},
 	{"ttyS0", []string{"--factory-reset"}, flagVars{configOpts: gpsprot.ConfigOptions{Reset: gpsprot.ResetFactory}}},
@@ -407,10 +442,13 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 	}{
 		{"no config", nil, 0, 0},
 		{"speed", []string{"--speed", "9600"}, gpsprot.ConfigSupportSpeed, 0},
-		{"band", []string{"--gnss", "GPS", "--band", "L5"}, gpsprot.ConfigSupportBand, 0},
+		{"band", []string{"--gnss", "GPS", "--band", "L5"}, gpsprot.ConfigSupportSignal, 0},
+		{"signal", []string{"--signal", "GPSL1"}, gpsprot.ConfigSupportSignal, 0},
+		{"signal with gnss", []string{"--gnss", "GPS", "--signal", "QZSSL1S"}, gpsprot.ConfigSupportSignal, 0},
+		{"except-signal", []string{"--gnss", "GPS", "--except-signal", "GPSL1C"}, gpsprot.ConfigSupportSignal, 0},
 		{"survey default accuracy", []string{"--survey"}, gpsprot.ConfigSupportSurvey, 0},
 		{"survey explicit accuracy", []string{"--survey", "--survey-acc", "5.5"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyAcc, 0},
-		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey, 0},
+		{"survey time", []string{"--survey", "--survey-time", "300"}, gpsprot.ConfigSupportSurvey | gpsprot.ConfigSupportSurveyDur, 0},
 		{"pvt survey", []string{"--pvt-out", "survey"}, gpsprot.ConfigSupportSurveyMsg, 0},
 		{"pvt ptp", []string{"--pvt-out", "ptp"}, gpsprot.ConfigSupportSurveyMsg, 0},
 		{"pvt ntp", []string{"--pvt-out", "ntp"}, gpsprot.ConfigSupportSurveyMsg, 0},
@@ -427,6 +465,8 @@ func TestParseFlagsConfigSupport(t *testing.T) {
 		{"rtcm none", []string{"--rtcm-out", "none"}, 0, 0},
 		{"rtcm qzss", []string{"--gnss", "GPS,QZSS", "--rtcm-out", "MSM4"}, gpsprot.ConfigSupportRTCMMSM4 | gpsprot.ConfigSupportRTCMQZSS, 0},
 		{"rtcm base id", []string{"--rtcm-base-id", "1234"}, gpsprot.ConfigSupportRTCMBaseID, 0},
+		{"reload", []string{"--reload"}, gpsprot.ConfigSupportReload, 0},
+		{"show-port", []string{"--show-port"}, gpsprot.ConfigSupportPort, 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -484,6 +524,16 @@ func TestConfigSupportReqUnsupportedOptions(t *testing.T) {
 			}(),
 			want: []string{"--fixed-pos-ecef", "--survey"},
 		},
+		{
+			name: "multiple options for same flag",
+			req: func() configSupportReq {
+				var req configSupportReq
+				req.require(gpsprot.ConfigSupportSignal, "--band")
+				req.require(gpsprot.ConfigSupportSignal, "--signal")
+				return req
+			}(),
+			want: []string{"--band", "--signal"},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -514,45 +564,52 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--speed", "9600", "--pps", "1.5"},
 	{"--serial-device", "ttyS0", "--speed", "9600", "--pps"},
 	{"--serial-device", "ttyS0", "--speed", "9600", "--survey", "--mobile"},
-	{"--serial-device", "ttyS0", "--gnss", "SBAS"},                             // only augmentation signals
-	{"--serial-device", "ttyS0", "--gnss", "GLO", "--band", "L5"},              // no signals in GNSS+band
-	{"--serial-device", "ttyS0", "--gnss", "SBAS,QZSS"},                        // non-major GNSS
-	{"--serial-device", "ttyS0", "--gnss", "GAL", "--band", "E6"},              // only augmentation signals
-	{"--serial-device", "ttyS0", "--save", "--save-all"},                       // can't use both save and save-all
-	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                  // can't use factory-reset with save
-	{"--serial-device", "ttyS0", "--factory-reset", "--reset"},                 // can't use factory-reset with reset
-	{"--serial-device", "ttyS0", "--factory-reset", "--nmea"},                  // can't use factory-reset with config changes
-	{"--serial-device", "ttyS0", "--factory-reset", "--gnss", "GPS"},           // can't use factory-reset with config changes
-	{"--serial-device", "ttyS0", "--reset", "--gnss", "GPS"},                   // reset without save would lose config changes
-	{"--serial-device", "ttyS0", "--save"},                                     // no config changes to save
-	{"--serial-device", "ttyS0", "--reset", "--save"},                          // no config changes to save with --save
-	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                  // incompatible options
-	{"--serial-device", "ttyS0", "--factory-reset", "--save-all"},              // incompatible options
-	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7"},                    // MSM4 and MSM7 cannot be used together
-	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7,ARP"},                // MSM4 and MSM7 cannot be used together
-	{"--serial-device", "ttyS0", "--factory-reset", "--save", "--gnss", "GPS"}, // multiple incompatible options
-	{"--serial-device", "ttyS0", "--raw-out", ""},                              // empty raw-out value
-	{"--serial-device", "ttyS0", "--raw-out", "invalid"},                       // invalid raw-out flag
-	{"--serial-device", "ttyS0", "--raw-out", "obs,invalid"},                   // partially invalid raw-out flags
-	{"--serial-device", "ttyS0", "--pvt-out", ""},                              // empty pvt-out value
-	{"--serial-device", "ttyS0", "--pvt-out", "invalid"},                       // invalid pvt-out flag
-	{"--serial-device", "ttyS0", "--pvt-out", "time,after"},                    // after requires tp
-	{"--serial-device", "ttyS0", "--pvt-out", "pos,tai"},                       // tai requires after or time
-	{"--serial-device", "ttyS0", "--pvt-out", "time,ecef"},                     // ecef requires pos or vel
-	{"--serial-device", "ttyS0", "--pvt-out", "after,tai"},                     // after requires tp
-	{"--serial-device", "ttyS0", "--pvt-out", "ecef,tai"},                      // ecef requires pos or vel, tai requires after or time
-	{"--serial-device", "ttyS0", "--pvt-out", "pos,invalid"},                   // partially invalid pvt-out flags
-	{"--serial-device", "ttyS0", "--rtcm-out", ""},                             // empty rtcm-out value
-	{"--serial-device", "ttyS0", "--rtcm-out", "invalid"},                      // invalid rtcm-out flag
-	{"--serial-device", "ttyS0", "--rtcm-out", "msm4,invalid"},                 // partially invalid rtcm-out flags
-	{"--serial-device", "ttyS0", "--rtcm-out", "other"},                        // trying to use hidden "other" flag
-	{"--serial-device", "ttyS0", "--nmea-out", ""},                             // empty nmea-out value
-	{"--serial-device", "ttyS0", "--nmea-out", "invalid"},                      // invalid nmea-out flag
-	{"--serial-device", "ttyS0", "--nmea-out", "RMC,invalid"},                  // partially invalid nmea-out flags
-	{"--serial-device", "ttyS0", "--nmea-out", "other"},                        // trying to use hidden "other" flag
-	{"--serial-device", "ttyS0", "--sats-out", ""},                             // empty sats-out value
-	{"--serial-device", "ttyS0", "--sats-out", "invalid"},                      // invalid sats-out flag
-	{"--serial-device", "ttyS0", "--sats-out", "sat,invalid"},                  // partially invalid sats-out flags
+	{"--serial-device", "ttyS0", "--gnss", "SBAS"},                                                       // only augmentation signals
+	{"--serial-device", "ttyS0", "--gnss", "GLO", "--band", "L5"},                                        // no signals in GNSS+band
+	{"--serial-device", "ttyS0", "--gnss", "SBAS,QZSS"},                                                  // non-major GNSS
+	{"--serial-device", "ttyS0", "--gnss", "GAL", "--band", "E6"},                                        // only augmentation signals
+	{"--serial-device", "ttyS0", "--except-signal", "GPSL1C"},                                            // --except-signal requires --gnss
+	{"--serial-device", "ttyS0", "--band", "L1", "--signal", "GPSL1"},                                    // --band requires --gnss
+	{"--serial-device", "ttyS0", "--signal", "QZSSL1S"},                                                  // only augmentation signals
+	{"--serial-device", "ttyS0", "--signal", "L1"},                                                       // ambiguous unqualified signal name
+	{"--serial-device", "ttyS0", "--signal", "BOGUS"},                                                    // unknown signal name
+	{"--serial-device", "ttyS0", "--gnss", "GPS", "--signal", "GPSL5", "--except-signal", "GPSL5"},       // same signal in both
+	{"--serial-device", "ttyS0", "--gnss", "GPS", "--except-signal", "GPSL1,GPSL1C,GPSL2P,GPSL2C,GPSL5"}, // excludes whole base
+	{"--serial-device", "ttyS0", "--save", "--save-all"},                                                 // can't use both save and save-all
+	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                                            // can't use factory-reset with save
+	{"--serial-device", "ttyS0", "--factory-reset", "--reset"},                                           // can't use factory-reset with reset
+	{"--serial-device", "ttyS0", "--factory-reset", "--nmea"},                                            // can't use factory-reset with config changes
+	{"--serial-device", "ttyS0", "--factory-reset", "--gnss", "GPS"},                                     // can't use factory-reset with config changes
+	{"--serial-device", "ttyS0", "--reset", "--gnss", "GPS"},                                             // reset without save would lose config changes
+	{"--serial-device", "ttyS0", "--save"},                                                               // no config changes to save
+	{"--serial-device", "ttyS0", "--reset", "--save"},                                                    // no config changes to save with --save
+	{"--serial-device", "ttyS0", "--factory-reset", "--save"},                                            // incompatible options
+	{"--serial-device", "ttyS0", "--factory-reset", "--save-all"},                                        // incompatible options
+	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7"},                                              // MSM4 and MSM7 cannot be used together
+	{"--serial-device", "ttyS0", "--rtcm-out", "MSM4,MSM7,ARP"},                                          // MSM4 and MSM7 cannot be used together
+	{"--serial-device", "ttyS0", "--factory-reset", "--save", "--gnss", "GPS"},                           // multiple incompatible options
+	{"--serial-device", "ttyS0", "--raw-out", ""},                                                        // empty raw-out value
+	{"--serial-device", "ttyS0", "--raw-out", "invalid"},                                                 // invalid raw-out flag
+	{"--serial-device", "ttyS0", "--raw-out", "obs,invalid"},                                             // partially invalid raw-out flags
+	{"--serial-device", "ttyS0", "--pvt-out", ""},                                                        // empty pvt-out value
+	{"--serial-device", "ttyS0", "--pvt-out", "invalid"},                                                 // invalid pvt-out flag
+	{"--serial-device", "ttyS0", "--pvt-out", "time,after"},                                              // after requires tp
+	{"--serial-device", "ttyS0", "--pvt-out", "pos,tai"},                                                 // tai requires after or time
+	{"--serial-device", "ttyS0", "--pvt-out", "time,ecef"},                                               // ecef requires pos or vel
+	{"--serial-device", "ttyS0", "--pvt-out", "after,tai"},                                               // after requires tp
+	{"--serial-device", "ttyS0", "--pvt-out", "ecef,tai"},                                                // ecef requires pos or vel, tai requires after or time
+	{"--serial-device", "ttyS0", "--pvt-out", "pos,invalid"},                                             // partially invalid pvt-out flags
+	{"--serial-device", "ttyS0", "--rtcm-out", ""},                                                       // empty rtcm-out value
+	{"--serial-device", "ttyS0", "--rtcm-out", "invalid"},                                                // invalid rtcm-out flag
+	{"--serial-device", "ttyS0", "--rtcm-out", "msm4,invalid"},                                           // partially invalid rtcm-out flags
+	{"--serial-device", "ttyS0", "--rtcm-out", "other"},                                                  // trying to use hidden "other" flag
+	{"--serial-device", "ttyS0", "--nmea-out", ""},                                                       // empty nmea-out value
+	{"--serial-device", "ttyS0", "--nmea-out", "invalid"},                                                // invalid nmea-out flag
+	{"--serial-device", "ttyS0", "--nmea-out", "RMC,invalid"},                                            // partially invalid nmea-out flags
+	{"--serial-device", "ttyS0", "--nmea-out", "other"},                                                  // trying to use hidden "other" flag
+	{"--serial-device", "ttyS0", "--sats-out", ""},                                                       // empty sats-out value
+	{"--serial-device", "ttyS0", "--sats-out", "invalid"},                                                // invalid sats-out flag
+	{"--serial-device", "ttyS0", "--sats-out", "sat,invalid"},                                            // partially invalid sats-out flags
 	// Test invalid combinations with --nmea and --binary
 	{"--serial-device", "ttyS0", "--nmea", "--binary"},            // can't use both --nmea and --binary
 	{"--serial-device", "ttyS0", "--binary", "--nmea"},            // can't use both --binary and --nmea
@@ -571,6 +628,7 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--gnss", "GPS", "--time-gnss", "GLO"},     // GLO not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "GAL,BDS", "--time-gnss", "GPS"}, // GPS not in enabled GNSS
 	{"--serial-device", "ttyS0", "--gnss", "BDS", "--time-gnss", "GAL"},     // GAL not in enabled GNSS
+	{"--serial-device", "ttyS0", "--signal", "GPSL1", "--time-gnss", "GAL"}, // no GAL signal enabled
 	// Test invalid --fixed-pos-ecef values
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", ""},                        // empty value
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "1,2"},                     // too few coordinates
@@ -581,8 +639,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "0,0,0"},                   // center of Earth (invalid)
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "8000000,8000000,8000000"}, // far outside valid range
 	// Test invalid --fixed-pos-acc values
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"},      // accuracy too small
-	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0"},       // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-acc", "0.00005"}, // accuracy below minimum
 	// Test mutual exclusion with --mobile and --survey
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--mobile"}, // can't use with mobile
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--survey"}, // can't use with survey
@@ -601,8 +659,8 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,-501"},        // height below -500m
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "0,0,10001"},       // height above 10000m
 	// Test invalid --fixed-pos-acc with --fixed-pos-llh
-	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0"},      // accuracy too small
-	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.0005"}, // accuracy below minimum
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0"},       // accuracy too small
+	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-acc", "0.00005"}, // accuracy below minimum
 	// Test mutual exclusion of --fixed-pos-llh with --fixed-pos-ecef, --mobile, --survey
 	{"--serial-device", "ttyS0", "--fixed-pos-llh", "51.5007,-0.1246,11", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94"},
 	{"--serial-device", "ttyS0", "--fixed-pos-ecef", "3978578.17,-8652.15,4968410.94", "--fixed-pos-llh", "51.5007,-0.1246,11"},
@@ -629,9 +687,9 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--reload", "-c"},                                    // can't use reload with short form
 	{"--serial-device", "ttyS0", "--show-config", "--factory-reset", "--gnss", "GPS"}, // multiple incompatible options
 	// Test invalid --show-port combinations
-	{"--serial-device", "ttyS0", "--show-port", "--factory-reset"},                    // can't use show-port with factory-reset
-	{"--serial-device", "ttyS0", "--show-port", "--reset"},                            // can't use show-port with reset
-	{"--serial-device", "ttyS0", "--show-port", "--reload"},                           // can't use show-port with reload
+	{"--serial-device", "ttyS0", "--show-port", "--factory-reset"}, // can't use show-port with factory-reset
+	{"--serial-device", "ttyS0", "--show-port", "--reset"},         // can't use show-port with reset
+	{"--serial-device", "ttyS0", "--show-port", "--reload"},        // can't use show-port with reload
 	// Test --msg-file mutual exclusivity with config flags
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--gnss", "GPS"},                                      // can't use with --gnss
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--pps", "0.1"},                                       // can't use with --pps
@@ -670,6 +728,9 @@ var invalidTestCases = [][]string{
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--port", ""},
 	// Test --msg-file cannot be combined with --show-receiver
 	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-receiver"}, // can't use with --show-receiver
+	// Test --json cannot be combined with --msg-file
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--json"},                // can't use with --msg-file
+	{"--serial-device", "ttyS0", "--msg-file", "test.toml", "--show-tags", "--json"}, // can't use with --msg-file even with --show-tags
 	// Test --config-file mutual exclusivity with --serial-device and --device-speed
 	{"--config-file", "test.toml", "--serial-device", "ttyS0"}, // can't use with --serial-device
 	{"--config-file", "test.toml", "--device-speed", "9600"},   // can't use with --device-speed
@@ -758,6 +819,214 @@ func TestParseFlagsInvalid(t *testing.T) {
 				t.Errorf("parseFlags returned nil error")
 			} else if vars != nil {
 				t.Errorf("parseFlags returned non-nil vars")
+			}
+		})
+	}
+}
+
+// mustTargetJSON resolves a JSON target the way --target-json does,
+// failing the test on error.
+func mustTargetJSON(t *testing.T, s string) *gpsprot.ConfigTarget {
+	t.Helper()
+	p := &flagParser{targetJSON: s}
+	if err := p.resolveTargetJSON(); err != nil {
+		t.Fatalf("resolveTargetJSON: %v", err)
+	}
+	return p.vars.targetJSON
+}
+
+// A JSON target bypasses the flag-level checks, so resolveTargetJSON
+// applies their semantic equivalents (validateTarget), adapted to the
+// model's full range.
+func TestResolveTargetJSONValidates(t *testing.T) {
+	tests := []struct {
+		name      string
+		json      string
+		expectErr bool
+	}{
+		{
+			name: "valid signals and time GNSS",
+			json: `{"Props":{"signalsEnabled":{"GPS":["L1"],"GAL":["E1"]},"timeGNSS":"GAL"}}`,
+		},
+		{
+			name:      "augmentation-only signals",
+			json:      `{"Props":{"signalsEnabled":{"GAL":["E6"]}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "time GNSS with none of its signals enabled",
+			json:      `{"Props":{"signalsEnabled":{"GPS":["L1"]},"timeGNSS":"GAL"}}`,
+			expectErr: true,
+		},
+		{
+			name: "zero pulse width disables",
+			json: `{"Props":{"timePulse":{"width":0}}}`,
+		},
+		{
+			name:      "negative pulse width",
+			json:      `{"Props":{"timePulse":{"width":-0.001}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "zero pulse period",
+			json:      `{"Props":{"timePulse":{"period":0}}}`,
+			expectErr: true,
+		},
+		{
+			name: "pulse period of an hour",
+			json: `{"Props":{"timePulse":{"period":3600}}}`,
+		},
+		{
+			name:      "pulse period beyond an hour",
+			json:      `{"Props":{"timePulse":{"period":3601}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "pulse width not less than period",
+			json:      `{"Props":{"timePulse":{"width":1,"period":1}}}`,
+			expectErr: true,
+		},
+		{
+			name:      "minimum elevation out of range",
+			json:      `{"Props":{"minElevation":91}}`,
+			expectErr: true,
+		},
+		{
+			name:      "survey accuracy under the minimum",
+			json:      `{"Opts":{"Survey":{"MinDur":60000000000,"AccLimit":0.00005}}}`,
+			expectErr: true,
+		},
+		{
+			name: "fixed position with no accuracy stated",
+			json: `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000]}}}`,
+		},
+		{
+			name:      "fixed position accuracy under the minimum",
+			json:      `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.00005}}}`,
+			expectErr: true,
+		},
+		{
+			name: "fixed position accuracy at the minimum",
+			json: `{"Props":{"mode":{"static":true,"fixedPosECEF":[4000000,500000,4800000],"fixedPosAcc":0.0001}}}`,
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			p := &flagParser{targetJSON: tc.json}
+			err := p.resolveTargetJSON()
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestResolveTargetJSONStdin(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldStdin := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() {
+		os.Stdin = oldStdin
+		r.Close()
+	})
+	if _, err := w.WriteString(`{"Get":["baudRate"]}`); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	target := mustTargetJSON(t, "-")
+	if target.Get != gpsprot.PropIDBaudRate {
+		t.Errorf("Get = %v, want baudRate", target.Get)
+	}
+}
+
+func TestResolveTargetJSONTrailingData(t *testing.T) {
+	for _, s := range []string{`{} {}`, `{} trailing`} {
+		p := &flagParser{targetJSON: s}
+		if err := p.resolveTargetJSON(); err == nil {
+			t.Errorf("resolveTargetJSON(%q) succeeded, want error", s)
+		}
+	}
+}
+
+func TestResolveTargetJSONUnknownField(t *testing.T) {
+	for _, s := range []string{
+		`{"Unknown":true}`,
+		`{"Props":{"unknown":true}}`,
+		`{"Opts":{"Unknown":true}}`,
+	} {
+		p := &flagParser{targetJSON: s}
+		if err := p.resolveTargetJSON(); err == nil {
+			t.Errorf("resolveTargetJSON(%s) succeeded, want error", s)
+		}
+	}
+}
+
+func TestResolveTargetJSONReadbackProps(t *testing.T) {
+	var props gpsprot.ConfigProps
+	props.SetSignalsEnabled(gpsprot.SignalSetOf(gpsprot.SigGPSL1CA))
+	props.SetPort("UART1")
+	b, err := json.Marshal(&props)
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := mustTargetJSON(t, fmt.Sprintf(`{"Props":%s}`, b))
+	if target.Props.ReadOnlyProps() != 0 {
+		t.Errorf("read-only properties not cleared: %v", target.Props.ReadOnlyProps())
+	}
+	if got, ok := target.Props.GetSignalsEnabled(); !ok || got != gpsprot.SignalSetOf(gpsprot.SigGPSL1CA) {
+		t.Errorf("signalsEnabled = %v, %t", got, ok)
+	}
+}
+
+func TestTargetJSONShowPortConfigSupport(t *testing.T) {
+	v, _, err := parseFlags("gps", []string{"-d", "/dev/ttyACM0", "--target-json", `{}`, "--show-port"})
+	if err != nil {
+		t.Fatalf("parseFlags: %v", err)
+	}
+	all, _ := v.configSupport.flags()
+	if all != gpsprot.ConfigSupportPort {
+		t.Errorf("configSupport = %v, want port", all.Items())
+	}
+}
+
+func TestTargetJSONShowTagsExclusive(t *testing.T) {
+	_, _, err := parseFlags("gps", []string{"--target-json", `{}`, "--msg-file", "messages.toml", "--show-tags"})
+	if err == nil {
+		t.Fatal("parseFlags succeeded, want error")
+	}
+	if !strings.Contains(err.Error(), "--target-json cannot be combined with --msg-file") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+// Flags that contribute to the configuration request are rejected in
+// combination with --target-json: the JSON target is the whole request.
+func TestTargetJSONExclusive(t *testing.T) {
+	tests := [][]string{
+		{"--gnss", "GPS"},
+		{"--pps", "0.1"},
+		{"--survey"},
+		{"--save"},
+		{"--speed", "115200"},
+		{"--pvt-out", "pos"},
+	}
+	for _, extra := range tests {
+		t.Run(extra[0], func(t *testing.T) {
+			args := append([]string{"-d", "/dev/ttyACM0", "--target-json", "{}"}, extra...)
+			_, _, err := parseFlags("gps", args)
+			if err == nil || !strings.Contains(err.Error(), "--target-json cannot be combined with "+extra[0]) {
+				t.Errorf("err = %v, want combination error", err)
 			}
 		})
 	}

@@ -1,0 +1,11 @@
+{"t":"2026-06-15T06:22:43.460339Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
+{"t":"2026-06-15T06:22:43.460408Z","ascii":"VERSIONB\r\n","out":true}
+{"t":"2026-06-15T06:22:43.497538Z","ascii":"The Board is reset,do not respon"}
+{"t":"2026-06-15T06:22:43.500545Z","ascii":"se any command!*2D\r\n"}
+{"t":"2026-06-15T06:22:43.500545Z","tag":"NMEA","msg":"command","ascii":"$command,VERSIONB,response: OK*46\r\n"}
+{"t":"2026-06-15T06:22:44.961102Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
+{"t":"2026-06-15T06:22:44.961136Z","ascii":"VERSIONB\r\n","out":true}
+{"t":"2026-06-15T06:22:44.997428Z","ascii":"The Board is reset,do not respon"}
+{"t":"2026-06-15T06:22:45.000494Z","ascii":"se any command!*2D\r\n"}
+{"t":"2026-06-15T06:22:45.000494Z","tag":"NMEA","msg":"command","ascii":"$command,VERSIONB,response: OK*46\r\n"}
+{"t":"2026-06-15T06:22:46.420824Z","tag":"NMEA","msg":"devicename","ascii":"$devicename,COM3*65\r\n"}

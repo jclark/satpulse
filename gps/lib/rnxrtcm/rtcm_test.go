@@ -60,13 +60,13 @@ func TestConvertMetadata(t *testing.T) {
 		MT1008: rtcmbin.MT1008{
 			MT1007: rtcmbin.MT1007{
 				MsgHdrStationID:   station,
-				AntennaDescriptor: rtcmbin.ASCIIString("ANT TYPE   "),
+				AntennaDescriptor: rtcmbin.Char8("ANT TYPE   "),
 			},
-			AntennaSerialNumber: rtcmbin.ASCIIString("ANT123"),
+			AntennaSerialNumber: rtcmbin.Char8("ANT123"),
 		},
-		ReceiverTypeDescriptor:  rtcmbin.ASCIIString("RX TYPE"),
-		ReceiverFirmwareVersion: rtcmbin.ASCIIString("FW1"),
-		ReceiverSerialNumber:    rtcmbin.ASCIIString("RX123"),
+		ReceiverTypeDescriptor:  rtcmbin.Char8("RX TYPE"),
+		ReceiverFirmwareVersion: rtcmbin.Char8("FW1"),
+		ReceiverSerialNumber:    rtcmbin.Char8("RX123"),
 	}, TimeInterval{})
 	if err != nil {
 		t.Fatalf("ConvertMsg MT1033: %v", err)
@@ -95,6 +95,25 @@ func TestConvertMetadata(t *testing.T) {
 	}
 	if s.meta[2].LeapSeconds == nil || *s.meta[2].LeapSeconds != 17 {
 		t.Fatalf("MT1013 metadata = %#v", s.meta[2])
+	}
+}
+
+func TestCleanASCII(t *testing.T) {
+	tests := []struct {
+		c    rtcmbin.Char8
+		want string
+	}{
+		{rtcmbin.Char8("ADVNULLANTENNA NONE\x00\x00\x00\x00"), "ADVNULLANTENNA NONE"},
+		{rtcmbin.Char8("TRM55971.00     NONE   "), "TRM55971.00     NONE"},
+		// RINEX is ASCII in fixed byte columns, so one byte per character.
+		{rtcmbin.Char8("CHAMB\xc9RY"), "CHAMB?RY"},
+		{rtcmbin.Char8("RX\tTYPE"), "RX?TYPE"},
+		{nil, ""},
+	}
+	for _, tc := range tests {
+		if got := cleanASCII(tc.c); got != tc.want {
+			t.Errorf("cleanASCII(%q) = %q, want %q", tc.c, got, tc.want)
+		}
 	}
 }
 

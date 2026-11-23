@@ -5,6 +5,8 @@ TypeScript type definitions for the JSON wire format of `gps/gpsprot`, `gps/ptim
 ## Files
 
 - `gpsprot.ts` -- interfaces for gpsprot message and value types
+- `configtarget.ts` -- ConfigTarget wire types and option vocabularies
+- `fixdisplay.ts` -- display words for the NavEpochMsg fix vocabulary
 - `ptime.ts` -- Time and UTCTime type aliases
 - `gpsio.ts` -- PacketLogEntry interface
 - `validate.gen.ts` -- generated file: typed constants with JSON literals (checked in)
@@ -54,5 +56,6 @@ Import types:
 
 ```ts
 import type { SatellitesMsg, SVInfo } from '@satpulse/gps/gpsprot';
+import type { ConfigTarget } from '@satpulse/gps/configtarget';
 import type { Time } from '@satpulse/gps/ptime';
 ```

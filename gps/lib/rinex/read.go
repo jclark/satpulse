@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
@@ -197,7 +198,7 @@ func readObservationEpochs(s *bufio.Scanner, h observationHeader) ([]SignalObser
 }
 
 func skipEpochRecords(s *bufio.Scanner, n int, context string) error {
-	for i := 0; i < n; i++ {
+	for range n {
 		if !s.Scan() {
 			if err := s.Err(); err != nil {
 				return err
@@ -530,11 +531,9 @@ func parseObsFloat(s string) (float64, bool) {
 	return v, err == nil
 }
 
+// parseIndicator parses a RINEX LLI/SSI indicator, a single decimal digit.
 func parseIndicator(b byte) (uint8, bool) {
-	if b < '0' || b > '9' {
-		return 0, false
-	}
-	return b - '0', true
+	return ascii.DigitVal(b)
 }
 
 func padLine(s string, n int) string {

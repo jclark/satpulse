@@ -1,0 +1,10 @@
+# Plain TCP pull: the daemon connects out to a raw TCP correction source (the
+# fake source run.py starts on SATPULSE_TEST_REMOTE_CASTER_PORT with --tcp),
+# reads RTCM MSM corrections streamed with no Ntrip handshake, and writes them
+# back to the receiver over the serial port. A pty backs the serial device so
+# the write path exists -- a read-only FIFO cannot carry the daemon's writes.
+[serial]
+device = "${SATPULSE_TEST_SERIAL}"
+
+[stream.pull.tcp]
+address = "127.0.0.1:${SATPULSE_TEST_REMOTE_CASTER_PORT}"

@@ -2,6 +2,7 @@ package nov
 
 import (
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 )
 
@@ -134,11 +135,11 @@ func StationIDValue(s novmsg.StationID) (uint16, bool) {
 	}
 	var v uint16
 	for i := 0; i < n; i++ {
-		c := s[i]
-		if c < '0' || c > '9' {
+		d, ok := ascii.DigitVal(s[i])
+		if !ok {
 			return 0, false
 		}
-		v = v*10 + uint16(c-'0')
+		v = v*10 + uint16(d)
 		if v > 4095 {
 			return 0, false
 		}
@@ -158,11 +159,11 @@ func StationIDUint(s novmsg.StationID) (uint16, bool) {
 	}
 	var v uint32
 	for i := 0; i < n; i++ {
-		c := s[i]
-		if c < '0' || c > '9' {
+		d, ok := ascii.DigitVal(s[i])
+		if !ok {
 			return 0, false
 		}
-		v = v*10 + uint32(c-'0')
+		v = v*10 + uint32(d)
 		if v > 0xFFFF {
 			return 0, false
 		}

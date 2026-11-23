@@ -9,6 +9,8 @@ allowed-tools: Bash, Glob, Grep, Read, Write, WebSearch, WebFetch
 
 This skill covers all work with GitHub issues: creating new issues (`gh issue create`), editing existing ones (`gh issue edit`), commenting (`gh issue comment`), and managing labels. Whenever you write or revise issue text, follow the style conventions below.
 
+When reading an issue, use `gh issue view N --json title,body,state,labels,comments` rather than the bare command - the default template queries a deprecated GraphQL field (Projects classic) and fails on older gh versions.
+
 ## Title
 
 - Short and descriptive, under ~80 characters
@@ -35,6 +37,12 @@ The body is plain prose -- no markdown headings. Structure it as:
 Do not use markdown headings (`#`, `##`, etc.) in the body. Keep formatting light: paragraphs, bullet lists, code blocks, backticks for identifiers. Assume the reader knows the codebase. Explain *why*, not just *what*. No greeting, sign-off, or filler. Sentence case. ASCII only.
 
 Do not hard-wrap body prose into fixed-width lines. Write each paragraph as a single long line and let GitHub wrap it for display. Hard line breaks inside a paragraph render as awkward wrapping in the GitHub UI. (This does not apply to code blocks, which are preformatted.)
+
+## Privacy
+
+Issues are public. Never put anything from the private lab into an issue: no host names (lab machine names or any `.lan` name), no NTRIP mountpoint names, caster addresses, IP addresses, network or location details, people, credentials, or anything else recorded in the private `satpulse-systest` repo. The same applies to issue comments, PR descriptions and commit messages.
+
+Describe the setup in terms that any reader could reproduce: the receiver model and firmware, the message types and rates, the relevant satpulse config fragment, the OS and board family, and the observed data. "Observed with `[stream.pull]` from a UM980 base sending MSM4 for five GNSS" is right; "observed on <lab host> pulling <lab caster>'s mountpoint" with the real names is not. Before running `gh issue create`, `gh issue edit` or `gh issue comment`, reread the text for these.
 
 ## Labels
 

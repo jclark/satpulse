@@ -3,13 +3,14 @@ package scan_test
 import (
 	"io"
 	"math/rand"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsreg"
 	"github.com/jclark/satpulse/gps/internal/ubx"
 	"github.com/jclark/satpulse/gps/lib/asbin"
-	casicbin "github.com/jclark/satpulse/gps/lib/casbin"
+	"github.com/jclark/satpulse/gps/lib/casbin"
 	"github.com/jclark/satpulse/gps/lib/novmsg"
 	"github.com/jclark/satpulse/gps/lib/rtcmbin"
 	"github.com/jclark/satpulse/gps/lib/sdbpbin"
@@ -18,17 +19,18 @@ import (
 	"github.com/jclark/satpulse/gps/scan"
 )
 
-// packetSyncBytes contains the first sync byte of each binary packet format.
+// packetSyncBytes contains the first sync byte of each packet format.
 // Used to generate invalid packets that won't be mistaken for valid ones.
 var packetSyncBytes = []byte{
-	'$',               // NMEA
-	ubxbin.Sync1,      // UBX
+	'$',                  // NMEA
+	novmsg.AbbrevSync,    // NovAtel abbreviated ASCII
+	ubxbin.Sync1,         // UBX
 	rtcmbin.PreambleByte, // RTCM
-	casicbin.Sync1,    // CASIC
-	uncmsg.Sync1,      // Unicore
-	novmsg.Sync1,      // NovAtel
-	asbin.Sync1,       // Allystar
-	sdbpbin.Sync1,     // SDBP (Techtotop/Taidou)
+	casbin.Sync1,         // CASIC
+	uncmsg.Sync1,         // Unicore
+	novmsg.Sync1,         // NovAtel
+	asbin.Sync1,          // Allystar
+	sdbpbin.Sync1,        // SDBP (Techtotop/Taidou)
 }
 
 // randomUBXPacket generates a random UBX packet for testing purposes.
@@ -45,7 +47,7 @@ func randomUBXPacket() string {
 	payloadLength := rand.Intn(300)
 	packet = append(packet, byte(payloadLength), byte(payloadLength>>8))
 
-	for i := 0; i < payloadLength; i++ {
+	for range payloadLength {
 		packet = append(packet, byte(rand.Intn(256)))
 	}
 
@@ -62,7 +64,7 @@ func TestGoodUBX(t *testing.T) {
 	var packets []string
 
 	// Generate random packets and keep track of them
-	for i := 0; i < numPackets; i++ {
+	for range numPackets {
 		packet := randomUBXPacket()
 		packets = append(packets, packet)
 	}
@@ -72,7 +74,7 @@ func TestGoodUBX(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
+	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(nil))
 
 	// Scan the data and verify the packets
 	for i, expectedPacket := range packets {
@@ -107,7 +109,7 @@ func TestUBXRescan(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
+	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(nil))
 
 	// Scan the first packet
 	pkt, err := s.Scan()
@@ -158,7 +160,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 	// Generate packets, alternating between UBX and invalid
 	var packets []string
-	for i := 0; i < numPackets; i++ {
+	for i := range numPackets {
 		if i%2 == 0 {
 			// Generate a UBX packet
 			packets = append(packets, randomUBXPacket())
@@ -173,7 +175,7 @@ func TestUBXWithInterspersedInvalidPackets(t *testing.T) {
 
 	// Create a reader and scanner
 	r := strings.NewReader(data)
-	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(gpsreg.VendorUnknown))
+	s := scan.New(r, bufferSize, gpsreg.CreatePacketFormats(nil))
 
 	// Top-level loop to scan packets
 	var concatenatedInvalid string
@@ -236,10 +238,5 @@ func randomInvalidPacket() string {
 }
 
 func isSyncByte(b byte) bool {
-	for _, sync := range packetSyncBytes {
-		if b == sync {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(packetSyncBytes, b)
 }

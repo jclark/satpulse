@@ -1,0 +1,10 @@
+vendor = "Septentrio"
+model = "mosaic-G5"
+firmware = "1.1.0"
+default-baud = 115200
+
+# From the ReceiverSetup SBF block:
+# ProductName    = "mosaic-G5 P3"
+# RxVersion      = "1.1.0"
+# GNSSFWVersion  = "2026.01.2-g83d1ca6770"
+# Captured over USB (USB1 = /dev/ttyACM1); baud is nominal on USB CDC.

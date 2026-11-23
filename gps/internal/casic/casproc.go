@@ -24,7 +24,23 @@ type PacketProcessor struct {
 	curNavEpochStart time.Time            // tRead of first message in current epoch
 	pendingNav2Dop   *casbin.Nav2Dop      // buffered until FlushNavEpoch (no TOW field)
 	lastTimeGNSS     gpsprot.GNSS         // from most recent Nav2TimeUTC
+	lastReceiverTime receiverTime         // most recent receiver-derived time reference
 	satAccum         satAccum             // satellite info accumulator
+}
+
+type receiverTime struct {
+	tRead time.Time
+	tai   ptime.Time
+}
+
+const tim2LsNowMaxAge = time.Hour
+
+func (t receiverTime) recent(tRead time.Time) (ptime.Time, bool) {
+	age := tRead.Sub(t.tRead)
+	if t.tai.IsZero() || age < 0 || age > tim2LsNowMaxAge {
+		return 0, false
+	}
+	return t.tai, true
 }
 
 // NewPacketProcessor creates a new CASIC binary packet processor
@@ -92,14 +108,8 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		tm := timeNavSol(mt)
 		posE := posECEFNavSol(p.curNavEpochMsg, mt)
 		velE := velECEFNavSol(p.curNavEpochMsg, mt)
+		p.dispatchTime(tm, tRead, true)
 		if p.mh != nil {
-			if tm != nil {
-				tm.Tag = Tag
-				if ne := p.curNavEpochMsg; ne != nil {
-					tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-				}
-				p.mh.Time(tm, tRead)
-			}
 			if posE != nil {
 				posE.Tag = Tag
 				posE.Priority = gpsprot.PriVendorLow
@@ -117,23 +127,14 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		if tm == nil {
 			return false
 		}
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.dispatchTime(tm, tRead, true)
 		return true
 	case *casbin.TimTP:
 		tm := timeTimTP(mt)
 		if tm == nil {
 			return false
 		}
-		if p.mh != nil {
-			tm.Tag = Tag
-			p.mh.Time(tm, tRead)
-		}
+		p.dispatchTime(tm, tRead, false)
 		return true
 	case *casbin.NavGPSInfo:
 		p.satAccum.accum(&mt.NavSatInfoFixed, mt.SVs, p.mh, tRead)
@@ -172,26 +173,14 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 			return false
 		}
 		p.lastTimeGNSS = tm.GNSS
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.dispatchTime(tm, tRead, true)
 		return true
 	case *casbin.Nav2Sol:
 		tm := timeNav2Sol(mt, p.lastTimeGNSS)
 		posE := posECEFNav2Sol(p.curNavEpochMsg, mt)
 		velE := velECEFNav2Sol(p.curNavEpochMsg, mt)
+		p.dispatchTime(tm, tRead, true)
 		if p.mh != nil {
-			if tm != nil {
-				tm.Tag = Tag
-				if ne := p.curNavEpochMsg; ne != nil {
-					tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-				}
-				p.mh.Time(tm, tRead)
-			}
 			if posE != nil {
 				posE.Tag = Tag
 				posE.Priority = gpsprot.PriVendorLow
@@ -241,13 +230,7 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 		return true
 	case *casbin.Tim2Tpx:
 		tm := timeTim2Tpx(mt)
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.dispatchTime(tm, tRead, true)
 		return true
 	case *casbin.Tim2TimeGPS:
 		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GPS, ptime.GPS, ptime.TAIMinusGPS, "TIM2-TIMEGPS", tRead)
@@ -256,16 +239,23 @@ func (p *PacketProcessor) dispatch(m casbin.Msg, tRead time.Time) bool {
 	case *casbin.Tim2TimeGLN:
 		// GLONASS time tracks UTC; use dedicated conversion that produces UTCTime
 		tm := timeTim2TimeGLN(&mt.Tim2TimeGNSS)
-		if p.mh != nil {
-			tm.Tag = Tag
-			if ne := p.curNavEpochMsg; ne != nil {
-				tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
-			}
-			p.mh.Time(tm, tRead)
-		}
+		p.dispatchTime(tm, tRead, true)
 		return true
 	case *casbin.Tim2TimeGAL:
 		return p.dispatchTim2Time(&mt.Tim2TimeGNSS, gpsprot.GAL, ptime.Galileo, ptime.TAIMinusGalileo, "TIM2-TIMEGAL", tRead)
+	case *casbin.Tim2Ls:
+		if now, ok := p.lastReceiverTime.recent(tRead); ok {
+			ls := leapTim2Ls(mt, now)
+			if ls != nil && p.mh != nil {
+				p.mh.LeapSecond(ls, tRead)
+			}
+		}
+		return true
+	case *casbin.Tim2TimePos:
+		if p.mh != nil {
+			p.mh.Survey(surveyTim2TimePos(mt), tRead)
+		}
+		return true
 	default:
 		return false
 	}
@@ -278,12 +268,25 @@ func (p *PacketProcessor) dispatchTim2Time(m *casbin.Tim2TimeGNSS, gnss gpsprot.
 		p.mh.LeapSecond(ls, tRead)
 	}
 	tm := timeTim2TimeGNSS(m, gnss, toTAI, taiMinusGNSS, msgID)
-	if p.mh != nil {
-		tm.Tag = Tag
+	p.dispatchTime(tm, tRead, true)
+	return true
+}
+
+func (p *PacketProcessor) dispatchTime(tm *gpsprot.TimeMsg, tRead time.Time, readDelay bool) {
+	if tm == nil {
+		return
+	}
+	if tai, ok := tm.ComputeTAITime(ptime.LeapSecond2016()); ok {
+		p.lastReceiverTime = receiverTime{tRead: tRead, tai: tai}
+	}
+	if p.mh == nil {
+		return
+	}
+	tm.Tag = Tag
+	if readDelay {
 		if ne := p.curNavEpochMsg; ne != nil {
 			tm.ReadDelay = gpsprot.Duration(tRead.Sub(p.curNavEpochStart))
 		}
-		p.mh.Time(tm, tRead)
 	}
-	return true
+	p.mh.Time(tm, tRead)
 }

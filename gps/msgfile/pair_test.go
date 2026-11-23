@@ -41,6 +41,7 @@ func TestCorrelatorPAIR(t *testing.T) {
 				recvNMEA("PAIR001,072,1"),
 				expect{ack: AckOther, relevance: LevelAckOnly, msgIndex: intptr(0)},
 				checkDone{canAcceptMore: true},
+				checkMissing{ack: []int{0}},
 				recvNMEA("PAIR001,072,0"),
 				expect{ack: AckAck, relevance: LevelAckOnly, msgIndex: intptr(0)},
 				checkDone{canAcceptMore: false},

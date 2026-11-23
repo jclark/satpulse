@@ -49,10 +49,12 @@ Out of scope but related: the TODO at `internal/gpscmd/gpsflags.go` about adding
 
 ## Part 2: the harness
 
-New top-level directory `gpstest/` containing a Python package, runnable in-repo as `python3 gpstest` and packageable with zipapp (part 4). Stdlib only at runtime; dev tooling (mypy strict via uv) mirrors `smoketest/`.
+New top-level directory `gpshwtest/` containing a Python package, runnable in-repo as `python3 gpshwtest` and packageable with zipapp (part 4). Stdlib only at runtime; dev tooling (mypy strict via uv) mirrors `smoketest/`.
+
+The name anticipates a later, separate restructuring that gathers the test harnesses under `test/` (`smoketest/` to `test/smoke/`, `systest/` to `test/sys/`, `gpshwtest/` to `test/gpshw/`). Shared Python helpers, if duplication appears, would live in a sibling package under `test/` at that point; until then each harness stays self-contained.
 
 ```
-gpstest/
+gpshwtest/
   __main__.py     # argparse, group selection, summary, exit code
   runner.py       # step execution: satpulsetool invocation, timeout, JSON + packet-log collection
   compare.py      # support-aware property comparators
@@ -65,8 +67,8 @@ gpstest/
 ### CLI
 
 ```
-python3 gpstest -f /etc/satpulse.toml --all
-python3 gpstest -d /dev/ttyACM0 -s 38400 --signals --tp
+python3 gpshwtest -f /etc/satpulse.toml --all
+python3 gpshwtest -d /dev/ttyACM0 -s 38400 --signals --tp
 ```
 
 - Connection options `-d`/`-s`/`-f` pass through to `satpulsetool gps` unchanged. `-f /etc/satpulse.toml` is the systest path: each host's config supplies device and speed, so the playbook needs no per-host receiver knowledge.
@@ -196,7 +198,7 @@ The session baseline includes a full config snapshot. At the end of the battery 
 
 Both the new harness and the system smoke deploy to systest hosts as single-file zipapps built with stdlib `zipapp` (no dependencies to bundle):
 
-- `gpstest/Makefile` target building `out/gpstest.pyz` from the `gpstest/` package (`python3 -m zipapp gpstest -o out/gpstest.pyz -p '/usr/bin/env python3'`).
+- `gpshwtest/Makefile` target building `out/gpshwtest.pyz` from the `gpshwtest/` package (`python3 -m zipapp gpshwtest -o out/gpshwtest.pyz -p '/usr/bin/env python3'`).
 - `smoketest/Makefile` target building `out/system-smoke.pyz` containing `system.py` (as `__main__.py` or via a shim), `common.py`, and `scenarios/`. `system.py`'s current `sys.path.insert(HERE)` is unnecessary inside a zipapp (the archive root is already on `sys.path`) but harmless; the only structural change needed is the `__main__.py` entry point.
 
 Target hosts are Debian 12/13 (python3 >= 3.11), so the 3.10+ syntax already used in `smoketest/` is fine. The `.pyz` files are build artifacts under `out/`, not checked in.
@@ -205,8 +207,8 @@ Target hosts are Debian 12/13 (python3 >= 3.11), so the 3.10+ syntax already use
 
 New playbook `systest/hwtest.yml` following the existing playbook patterns (`check.yml`, `stop.yml`, `start.yml`):
 
-1. Build `out/gpstest.pyz` locally (or take it prebuilt).
-2. Per host: stop the satpulse service(s), copy the `.pyz`, run `python3 gpstest.pyz -f /etc/satpulse.toml --all --artifact-dir /tmp/gpstest-<run>` (group selection overridable via an Ansible variable; dangerous groups never default on). The playbook runs as root, so physical PPS verification is active automatically on every host whose config has a `[phc]` table.
+1. Build `out/gpshwtest.pyz` locally (or take it prebuilt).
+2. Per host: stop the satpulse service(s), copy the `.pyz`, run `python3 gpshwtest.pyz -f /etc/satpulse.toml --all --artifact-dir /tmp/gpshwtest-<run>` (group selection overridable via an Ansible variable; dangerous groups never default on). The playbook runs as root, so physical PPS verification is active automatically on every host whose config has a `[phc]` table.
 3. Fetch the artifact dir (results.jsonl, per-step packet logs, any wedge reports) back to the controller under a per-host directory.
 4. Restart the satpulse service regardless of test outcome.
 5. Aggregate: a controller-side summary across hosts from the fetched `results.jsonl` files.
@@ -218,16 +220,15 @@ Golden-data harvest workflow: after a green fleet run, the fetched per-step pack
 ## Phasing
 
 1. `--json` on `satpulsetool gps` (+ man page, NEWS). Independently useful; everything else consumes it.
-2. Harness skeleton: runner, session baseline, readback groups (signals, timeGNSS, timePulse, antCableDelay, minElev, mode, rtcmBaseID), comparators, reporting. Developed against the ZED-F9P on the desk.
-3. Dewedging (baud discovery, status capture, recovery, restoration). Needs a UART-connected receiver to exercise for real.
+2. Harness skeleton: runner, session baseline, readback groups (signals, timeGNSS, timePulse, antCableDelay, minElev, mode, rtcmBaseID), comparators, reporting. Developed against the locally attached ZED-F9P on `/dev/ttyACM0`.
+3. Dewedging (baud discovery, status capture, recovery, restoration). Needs a UART-connected receiver to exercise for real; the second local receiver on `/dev/ttyS0` provides one.
 4. Persist group.
 5. Message-output groups: event-level verification via `satpulsetool replay` for PVT/sats, packet-level checks for NMEA/RTCM.
-6. zipapp targets for gpstest and the system smoke.
+6. zipapp targets for gpshwtest and the system smoke.
 7. `systest/hwtest.yml` playbook + artifact fetch/aggregation.
 8. Opt-in dangerous groups (`--speed-group`, `--reset-group`).
 
 ## Open questions
 
-- Directory and tool name: `gpstest/` is proposed; `hwtest/` is the casictool-aligned alternative. The name should not collide conceptually with `smoketest/` (no hardware) or `systest/` (Ansible).
 - Whether `--json` should also be honored by the low-level `--msg-file` path eventually (error for now).
 - Whether the persist group should also verify `--save-all` (saves running config wholesale), which is harder to make NVM-neutral.

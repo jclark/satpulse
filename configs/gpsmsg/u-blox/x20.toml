@@ -1,0 +1,25 @@
+#:schema ../gpsmsg-schema.json
+# u-blox ZED-X20P configuration messages (HPG 2.10, protocol version 50.11)
+# X20-specific capabilities not present on the F9 generation, on top of the
+# shared gen 9+ entries pulled in from gen9.toml (which itself includes ubx.toml).
+# Uses CFG-VALSET ([[ubxval]] / [[ubxvalport]]); the layer (RAM vs persistent)
+# is chosen by --save.
+
+[[include]]
+src = "gen9.toml"
+
+# CFG-NAVCOR selects the navigation corrections source. Enabling Galileo HAS
+# means switching off host-supplied corrections and turning on the HAS source.
+[[ubxval]]
+tag = "ppp-has"
+description = "Enable PPP with Galileo HAS source"
+keys = [0x100D0001, 0x100D0002] # CFG-NAVCOR-ENABLE_HOST, CFG-NAVCOR-ENABLE_GAL_HAS
+types = "U1U1"
+values = [0, 1]
+
+[[ubxval]]
+tag = "ppp-has-off"
+description = "Disable PPP with Galileo HAS source"
+keys = [0x100D0001, 0x100D0002] # CFG-NAVCOR-ENABLE_HOST, CFG-NAVCOR-ENABLE_GAL_HAS
+types = "U1U1"
+values = [1, 0]

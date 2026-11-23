@@ -12,6 +12,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/ascii"
 	"github.com/jclark/satpulse/time/internal/obs"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 )
@@ -40,6 +41,7 @@ type PrometheusObserver struct {
 	freqDeltaSumSqCounter prometheus.Counter
 
 	// RTCM input metrics
+	rtcmEpochMsgIDs          map[string]struct{} // MSM types counted in the current epoch
 	rtcmInputMessages        *prometheus.CounterVec
 	rtcmInputPacketsObserved *prometheus.CounterVec
 	rtcmInputBytes           prometheus.Counter
@@ -84,7 +86,7 @@ type PrometheusObserver struct {
 }
 
 // New creates a new PrometheusObserver with basic metrics
-func New(clockAccuracyNanos int) *PrometheusObserver {
+func New(clockAccuracyNanos int64) *PrometheusObserver {
 	reg := prometheus.NewRegistry()
 
 	// Sync state gauge
@@ -154,7 +156,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 
 	rtcmInputMessages := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "satpulse_rtcm_input_messages_total",
-		Help: "Total complete logical RTCM input messages observed from the correction feed",
+		Help: "Total logical RTCM input messages",
 	}, []string{"msg_id"})
 	rtcmInputPacketsObserved := prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "satpulse_rtcm_input_packets_observed_total",
@@ -227,6 +229,7 @@ func New(clockAccuracyNanos int) *PrometheusObserver {
 	return &PrometheusObserver{
 		reg:                      reg,
 		activeSatellites:         make(map[gpsprot.SVID]map[gpsprot.SignalID]struct{}),
+		rtcmEpochMsgIDs:          make(map[string]struct{}),
 		inSyncGauge:              inSyncGauge,
 		syncModeGauge:            syncModeGauge,
 		offsetHistogram:          offsetHistogram,
@@ -284,7 +287,7 @@ func makeBuckets(clockAccuracyNanos float64) []float64 {
 // ModeChanged drives sync_mode and sync_status from the new controller
 // mode. Both gauges therefore reflect current state — including transitions
 // that aren't sample-driven, such as a Pause() on carrier loss.
-func (p *PrometheusObserver) ModeChanged(_, newMode phcsync.Mode) {
+func (p *PrometheusObserver) ModeChanged(_, newMode phcsync.Mode, _ time.Time) {
 	p.syncModeGauge.Set(float64(newMode))
 	if newMode.InSync() {
 		p.inSyncGauge.Set(1)
@@ -378,8 +381,19 @@ func (p *PrometheusObserver) corReportPull(msg *gpsprot.CorReportMsg) {
 		return
 	}
 	p.rtcmInputPacketsObserved.WithLabelValues(msg.MsgID).Inc()
-	if !msg.FinalFragment.IsSet() || msg.FinalFragment.Get() {
+	if !msg.FinalInEpoch.IsSet() {
 		p.rtcmInputMessages.WithLabelValues(msg.MsgID).Inc()
+		return
+	}
+	// FinalInEpoch marks the end of the epoch, not of a split message, so an
+	// MSM type counts once per epoch; its further packets in the epoch are
+	// parts of the same message.
+	if _, ok := p.rtcmEpochMsgIDs[msg.MsgID]; !ok {
+		p.rtcmEpochMsgIDs[msg.MsgID] = struct{}{}
+		p.rtcmInputMessages.WithLabelValues(msg.MsgID).Inc()
+	}
+	if msg.FinalInEpoch.Get() {
+		clear(p.rtcmEpochMsgIDs)
 	}
 }
 
@@ -697,9 +711,9 @@ func splitCamelWords(s string) []string {
 			upperRunLen = 0
 			continue
 		}
-		upper := 'A' <= c && c <= 'Z'
+		upper := ascii.IsUpper(byte(c))
 		if upper {
-			if upperRunLen == 0 && i > start && s[i-1] >= 'a' && s[i-1] <= 'z' {
+			if upperRunLen == 0 && i > start && ascii.IsLower(s[i-1]) {
 				// Uppercase after lowercase: new word.
 				words = append(words, s[start:i])
 				start = i

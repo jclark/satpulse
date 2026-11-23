@@ -34,14 +34,30 @@ import time
 from types import FrameType
 from typing import Sequence, TextIO, TypeAlias
 
-# struct sock_sample (native layout, as written by chrony's SOCK clients):
-#   struct timeval tv  -> sec, usec : int64 each on 64-bit Linux
+
+def _is_32bit() -> bool:
+    """Whether the SOCK sender uses the 32-bit struct layout.
+
+    Honour GOARCH, which the smoke-test runner sets when exercising a
+    cross-built 32-bit daemon; otherwise fall back to this host's word size for
+    standalone use against a local sender.
+    """
+    goarch = os.environ.get("GOARCH")
+    if goarch:
+        return goarch in ("386", "arm")
+    return struct.calcsize("P") == 4
+
+
+# struct sock_sample, as written by chrony's SOCK clients (little-endian on
+# every arch we build for). struct timeval's two ints are 32-bit wide on 32-bit
+# platforms and 64-bit on 64-bit ones; everything after it is arch-independent:
+#   struct timeval tv  -> sec, usec : seconds and microseconds of the read
 #   double offset                   : seconds, true_time - system_time
 #   int pulse                       : non-zero if PPS-only (no seconds)
 #   int leap                        : 0 normal, 1 insert, 2 delete
 #   int _pad                        : ignored
 #   int magic == 0x534f434b ("SOCK")
-SAMPLE_FMT = "@qqdiiii"
+SAMPLE_FMT = "<iidiiii" if _is_32bit() else "<qqdiiii"
 SAMPLE_SIZE = struct.calcsize(SAMPLE_FMT)
 SOCK_MAGIC = 0x534F434B
 Record: TypeAlias = dict[str, object]

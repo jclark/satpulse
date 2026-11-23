@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
@@ -185,106 +186,105 @@ func TestParseFlags(t *testing.T) {
 	}
 }
 
-func TestTimingSleepsFromEmittedPacketDeltas(t *testing.T) {
-	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
-	fc := &fakeClock{now: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
-	out := &recordingOutput{clock: fc}
-	input := lines(
-		timedBin(base, "UBX", "NAV-PVT", "01"),
-		timedBin(base.Add(150*time.Millisecond), "UBX", "NAV-PVT", "02"),
-		timedBin(base.Add(350*time.Millisecond), "UBX", "NAV-PVT", "03"),
-	)
+// The realtime timing tests run inside a synctest bubble, so time.Sleep
+// advances a virtual clock deterministically and the recorded write offsets are
+// exact. synctest sleeps never overshoot, so these tests cannot reproduce the
+// wakeup-overshoot drift that absolute-base scheduling guards against; that
+// regression is covered by the macOS smoke test, which failed reliably under
+// the old previous-packet-relative scheduling.
 
-	err := run(strings.NewReader(input), out, runConfig{factor: 1, clock: fc})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if !bytes.Equal(out.Bytes(), []byte{0x01, 0x02, 0x03}) {
-		t.Fatalf("output = %x", out.Bytes())
-	}
-	wantSleeps := []time.Duration{150 * time.Millisecond, 200 * time.Millisecond}
-	if !reflect.DeepEqual(fc.sleeps, wantSleeps) {
-		t.Fatalf("sleeps = %v, want %v", fc.sleeps, wantSleeps)
-	}
-	if out.flushes != 3 {
-		t.Fatalf("flushes = %d, want 3", out.flushes)
-	}
+func TestTimingSleepsFromEmittedPacketDeltas(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
+		out := &recordingOutput{start: time.Now()}
+		input := lines(
+			timedBin(base, "UBX", "NAV-PVT", "01"),
+			timedBin(base.Add(150*time.Millisecond), "UBX", "NAV-PVT", "02"),
+			timedBin(base.Add(350*time.Millisecond), "UBX", "NAV-PVT", "03"),
+		)
+		if err := run(strings.NewReader(input), out, runConfig{factor: 1}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if !bytes.Equal(out.Bytes(), []byte{0x01, 0x02, 0x03}) {
+			t.Fatalf("output = %x", out.Bytes())
+		}
+		wantOffsets := []time.Duration{0, 150 * time.Millisecond, 350 * time.Millisecond}
+		if !reflect.DeepEqual(out.writeOffsets, wantOffsets) {
+			t.Fatalf("writeOffsets = %v, want %v", out.writeOffsets, wantOffsets)
+		}
+		if out.flushes != 3 {
+			t.Fatalf("flushes = %d, want 3", out.flushes)
+		}
+	})
 }
 
 func TestTimingAnchorsFirstPacketAfterFlush(t *testing.T) {
-	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
-	start := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
-	fc := &fakeClock{now: start}
-	out := &recordingOutput{
-		clock:          fc,
-		advanceOnFlush: 200 * time.Millisecond,
-	}
-	input := lines(
-		timedBin(base, "UBX", "NAV-PVT", "01"),
-		timedBin(base.Add(time.Second), "UBX", "NAV-PVT", "02"),
-		timedBin(base.Add(2*time.Second), "UBX", "NAV-PVT", "03"),
-	)
-
-	err := run(strings.NewReader(input), out, runConfig{factor: 1, clock: fc})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	wantSleeps := []time.Duration{time.Second, 800 * time.Millisecond}
-	if !reflect.DeepEqual(fc.sleeps, wantSleeps) {
-		t.Fatalf("sleeps = %v, want %v", fc.sleeps, wantSleeps)
-	}
-	wantWriteTimes := []time.Time{start, start.Add(1200 * time.Millisecond), start.Add(2200 * time.Millisecond)}
-	if !reflect.DeepEqual(out.writeTimes, wantWriteTimes) {
-		t.Fatalf("writeTimes = %v, want %v", out.writeTimes, wantWriteTimes)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
+		// The first Flush blocks until a FIFO reader attaches; later packets must
+		// be scheduled from when packet 1 was actually emitted, not from start.
+		out := &recordingOutput{start: time.Now(), firstFlushBlock: 200 * time.Millisecond}
+		input := lines(
+			timedBin(base, "UBX", "NAV-PVT", "01"),
+			timedBin(base.Add(time.Second), "UBX", "NAV-PVT", "02"),
+			timedBin(base.Add(2*time.Second), "UBX", "NAV-PVT", "03"),
+		)
+		if err := run(strings.NewReader(input), out, runConfig{factor: 1}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		wantOffsets := []time.Duration{0, 1200 * time.Millisecond, 2200 * time.Millisecond}
+		if !reflect.DeepEqual(out.writeOffsets, wantOffsets) {
+			t.Fatalf("writeOffsets = %v, want %v", out.writeOffsets, wantOffsets)
+		}
+	})
 }
 
 func TestTimingFactorCompressesDelays(t *testing.T) {
-	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
-	fc := &fakeClock{now: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
-	out := &recordingOutput{clock: fc}
-	input := lines(
-		timedBin(base, "UBX", "NAV-PVT", "01"),
-		timedBin(base.Add(200*time.Millisecond), "UBX", "NAV-PVT", "02"),
-		timedBin(base.Add(600*time.Millisecond), "UBX", "NAV-PVT", "03"),
-	)
-
-	err := run(strings.NewReader(input), out, runConfig{factor: 4, clock: fc})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	wantSleeps := []time.Duration{50 * time.Millisecond, 100 * time.Millisecond}
-	if !reflect.DeepEqual(fc.sleeps, wantSleeps) {
-		t.Fatalf("sleeps = %v, want %v", fc.sleeps, wantSleeps)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
+		out := &recordingOutput{start: time.Now()}
+		input := lines(
+			timedBin(base, "UBX", "NAV-PVT", "01"),
+			timedBin(base.Add(200*time.Millisecond), "UBX", "NAV-PVT", "02"),
+			timedBin(base.Add(600*time.Millisecond), "UBX", "NAV-PVT", "03"),
+		)
+		if err := run(strings.NewReader(input), out, runConfig{factor: 4}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		wantOffsets := []time.Duration{0, 50 * time.Millisecond, 150 * time.Millisecond}
+		if !reflect.DeepEqual(out.writeOffsets, wantOffsets) {
+			t.Fatalf("writeOffsets = %v, want %v", out.writeOffsets, wantOffsets)
+		}
+	})
 }
 
-func TestTimingUsesPreviousEmittedPacket(t *testing.T) {
-	base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
-	fc := &fakeClock{now: time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)}
-	out := &recordingOutput{clock: fc}
-	input := lines(
-		timedBin(base, "UBX", "NAV-PVT", "01"),
-		timedBin(base.Add(100*time.Millisecond), "RTCM", "1077", "02"),
-		timedBin(base.Add(300*time.Millisecond), "UBX", "NAV-PVT", "03"),
-	)
-
-	err := run(strings.NewReader(input), out, runConfig{tag: "UBX", factor: 1, clock: fc})
-	if err != nil {
-		t.Fatalf("run: %v", err)
-	}
-	if !bytes.Equal(out.Bytes(), []byte{0x01, 0x03}) {
-		t.Fatalf("output = %x", out.Bytes())
-	}
-	wantSleeps := []time.Duration{300 * time.Millisecond}
-	if !reflect.DeepEqual(fc.sleeps, wantSleeps) {
-		t.Fatalf("sleeps = %v, want %v", fc.sleeps, wantSleeps)
-	}
+func TestTimingIgnoresFilteredPackets(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		base := time.Date(2026, 5, 27, 0, 0, 0, 0, time.UTC)
+		out := &recordingOutput{start: time.Now()}
+		input := lines(
+			timedBin(base, "UBX", "NAV-PVT", "01"),
+			timedBin(base.Add(100*time.Millisecond), "RTCM", "1077", "02"),
+			timedBin(base.Add(300*time.Millisecond), "UBX", "NAV-PVT", "03"),
+		)
+		if err := run(strings.NewReader(input), out, runConfig{tag: "UBX", factor: 1}); err != nil {
+			t.Fatalf("run: %v", err)
+		}
+		if !bytes.Equal(out.Bytes(), []byte{0x01, 0x03}) {
+			t.Fatalf("output = %x", out.Bytes())
+		}
+		// Packet 3 is scheduled from its own timestamp relative to the base; the
+		// filtered RTCM packet does not shift its slot.
+		wantOffsets := []time.Duration{0, 300 * time.Millisecond}
+		if !reflect.DeepEqual(out.writeOffsets, wantOffsets) {
+			t.Fatalf("writeOffsets = %v, want %v", out.writeOffsets, wantOffsets)
+		}
+	})
 }
 
 func TestTimingRequiresTimestampOnSelectedPackets(t *testing.T) {
 	input := lines(`{"event":"metadata"}`, `{"tag":"UBX","bin":"01"}`)
-	err := run(strings.NewReader(input), &recordingOutput{}, runConfig{factor: 1, clock: &fakeClock{}})
+	err := run(strings.NewReader(input), &recordingOutput{}, runConfig{factor: 1})
 	if err == nil {
 		t.Fatalf("expected error")
 	}
@@ -301,44 +301,30 @@ func timedBin(t time.Time, tag, msg, bin string) string {
 	return fmt.Sprintf(`{"t":%q,"tag":%q,"msg":%q,"bin":%q}`, t.UTC().Format(gpsio.RFC3339Micro), tag, msg, bin)
 }
 
-type fakeClock struct {
-	now    time.Time
-	sleeps []time.Duration
-}
-
-func (c *fakeClock) Now() time.Time {
-	return c.now
-}
-
-func (c *fakeClock) Sleep(d time.Duration) {
-	c.sleeps = append(c.sleeps, d)
-	c.now = c.now.Add(d)
-}
-
+// recordingOutput captures emitted bytes and, when start is set, the virtual
+// time of each Write relative to start. A non-zero firstFlushBlock makes the
+// first Flush sleep, modelling a FIFO reader attaching late.
 type recordingOutput struct {
 	bytes.Buffer
-	flushes        int
-	clock          *fakeClock
-	writeTimes     []time.Time
-	advanceOnWrite time.Duration
-	advanceOnFlush time.Duration
+	start           time.Time
+	writeOffsets    []time.Duration
+	flushes         int
+	firstFlushBlock time.Duration
+	flushed         bool
 }
 
 func (w *recordingOutput) Write(p []byte) (int, error) {
-	if w.clock != nil {
-		w.writeTimes = append(w.writeTimes, w.clock.now)
+	if !w.start.IsZero() {
+		w.writeOffsets = append(w.writeOffsets, time.Since(w.start))
 	}
-	n, err := w.Buffer.Write(p)
-	if w.clock != nil {
-		w.clock.now = w.clock.now.Add(w.advanceOnWrite)
-	}
-	return n, err
+	return w.Buffer.Write(p)
 }
 
 func (w *recordingOutput) Flush() error {
 	w.flushes++
-	if w.clock != nil {
-		w.clock.now = w.clock.now.Add(w.advanceOnFlush)
+	if w.firstFlushBlock > 0 && !w.flushed {
+		time.Sleep(w.firstFlushBlock)
 	}
+	w.flushed = true
 	return nil
 }

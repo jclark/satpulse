@@ -5,12 +5,15 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/logfile"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/nmeasyn"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
@@ -23,7 +26,6 @@ import (
 	"github.com/jclark/satpulse/time/lib/ntime"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/phctime"
-	"golang.org/x/sys/unix"
 )
 
 const LogExtension = ".jsonl"
@@ -91,6 +93,12 @@ func (h *tickHandler) Time(msg *gpsprot.TimeMsg, tRead time.Time) {
 	h.obs.Tick(msg, tRead)
 }
 
+// GGASelector receives receiver packets and synthesized GGA candidates.
+type GGASelector interface {
+	nmeasyn.Sink
+	Packet(scan.Packet) bool
+}
+
 type Dispatcher struct {
 	gpsprot.DefaultHandler
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
@@ -101,13 +109,17 @@ type Dispatcher struct {
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
+	ppsGen                *pps.Generator
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
 	lg                    *slog.Logger
 	lf                    logfile.LogFile
+	ggaSelector           GGASelector
+	ggaSynth              *nmeasyn.Synth
 	loggedUnknownProtocol bool
 	loggedSurveyComplete  bool
+	sysPulseStartup       *sysPulseStartup // nil once the startup check is over
 	tStart                time.Time
 }
 
@@ -123,10 +135,12 @@ func NewDispatcher(
 	generator *phcsample.Generator,
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
+	ppsGen *pps.Generator,
 	ls ptime.LeapSecond,
 	obs obs.Observer,
 	eventLogPath string,
 	tStart time.Time,
+	ggaSelector GGASelector,
 ) (*Dispatcher, error) {
 	// Always create timeMsgBuffer (useful even without PHC)
 	var minWindow time.Duration
@@ -153,23 +167,35 @@ func NewDispatcher(
 		lg:            lg,
 		obs:           obs,
 		tStart:        tStart,
+		ggaSelector:   ggaSelector,
+	}
+	if ggaSelector != nil {
+		d.ggaSynth = nmeasyn.New(ggaSelector)
 	}
 	d.shm = shm
 	if p, ok := shm.(samplePrecisionSetter); ok {
 		d.sps = p
 	}
-	multiHandler := gpsprot.NewMultiHandler(&d, obs)
+	handlers := []gpsprot.MsgHandler{&d, obs}
+	if d.ggaSynth != nil {
+		handlers = append(handlers, d.ggaSynth)
+	}
+	multiHandler := gpsprot.NewMultiHandler(handlers...)
 	for _, pp := range pktProcs {
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
 	// Route time-message samples. In PHC-base-clock mode the generator
-	// needs TAI labels and a sample sink; in serial mode the Dispatcher
+	// needs TAI labels and a sample sink; with serial PPS the PPS
+	// generator takes the UTC samples; in serial mode the Dispatcher
 	// feeds UTC samples to rc.Sample and SHM; in PHC-disciplined mode no
 	// sink is installed.
 	if generator != nil {
 		generator.SetSampler(&d)
 		timeMsgBuffer.SetMsgTAITimer(&d)
+	} else if ppsGen != nil {
+		d.ppsGen = ppsGen
+		timeMsgBuffer.SetMsgUTCTimer(ppsGen)
 	} else if controller == nil && (rc != nil || shm != nil) {
 		timeMsgBuffer.SetMsgUTCTimer(&d)
 	}
@@ -180,9 +206,12 @@ func NewDispatcher(
 	return &d, nil
 }
 
-const tickPeriod = time.Second / 4
+const (
+	tickPeriod             = time.Second / 4
+	sysPulseStartupTimeout = 30 * time.Second
+)
 
-func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
+func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, pktCh <-chan scan.Packet, pullPktCh <-chan scan.Packet) {
 	// loop until all input channels are closed
 	defer d.obs.Release()
 	if d.rc != nil {
@@ -202,6 +231,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	var ticker *time.Ticker
 	var tickerCh <-chan time.Time
 	var firstTsDeadline <-chan time.Time
+	var sysPulseStartupDeadline <-chan time.Time
 	if d.controller != nil {
 		ticker = time.NewTicker(tickPeriod)
 		defer ticker.Stop()
@@ -211,9 +241,15 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 		// give a warning if we haven't received a timestamp by the time this fires
 		firstTsDeadline = time.After(time.Second * 2)
 	}
+	if ppsCh != nil {
+		// Adaptive polling can take several seconds to acquire a narrow pulse.
+		// Allow comfortably more before warning.
+		sysPulseStartupDeadline = time.After(sysPulseStartupTimeout)
+		d.sysPulseStartup = &sysPulseStartup{rejected: make(map[pps.RejectReason]int)}
+	}
 	// Use SIGHUP as a signal to reopen the log file (e.g. after log rotation)
 	sig := make(chan os.Signal, 1)
-	signal.Notify(sig, unix.SIGHUP)
+	signal.Notify(sig, syscall.SIGHUP)
 	lg := d.lg
 	defer d.lf.Close(d.lg)
 	lg.Debug("event dispatcher goroutine started")
@@ -221,7 +257,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 	staleEra := ts.StaleEra
 	nSkipped := 0
 
-	for tsCh != nil || pktCh != nil || pullPktCh != nil {
+	for tsCh != nil || ppsCh != nil || pktCh != nil || pullPktCh != nil {
 		select {
 		case e, ok := <-tsCh:
 			if !ok {
@@ -231,7 +267,7 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 			}
 			if e.Kind == ts.PauseEvent {
 				if d.controller != nil {
-					d.controller.Pause()
+					d.controller.Pause(e.TReadMono.Sys)
 				} else if d.generator != nil {
 					// Replace with a fresh instance; nothing in
 					// the prior one is worth preserving across
@@ -260,6 +296,18 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 				}
 				d.timestamp(e)
 			}
+		case ce, ok := <-ppsCh:
+			if ok {
+				usable := d.sysPulseCandidateEdge(ce)
+				if s := d.sysPulseStartup; s != nil {
+					s.edge(usable, ce.Reject)
+				}
+			} else {
+				lg.Debug("serial PPS channel of event dispatcher goroutine was closed")
+				ppsCh = nil
+				sysPulseStartupDeadline = nil
+				d.sysPulseStartup = nil
+			}
 
 		case pkt, ok := <-pktCh:
 			if ok {
@@ -280,11 +328,82 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, pktCh <-chan scan.Packet, pullPkt
 		case <-firstTsDeadline:
 			lg.Warn("no PTP hardware clock external timestamps being received")
 			firstTsDeadline = nil
+		case <-sysPulseStartupDeadline:
+			d.sysPulseStartup.report(lg)
+			sysPulseStartupDeadline = nil
+			d.sysPulseStartup = nil
 		case <-sig:
 			d.obs.ReopenLog()
 			d.lf.Reopen(d.lg)
 		}
 	}
+}
+
+// sysPulseStartup checks that serial PPS receives what it needs to produce
+// samples: a usable edge and a post-pulse time message with a UTC time,
+// which is what feeds the Generator. It reports once, at the startup timeout.
+type sysPulseStartup struct {
+	rejected      map[pps.RejectReason]int
+	usableEdge    bool
+	usableTimeMsg bool
+}
+
+func (s *sysPulseStartup) edge(usable bool, reject pps.RejectReason) {
+	if usable {
+		s.usableEdge = true
+	} else {
+		s.rejected[reject]++
+	}
+}
+
+func (s *sysPulseStartup) timeMsg(msg *gpsprot.TimeMsg) {
+	if msg.UTCTime.IsSet() && msg.Ref != gpsprot.PrePulse {
+		s.usableTimeMsg = true
+	}
+}
+
+func (s *sysPulseStartup) report(lg *slog.Logger) {
+	if !s.usableEdge {
+		if len(s.rejected) == 0 {
+			lg.Warn("no serial PPS edges being received")
+		} else {
+			lg.Warn("no usable serial PPS edges being received", "rejected", s.rejected)
+		}
+	}
+	if !s.usableTimeMsg {
+		lg.Warn("no usable time messages being received")
+	}
+}
+
+// sysPulseCandidateEdge reports whether ce is usable according to its reader,
+// independently of whether it can be matched to a receiver time message.
+func (d *Dispatcher) sysPulseCandidateEdge(ce pps.CandidateEdge) bool {
+	d.logEvent(LogEvent{
+		Type: sysPulseEdgeType,
+		T:    ce.TRead,
+		Data: &SysPulseEdge{
+			T:           ce.Timestamp,
+			Uncertainty: [2]gpsprot.Duration{gpsprot.Duration(ce.Uncertainty[0]), gpsprot.Duration(ce.Uncertainty[1])},
+			PollWidths:  [2]gpsprot.Duration{gpsprot.Duration(ce.PollWidths[0]), gpsprot.Duration(ce.PollWidths[1])},
+			Reject:      ce.Reject,
+		},
+	})
+	if ce.Reject != "" {
+		return false
+	}
+	d.sysPulseSample(ce.Edge)
+	return true
+}
+
+func (d *Dispatcher) sysPulseSample(edge pps.Edge) {
+	if d.ppsGen == nil {
+		panic("serial PPS edge channel wired without a Generator")
+	}
+	sample, ok := d.ppsGen.Sample(edge)
+	if !ok {
+		return
+	}
+	d.MsgUTCTime(sample.Ref, sample.Sys, sample.Leap)
 }
 
 func (d *Dispatcher) handlePacket(pkt scan.Packet) {
@@ -318,6 +437,10 @@ func (d *Dispatcher) handlePacket(pkt scan.Packet) {
 	msgID, err := pp.ProcessPacket(pkt.Data, pkt.TRead)
 	if err != nil {
 		lg.Warn("error processing packet", gpsio.PacketWarnAttrs(err, pkt, msgID)...)
+		return
+	}
+	if d.ggaSelector != nil {
+		d.ggaSelector.Packet(pkt)
 	}
 }
 
@@ -340,23 +463,36 @@ func (d *Dispatcher) handlePulledPacket(pkt scan.Packet) {
 }
 
 // LogEvent is a daemon event-log entry: the universal gpsprot event envelope
-// with a payload that is either a gpsprot.Msg (GPS message records) or a
-// *PulseEdge (pulse-edge records, with Type "pulseEdge").
+// with a payload that is either a gpsprot.Msg (GPS message records), a
+// *PHCPulseEdge (Type "phcPulseEdge"), or a *SysPulseEdge (Type
+// "sysPulseEdge").
 type LogEvent gpsprot.Event[any]
 
-// pulseEdgeType is the LogEvent.Type value for pulse-edge records.
-const pulseEdgeType = "pulseEdge"
+// phcPulseEdgeType is the LogEvent.Type value for PHC-timestamped pulse-edge
+// records.
+const phcPulseEdgeType = "phcPulseEdge"
 
-type PulseEdge struct {
+type PHCPulseEdge struct {
 	T     ptime.Time  `json:"t"`
 	Era   phctime.Era `json:"era"`
 	TRead ptime.Time  `json:"tRead"`
 }
 
+// sysPulseEdgeType is the LogEvent.Type value for system-clock-timestamped
+// pulse-edge records produced by serial PPS detection.
+const sysPulseEdgeType = "sysPulseEdge"
+
+type SysPulseEdge struct {
+	T           time.Time           `json:"t"`
+	Uncertainty [2]gpsprot.Duration `json:"uncertainty,omitzero"`
+	PollWidths  [2]gpsprot.Duration `json:"pollWidths,omitzero"`
+	Reject      pps.RejectReason    `json:"reject,omitempty"`
+}
+
 // UnmarshalJSON decodes a LogEvent, dispatching on the type discriminator:
-// "pulseEdge" records decode Data as *PulseEdge, all others as the gpsprot.Msg
-// named by Type. It accepts only the new envelope format; old sparse event
-// logs are handled by gpsevent/migrate_log.go.
+// pulse-edge records decode Data as *PHCPulseEdge or *SysPulseEdge, all
+// others as the gpsprot.Msg named by Type. It accepts only the new envelope
+// format; old sparse event logs are handled by gpsevent/migrate_log.go.
 func (e *LogEvent) UnmarshalJSON(data []byte) error {
 	var raw struct {
 		Type string           `json:"type"`
@@ -370,12 +506,20 @@ func (e *LogEvent) UnmarshalJSON(data []byte) error {
 	e.Type = raw.Type
 	e.T = raw.T
 	e.Mono = raw.Mono
-	if raw.Type == pulseEdgeType {
-		var pe PulseEdge
+	switch raw.Type {
+	case phcPulseEdgeType:
+		var pe PHCPulseEdge
 		if err := json.Unmarshal(raw.Data, &pe); err != nil {
 			return err
 		}
 		e.Data = &pe
+		return nil
+	case sysPulseEdgeType:
+		var se SysPulseEdge
+		if err := json.Unmarshal(raw.Data, &se); err != nil {
+			return err
+		}
+		e.Data = &se
 		return nil
 	}
 	msg, err := gpsprot.UnmarshalMsg(raw.Type, raw.Data)
@@ -404,9 +548,9 @@ func (d *Dispatcher) timestamp(e ts.Event) {
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
-		Type: pulseEdgeType,
+		Type: phcPulseEdgeType,
 		T:    e.TReadMono.Sys,
-		Data: &PulseEdge{
+		Data: &PHCPulseEdge{
 			T:     e.Ts.T,
 			Era:   e.Ts.Era,
 			TRead: e.TReadMono.PHC.T,
@@ -477,10 +621,13 @@ func (d *Dispatcher) Time(mt *gpsprot.TimeMsg, tRead time.Time) {
 	d.logMsg(mt, tRead)
 
 	d.timeMsgBuffer.Time(mt, tRead)
+	if s := d.sysPulseStartup; s != nil {
+		s.timeMsg(mt)
+	}
 
 	// Notify controller that a time message arrived
 	if d.controller != nil {
-		d.controller.TimeMessage()
+		d.controller.TimeMessage(tRead)
 	}
 
 	d.timeTicker.Time(mt, tRead)
@@ -527,6 +674,7 @@ func (d *Dispatcher) Satellites(msg *gpsprot.SatellitesMsg, tRead time.Time) {
 func (d *Dispatcher) NavEpoch(msg *gpsprot.NavEpochMsg, tRead time.Time) {
 	d.logMsg(msg, tRead)
 	d.timeTicker.NavEpoch(msg, tRead)
+	msg.Acc.FillDerived() // after logMsg, so the event log has only reported values
 	d.pvAccum.PVMsgBundle.FillDerived()
 	pv := d.pvAccum.PVMsgBundle // copy before clearing
 	d.pvAccum.NavEpoch(msg, tRead)
@@ -553,7 +701,7 @@ func (d *Dispatcher) LeapSecond(msg *gpsprot.LeapSecondMsg, tRead time.Time) {
 	}
 }
 
-func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg interface{}, tRead time.Time) error {
+func (d *Dispatcher) NativeMsg(tag gpsprot.Tag, msgID string, msg any, tRead time.Time) error {
 	if !d.obs.NativeMsg(tag, msgID, msg, tRead) {
 		d.lg.Debug("unused message from GPS receiver", "protocol", tag, "msgID", msgID)
 	}

@@ -40,6 +40,9 @@ func NewReader(data []byte) *Reader {
 	return &Reader{data: data}
 }
 
+// BitLen returns the number of bits read.
+func (r *Reader) BitLen() int { return r.pos }
+
 // Uint reads n unsigned bits and returns them as a uint64.
 func (r *Reader) Uint(n int) (uint64, error) {
 	if n <= 0 || n > 64 {
@@ -49,7 +52,7 @@ func (r *Reader) Uint(n int) (uint64, error) {
 		return 0, fmt.Errorf("bitsenc: read past end of data at bit %d", r.pos)
 	}
 	var v uint64
-	for i := 0; i < n; i++ {
+	for i := range n {
 		byteIdx := (r.pos + i) / 8
 		bitIdx := 7 - (r.pos+i)%8
 		v = v<<1 | uint64((r.data[byteIdx]>>bitIdx)&1)
@@ -155,7 +158,7 @@ func readStruct(r *Reader, sv, root reflect.Value, varNext func() (int, bool)) e
 				if f.Tag.Get(tagName) != "" {
 					return fmt.Errorf("bitsenc: bits tag not allowed on []struct field %s", f.Name)
 				}
-				for j := 0; j < n; j++ {
+				for j := range n {
 					if err := readStruct(r, fv.Index(j), root, varNext); err != nil {
 						return err
 					}
@@ -176,7 +179,7 @@ func readStruct(r *Reader, sv, root reflect.Value, varNext func() (int, bool)) e
 					return fmt.Errorf("bitsenc: unsupported slice element type %s for field %s", f.Type.Elem(), f.Name)
 				}
 			}
-			for j := 0; j < n; j++ {
+			for j := range n {
 				ev := fv.Index(j)
 				if err := readField(r, ev, elemKind, bits); err != nil {
 					return err
@@ -248,7 +251,7 @@ func (w *Writer) PutUint(v uint64, n int) {
 	if n <= 0 || n > 64 {
 		panic(fmt.Sprintf("bitsenc: invalid bit width %d", n))
 	}
-	for i := 0; i < n; i++ {
+	for i := range n {
 		byteIdx := (w.pos + i) / 8
 		bitIdx := 7 - (w.pos+i)%8
 		for byteIdx >= len(w.buf) {
@@ -336,7 +339,7 @@ func writeStruct(w *Writer, sv reflect.Value, varNext func() (int, bool)) error 
 				if f.Tag.Get(tagName) != "" {
 					return fmt.Errorf("bitsenc: bits tag not allowed on []struct field %s", f.Name)
 				}
-				for j := 0; j < n; j++ {
+				for j := range n {
 					if err := writeStruct(w, fv.Index(j), varNext); err != nil {
 						return err
 					}
@@ -357,7 +360,7 @@ func writeStruct(w *Writer, sv reflect.Value, varNext func() (int, bool)) error 
 					return fmt.Errorf("bitsenc: unsupported slice element type %s for field %s", f.Type.Elem(), f.Name)
 				}
 			}
-			for j := 0; j < n; j++ {
+			for j := range n {
 				if err := writeField(w, fv.Index(j), elemKind, bits); err != nil {
 					return err
 				}

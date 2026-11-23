@@ -1,0 +1,71 @@
+{"t":"2026-06-15T06:13:40.600781Z","tag":"UBX","msg":"MON-VER","bin":"b5620a0400000e34","out":true}
+{"t":"2026-06-15T06:13:40.600809Z","ascii":"VERSIONB\r\n","out":true}
+{"t":"2026-06-15T06:13:40.669178Z","tag":"NMEA","msg":"command","ascii":"$command,VERSIONB,response: OK*46\r\n"}
+{"t":"2026-06-15T06:13:40.672239Z","tag":"UNCB","msg":"VERSION","bin":"aa44b55f2500340100a0770970bc7c068c44000000127e02120000003137353438000000000000000000000000000000000000000000000000000000004852505430302d533130432d500000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000323331303431353030303030312d4d443232413232323530323339383200000000000000000000000000000000000000000000000000000000000000000000000000666633623731393639613964663639640000000000000000000000000000000000323032342f31322f323300000000000000000000000000000000000000000000000000000000000000000094f90068"}
+{"t":"2026-06-15T06:13:40.703701Z","ascii":"CONFIG\r\n","out":true}
+{"t":"2026-06-15T06:13:40.703728Z","ascii":"MASK\r\n","out":true}
+{"t":"2026-06-15T06:13:40.70374Z","ascii":"MODE\r\n","out":true}
+{"t":"2026-06-15T06:13:40.769054Z","tag":"NMEA","msg":"command","ascii":"$command,CONFIG,response: OK*54\r\n"}
+{"t":"2026-06-15T06:13:40.771999Z","tag":"NMEA","msg":"command","ascii":"$command,MASK,response: OK*4A\r\n"}
+{"t":"2026-06-15T06:13:40.775068Z","tag":"NMEA","msg":"command","ascii":"$command,MODE,response: OK*5D\r\n"}
+{"t":"2026-06-15T06:13:40.775068Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,ANTENNA,CONFIG ANTENNA POWERON*7A\r\n"}
+{"t":"2026-06-15T06:13:40.781143Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,NMEAVERSION,CONFIG NMEAVERSION V410*47\r\n"}
+{"t":"2026-06-15T06:13:40.784334Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,VELSTDTHD,CONFIG VELSTDTHD DISABLE 0 0*70\r\n"}
+{"t":"2026-06-15T06:13:40.790395Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,RTK,CONFIG RTK TIMEOUT 120*6C\r\n"}
+{"t":"2026-06-15T06:13:40.793449Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,RTK,CONFIG RTK RELIABILITY 3 1*76\r\n"}
+{"t":"2026-06-15T06:13:40.796539Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,PPP,CONFIG PPP TIMEOUT 120*6C\r\n"}
+{"t":"2026-06-15T06:13:40.802625Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,DGPS,CONFIG DGPS TIMEOUT 300*6C\r\n"}
+{"t":"2026-06-15T06:13:40.805683Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,RTCMB1CB2A,CONFIG RTCMB1CB2A ENABLE*25\r\n"}
+{"t":"2026-06-15T06:13:40.808719Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,ANTENNADELTAHEN,CONFIG ANTENNADELTAHEN 0.0000 0.0000 0.0000*3A\r\n"}
+{"t":"2026-06-15T06:13:40.817832Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,PPS,CONFIG PPS ENABLE GPS POSITIVE 500000 1000 0 0*6E\r\n"}
+{"t":"2026-06-15T06:13:40.824008Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,SIGNALGROUP,CONFIG SIGNALGROUP 1*15\r\n"}
+{"t":"2026-06-15T06:13:40.827025Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,ANTIJAM,CONFIG ANTIJAM AUTO*2B\r\n"}
+{"t":"2026-06-15T06:13:40.830141Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,AGNSS,CONFIG AGNSS DISABLE*70\r\n"}
+{"t":"2026-06-15T06:13:40.836217Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,LOGSEQ,CONFIG LOGSEQ 1*15\r\n"}
+{"t":"2026-06-15T06:13:40.839294Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,CMDFORMAT,CONFIG CMDFORMAT 0*14\r\n"}
+{"t":"2026-06-15T06:13:40.842291Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,COM1,CONFIG COM1 115200*23\r\n"}
+{"t":"2026-06-15T06:13:40.845392Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,COM2,CONFIG COM2 115200*23\r\n"}
+{"t":"2026-06-15T06:13:40.848442Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,COM3,CONFIG COM3 115200*23\r\n"}
+{"t":"2026-06-15T06:13:40.851432Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK GPS*4A\r\n"}
+{"t":"2026-06-15T06:13:40.854497Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK BDSB2I*62\r\n"}
+{"t":"2026-06-15T06:13:40.857547Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK BDSB3I*63\r\n"}
+{"t":"2026-06-15T06:13:40.86059Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK BD3B1C*0B\r\n"}
+{"t":"2026-06-15T06:13:40.863641Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK BD3B2A*0A\r\n"}
+{"t":"2026-06-15T06:13:40.866723Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK BD3B2B*09\r\n"}
+{"t":"2026-06-15T06:13:40.86977Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK GLOL2*34\r\n"}
+{"t":"2026-06-15T06:13:40.87282Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK QZSS*05\r\n"}
+{"t":"2026-06-15T06:13:40.87282Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK GALE5a*55\r\n"}
+{"t":"2026-06-15T06:13:40.875872Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK GALE5b*56\r\n"}
+{"t":"2026-06-15T06:13:40.878916Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK GALE6c*54\r\n"}
+{"t":"2026-06-15T06:13:40.881991Z","tag":"NMEA","msg":"CONFIG","ascii":"$CONFIG,MASK,MASK 5.0*25\r\n"}
+{"t":"2026-06-15T06:13:40.885074Z","tag":"UNCA","msg":"MODE","ascii":"#MODE,95,GPS,FINE,2423,108838000,17548,0,18,739;MODE ROVER SURVEY,*10\r\n"}
+{"t":"2026-06-15T06:13:40.892156Z","ascii":"MASK L1\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892163Z","ascii":"MASK L2\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892164Z","ascii":"MASK B1\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892166Z","ascii":"MASK B3\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892198Z","ascii":"MASK B2I\r\n","out":true}
+{"t":"2026-06-15T06:13:40.8922Z","ascii":"MASK BD3B2B\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892202Z","ascii":"MASK R2\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892204Z","ascii":"MASK E1\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892217Z","ascii":"MASK E5b\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892226Z","ascii":"MASK Q1\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892227Z","ascii":"MASK Q2\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892229Z","ascii":"UNMASK L5\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892237Z","ascii":"UNMASK BD3B2A\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892239Z","ascii":"UNMASK E5a\r\n","out":true}
+{"t":"2026-06-15T06:13:40.892241Z","ascii":"UNMASK Q5\r\n","out":true}
+{"t":"2026-06-15T06:13:40.919073Z","tag":"NMEA","msg":"command","ascii":"$command,MASK L1,response: OK*17\r\n"}
+{"t":"2026-06-15T06:13:40.922083Z","tag":"NMEA","msg":"command","ascii":"$command,MASK L2,response: OK*14\r\n"}
+{"t":"2026-06-15T06:13:40.925134Z","tag":"NMEA","msg":"command","ascii":"$command,MASK B1,response: OK*19\r\n"}
+{"t":"2026-06-15T06:13:40.928182Z","tag":"NMEA","msg":"command","ascii":"$command,MASK B3,response: OK*1B\r\n"}
+{"t":"2026-06-15T06:13:40.931234Z","tag":"NMEA","msg":"command","ascii":"$command,MASK B2I,response: OK*53\r\n"}
+{"t":"2026-06-15T06:13:40.934272Z","tag":"NMEA","msg":"command","ascii":"$command,MASK BD3B2B,response: OK*6D\r\n"}
+{"t":"2026-06-15T06:13:40.937346Z","tag":"NMEA","msg":"command","ascii":"$command,MASK R2,response: OK*0A\r\n"}
+{"t":"2026-06-15T06:13:40.940402Z","tag":"NMEA","msg":"command","ascii":"$command,MASK E1,response: OK*1E\r\n"}
+{"t":"2026-06-15T06:13:40.943448Z","tag":"NMEA","msg":"command","ascii":"$command,MASK E5b,response: OK*78\r\n"}
+{"t":"2026-06-15T06:13:40.946503Z","tag":"NMEA","msg":"command","ascii":"$command,MASK Q1,response: OK*0A\r\n"}
+{"t":"2026-06-15T06:13:40.949548Z","tag":"NMEA","msg":"command","ascii":"$command,MASK Q2,response: OK*09\r\n"}
+{"t":"2026-06-15T06:13:40.952628Z","tag":"NMEA","msg":"command","ascii":"$command,UNMASK L5,response: OK*08\r\n"}
+{"t":"2026-06-15T06:13:40.969056Z","tag":"NMEA","msg":"command","ascii":"$command,UNMASK BD3B2A,response: OK*75\r\n"}
+{"t":"2026-06-15T06:13:40.972102Z","tag":"NMEA","msg":"command","ascii":"$command,UNMASK E5a,response: OK*60\r\n"}
+{"t":"2026-06-15T06:13:40.975154Z","tag":"NMEA","msg":"command","ascii":"$command,UNMASK Q5,response: OK*15\r\n"}

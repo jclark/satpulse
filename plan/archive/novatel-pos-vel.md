@@ -8,7 +8,7 @@ UM980 connected to `/dev/ttyUSB0` at 115200 baud. UM980 outputs BESTPOS and BEST
 
 Add BESTPOS (geodetic position, NovAtel ID 42) and BESTXYZ (ECEF position+velocity, NovAtel ID 241) message support to `novmsg` (parsing library) and `nov` (processor).
 
-BESTPOS and BESTXYZ have identical binary layouts across NovAtel OEM7, ByNav, SinoGNSS, and Unicore. The only difference is vendor-specific SolStatus and PosType/VelType enum value sets. We use generic structs `novmsg.Pos[S, P]` and `novmsg.XYZ[S, P]` parameterized by these enum types, and vendor-specific types embed them.
+BESTPOS and BESTXYZ have identical binary layouts across NovAtel OEM7, Bynav, SinoGNSS, and Unicore. The only difference is vendor-specific SolStatus and PosType/VelType enum value sets. We use generic structs `novmsg.Pos[S, P]` and `novmsg.XYZ[S, P]` parameterized by these enum types, and vendor-specific types embed them.
 
 ### Layering
 
@@ -16,7 +16,7 @@ BESTPOS and BESTXYZ have identical binary layouts across NovAtel OEM7, ByNav, Si
 
 ## Spec
 
-ByNav spec of BESTPOS (message ID 42).
+Bynav spec of BESTPOS (message ID 42).
 
 ### ASCII example
 
@@ -115,7 +115,7 @@ Body length: 72 bytes (+ 4 byte CRC).
 
 ## BESTXYZ spec
 
-OEM7 BESTXYZ (message ID 241). Binary layout is identical across OEM7, ByNav, SinoGNSS (BESTXYZ, ID 241), and Unicore (BESTNAVXYZ, ID 240).
+OEM7 BESTXYZ (message ID 241). Binary layout is identical across OEM7, Bynav, SinoGNSS (BESTXYZ, ID 241), and Unicore (BESTNAVXYZ, ID 240).
 
 ### ASCII example
 
@@ -368,7 +368,7 @@ With `String()`, `ParseSolStatus()`, `MarshalText()`, `UnmarshalText()`.
 
 ### PosType
 
-NovAtel's position/velocity type enum (Table 4-2). Based on OEM7/ByNav values.
+NovAtel's position/velocity type enum (Table 4-2). Based on OEM7/Bynav values.
 
 ```go
 type PosType uint32
@@ -545,13 +545,13 @@ BESTPOS is position-only. NovAtel provides velocity via a separate BESTVEL messa
 
 ### Enum differences across vendors
 
-BESTPOS (NovAtel protocol) is implemented by multiple vendors with the same binary layout but different SolStatus and PosType enum value sets. ByNav SolStatus is a superset of SinoGNSS and Unicore. PosType has incompatible assignments at several values.
+BESTPOS (NovAtel protocol) is implemented by multiple vendors with the same binary layout but different SolStatus and PosType enum value sets. Bynav SolStatus is a superset of SinoGNSS and Unicore. PosType has incompatible assignments at several values.
 
-**SolStatus**: ByNav is a superset of both SinoGNSS (4 values) and Unicore (5 values). No conflicts.
+**SolStatus**: Bynav is a superset of both SinoGNSS (4 values) and Unicore (5 values). No conflicts.
 
 **PosType comparison across vendors:**
 
-| Value | OEM7 | SinoGNSS | ByNav | Unicore | Description (OEM7) |
+| Value | OEM7 | SinoGNSS | Bynav | Unicore | Description (OEM7) |
 |------:|------|----------|-------|---------|--------------------|
 | 0 | NONE | NONE | NONE | NONE | No solution |
 | 1 | FIXEDPOS | FIXEDPOS | FIXEDPOS | FIXEDPOS | Fixed by FIX position command or position averaging |
@@ -592,14 +592,14 @@ BESTPOS (NovAtel protocol) is implemented by multiple vendors with the same bina
 | 80 | INS_PPP_BASIC | | INS_PPP_BASIC | | INS position, last update used converged TerraStar-L |
 
 **Incompatible values** (same integer, different meaning):
-- **51**: RTK_DIRECT_INS (OEM7/ByNav) vs SUPER WIDE_LANE (SinoGNSS)
-- **52**: INS_SBAS (OEM7/ByNav) vs INS (Unicore)
-- **70**: OPERATIONAL (OEM7/ByNav) vs PPP_AR (Unicore)
-- **71**: WARNING (OEM7/ByNav) vs PPP_RTK (Unicore)
+- **51**: RTK_DIRECT_INS (OEM7/Bynav) vs SUPER WIDE_LANE (SinoGNSS)
+- **52**: INS_SBAS (OEM7/Bynav) vs INS (Unicore)
+- **70**: OPERATIONAL (OEM7/Bynav) vs PPP_AR (Unicore)
+- **71**: WARNING (OEM7/Bynav) vs PPP_RTK (Unicore)
 
 Value 18 (WAAS vs SBAS) is the same thing with different names, not a real conflict.
 
-**ByNav diverges from OEM7** at values 4-6 (FLOATCONV/WIDELANE/NARROWLANE) and 33 (IONOFREE_FLOAT), which OEM7 marks as Reserved. OEM7 has 67 (EXT_CONSTRAINED) which ByNav lacks.
+**Bynav diverges from OEM7** at values 4-6 (FLOATCONV/WIDELANE/NARROWLANE) and 33 (IONOFREE_FLOAT), which OEM7 marks as Reserved. OEM7 has 67 (EXT_CONSTRAINED) which Bynav lacks.
 
 **SinoGNSS diverges from OEM7** at values 9 (SINGLE_SMOOTH), 35 (FIX_DERIVATION), and 51 (SUPER WIDE_LANE vs RTK_DIRECT_INS).
 

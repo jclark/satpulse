@@ -55,9 +55,14 @@ to tell the extension which schema to use.
 The `phc` table is about the PTP hardware clock. It can have following keys:
 
 * `interface` - a string giving the name of an ethernet interface with the pin that the GPS's PPS output is attached to
-* `pin` - an integer giving the index of the pin; the default is 0 (which is the only pin on the Raspberry Pi CM4)
-* `channel` - an integer giving the timestamping channel to use; the default is 0; the only case in which you need
-  to change the default is if you have multiple pins in use; in this case, each pin must specify a distinct channel
+* `device` - a string giving the device path of the PHC; use this only for a PHC that is not associated with an interface
+* `pin` - an integer giving the index of the pin; when the PHC has pins, the default is 0 (which is the only pin on the Raspberry Pi CM4);
+  must not be specified if the PHC has no pins
+* `channel` - an integer giving the timestamping channel to use; the default is 0; this needs changing only if
+  multiple pins are in use, in which case each pin must specify a distinct channel, or if the PHC has no
+  pins and the PPS is on another channel
+* `exttsLatency` - an integer giving the external timestamp latency in nanoseconds: how much later the PHC
+  captures a timestamp than the pulse edge arrived at the pin
 * `sync` - a boolean saying whether SatPulse synchronizes the PHC to the GPS receiver; the default is true;
   when false, SatPulse leaves the PHC free-running and instead sends the NTP daemon samples whose
   timestamps are readings of the PHC, treated as TAI, with the offset of each PPS pulse edge derived
@@ -82,6 +87,61 @@ It can have the following keys:
 * `speed` - an integer giving the speed of the connection in bits-per-second (baud)
 * `device` - a string giving the path of the serial device name; when SatPulse is run via systemd, the
   device will usually be specified in systemd commands, which will override any value specified here
+* `pps.pin` - a string giving the modem-control input pin on which to detect the receiver's PPS pulses;
+  one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`, naming the pins of the computer's own serial port or
+  adapter; CTS is recommended; requires `device` to be a real TTY rather than a FIFO or socket;
+  cannot be used when `interface` or `device` in the `[phc]` table is configured;
+  with the `poll` method the pulse must be at least a few milliseconds wide,
+  and narrow pulses can take longer to detect;
+  the common receiver default of 100 ms works well, and microsecond-width pulses are not supported
+* `pps.invertPolarity` - a boolean saying whether to invert the usual PPS pulse polarity;
+  set this to `true` if detected edges trail the start of the second by the pulse width (typically 0.1 s);
+  the default is `false`
+
+Example using PPS on CTS:
+
+```
+[serial]
+device = "/dev/cu.usbserial-XXXXXXXX"
+speed = 38400
+pps.pin = "cts"
+```
+
+## `sample.serial.pps` table
+
+The `sample.serial.pps` table controls how serial PPS edges are detected and associated with UTC-labelled receiver messages.
+It is used when `pps.pin` in the `[serial]` table is configured.
+A non-prepulse message is emitted after the pulse whose UTC second it reports, but timestamp measurement uncertainty can make the inferred delay slightly negative.
+The accepted interval must be narrower than one second so that a pulse has at most one possible UTC label.
+
+It can have the following keys:
+
+* `delayUncertainty` - the allowed uncertainty in the inferred pulse-to-message delay, in seconds;
+  the inferred delay may be this far below zero; the default is 0.005
+* `maxDelay` - the maximum accepted inferred delay from the pulse to its post-pulse message, in seconds;
+  the default is 0.8
+* `method` - controls how the operating system is used to detect modem status changes that mark pulse edges:
+  `"kernel"` means the kernel timestamps the time of a status change;
+  `"wait"` means the kernel notifies the application of a status change;
+  `"poll"` means the application continually asks for the current status;
+  when omitted, the best available method is used
+* `pollPreWarm` - a number of seconds to busy-wait before each poll window opens;
+  this makes the `poll` method more precise on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core;
+  the default is 0, which disables it; a value between 20e-3 and 50e-3 is suggested
+* `maxWakeupLatency` - a number of seconds limiting CPU wakeup latency while serial PPS is active;
+  this makes edge detection more precise, at the cost of power;
+  omitted by default; 0 requests the lowest latency available; a value between 10e-6 and 50e-6 is suggested;
+  currently supported only on Linux
+
+The sum of `delayUncertainty` and `maxDelay` must be less than 1.
+
+Example using the defaults explicitly:
+
+```toml
+[sample.serial.pps]
+delayUncertainty = 0.005
+maxDelay = 0.8
+```
 
 
 ## `gps` table
@@ -89,11 +149,13 @@ It can have the following keys:
 The `gps` table relates to configuration of the GPS receiver. It can have the following keys:
 
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
-  currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
+  currently this works only with u-blox receivers (from the u-blox 6 platform through to the X20 platform),
+  Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960),
+  and Zhongke Microelectronics receivers using CASIC (such as the ATGM332D and ATGM336H);
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
   if you use `false` here, then all the other keys in the table other than `vendor` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
-* `vendor` - a string giving the manufacturer of the GPS module; this restricts which packet formats the scanner recognizes and which configuration protocols are probed; it is also used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; the following values are supported: `"u-blox"`, `"Unicore"`, `"Allystar"`, `"Bynav"`, `"NovAtel"`, `"Quectel"`, `"SinoGNSS"`, `"Techtotop"`, `"Zhongke"`, `"other"`; in addition, the following values are allowed and currently treated as equivalent to `"other"`: `"Furuno"`, `"MediaTek"`, `"Septentrio"`, `"SkyTraq"`, `"Trimble"`; values are case-insensitive; if `vendor` is not specified, no restrictions are applied
+* `vendor` - a string giving the manufacturer of the GPS module; this restricts which packet formats the scanner recognizes and which configuration protocols are probed; it is also used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; the following values are supported: `"u-blox"`, `"Unicore"`, `"Allystar"`, `"Bynav"`, `"NovAtel"`, `"Quectel"`, `"Septentrio"`, `"SinoGNSS"`, `"Techtotop"`, `"Zhongke"` (or `"CASIC"`), `"other"`; in addition, the following values are allowed and currently treated as equivalent to `"other"`: `"Furuno"`, `"MediaTek"`, `"SkyTraq"`, `"Trimble"`; values are case-insensitive; if `vendor` is not specified, the `SATPULSE_VENDORS` environment variable (see **satpulsed**(8)) applies, and if that too is unset, no restrictions are applied
 * `timeGNSS` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
   (SatPulse will not change the enabled GNSS systems since that is a rather disruptive operation); possible values are
    * `"GPS"` for the GNSS system operated by the USA
@@ -163,7 +225,7 @@ The `ptp` table controls this. It can have the following keys:
 * `ptp4l.udsAddress` - a string giving the path of the Unix domain socket used by ptp4l for PTP management. By default
    ptp4l uses `/var/run/ptp4l`, but it can be changed with the ptp4l `uds_address` option. This key must be supplied
    to enable SatPulse to update ptp4l.
-* `domain` - the PTP domain number; this defaults to 0
+* `domainNumber` - the PTP domain number; this defaults to 0
 * `majorSdoId` - the PTP majorSdoId; this defaults to 0; in earlier versions of the PTP standard this is called `transportSpecific`
 * `minorSdoId` - the PTP minorSdoId; this defaults to 0
 * `clockAccuracy` - the accuracy in nanoseconds of the PTP grandmaster instance when synchronized to the GPS receiver.
@@ -191,9 +253,11 @@ ptp4l.udsAddress = "/var/run/ptp4l"
 The `ntp` table controls how SatPulse sends samples to an NTP daemon.
 It supports two protocols: the refclock SOCK protocol defined by chrony, and the SHM protocol defined by NTP.
 
-If the `[phc]` table is not present, then the samples will be based on the timing of the serial messages.
+If the `[phc]` table is not present, samples are normally based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
 The samples from SatPulse can be used to complete the PPS samples.
+When `pps.pin` in the `[serial]` table is configured, samples instead use PPS edges detected on that pin;
+serial time messages are still used to identify the UTC second and leap indication.
 
 The following key enables use of the refclock SOCK protocol:
 
@@ -227,23 +291,25 @@ shm.segment = 2
 ## `log` table
 
 The `log` table is about how SatPulse should log information. SatPulse does two kinds of logging: it logs through systemd,
-and it can also write its own applicaton-specific log files.
+and it can also write its own application-specific log files.
 
 The following keys relate to logging through systemd:
 
 * `verbose` - a boolean saying whether to log verbosely; default is false
-* `interval` - an integer giving the time in seconds over which a log message should summarize the synchronization status;
+* `interval` - an integer giving the time in seconds over which a log message should summarize the PHC synchronization status;
   the default is 30; the status is computed once per second, and a value of 1 will log that status directly; a value
   of 0 will not log the synchronization status
 
-The following keys relate to its own log
+The following keys relate to its own log files:
 
 * `clock` - a boolean saying whether to create a *clock* log; the clock log is in text format and records offsets between the PHC and the GPS;
    it is intended to be convenient for statistical analysis
 * `packet` - a boolean saying whether to create a *packet* log; the packet log is in JSON Lines format and
   records packets received by and sent to the GPS receiver
-* `event` a boolean saying whether to create an  *event* log; the event log is in JSON Lines format and
+* `event` - a boolean saying whether to create an *event* log; the event log is in JSON Lines format and
   records the events input into the synchronization process (pulses and GPS messages)
+* `track` - a boolean saying whether to create a *track* log; the track log is in JSON Lines format and
+  records one trackpoint per navigation epoch
 * `dir` - a string giving the directory in which to write log files; this defaults to `/var/log/satpulse`
 
 ## `http` table array
@@ -276,8 +342,8 @@ listen = "192.168.2.1:2006"
 
 Note that the HTTP monitoring interface can provide a graphical view of the available satellites, but the GPS receiver needs to output the necessary information.
 If the HTTP monitoring interface is enabled and GPS configuration is enabled, then the GPS receiver will be automatically configured to output this information.
-However, this will be done only if the serial speed is less than 38400.
-This can be overridden  using the `satellitesOutput` key in the `gps` table.
+However, this will be done only if the serial speed is at least 38400.
+This can be overridden using the `satellitesOutput` key in the `gps` table.
 But if you want the graphical view, it is recommended to increase the serial speed to at least 38400.
 
 ## `ntrip` table
@@ -387,6 +453,8 @@ The following keys may be specified:
 * `ntrip.mountpoint` - a string giving the caster mountpoint to use; this key is required
 * `ntrip.username` - a string giving the user name for Ntrip basic authentication
 * `ntrip.password` - a string giving the password for Ntrip basic authentication
+* `ntrip.nmeaSend` - a boolean saying whether SatPulse should send the receiver's position to the caster as NMEA GGA; this is needed by Virtual Reference Station casters before they will stream corrections; when true, SatPulse uploads the receiver's current position after connecting and re-uploads it periodically (see `ntrip.nmeaSendInterval`); the default is false
+* `ntrip.nmeaSendInterval` - a number giving the interval in seconds between GGA uploads when `ntrip.nmeaSend` is true; a value of 0 means upload only once per connection; the default is 5
 
 Example
 
@@ -422,11 +490,15 @@ protocol = "RTCM"
 
 The `stream.push` table array allows streams of packets from the GPS receiver to be sent to network endpoints.
 Each `[[stream.push]]` table specifies one endpoint.
-Currently the only kind of endpoint is Ntrip: SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+Two kinds of endpoint are supported: Ntrip and UDP.
 
-The `[[stream.push]]` table has the following keys:
+The `[[stream.push]]` table can have the following key:
 
-* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol; the default is `"RTCM"`
+* `protocol` - a string giving the packet protocol to forward; recognized values are `"RTCM"`, `"NMEA"`, `"UBX"`, `"CASBIN"`, `"ASBIN"`, `"SDBP"`, `"UNCB"`, `"UNCA"`, `"NOVB"` and `"NOVA"`; the receiver must output packets using this protocol
+
+With an Ntrip endpoint, SatPulse acts as an Ntrip server, sending to an Ntrip caster.
+The following keys may be specified:
+
 * `ntrip.address` - a string giving the address of the remote Ntrip caster, in the form *host* or *host*`:`*port*; when the port is omitted, the default is 2101; this key is required
 * `ntrip.mountpoint` - a string giving the mountpoint to push to on the remote caster; this key is required and must be a single URL path component
 * `ntrip.password` - a string giving the password for uploading to the remote caster; this key is required
@@ -434,9 +506,10 @@ The `[[stream.push]]` table has the following keys:
 * `ntrip.bitrate` - an integer giving the bitrate sent to the remote caster; the default is the `bitrate` key in the top-level `ntrip` table
 * `ntrip.msm7to4` - a boolean saying whether MSM7 RTCM packets should be converted to MSM4 before being pushed; non-MSM7 packets are forwarded unchanged; this can be used only when `protocol` is `RTCM`; the default is false
 
+For Ntrip endpoints, `protocol` defaults to `"RTCM"`.
 When the protocol is `RTCM`, the source table information sent to the remote caster uses the fields from the `ntrip` table together with the `ntrip.description`, `ntrip.bitrate`, and `ntrip.msm7to4` keys from the push entry.
 
-Example
+Example using Ntrip
 
 ```
 [ntrip]
@@ -447,6 +520,18 @@ ntrip.address = "caster.example.com"
 ntrip.mountpoint = "BKK"
 ntrip.password = "secret"
 ntrip.description = "Bangkok"
+```
+
+With a UDP endpoint, SatPulse acts as a UDP client, sending packets to a UDP address.
+The following key must be specified:
+
+* `udp.address` - a string giving the UDP destination, in the form *host*`:`*port*
+
+Example using UDP
+
+```
+[[stream.push]]
+udp.address = "127.0.0.1:10110"
 ```
 
 ## `sync` table

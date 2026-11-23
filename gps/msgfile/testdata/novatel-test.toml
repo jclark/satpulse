@@ -1,0 +1,26 @@
+# NovAtel-format test messages for correlator tests.
+
+[default.line]
+responsePattern = "novatel"
+
+[[line]]
+tag = "pps"
+text = "PPSCONTROL ENABLE POSITIVE 1 1000"
+
+[[line]]
+tag = "unlog"
+text = "UNLOG TIMEA"
+
+# Speed change: the response arrives at the new speed.
+[[line]]
+tag = "speed"
+text = "SERIALCONFIG COM1 230400"
+
+# Query: the reply is plain text after the response and port line.
+[[line]]
+tag = "comconfig"
+text = "LOG COMCONFIG"
+
+[[line]]
+tag = "timea"
+text = "LOG TIMEA ONCE"

@@ -97,7 +97,7 @@ func ParseText(text string, v any) error {
 	case *string:
 		*v = text
 	case *int:
-		n, err := strconv.ParseInt(text, 10, 64)
+		n, err := strconv.ParseInt(text, 10, strconv.IntSize)
 		if err != nil {
 			return err
 		}
@@ -127,7 +127,7 @@ func ParseText(text string, v any) error {
 		}
 		*v = int64(n)
 	case *uint:
-		n, err := strconv.ParseUint(text, 0, 64)
+		n, err := strconv.ParseUint(text, 0, strconv.IntSize)
 		if err != nil {
 			return err
 		}
