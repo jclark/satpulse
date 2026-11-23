@@ -95,12 +95,18 @@ On a Raspberry Pi running a 64-bit OS, satpulsed can instead read the GPIO itsel
 It polls the GPIO's level in a short window around each expected pulse.
 This is not subject to the interrupt delay described above.
 On a Raspberry Pi 5, with the poller on its own CPU at real-time priority,
+the `ondemand` CPU frequency governor and PCIe power management disabled,
 it locates the rising edge to within about a microsecond.
 The samples satpulsed sends to the NTP daemon then have both the precise edge time and the second it belongs to,
 so the NTP daemon needs no PPS refclock of its own,
 and is configured as for the serial approach.
 The boot configuration below is still needed to make the GPIO an input;
 the `/dev/pps0` device is left unused.
+
+Power management matters more on a Raspberry Pi 3 or 4.
+With the `ondemand` governor, a mostly idle CPU runs at its lowest clock,
+and the interval in which polling locates the edge is two to three times wider than with the `performance` governor:
+3.1 against 1.1 microseconds on a Raspberry Pi 4, and 4.7 against 2.3 microseconds on a Raspberry Pi 3.
 
 ### Raspberry Pi boot configuration
 
