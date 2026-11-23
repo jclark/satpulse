@@ -9,10 +9,7 @@ import (
 // x/sys/unix defines the SysV shared memory syscall numbers for freebsd but
 // not the SysvShm* wrappers or the sys/ipc.h constants, so this file issues
 // the syscalls directly.
-const (
-	ipcCreat = 0o1000 // IPC_CREAT from <sys/ipc.h>
-	ipcRmid  = 0      // IPC_RMID from <sys/ipc.h>
-)
+const ipcCreat = 0o1000 // IPC_CREAT from <sys/ipc.h>
 
 func sysvShmGet(key, size, flag int) (int, error) {
 	id, _, errno := unix.Syscall(unix.SYS_SHMGET, uintptr(key), uintptr(size), uintptr(flag))
@@ -38,13 +35,6 @@ func sysvShmAttach(id int) ([]byte, error) {
 
 func sysvShmDetach(data []byte) error {
 	if _, _, errno := unix.Syscall(unix.SYS_SHMDT, uintptr(unsafe.Pointer(&data[0])), 0, 0); errno != 0 {
-		return errno
-	}
-	return nil
-}
-
-func sysvShmRemove(id int) error {
-	if _, _, errno := unix.Syscall(unix.SYS_SHMCTL, uintptr(id), ipcRmid, 0); errno != 0 {
 		return errno
 	}
 	return nil

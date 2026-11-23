@@ -168,7 +168,15 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/kpps` provides low-level access to kernel PPS sources using the RFC 2783 data model. It is implemented on Linux and FreeBSD; FreeBSD serial drivers implement the RFC 2783 ioctls on the serial device itself, so there the source is created on an open serial device's descriptor with `OpenFD`.
 
-`gps/lib/gpiomem` reads the level of a Raspberry Pi GPIO directly from the GPIO controller's registers through the gpiomem device. It is built for 64-bit Linux only.
+`gps/lib/gpiomem` reads the level of a GPIO directly from its controller's registers. It is implemented for 64-bit Linux only.
+
+`gps/lib/gpiomem/soc` defines the interface between `gps/lib/gpiomem` and its SoC family packages.
+
+`gps/lib/gpiomem/bcm2835` describes the GPIO controller of the Raspberry Pi 3 and 4.
+
+`gps/lib/gpiomem/rp1` describes the GPIO controller of the Raspberry Pi 5.
+
+`gps/lib/osthread` changes the scheduling settings of an OS thread. It is implemented for Linux.
 
 `gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; on FreeBSD it scans `/dev` for call-out devices and takes USB identity from the `dev.` sysctl tree; other platforms use go.bug.st/serial/enumerator.
 

@@ -17,7 +17,12 @@ and has especially deep support for the Raspberry Pi, from the Pi Zero to the Pi
 It supports a [wide range of GPS receivers]({% link gps-module-support/index.md %}).
 It runs on Linux, macOS and Windows.
 
-The [Setup guide]({% link setup/index.md %}) describes how to get started with SatPulse.
+<span class="new-in-label">new</span>
+Its graphical interface for GPS receiver configuration and monitoring
+can also run [entirely in the browser]({% link workbench/zero-install.md %}), with no installation needed.
+{: .notice--info}
+
+The [Setup guide]({% link setup/index.md %}) describes how to install and configure SatPulse.
 
 The [0.3 release](https://github.com/jclark/satpulse/releases/tag/v0.3)
 brings a large set of [new features]({% link recent-changes.md %}).
@@ -39,7 +44,7 @@ SatPulse consists of three programs:
 * satpulsed, a program that runs as a service: it transfers time from a GPS receiver to an NTP or PTP time server;
   it supports monitoring through a Web dashboard and Prometheus metrics;
   it can work as an RTK base station;
-* satpulsewb, [SatPulse Workbench]({% link workbench/index.md %}): a web-based, graphical interface for GNSS receiver configuration and monitoring; it includes an Ntrip client allowing use of RTK positioning
+* satpulsewb, [SatPulse Workbench]({% link workbench/index.md %}): a web-based, graphical interface for GPS receiver configuration and monitoring; it includes an Ntrip client allowing use of RTK positioning
 * satpulsetool, a suite of command-line tools: most important is the gps subcommand that does GPS configuration; other subcommands are intended to support the use of satpulsed and satpulsewb
 
 SatPulse has a distinctive approach to GPS configuration: it supports high-level configuration, which allows the intended configuration to be expressed in GNSS terms, independently of any vendor-specific configuration protocol.

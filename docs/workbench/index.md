@@ -5,7 +5,12 @@ title: Getting started with SatPulse Workbench
 SatPulse Workbench provides a graphical interface for GNSS receiver configuration and monitoring.
 It is an interactive tool for exploring and experimenting with a GNSS receiver.
 It is web-based, which means that you use it through a web browser.
-Concretely, it is a command-line program `satpulsewb` that runs on the computer the GNSS receiver is attached to and acts as a web server.
+It comes in two variants.
+There is an experimental [Zero-Install]({% link workbench/zero-install.md %}) variant, which runs entirely in the browser.
+The main variant is a program `satpulsewb`,
+which is installed along with other programs that are part of SatPulse.
+This page describes the main variant.
+It is a command-line program that runs on the computer the GNSS receiver is attached to and acts as a web server.
 It supports Linux, macOS and Windows.
 The web-based approach means that you can run `satpulsewb` on a headless SBC such as a Raspberry Pi,
 and then interact with it from a browser running on a Mac or PC.
