@@ -1,109 +1,105 @@
-//go:build linux && arm64
-
+// Package gpiomem reads the level of a GPIO directly from its controller's
+// registers, mapped read-only, which suits polling for a pulse edge: a read
+// is one bus transaction, taking about a microsecond on a Raspberry Pi 5.
+//
+// A GPIO is named as its SoC's documentation names it, such as GPIO18 on a
+// Raspberry Pi; the name is case-insensitive ASCII. The SoC is identified
+// from the GPIO controllers of the running system: the gpiochips whose
+// device-tree nodes have a compatible string that one of the SoC family
+// packages under this package handles. That package looks up the controller
+// and line the name identifies and locates the line's level register.
+// Currently the registers are mapped through the gpiomem devices that
+// Raspberry Pi OS provides.
+//
+// The package does not configure the GPIO: it must already be an input, as
+// the pps-gpio overlay makes it. Opening a GPIO is implemented for 64-bit
+// Linux only; elsewhere Open returns an error wrapping
+// errors.ErrUnsupported.
 package gpiomem
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
-	"path/filepath"
+	"slices"
 	"strings"
-	"sync/atomic"
-	"unsafe"
 
+	"github.com/jclark/satpulse/gps/lib/gpiomem/bcm2835"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/rp1"
 	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
-	"golang.org/x/sys/unix"
 )
 
-// Pin is a mapped GPIO whose level can be read.
-type Pin struct {
-	mapping []byte
-	level   *uint32
-	mask    uint32
-	device  string
+// socs lists the supported SoC families.
+var socs = []soc.SoC{bcm2835.SoC{}, rp1.SoC{}}
+
+// upperName checks that name is a non-empty ASCII string and returns it in
+// upper case, the form the SoC family packages parse.
+func upperName(name string) (string, error) {
+	if name == "" {
+		return "", errors.New("empty GPIO name")
+	}
+	for i := 0; i < len(name); i++ {
+		if name[i] >= 0x80 {
+			return "", fmt.Errorf("GPIO name %q: not ASCII", name)
+		}
+	}
+	return strings.ToUpper(name), nil
 }
 
-// Open identifies the SoC of the running system from its GPIO controllers,
-// finds the GPIO the SoC calls name, such as GPIO18, maps its controller's
-// registers and returns a reader for its level.
-func Open(name string) (*Pin, error) {
-	upper, err := upperName(name)
-	if err != nil {
-		return nil, err
-	}
-	ctrls, err := controllers()
-	if err != nil {
-		return nil, err
-	}
-	s, ctrls, err := findSoC(ctrls)
-	if err != nil {
-		return nil, err
-	}
-	i, line, err := s.Lookup(upper, ctrls)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
-	}
-	offset, bit := s.Level(ctrls[i], line)
-	device, length := s.GPIOMem()
-	f, err := os.OpenFile(device, os.O_RDONLY|unix.O_SYNC, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	b, err := unix.Mmap(int(f.Fd()), 0, length, unix.PROT_READ, unix.MAP_SHARED)
-	if err != nil {
-		return nil, fmt.Errorf("mapping %s: %w", device, err)
-	}
-	return &Pin{mapping: b, level: (*uint32)(unsafe.Pointer(&b[offset])), mask: 1 << bit, device: device}, nil
-}
-
-const gpioDevices = "/sys/bus/gpio/devices"
-
-// controllers lists the gpiochips that are bound to a device-tree node, with
-// that node's compatible strings.
-func controllers() ([]soc.Controller, error) {
-	entries, err := os.ReadDir(gpioDevices)
-	if err != nil {
-		return nil, err
-	}
-	var ctrls []soc.Controller
-	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "gpiochip") {
+// findSoC finds the SoC family whose controllers are among ctrls, the GPIO
+// controllers on the system, and returns it with those controllers. A system
+// has one SoC, so controllers of more than one family mean something has gone
+// badly wrong.
+func findSoC(ctrls []soc.Controller) (soc.SoC, []soc.Controller, error) {
+	var found soc.SoC
+	var foundCtrls []soc.Controller
+	for _, s := range socs {
+		var matched []soc.Controller
+		for _, c := range ctrls {
+			if slices.ContainsFunc(c.Compatible, func(compat string) bool { return slices.Contains(s.Compatible(), compat) }) {
+				matched = append(matched, c)
+			}
+		}
+		if len(matched) == 0 {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(gpioDevices, e.Name(), "of_node", "compatible"))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
+		if found != nil {
+			c, d := foundCtrls[0], matched[0]
+			return nil, nil, fmt.Errorf("GPIO controllers of more than one SoC family: %s is %s and %s is %s", c.Chip, c.Compatible[0], d.Chip, d.Compatible[0])
 		}
-		if err != nil {
-			return nil, err
-		}
-		if c := compatibles(b); len(c) > 0 {
-			ctrls = append(ctrls, soc.Controller{Chip: e.Name(), Compatible: c})
+		found, foundCtrls = s, matched
+	}
+	if found == nil {
+		return nil, nil, unsupportedError(ctrls)
+	}
+	return found, foundCtrls, nil
+}
+
+// unsupportedError reports that none of ctrls is a supported controller,
+// listing their compatible strings to identify the hardware.
+func unsupportedError(ctrls []soc.Controller) error {
+	if len(ctrls) == 0 {
+		return errors.New("no GPIO controllers with a device-tree node found")
+	}
+	var compats []string
+	for _, c := range ctrls {
+		for _, compat := range c.Compatible {
+			if !slices.Contains(compats, compat) {
+				compats = append(compats, compat)
+			}
 		}
 	}
-	return ctrls, nil
+	return fmt.Errorf("no supported GPIO controller; found %s", strings.Join(compats, ", "))
 }
 
-// High reports whether the GPIO currently reads high.
-func (p *Pin) High() bool {
-	return atomic.LoadUint32(p.level)&p.mask != 0
-}
-
-// Device returns the path of the gpiomem device the GPIO is read through.
-func (p *Pin) Device() string {
-	return p.device
-}
-
-// Close unmaps the registers. It must not be called while High may still
-// run: High has no guard, so a read after Close faults. Calling Close twice
-// is a programmer error and panics.
-func (p *Pin) Close() error {
-	if p.mapping == nil {
-		panic("gpiomem: Pin closed twice")
+// compatibles splits the NUL-terminated strings of a device-tree compatible
+// property.
+func compatibles(b []byte) []string {
+	var s []string
+	for _, c := range bytes.Split(bytes.TrimRight(b, "\x00"), []byte{0}) {
+		if len(c) > 0 {
+			s = append(s, string(c))
+		}
 	}
-	err := unix.Munmap(p.mapping)
-	p.mapping = nil
-	return err
+	return s
 }
