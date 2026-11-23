@@ -95,17 +95,24 @@ const gpioSleepQuantum = 10 * time.Microsecond
 // the kernel wakes the thread directly at the deadline, with its scheduling
 // priority, rather than through the runtime's timer and scheduler. A wait
 // that need not be precise ends up to gpioSleepQuantum early. ctx is
-// consulted only around the sleep, which is at most a period long.
+// consulted only around the sleep, which is at most a period long. A failed
+// sleep is an error: with no runtime timer behind it, the poller would
+// otherwise read continuously.
 func gpioWait(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	if err := ctx.Err(); err != nil {
 		return false, err
 	}
 	if !precise {
-		d := time.Until(t).Truncate(gpioSleepQuantum)
+		now := time.Now()
+		d := t.Sub(now).Truncate(gpioSleepQuantum)
 		if d <= 0 {
 			return false, nil
 		}
-		t = time.Now().Add(d)
+		t = now.Add(d)
 	}
-	return sleepUntil(t), ctx.Err()
+	slept, err := sleepUntil(t)
+	if err != nil {
+		return false, fmt.Errorf("sleeping until the next GPIO poll: %w", err)
+	}
+	return slept, ctx.Err()
 }

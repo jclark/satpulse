@@ -14,10 +14,11 @@ satpulsetool-pps - examine kernel PPS devices and poll GPIOs for PPS edges
 The **satpulsetool** **pps** command examines the kernel pulse-per-second (PPS) devices, such as `/dev/pps0`, through which the kernel reports the times of pulses on a GPIO pin, a serial modem-control line or a PTP hardware clock pin.
 
 With the **\-d** option, it prints the timestamps captured by one device as they arrive.
-With the **\-g** option, it instead polls a GPIO for PPS edges directly, reading the GPIO controller's registers, and prints the time of each edge it catches;
-the GPIO must already be an input, as the `pps-gpio` overlay makes it.
+With the **\-g** option, it instead polls a GPIO for PPS edges directly, reading the GPIO controller's registers, and prints the time of each edge it catches.
+The GPIO must already be an input, as the `pps-gpio` overlay makes it.
 Otherwise, it lists the PPS devices present, without opening them.
 It changes nothing on the device or GPIO.
+Polling is most precise on a CPU that does not handle the GPIO's interrupt (see `/proc/interrupts`).
 
 # OPTIONS
 
@@ -34,18 +35,19 @@ Opening the device usually requires root privileges.
 *name* is the GPIO's name in the documentation of the board or SoC, such as GPIO18 on a Raspberry Pi, not a header pin number.
 The value is case-insensitive.
 The edge is located between the last read of the GPIO before it and the first read after it.
-Supported on 64-bit Linux on a Raspberry Pi 3, 4 or 5, and usually requires root privileges.
+Supported on 64-bit Linux on a Raspberry Pi 3, 4 or 5.
+Requires read access to the gpiomem device, which the `gpio` group has on Raspberry Pi OS.
 Cannot be combined with **\-d**.
 
 **\-\-cpu** *N*
 : Run the poller on CPU *N*.
-Choose one that does not handle the GPIO's interrupt (see `/proc/interrupts`).
 By default the poller is not pinned to a CPU.
 Requires **\-g**.
 
 **\-\-priority** *N*
 : Run the poller at `SCHED_FIFO` real-time priority *N*, from 1 to 99.
 The default is 0, which leaves it at normal priority.
+Usually requires root privileges.
 Requires **\-g**.
 
 **\-t**, **\-\-timeout** *seconds*

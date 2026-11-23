@@ -659,8 +659,11 @@ func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	} else if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if precise && sleepUntil(t) {
-		slept = true
+	if precise {
+		// A failed remainder sleep only makes the reads pace the wait.
+		if ok, _ := sleepUntil(t); ok {
+			slept = true
+		}
 	}
 	return slept, nil
 }

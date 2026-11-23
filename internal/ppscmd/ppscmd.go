@@ -1,11 +1,12 @@
 // Package ppscmd implements the pps subcommand of satpulsetool, which lists
 // kernel PPS devices and prints the timestamps of one as they arrive, or
-// polls a GPIO for PPS edges as satpulsed does.
+// polls a GPIO for PPS edges.
 package ppscmd
 
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -306,7 +307,15 @@ func pollGPIO(ctx context.Context, lg *slog.Logger, v flagVars) error {
 			}
 			n++
 		case err := <-errCh:
-			if err != nil && ctx.Err() == nil {
+			// DetectGPIO has returned, so the buffered edges are all
+			// there will be.
+			for len(edges) > 0 {
+				if err := printEdge(enc, v, <-edges); err != nil {
+					return err
+				}
+				n++
+			}
+			if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, context.DeadlineExceeded) {
 				return err
 			}
 			if n == 0 {
