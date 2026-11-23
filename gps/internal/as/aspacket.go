@@ -1,8 +1,8 @@
 package as
 
 import (
-	"github.com/jclark/satpulse/gps/lib/asbin"
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/lib/asbin"
 )
 
 // Tag is the identifier for Allystar binary protocol packets

@@ -15,7 +15,7 @@ func TestSurveyNavSvin(t *testing.T) {
 		expect gpsprot.SurveyMsg
 	}{
 		{
-			name:  "in progress",
+			name: "in progress",
 			input: asbin.NavSvin{
 				NavITOW:    asbin.NavITOW{ITow: 100000},
 				PosUsed:    60,
@@ -32,7 +32,7 @@ func TestSurveyNavSvin(t *testing.T) {
 			},
 		},
 		{
-			name:  "completed valid",
+			name: "completed valid",
 			input: asbin.NavSvin{
 				NavITOW:    asbin.NavITOW{ITow: 200000},
 				PosUsed:    300,
@@ -49,7 +49,7 @@ func TestSurveyNavSvin(t *testing.T) {
 			},
 		},
 		{
-			name:  "completed not valid",
+			name: "completed not valid",
 			input: asbin.NavSvin{
 				NavITOW:    asbin.NavITOW{ITow: 300000},
 				PosUsed:    120,
@@ -66,7 +66,7 @@ func TestSurveyNavSvin(t *testing.T) {
 			},
 		},
 		{
-			name:  "high precision accuracy",
+			name: "high precision accuracy",
 			input: asbin.NavSvin{
 				NavITOW:    asbin.NavITOW{ITow: 400000},
 				PosUsed:    3600,
