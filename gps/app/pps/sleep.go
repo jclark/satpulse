@@ -10,4 +10,4 @@ func sleepDuration(d time.Duration) time.Duration {
 
 // sleepUntil has nothing to do: sleepDuration asked the runtime timer for
 // the whole wait, and there is no GPIO source to sleep for.
-func sleepUntil(time.Time) bool { return false }
+func sleepUntil(time.Time) (bool, error) { return false, nil }
