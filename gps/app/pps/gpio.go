@@ -23,21 +23,16 @@ type GPIOConfig struct {
 	Priority int
 }
 
-// DetectGPIO polls the GPIO called name, such as GPIO18, for the rising
-// edges of its PPS pulses and sends a candidate for each until ctx is done
-// or polling fails. The GPIO is read through gpiomem, so it must already be
-// an input. The poller runs on its own OS thread, pinned and prioritized as
-// cfg says; the thread is discarded when polling ends, so its settings never
-// reach the rest of the program. Cancellation takes effect at the next
-// poll, at most one period away. If stats is non-nil, it records polling
-// statistics.
-func DetectGPIO(ctx context.Context, lg *slog.Logger, name string, cfg GPIOConfig, ceCh chan<- CandidateEdge, stats *PollStats) error {
-	pin, err := gpiomem.Open(name)
-	if err != nil {
-		return err
-	}
-	defer pin.Close()
-	lg.Info("GPIO PPS polling", "gpio", name, "device", pin.Device())
+// DetectGPIO polls pin for the rising edges of its PPS pulses and sends a
+// candidate for each until ctx is done or polling fails. The pin must
+// already be an input, and stays open: the caller opens it with gpiomem.Open,
+// which finds errors in the GPIO's name or the platform before polling
+// starts, and closes it after DetectGPIO returns. The poller runs on its own
+// OS thread, pinned and prioritized as cfg says; the thread is discarded
+// when polling ends, so its settings never reach the rest of the program.
+// Cancellation takes effect at the next poll, at most one period away. If
+// stats is non-nil, it records polling statistics.
+func DetectGPIO(ctx context.Context, lg *slog.Logger, pin *gpiomem.Pin, cfg GPIOConfig, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	errCh := make(chan error, 1)
 	go func() {
 		// The goroutine exits with its thread still locked, so the runtime

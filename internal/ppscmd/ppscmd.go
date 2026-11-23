@@ -17,6 +17,7 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/cmd"
 	"github.com/jclark/satpulse/gps/app/pps"
+	"github.com/jclark/satpulse/gps/lib/gpiomem"
 	"github.com/jclark/satpulse/gps/lib/kpps"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/spf13/pflag"
@@ -286,6 +287,12 @@ func pollGPIO(ctx context.Context, lg *slog.Logger, v flagVars) error {
 		ctx, cancel = context.WithTimeout(ctx, v.timeout)
 		defer cancel()
 	}
+	pin, err := gpiomem.Open(v.gpio)
+	if err != nil {
+		return err
+	}
+	defer pin.Close()
+	lg.Info("GPIO PPS polling", "gpio", v.gpio, "device", pin.Device())
 	edges := make(chan pps.CandidateEdge, 16)
 	errCh := make(chan error, 1)
 	var stats *pps.PollStats
@@ -293,7 +300,7 @@ func pollGPIO(ctx context.Context, lg *slog.Logger, v flagVars) error {
 		stats = new(pps.PollStats)
 	}
 	go func() {
-		err := pps.DetectGPIO(ctx, lg, v.gpio, v.cfg, edges, stats)
+		err := pps.DetectGPIO(ctx, lg, pin, v.cfg, edges, stats)
 		stats.Log(lg)
 		errCh <- err
 	}()

@@ -35,7 +35,7 @@ Opening the device usually requires root privileges.
 *name* is the GPIO's name in the documentation of the board or SoC, such as GPIO18 on a Raspberry Pi, not a header pin number.
 The value is case-insensitive.
 The edge is located between the last read of the GPIO before it and the first read after it.
-Supported on 64-bit Linux on a Raspberry Pi 3, 4 or 5.
+Supported on a Raspberry Pi running 64-bit Linux.
 Requires read access to the gpiomem device, which the `gpio` group has on Raspberry Pi OS.
 Cannot be combined with **\-d**.
 
