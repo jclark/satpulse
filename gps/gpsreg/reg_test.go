@@ -1,10 +1,12 @@
 package gpsreg
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
 	"github.com/jclark/satpulse/gps/gpsprot"
+	"github.com/jclark/satpulse/gps/internal/nov"
 )
 
 func TestVendorString(t *testing.T) {
@@ -115,13 +117,13 @@ func TestEnvVendors(t *testing.T) {
 		{"CASIC alias", "CASIC", []Vendor{VendorZhongke}, false},
 		{"list", "u-blox,Unicore", []Vendor{VendorUblox, VendorUnicore}, false},
 		{"list with alias", "ublox,comnav", []Vendor{VendorUblox, VendorSinoGNSS}, false},
-		{"all", "all", allVendors, false},
+		{"all", "all", AllVendors(), false},
 		{"all mixed with names", "all,u-blox", nil, true},
 		{"unknown name", "bogus", nil, true},
 		{"duplicates dropped in order", "u-blox,ublox,Unicore", []Vendor{VendorUblox, VendorUnicore}, false},
 		{"empty element", "u-blox,,Unicore", nil, true},
 		{"whitespace around names", " u-blox, Unicore ", []Vendor{VendorUblox, VendorUnicore}, false},
-		{"whitespace around all", " all ", allVendors, false},
+		{"whitespace around all", " all ", AllVendors(), false},
 		{"whitespace only", "  ", nil, false},
 	}
 	for _, tc := range tests {
@@ -187,22 +189,51 @@ func TestCreatePacketFormats(t *testing.T) {
 	}
 }
 
+func TestNovVariant(t *testing.T) {
+	tests := []struct {
+		name    string
+		vendors []Vendor
+		expect  nov.Variant
+	}{
+		{"empty list", nil, nov.VariantOEM7},
+		{"bynav", []Vendor{VendorBynav}, nov.VariantBynav},
+		{"sinognss", []Vendor{VendorSinoGNSS}, nov.VariantSinoGNSS},
+		{"bynav with non-NovAtel vendor", []Vendor{VendorUblox, VendorBynav}, nov.VariantBynav},
+		{"two NovAtel-format vendors", []Vendor{VendorBynav, VendorUnicore}, nov.VariantOEM7},
+		{"no NovAtel-format vendor", []Vendor{VendorUblox}, nov.VariantOEM7},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := NovVariant(tc.vendors); got != tc.expect {
+				t.Errorf("got %v, want %v", got, tc.expect)
+			}
+		})
+	}
+}
+
 func TestCreateConfigProtocols(t *testing.T) {
 	tests := []struct {
 		name    string
 		vendors []Vendor
-		expect  int
+		expect  []string
 	}{
-		{"empty list is the default probe set", nil, 2},
-		{"u-blox", []Vendor{VendorUblox}, 1},
-		{"unicore", []Vendor{VendorUnicore}, 1},
-		{"both defaults", []Vendor{VendorUblox, VendorUnicore}, 2},
-		{"vendor without protocol", []Vendor{VendorAllystar}, 0},
+		{"empty list is the default probe set", nil, []string{"*ubx.ConfigProtocol", "*unc.ConfigProtocol"}},
+		{"u-blox", []Vendor{VendorUblox}, []string{"*ubx.ConfigProtocol"}},
+		{"unicore", []Vendor{VendorUnicore}, []string{"*unc.ConfigProtocol"}},
+		{"zhongke", []Vendor{VendorZhongke}, []string{"*casic.ConfigProtocol"}},
+		{"vendor order ignored", []Vendor{VendorUnicore, VendorZhongke, VendorUblox},
+			[]string{"*ubx.ConfigProtocol", "*casic.ConfigProtocol", "*unc.ConfigProtocol"}},
+		{"all vendors", AllVendors(), []string{"*ubx.ConfigProtocol", "*casic.ConfigProtocol", "*unc.ConfigProtocol"}},
+		{"vendor without protocol", []Vendor{VendorAllystar}, nil},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if n := len(CreateConfigProtocols(tc.vendors)); n != tc.expect {
-				t.Errorf("got %d config protocols, want %d", n, tc.expect)
+			var got []string
+			for _, p := range CreateConfigProtocols(tc.vendors) {
+				got = append(got, fmt.Sprintf("%T", p))
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
 			}
 		})
 	}

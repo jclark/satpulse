@@ -7,9 +7,7 @@ src = "ubx.toml"
 
 # UBX message enable/disable via CFG-MSG (class 0x06, id 0x01).
 # The 3-byte short form [msgClass, msgID, rate] sets the rate on the
-# port the command is received on.
-# These tags are named with a -uart1 suffix to indicate they are intended
-# for use over UART1 (the receiving port determines which port is affected).
+# port the command is received on, so these tags are not port-specific.
 
 # Configuration management via CFG-CFG (class 0x06, id 0x09).
 # Payload: clearMask(U4) + saveMask(U4) + loadMask(U4).
@@ -25,32 +23,32 @@ payload.values = [0, 0, 0x1F1F]
 # TIM messages
 
 [[ubx]]
-tag = "ubx-tim-tp-uart1"
-description = "Enable TIM-TP on UART1"
+tag = "ubx-tim-tp"
+description = "Enable TIM-TP"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x0D, 0x01, 1]
 
 [[ubx]]
-tag = "ubx-tim-tp-uart1-off"
-description = "Disable TIM-TP on UART1"
+tag = "ubx-tim-tp-off"
+description = "Disable TIM-TP"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x0D, 0x01, 0]
 
 [[ubx]]
-tag = "ubx-tim-svin-uart1"
-description = "Enable TIM-SVIN on UART1"
+tag = "ubx-tim-svin"
+description = "Enable TIM-SVIN"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x0D, 0x04, 1]
 
 [[ubx]]
-tag = "ubx-tim-svin-uart1-off"
-description = "Disable TIM-SVIN on UART1"
+tag = "ubx-tim-svin-off"
+description = "Disable TIM-SVIN"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
@@ -59,289 +57,478 @@ payload.values = [0x0D, 0x04, 0]
 # NAV messages
 
 [[ubx]]
-tag = "ubx-nav-pvt-uart1"
-description = "Enable NAV-PVT on UART1"
+tag = "ubx-nav-pvt"
+description = "Enable NAV-PVT"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x07, 1]
 
 [[ubx]]
-tag = "ubx-nav-pvt-uart1-off"
-description = "Disable NAV-PVT on UART1"
+tag = "ubx-nav-pvt-off"
+description = "Disable NAV-PVT"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x07, 0]
 
 [[ubx]]
-tag = "ubx-nav-timegps-uart1"
-description = "Enable NAV-TIMEGPS on UART1"
+tag = "ubx-nav-timegps"
+description = "Enable NAV-TIMEGPS"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x20, 1]
 
 [[ubx]]
-tag = "ubx-nav-timegps-uart1-off"
-description = "Disable NAV-TIMEGPS on UART1"
+tag = "ubx-nav-timegps-off"
+description = "Disable NAV-TIMEGPS"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x20, 0]
 
 [[ubx]]
-tag = "ubx-nav-timeutc-uart1"
-description = "Enable NAV-TIMEUTC on UART1"
+tag = "ubx-nav-timeutc"
+description = "Enable NAV-TIMEUTC"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x21, 1]
 
 [[ubx]]
-tag = "ubx-nav-timeutc-uart1-off"
-description = "Disable NAV-TIMEUTC on UART1"
+tag = "ubx-nav-timeutc-off"
+description = "Disable NAV-TIMEUTC"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x21, 0]
 
 [[ubx]]
-tag = "ubx-nav-timebds-uart1"
-description = "Enable NAV-TIMEBDS on UART1"
+tag = "ubx-nav-timebds"
+description = "Enable NAV-TIMEBDS"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x24, 1]
 
 [[ubx]]
-tag = "ubx-nav-timebds-uart1-off"
-description = "Disable NAV-TIMEBDS on UART1"
+tag = "ubx-nav-timebds-off"
+description = "Disable NAV-TIMEBDS"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x24, 0]
 
 [[ubx]]
-tag = "ubx-nav-timeglo-uart1"
-description = "Enable NAV-TIMEGLO on UART1"
+tag = "ubx-nav-timeglo"
+description = "Enable NAV-TIMEGLO"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x23, 1]
 
 [[ubx]]
-tag = "ubx-nav-timeglo-uart1-off"
-description = "Disable NAV-TIMEGLO on UART1"
+tag = "ubx-nav-timeglo-off"
+description = "Disable NAV-TIMEGLO"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x23, 0]
 
 [[ubx]]
-tag = "ubx-nav-timegal-uart1"
-description = "Enable NAV-TIMEGAL on UART1"
+tag = "ubx-nav-timegal"
+description = "Enable NAV-TIMEGAL"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x25, 1]
 
 [[ubx]]
-tag = "ubx-nav-timegal-uart1-off"
-description = "Disable NAV-TIMEGAL on UART1"
+tag = "ubx-nav-timegal-off"
+description = "Disable NAV-TIMEGAL"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x25, 0]
 
 [[ubx]]
-tag = "ubx-nav-timels-uart1"
-description = "Enable NAV-TIMELS on UART1"
+tag = "ubx-nav-timels"
+description = "Enable NAV-TIMELS"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x26, 1]
 
 [[ubx]]
-tag = "ubx-nav-timels-uart1-off"
-description = "Disable NAV-TIMELS on UART1"
+tag = "ubx-nav-timels-off"
+description = "Disable NAV-TIMELS"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x26, 0]
 
 [[ubx]]
-tag = "ubx-nav-clock-uart1"
-description = "Enable NAV-CLOCK on UART1"
+tag = "ubx-nav-clock"
+description = "Enable NAV-CLOCK"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x22, 1]
 
 [[ubx]]
-tag = "ubx-nav-clock-uart1-off"
-description = "Disable NAV-CLOCK on UART1"
+tag = "ubx-nav-clock-off"
+description = "Disable NAV-CLOCK"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x22, 0]
 
 [[ubx]]
-tag = "ubx-nav-eoe-uart1"
-description = "Enable NAV-EOE on UART1"
+tag = "ubx-nav-eoe"
+description = "Enable NAV-EOE"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x61, 1]
 
 [[ubx]]
-tag = "ubx-nav-eoe-uart1-off"
-description = "Disable NAV-EOE on UART1"
+tag = "ubx-nav-eoe-off"
+description = "Disable NAV-EOE"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x61, 0]
 
 [[ubx]]
-tag = "ubx-nav-posllh-uart1"
-description = "Enable NAV-POSLLH on UART1"
+tag = "ubx-nav-posllh"
+description = "Enable NAV-POSLLH"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x02, 1]
 
 [[ubx]]
-tag = "ubx-nav-posllh-uart1-off"
-description = "Disable NAV-POSLLH on UART1"
+tag = "ubx-nav-posllh-off"
+description = "Disable NAV-POSLLH"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x02, 0]
 
 [[ubx]]
-tag = "ubx-nav-posecef-uart1"
-description = "Enable NAV-POSECEF on UART1"
+tag = "ubx-nav-posecef"
+description = "Enable NAV-POSECEF"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x01, 1]
 
 [[ubx]]
-tag = "ubx-nav-posecef-uart1-off"
-description = "Disable NAV-POSECEF on UART1"
+tag = "ubx-nav-posecef-off"
+description = "Disable NAV-POSECEF"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x01, 0]
 
 [[ubx]]
-tag = "ubx-nav-velned-uart1"
-description = "Enable NAV-VELNED on UART1"
+tag = "ubx-nav-velned"
+description = "Enable NAV-VELNED"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x12, 1]
 
 [[ubx]]
-tag = "ubx-nav-velned-uart1-off"
-description = "Disable NAV-VELNED on UART1"
+tag = "ubx-nav-velned-off"
+description = "Disable NAV-VELNED"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x12, 0]
 
 [[ubx]]
-tag = "ubx-nav-velecef-uart1"
-description = "Enable NAV-VELECEF on UART1"
+tag = "ubx-nav-velecef"
+description = "Enable NAV-VELECEF"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x11, 1]
 
 [[ubx]]
-tag = "ubx-nav-velecef-uart1-off"
-description = "Disable NAV-VELECEF on UART1"
+tag = "ubx-nav-velecef-off"
+description = "Disable NAV-VELECEF"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x11, 0]
 
 [[ubx]]
-tag = "ubx-nav-dop-uart1"
-description = "Enable NAV-DOP on UART1"
+tag = "ubx-nav-dop"
+description = "Enable NAV-DOP"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x04, 1]
 
 [[ubx]]
-tag = "ubx-nav-dop-uart1-off"
-description = "Disable NAV-DOP on UART1"
+tag = "ubx-nav-dop-off"
+description = "Disable NAV-DOP"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x04, 0]
 
 [[ubx]]
-tag = "ubx-nav-sat-uart1"
-description = "Enable NAV-SAT on UART1"
+tag = "ubx-nav-sat"
+description = "Enable NAV-SAT"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x35, 1]
 
 [[ubx]]
-tag = "ubx-nav-sat-uart1-off"
-description = "Disable NAV-SAT on UART1"
+tag = "ubx-nav-sat-off"
+description = "Disable NAV-SAT"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x35, 0]
 
 [[ubx]]
-tag = "ubx-nav-svinfo-uart1"
-description = "Enable NAV-SVINFO on UART1"
+tag = "ubx-nav-svinfo"
+description = "Enable NAV-SVINFO"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x30, 1]
 
 [[ubx]]
-tag = "ubx-nav-svinfo-uart1-off"
-description = "Disable NAV-SVINFO on UART1"
+tag = "ubx-nav-svinfo-off"
+description = "Disable NAV-SVINFO"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x30, 0]
 
 [[ubx]]
-tag = "ubx-nav-sol-uart1"
-description = "Enable NAV-SOL on UART1"
+tag = "ubx-nav-sol"
+description = "Enable NAV-SOL"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x06, 1]
 
 [[ubx]]
-tag = "ubx-nav-sol-uart1-off"
-description = "Disable NAV-SOL on UART1"
+tag = "ubx-nav-sol-off"
+description = "Disable NAV-SOL"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x06, 0]
 
 [[ubx]]
-tag = "ubx-nav-svin-uart1"
-description = "Enable NAV-SVIN on UART1"
+tag = "ubx-nav-svin"
+description = "Enable NAV-SVIN"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x3B, 1]
 
 [[ubx]]
-tag = "ubx-nav-svin-uart1-off"
-description = "Disable NAV-SVIN on UART1"
+tag = "ubx-nav-svin-off"
+description = "Disable NAV-SVIN"
 class = 0x06
 id = 0x01
 payload.types = "U1U1U1"
 payload.values = [0x01, 0x3B, 0]
+
+# Information message output via CFG-INF (class 0x06, id 0x02).
+# Payload: protocolID(U1) + reserved1(U1[3]) + infMsgMask(X1[6]).
+# protocolID is 0 for UBX-INF and 1 for NMEA TXT. infMsgMask is a bit mask
+# of severity levels: ERROR 0x01, WARNING 0x02, NOTICE 0x04, TEST 0x08,
+# DEBUG 0x10. Each tag names the least important level enabled and includes
+# every more important level. UBX-INF defaults to none on every port; NMEA
+# TXT defaults to notice on I2C, UART1, USB and SPI.
+# There is no current-port form of CFG-INF: the mask covers all six I/O
+# ports at once, so each tag says which ports it acts on. The -uart1 tags
+# enable the level on UART1 and disable it on the other ports; the -all
+# tags enable it on every port, which the receiver clamps to the ports it
+# has. An unsuffixed name is reserved for a future current-port form.
+
+[[ubx]]
+tag = "ubx-inf-error-uart1"
+description = "Enable UBX-INF error messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x01, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-warning-uart1"
+description = "Enable UBX-INF error and warning messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x03, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-notice-uart1"
+description = "Enable UBX-INF error, warning and notice messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x07, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-test-uart1"
+description = "Enable UBX-INF error, warning, notice and test messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x0F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-debug-uart1"
+description = "Enable UBX-INF messages at all severity levels on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0x1F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "ubx-inf-error-all"
+description = "Enable UBX-INF error messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]
+
+[[ubx]]
+tag = "ubx-inf-warning-all"
+description = "Enable UBX-INF error and warning messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03]
+
+[[ubx]]
+tag = "ubx-inf-notice-all"
+description = "Enable UBX-INF error, warning and notice messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07]
+
+[[ubx]]
+tag = "ubx-inf-test-all"
+description = "Enable UBX-INF error, warning, notice and test messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F]
+
+[[ubx]]
+tag = "ubx-inf-debug-all"
+description = "Enable UBX-INF messages at all severity levels on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F]
+
+[[ubx]]
+tag = "ubx-inf-off"
+description = "Disable UBX-INF messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-error-uart1"
+description = "Enable NMEA TXT error messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x01, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-warning-uart1"
+description = "Enable NMEA TXT error and warning messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x03, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-notice-uart1"
+description = "Enable NMEA TXT error, warning and notice messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x07, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-test-uart1"
+description = "Enable NMEA TXT error, warning, notice and test messages on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x0F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-debug-uart1"
+description = "Enable NMEA TXT messages at all severity levels on UART1 only"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0x1F, 0, 0, 0, 0]
+
+[[ubx]]
+tag = "nmea-inf-error-all"
+description = "Enable NMEA TXT error messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x01, 0x01, 0x01, 0x01, 0x01, 0x01]
+
+[[ubx]]
+tag = "nmea-inf-warning-all"
+description = "Enable NMEA TXT error and warning messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x03, 0x03, 0x03, 0x03, 0x03, 0x03]
+
+[[ubx]]
+tag = "nmea-inf-notice-all"
+description = "Enable NMEA TXT error, warning and notice messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x07, 0x07, 0x07, 0x07, 0x07, 0x07]
+
+[[ubx]]
+tag = "nmea-inf-test-all"
+description = "Enable NMEA TXT error, warning, notice and test messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F, 0x0F]
+
+[[ubx]]
+tag = "nmea-inf-debug-all"
+description = "Enable NMEA TXT messages at all severity levels on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F, 0x1F]
+
+[[ubx]]
+tag = "nmea-inf-off"
+description = "Disable NMEA TXT messages on all ports"
+class = 0x06
+id = 0x02
+payload.types = "U1U1U1U1U1U1U1U1U1U1"
+payload.values = [1, 0, 0, 0, 0, 0, 0, 0, 0, 0]

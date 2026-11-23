@@ -1,9 +1,8 @@
 package ubxbin
 
 import (
+	"slices"
 	"testing"
-
-	"golang.org/x/exp/slices"
 )
 
 func TestInf(t *testing.T) {

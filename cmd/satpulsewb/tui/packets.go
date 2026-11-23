@@ -503,7 +503,7 @@ func packetPreview(e *gpsio.PacketLogEntry) string {
 	return strings.ReplaceAll(strings.ReplaceAll(s, "\r", " "), "\n", " ")
 }
 
-// decode runs the packet through session.DecodePacket and renders the
+// decode runs the packet through Session.DecodePacket and renders the
 // result as indented JSON (just the payload when that is the only
 // field, as in the workbench); undecodable packets fall back to the
 // raw data.
@@ -512,7 +512,7 @@ func (v *packetsView) decode(e *gpsio.PacketLogEntry) string {
 	if len(data) == 0 {
 		data = []byte(e.Ascii)
 	}
-	r, err := session.DecodePacket(v.formats, data, e.Out)
+	r, err := v.sess.DecodePacket(v.formats, data, e.Out)
 	if err == nil && r != nil {
 		var out any = r
 		if r.Header == nil && r.CfgData == nil && r.Payload != nil {

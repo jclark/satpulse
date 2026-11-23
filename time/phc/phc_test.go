@@ -70,3 +70,19 @@ func TestReadExttsTime(t *testing.T) {
 		})
 	}
 }
+
+// TestExttsMaskSingle checks that the ENOTTY a kernel gives for the mask
+// ioctls on a file that does not support them, as before Linux 6.7,
+// is not treated as an error.
+func TestExttsMaskSingle(t *testing.T) {
+	fds := make([]int, 2)
+	if err := unix.Pipe(fds); err != nil {
+		t.Fatalf("pipe: %v", err)
+	}
+	defer unix.Close(fds[0])
+	defer unix.Close(fds[1])
+	clk := &Clock{fd: fds[0]}
+	if err := clk.ExttsMaskSingle(0); err != nil {
+		t.Errorf("unexpected error: %v", err)
+	}
+}

@@ -14,9 +14,12 @@ type USBID struct {
 
 // Port describes a serial port for display in a dropdown or CLI listing.
 type Port struct {
-	Device  string `json:"device"`       // canonical device node to open
-	Display string `json:"display"`      // human-readable label
-	USB     USBID  `json:"usb,omitzero"` // USB vendor and product IDs
+	Device    string   `json:"device"`              // canonical device node to open
+	Display   string   `json:"display"`             // human-readable label
+	USB       USBID    `json:"usb,omitzero"`        // USB vendor and product IDs
+	Serial    string   `json:"serial,omitempty"`    // USB serial number, empty if the device publishes none
+	Interface string   `json:"interface,omitempty"` // USB interface number as sysfs spells it ("00", "02"), empty if unknown (Linux only)
+	Aliases   []string `json:"aliases,omitempty"`   // symlinks to Device, sorted (Linux only)
 }
 
 // enumeratorDisplay preserves the display formatting used with go.bug.st's
@@ -33,6 +36,17 @@ func enumeratorDisplay(name, product string, vid, pid uint16) string {
 		return name + " (" + tag + ")"
 	}
 	return name
+}
+
+// portDetail returns the device text for a display label in the format the
+// Linux and FreeBSD enumerators use: the product text, except that a u-blox
+// generation tag is more informative than u-blox's generic USB product string.
+func portDetail(product string, vid, pid uint16) string {
+	tag := ubloxTag(vid, pid)
+	if (tag != "" && tag != "u-blox") || product == "" {
+		return tag
+	}
+	return product
 }
 
 // ubloxTag returns a u-blox generation tag from USB VID/PID, or empty string.

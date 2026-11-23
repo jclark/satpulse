@@ -67,7 +67,7 @@ const WB_URL_RE = /http:\/\/(?:\[[^\]]+\]|[^\s/]+?):(\d+)\/(?:\?t=(\S+))?/;
 function buildDir(): string {
   // Honour GOOS/GOARCH like the smoketest so a cross-built tree runs against its
   // own binaries; default to the host. Linux uses out/<arch>, other Unix
-  // out/<goos>_<arch>, matching unix-build.sh.
+  // out/<goos>_<arch>, matching Makefile.unix.
   const goos = process.env.GOOS || (process.platform === 'darwin' ? 'darwin' : 'linux');
   let goarch = process.env.GOARCH;
   if (!goarch) {
@@ -374,6 +374,14 @@ export interface WorkbenchCaster {
   caster: { host: string; port: number; mountpoint: string; username: string; password: string };
 }
 
+// MockWorkbench serves the real Workbench components against the test-only
+// mock transport in packages/workbench/test, through Vite's dev server; no
+// backend runs.
+export interface MockWorkbench {
+  // url returns the fixture page with the given query string (e.g. "?corrections").
+  url(query?: string): string;
+}
+
 // --- launchers --------------------------------------------------------------
 
 async function launchSatpulsed(session: RunSession): Promise<{ fifoPath: string; httpPort: number }> {
@@ -462,6 +470,7 @@ interface WorkerFixtures {
   dashboardReplay: DashboardReplay;
   workbenchFixed: WorkbenchFixed;
   workbenchCaster: WorkbenchCaster;
+  mockWorkbench: MockWorkbench;
 }
 
 interface TestFixtures {
@@ -663,6 +672,34 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
             password: CASTER_PASSWORD,
           },
         });
+      } catch (e) {
+        session.keep = true;
+        throw e;
+      } finally {
+        openSessions.delete(session);
+        await session.teardown();
+      }
+    },
+    { scope: 'worker' },
+  ],
+
+  mockWorkbench: [
+    async ({}, use) => {
+      const session = new RunSession('satpulse-e2e-mock-wb');
+      openSessions.add(session);
+      try {
+        const port = await freePort();
+        // Run Vite itself, not through npm, so teardown signals the server.
+        const proc = session.spawnLogged('vite', path.join(REPO, 'webui', 'node_modules', '.bin', 'vite'), [
+          path.join(REPO, 'webui', 'packages', 'workbench-http'),
+          '--host', '127.0.0.1', '--port', String(port), '--strictPort',
+        ]);
+        await poll(`vite port ${port}`, 30000, () => {
+          session.deadIfExited(proc);
+          return httpResponds(port, '/');
+        });
+        const page = path.join(REPO, 'webui', 'packages', 'workbench', 'test', 'index.html');
+        await use({ url: (query = '') => `http://127.0.0.1:${port}/@fs/${page}${query}` });
       } catch (e) {
         session.keep = true;
         throw e;

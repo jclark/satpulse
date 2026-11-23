@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
+	"sync"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -48,7 +50,12 @@ func TestNativeOnlyDetection(t *testing.T) {
 }
 
 // fakeOutPort implements gpsio.OutPort for testing. Records all writes.
+// Writes come from the detect goroutine while the test goroutine reads
+// them, so access is guarded: synctest.Wait orders a bubbled goroutine's
+// writes before a later Wait, but not the test's reads before subsequent
+// writes.
 type fakeOutPort struct {
+	mu         sync.Mutex
 	writes     [][]byte
 	writeTimes []time.Time
 }
@@ -58,9 +65,25 @@ var _ gpsio.OutPort = (*fakeOutPort)(nil)
 func (p *fakeOutPort) Write(b []byte) (int, error) {
 	cp := make([]byte, len(b))
 	copy(cp, b)
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.writes = append(p.writes, cp)
 	p.writeTimes = append(p.writeTimes, time.Now())
 	return len(b), nil
+}
+
+// written returns a snapshot of the recorded writes.
+func (p *fakeOutPort) written() [][]byte {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.writes)
+}
+
+// times returns a snapshot of the times of the recorded writes.
+func (p *fakeOutPort) times() []time.Time {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return slices.Clone(p.writeTimes)
 }
 
 func (p *fakeOutPort) Buffered() (int, error) { return 0, nil }
@@ -227,11 +250,12 @@ func TestProbingTriggeredBySilence(t *testing.T) {
 		// Wait 1s for the silence timer to fire and trigger the first probe
 		time.Sleep(1 * time.Second)
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("expected 1 probe write, got %d", len(port.writes))
+		w := port.written()
+		if len(w) != 1 {
+			t.Fatalf("expected 1 probe write, got %d", len(w))
 		}
-		if string(port.writes[0]) != "PROBE1" {
-			t.Fatalf("probe write = %q, want %q", port.writes[0], "PROBE1")
+		if string(w[0]) != "PROBE1" {
+			t.Fatalf("probe write = %q, want %q", w[0], "PROBE1")
 		}
 		// Let probes time out: 1.5s retry delay + 3s response timeout
 		time.Sleep(probeRetryDelay + probeResponseTimeout)
@@ -245,8 +269,8 @@ func TestProbingTriggeredBySilence(t *testing.T) {
 			t.Fatalf("detect() configProt = %v, want nil", r.configProt)
 		}
 		// Two probes should have been sent
-		if len(port.writes) != 2 {
-			t.Fatalf("expected 2 total probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 2 {
+			t.Fatalf("expected 2 total probe writes, got %d", n)
 		}
 	})
 }
@@ -264,8 +288,8 @@ func TestProbingTriggeredByValidPacket(t *testing.T) {
 		// This triggers a probe immediately.
 		packetCh <- makeNMEAPacket()
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("expected 1 probe write after valid packet, got %d", len(port.writes))
+		if n := len(port.written()); n != 1 {
+			t.Fatalf("expected 1 probe write after valid packet, got %d", n)
 		}
 		// Let probes time out: 1.5s retry delay + 3s response timeout
 		time.Sleep(probeRetryDelay + probeResponseTimeout)
@@ -280,8 +304,8 @@ func TestProbingTriggeredByValidPacket(t *testing.T) {
 			t.Fatalf("detect() configProt = %v, want nil (probe timed out)", r.configProt)
 		}
 		// Two probes should have been sent
-		if len(port.writes) != 2 {
-			t.Fatalf("expected 2 total probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 2 {
+			t.Fatalf("expected 2 total probe writes, got %d", n)
 		}
 	})
 }
@@ -323,8 +347,8 @@ func TestSocketMode(t *testing.T) {
 			resultCh := runDetect(ctx, mh, port, true, true)
 			synctest.Wait()
 			// In socket mode, probe is sent immediately
-			if len(port.writes) != 1 {
-				t.Fatalf("expected 1 probe write in socket mode, got %d", len(port.writes))
+			if n := len(port.written()); n != 1 {
+				t.Fatalf("expected 1 probe write in socket mode, got %d", n)
 			}
 			// Set probeOK and send a packet
 			fp.probeOK = true
@@ -368,14 +392,14 @@ func TestProbeRetryAndTimeout(t *testing.T) {
 		// Send a valid packet to trigger first probe immediately
 		packetCh <- makeNMEAPacket()
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("after first packet: expected 1 probe write, got %d", len(port.writes))
+		if n := len(port.written()); n != 1 {
+			t.Fatalf("after first packet: expected 1 probe write, got %d", n)
 		}
 		// After 1.5s (probeRetryDelay), second probe should be sent
 		time.Sleep(probeRetryDelay)
 		synctest.Wait()
-		if len(port.writes) != 2 {
-			t.Fatalf("after retry delay: expected 2 probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 2 {
+			t.Fatalf("after retry delay: expected 2 probe writes, got %d", n)
 		}
 		// Detect should still be running (waiting for probeResponseTimeout)
 		select {
@@ -414,22 +438,23 @@ func TestProbePacketsSequenceDelay(t *testing.T) {
 		synctest.Wait()
 		packetCh <- makeNMEAPacket()
 		synctest.Wait()
-		checkWrites(t, port.writes, "ESC")
+		checkWrites(t, port.written(), "ESC")
 		time.Sleep(delay)
 		synctest.Wait()
-		checkWrites(t, port.writes, "ESC", "PROBE1", "PROBE2")
-		if got := port.writeTimes[1].Sub(port.writeTimes[0]); got != delay {
+		checkWrites(t, port.written(), "ESC", "PROBE1", "PROBE2")
+		times := port.times()
+		if got := times[1].Sub(times[0]); got != delay {
 			t.Fatalf("probe packet delay = %v, want %v", got, delay)
 		}
-		if got := port.writeTimes[2].Sub(port.writeTimes[1]); got != 0 {
+		if got := times[2].Sub(times[1]); got != 0 {
 			t.Fatalf("delay after final sequence packet = %v, want 0", got)
 		}
 		time.Sleep(probeRetryDelay - time.Nanosecond)
 		synctest.Wait()
-		checkWrites(t, port.writes, "ESC", "PROBE1", "PROBE2")
+		checkWrites(t, port.written(), "ESC", "PROBE1", "PROBE2")
 		time.Sleep(time.Nanosecond)
 		synctest.Wait()
-		checkWrites(t, port.writes, "ESC", "PROBE1", "PROBE2", "ESC")
+		checkWrites(t, port.written(), "ESC", "PROBE1", "PROBE2", "ESC")
 		cancel()
 		synctest.Wait()
 		r := <-resultCh
@@ -455,21 +480,21 @@ func TestSilenceTimerCancelsOnInput(t *testing.T) {
 		synctest.Wait()
 		// No probe should have been sent yet (silence timer cancelled,
 		// no valid packet received, deadline hasn't fired)
-		if len(port.writes) != 0 {
-			t.Fatalf("after framing error at 500ms: expected 0 probe writes, got %d", len(port.writes))
+		if n := len(port.written()); n != 0 {
+			t.Fatalf("after framing error at 500ms: expected 0 probe writes, got %d", n)
 		}
 		// Advance past the original 1s silence timer. No probe should fire.
 		time.Sleep(600 * time.Millisecond)
 		synctest.Wait()
-		if len(port.writes) != 0 {
-			t.Fatalf("at 1.1s: expected 0 probe writes (silence timer cancelled), got %d", len(port.writes))
+		if n := len(port.written()); n != 0 {
+			t.Fatalf("at 1.1s: expected 0 probe writes (silence timer cancelled), got %d", n)
 		}
 		// The deadline (extended by framing error) eventually fires and triggers probe.
 		// Deadline was extended to 2s from the framing error at 0.5s = 2.5s.
 		time.Sleep(1400 * time.Millisecond)
 		synctest.Wait()
-		if len(port.writes) != 1 {
-			t.Fatalf("after deadline: expected 1 probe write, got %d", len(port.writes))
+		if n := len(port.written()); n != 1 {
+			t.Fatalf("after deadline: expected 1 probe write, got %d", n)
 		}
 		// Let probes finish
 		time.Sleep(probeRetryDelay + probeResponseTimeout)

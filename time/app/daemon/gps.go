@@ -137,7 +137,7 @@ func (c *GPSConfig) getMode(target *gpsprot.ConfigTarget) error {
 	opts := &target.Opts
 	opts.Survey.MinDur = time.Second * time.Duration(c.SurveyTime)
 	opts.Survey.AccLimit = gpsprot.Meters(c.SurveyAcc)
-	if opts.Survey.AccLimit < gpsprot.Millimeter {
+	if opts.Survey.AccLimit < gpsprot.MinAccuracy {
 		return configErrorf("survey accuracy %v is too small", opts.Survey.AccLimit)
 	}
 	if c.Resurvey {
@@ -169,7 +169,7 @@ func (c *GPSConfig) setFixedModeECEF(cp *gpsprot.ConfigProps) error {
 		return configErrorf("%v: invalid fixed position: %w", c.FixedPosECEF, err)
 	}
 	var fixedPos gpsprot.Point3D
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		fixedPos[i] = gpsprot.Meters(c.FixedPosECEF[i])
 	}
 	acc, err := c.getFixedPosAcc()
@@ -215,7 +215,7 @@ func (c *GPSConfig) setFixedModeLLH(cp *gpsprot.ConfigProps) error {
 
 func (c *GPSConfig) getFixedPosAcc() (gpsprot.Length, error) {
 	acc := gpsprot.Meters(c.FixedPosAcc)
-	if acc < gpsprot.Millimeter {
+	if acc < gpsprot.MinAccuracy {
 		return 0, configErrorf("fixed position accuracy %v is too small", c.FixedPosAcc)
 	}
 	if acc > gpsprot.Meter*1000 {
@@ -257,7 +257,7 @@ func (c *GPSConfig) getDelay(cp *gpsprot.ConfigProps) error {
 		return nil
 	}
 	if !(math.Abs(delay) <= maxAntennaCableDelay) {
-		return configErrorf("invalid cable delay %v (cable delay is in nanoseconds)", c.AntennaCableDelay)
+		return configErrorf("invalid cable delay %v (cable delay is in nanoseconds)", delay)
 	}
 	cp.SetAntennaCableDelay(time.Duration(delay))
 	return nil

@@ -223,11 +223,11 @@ func (v *correctionsView) handleCorPacket(msg *gpsprot.CorReportMsg) {
 	r := v.rows[msg.MsgID]
 	if r == nil {
 		r = &corRow{tag: string(msg.Tag), msgID: msg.MsgID, count: 1, station: -1, lastTime: now, lastEpoch: -1}
-		if msg.FinalFragment.IsSet() {
+		if msg.FinalInEpoch.IsSet() {
 			r.lastEpoch = v.epoch
 		}
 		v.rows[msg.MsgID] = r
-	} else if msg.FinalFragment.IsSet() {
+	} else if msg.FinalInEpoch.IsSet() {
 		if r.lastEpoch != v.epoch {
 			r.count++
 			r.lastEpoch = v.epoch
@@ -244,7 +244,7 @@ func (v *correctionsView) handleCorPacket(msg *gpsprot.CorReportMsg) {
 	if id := msg.RTCMRefBaseID.Ptr(); id != nil {
 		r.station = int(*id)
 	}
-	if ff := msg.FinalFragment.Ptr(); ff != nil && *ff {
+	if ff := msg.FinalInEpoch.Ptr(); ff != nil && *ff {
 		v.epoch++
 	}
 }

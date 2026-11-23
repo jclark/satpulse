@@ -9,23 +9,24 @@ import (
 
 func disable(lg *slog.Logger, cfg *FlagConfig) ([]Printer, error) {
 	// Open PHC and resolve pin
-	clk, pinIndex, err := phcOpen(cfg.Interface, cfg.Pin)
+	clk, pinIndex, err := phcOpen(cfg)
 	if err != nil {
 		return nil, err
 	}
 	defer clk.Close()
-	
+	if !clk.HasPins() {
+		return nil, noPinsError(cfg)
+	}
+
 	// Disable pin by setting function to NONE
 	// Channel doesn't matter for NONE function, but we use 0 for consistency
 	err = clk.PinSetFunc(pinIndex, phc.PinFuncNone, 0)
 	if err != nil {
 		return nil, fmt.Errorf("failed to disable pin %d: %w", pinIndex, err)
 	}
-	
+
 	// Log success message
-	lg.Info("pin disabled",
-		"interface", cfg.Interface,
-		"pin", pinIndex)
+	lg.Info("pin disabled", append(cfg.logAttrs(), "pin", pinIndex)...)
 	
 	// No data output for disable mode
 	return nil, nil

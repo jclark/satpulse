@@ -40,3 +40,21 @@ func TestAsciiPacketValidation(t *testing.T) {
 		})
 	}
 }
+func TestAsciiPacketMsgID(t *testing.T) {
+	tests := []struct {
+		name   string
+		packet string
+		want   string
+	}{
+		{"decoded message normalizes", "#BESTPOSA,COM1,0,60.0,FINESTEERING,2437,548104.800,00000000,0000,1114;x*00000000\r\n", "BESTPOS"},
+		{"message without a decoder normalizes", "#TRACKSTATA,COM1,0,60.0,FINESTEERING,2437,548104.800,00000000,0000,1114;x*00000000\r\n", "TRACKSTAT"},
+		{"unknown message keeps its wire name", "#BYCHECKA,COM1,0,60.0,FINESTEERING,2437,548104.800,00000000,0000,1114;x*00000000\r\n", "BYCHECKA"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := AsciiPacketFormat.MsgID([]byte(tt.packet)); got != tt.want {
+				t.Errorf("MsgID() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

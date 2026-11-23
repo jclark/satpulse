@@ -34,6 +34,8 @@ These packages provide entry points for the SatPulse executables. They are in th
 
 `cmd/ifwait` provides a program that waits for a network interface to become ready. It exercises the functionality of the `time/lib/ifwait` package.
 
+`cmd/satpulsewbwasm` provides main for SatPulse Workbench in the browser, built for `js/wasm` and using Web Serial.
+
 ### gps/
 
 These packages provide the public API for GPS processing. They are in the domain layer.
@@ -70,9 +72,13 @@ These packages provide GPS orchestration and CLI infrastructure. They are in the
 
 `gps/app/stream` manages correction and packet streams. It pulls RTCM streams from an Ntrip or TCP network endpoint and feeds them to the GPS receiver over the serial port, pushes streams from the GPS receiver to a remote Ntrip network endpoint, and provides selected-GGA helpers for consumers that need current receiver position.
 
-`gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`.
+`gps/app/ntrip` implements an Ntrip caster for serving RTCM packet streams from a GPS receiver to Ntrip clients. It includes an STR record generation capability, which is also used by `gps/app/stream`. The caster, the package's only use of `net/http`, is in `caster.go`, which a `nohttp` build leaves out; the browser Workbench builds that way.
 
-`gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener` (serial device or a running satpulsed's proxy socket, with reset operations gated off over the proxy), and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
+`gps/app/session` implements an interactive session with a GPS receiver -- connect, probe, configure, send message files, monitor, disconnect -- as the application core shared by GUI shells (the Wails desktop app, `cmd/satpulsewb`). It owns the packet pipeline goroutines, delivers events to the shell through a `Sink` interface, opens its transport through an `Opener`, and reconnects and re-probes when a reset re-enumerates a USB device. It was extracted from the desktop app's `app.go`.
+
+`gps/app/pps` handles PPS edges timestamped by the system clock, independently of how they are detected: it combines an edge's timestamp with recent receiver UTC messages to generate a refclock sample, and provides the adaptive polling loop that detects edges on a pin whose level can only be read, predicting each pulse and polling in a window around it.
+
+`gps/app/serialpps` detects PPS edges on serial modem-control input lines, by polling through `gps/app/pps` or by waiting for line changes, and reports them as `gps/app/pps` candidate edges.
 
 `gps/app/ubxsim` implements a hardware-free fake u-blox receiver for smoke-testing configuration wiring. It answers the configuration interface with the ACK/NAK semantics of the interface description and replays a recorded packet log as nav output gated by its own MSGOUT configuration.
 
@@ -90,7 +96,7 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 `gps/internal/septentrio` implements `gps/gpsprot` abstractions for the Septentrio SBF protocol. It uses `gps/lib/sbfbin` to frame and parse SBF blocks.
 
-`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol. It uses `gps/lib/casbin` to do this.
+`gps/internal/casic` implements `gps/gpsprot` abstractions for the CASIC binary protocol, including the configuration protocol for CASIC receivers. It uses `gps/lib/casbin` and `gps/lib/casmsg` to do this.
 
 `gps/internal/unc` implements `gps/gpsprot` abstractions for the Unicore protocol. It uses `gps/lib/uncmsg` to parse Unicore binary and ASCII message formats.
 
@@ -108,6 +114,10 @@ These packages implement the `gpsprot` interface for specific protocols. They ar
 
 These packages are reusable libraries for GPS processing. They are in the library layer.
 
+`gps/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
+
+`gps/lib/wakeup` requests operating-system limits on latency added when CPUs wake from idle. It is Linux-dependent.
+
 `gps/lib/ubxbin` translates binary packets in the UBX protocol to and from Go structs.
 
 `gps/lib/ubxcfgval` handles the 9th generation UBX format for configuration data that is payload for UBX-CFG-VALGET/VALSET messages.
@@ -115,6 +125,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/ubxcfgval/cfgschema` contains a YAML schema for configuration data handled by `gps/lib/ubxcfgval`. This is used to generate code in the `gps/lib/ubxcfgval` package.
 
 `gps/lib/casbin` translates binary packets in the CASIC protocol to and from Go structs.
+
+`gps/lib/casmsg` builds CASIC proprietary PCAS NMEA sentences and interprets their GPTXT responses.
 
 `gps/lib/asbin` translates binary packets in the Allystar binary protocol to and from Go structs.
 
@@ -129,6 +141,8 @@ These packages are reusable libraries for GPS processing. They are in the librar
 `gps/lib/rinex` defines an intermediate, RINEX-adjacent representation of observation data as JSON-serializable Go types, and reads and writes it as RINEX observation files.
 
 `gps/lib/rnxrtcm` converts RTCM MSM7 observation messages to `gps/lib/rinex` records. It uses `gps/lib/rtcmbin` to decode the source messages.
+
+`gps/lib/rnxsbf` converts Septentrio SBF raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/sbfbin` to decode the source messages.
 
 `gps/lib/rnxubx` converts u-blox raw observation messages to `gps/lib/rinex` records. It uses `gps/lib/ubxbin` to decode the source messages.
 
@@ -154,7 +168,19 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/term` provides access to the Linux terminal interface, which provides access to serial devices. This is similar to [github.com/pkg/term](https://github.com/pkg/term), but provides additional Linux-specific functionality.
 
-`gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; other platforms use go.bug.st/serial/enumerator.
+`gps/lib/kpps` provides low-level access to kernel PPS sources using the RFC 2783 data model. It is implemented on Linux and FreeBSD; FreeBSD serial drivers implement the RFC 2783 ioctls on the serial device itself, so there the source is created on an open serial device's descriptor with `OpenFD`.
+
+`gps/lib/gpiomem` reads the level of a GPIO directly from its controller's registers. It is implemented for 64-bit Linux only.
+
+`gps/lib/gpiomem/soc` defines the interface between `gps/lib/gpiomem` and its SoC family packages.
+
+`gps/lib/gpiomem/bcm2835` describes the GPIO controller of the Raspberry Pi 3 and 4.
+
+`gps/lib/gpiomem/rp1` describes the GPIO controller of the Raspberry Pi 5.
+
+`gps/lib/osthread` changes the scheduling settings of an OS thread. It is implemented for Linux.
+
+`gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; on FreeBSD it scans `/dev` for call-out devices and takes USB identity from the `dev.` sysctl tree; other platforms use go.bug.st/serial/enumerator.
 
 `gps/lib/decconv` converts between base-10 decimal strings and int64 scaled integers without floating point. It is used for exact parsing and formatting of physical quantities like angles and lengths.
 
@@ -184,6 +210,8 @@ These packages provide daemon orchestration and CLI. They are in the command lay
 
 `time/app/syncsimcmd` implements the `syncsim` subcommand of satpulsetool. It parses configuration and command-line arguments, then orchestrates a discrete-event simulation of the synchronization system using `time/internal/syncsim`.
 
+`time/app/serialcmd` implements the `serial` subcommand of satpulsetool, including serial PPS edge monitoring through `gps/app/serialpps`.
+
 ### time/internal/
 
 These packages are the main building blocks for satpulsed; they are in the application layer and are not importable outside `time/`.
@@ -201,6 +229,8 @@ These packages are the main building blocks for satpulsed; they are in the appli
 `time/internal/refclock` provides abstractions for sending clock synchronization samples to external time synchronization services like chrony. It includes a worker goroutine that processes samples from a channel and delivers them to configured refclock implementations.
 
 `time/internal/syncsim` provides a discrete-event simulator for testing the phcsync controller with configurable error models for GPS PPS timing and PHC oscillator characteristics. It generates synthetic pulses, messages, and ticks under various fault conditions and measures controller performance.
+
+`time/internal/pollsim` simulates the serial PPS polling loop of `gps/app/pps` in virtual time. It supplies the loop's clock, timer and pulse reader from a model of the pulse and the host (query time, timer truncation and overshoot, idle slowdown) with injected pulse outages and stalls of the polling thread, applies the daemon's forwarding rule to the candidates, and reports how many edges the time daemon would have received, their error against the true edge, and the gaps between them.
 
 `time/internal/obs` provides unified observability interfaces including `Observer` (which extends `phcsync.Sampler` and `gpsprot.Handler`) for receiving both clock synchronization samples and GPS protocol messages.
 
@@ -229,8 +259,6 @@ These packages are reusable libraries for time synchronization. They are in the 
 `time/lib/sse` marshals data into the format of HTML SSE (server-sent events).
 
 `time/lib/allan` computes Allan deviations. (This is not used currently.)
-
-`time/lib/check` validates struct fields against constraints specified in struct tags using reflection. It supports numeric types with comparison operators (`>`, `>=`, `<`, `<=`) and recursively validates nested structs.
 
 `time/lib/circbuf` provides a generic circular buffer that maintains a sliding window of recent samples. It supports appending with automatic overflow handling and reverse chronological iteration.
 
@@ -266,13 +294,19 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/sdpcmd` implements the `sdp` subcommand of satpulsetool. It provides interfaces to manage software-defined pins (SDPs) on PTP hardware clocks, including listing available interfaces and pins, capturing external timestamps, configuring periodic output, and disabling pins.
 
+### webui/packages/e2e/
+
+`webui/packages/e2e/wasmsim` runs the u-blox simulator over stdin/stdout for browser Workbench tests.
+
 ## npm packages
 
-These hold the web frontend source. They are not Go packages: they are built with npm, and the build output is embedded into the Go binaries (see `time/internal/web`). GPS JSON wire types are published from `gps/ts` as `@satpulse/gps` and consumed here rather than redefined.
+These hold the web frontend source. They are built with npm, and the output is embedded into native Go binaries or served as standalone browser assets. GPS JSON wire types are published from `gps/ts` as `@satpulse/gps` and consumed here rather than redefined.
 
 ### webui/
 
-`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). Three of its packages are bundled by Vite with content hashing disabled so the embedded filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management and message-file capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. `@satpulse/e2e` (`packages/e2e`) is the Playwright browser-test suite for the two embedded frontends; it builds nothing, launching the real `satpulsed`/`satpulsewb` binaries from `out/<arch>` and driving them with the smoketest's hardware-free packet sources (a FIFO packet-log replay, the `satpulsetool ubxsim` simulator). Its `harness.ts` provides the launch fixtures, and its two Playwright projects (`dashboard`, `workbench`) mirror the two frontends; it has no `test` script, so `npm test` does not run it (the runner is `npm run e2e`). The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
+`webui/` is the npm workspace holding the web frontend source (TypeScript, Preact, Tailwind). Its entry packages are bundled by Vite with content hashing disabled so the asset filenames stay `app.js` and `style.css`. `@satpulse/dashboard` (`packages/dashboard`) is the satpulsed web dashboard app. `@satpulse/workbench` (`packages/workbench`) holds the SatPulse Workbench components and app, originally the desktop GUI frontend; its `src/transport.ts` defines the transport interface the components talk to their backend through -- a universal core plus optional connection-management, message-file, and correction-forwarding capabilities. `@satpulse/workbench-http` (`packages/workbench-http`) is the satpulsewb entry point: token handling plus the fetch+SSE transport implementation; its build output is embedded by `cmd/satpulsewb`. `@satpulse/e2e` (`packages/e2e`) is the Playwright browser-test suite for the native and WASM frontends. Its `harness.ts` launches native binaries from `out/<arch>` with hardware-free packet sources; `dashboard` and `workbench` test the embedded frontends, while `workbench-wasm` uses the site in `out/workbench-wasm`, mocked Web Serial, and `out/wasm-test/wasmsim`. Mock-transport capability checks use a test-only entry point served by the Vite dev server, which a worker fixture starts on a free port. The suite builds nothing: before running `npm run e2e` in `packages/e2e`, run `make` and `make -f Makefile.wasm test-assets` from the repo root. It has no `test` script, so `npm test` does not run it. The workspace imports GPS wire types from `@satpulse/gps` (`gps/ts`).
+
+`@satpulse/workbench-wasm` (`packages/workbench-wasm`) is the browser entry point, loading the Go wasm module and providing the Web Serial transport.
 
 ## Python packages
 

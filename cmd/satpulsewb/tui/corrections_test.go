@@ -7,8 +7,8 @@ import (
 	"github.com/jclark/satpulse/gps/lib/opt"
 )
 
-func corPacket(msgID string, finalFragment opt.Val[bool]) *gpsprot.CorReportMsg {
-	return &gpsprot.CorReportMsg{Tag: "RTCM", MsgID: msgID, FinalFragment: finalFragment}
+func corPacket(msgID string, finalInEpoch opt.Val[bool]) *gpsprot.CorReportMsg {
+	return &gpsprot.CorReportMsg{Tag: "RTCM", MsgID: msgID, FinalInEpoch: finalInEpoch}
 }
 
 // TestCorrectionsCounting checks the logical-message counting rules:

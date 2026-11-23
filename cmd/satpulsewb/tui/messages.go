@@ -536,7 +536,7 @@ func (v *messagesView) decodeResponse() string {
 	if len(data) == 0 {
 		return ""
 	}
-	rslt, err := session.DecodePacket(v.formats, data, false)
+	rslt, err := v.sess.DecodePacket(v.formats, data, false)
 	if err == nil && rslt != nil {
 		var out any = rslt
 		if rslt.Header == nil && rslt.CfgData == nil && rslt.Payload != nil {

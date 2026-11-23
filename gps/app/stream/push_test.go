@@ -10,6 +10,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/jclark/satpulse/gps/app/bcast"
@@ -522,8 +523,7 @@ func TestPushFiltersInvalidChecksum(t *testing.T) {
 }
 
 func TestPushBcastCloseShutsDown(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// Destination that never succeeds: Connect keeps failing.
 	// This exercises the bcast-close path while the writer is in
 	// the backoff sleep / Connect loop, not in writeLoop.
@@ -568,43 +568,45 @@ func TestPushParentCtxCancellation(t *testing.T) {
 }
 
 func TestPushReconnectsAfterWriteError(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	dest := newPipeDest()
-	pktCh, _, wait := runPush(t, ctx, dest, rtcm.Tag, nil)
-	server0 := dest.serverConn(t, 0)
-	pkt1005 := makeRTCM(1005, 16)
-	pkt1077 := makeRTCM(1077, 16)
-	// First packet must traverse the pipeline to confirm the writer
-	// is in the streaming phase before we tear down server0.
-	pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt1005), ChecksumValid: true}
-	got := readAllAvailable(server0, len(pkt1005), 2*time.Second)
-	if string(got) != string(pkt1005) {
-		t.Fatalf("first packet: got %x, want %x", got, pkt1005)
-	}
-	// Close server side; the writer's next Write will fail.  Send a
-	// packet to force the write attempt -- this packet is expected
-	// to be lost (the plan documents that the in-flight packet may
-	// be dropped during a reconnect).
-	server0.Close()
-	pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt1005), ChecksumValid: true}
-	// Wait for the writer to reconnect.
-	server1 := dest.serverConn(t, 1)
-	// Send a fresh packet; it should arrive on the new connection.
-	pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt1077), ChecksumValid: true}
-	got = readAllAvailable(server1, len(pkt1077), 5*time.Second)
-	if string(got) != string(pkt1077) {
-		t.Errorf("after reconnect: got %x, want %x", got, pkt1077)
-	}
-	cancel()
-	if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
-		t.Errorf("Run: %v", err)
-	}
+	// The bubble's fake clock skips the real backoff delay before reconnecting.
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		dest := newPipeDest()
+		pktCh, _, wait := runPush(t, ctx, dest, rtcm.Tag, nil)
+		server0 := dest.serverConn(t, 0)
+		pkt1005 := makeRTCM(1005, 16)
+		pkt1077 := makeRTCM(1077, 16)
+		// First packet must traverse the pipeline to confirm the writer
+		// is in the streaming phase before we tear down server0.
+		pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt1005), ChecksumValid: true}
+		got := readAllAvailable(server0, len(pkt1005), 2*time.Second)
+		if string(got) != string(pkt1005) {
+			t.Fatalf("first packet: got %x, want %x", got, pkt1005)
+		}
+		// Close server side; the writer's next Write will fail.  Send a
+		// packet to force the write attempt -- this packet is expected
+		// to be lost (the plan documents that the in-flight packet may
+		// be dropped during a reconnect).
+		server0.Close()
+		pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt1005), ChecksumValid: true}
+		// Wait for the writer to reconnect.
+		server1 := dest.serverConn(t, 1)
+		// Send a fresh packet; it should arrive on the new connection.
+		pktCh <- scan.Packet{Format: rtcm.PacketFormat, Data: string(pkt1077), ChecksumValid: true}
+		got = readAllAvailable(server1, len(pkt1077), 5*time.Second)
+		if string(got) != string(pkt1077) {
+			t.Errorf("after reconnect: got %x, want %x", got, pkt1077)
+		}
+		cancel()
+		if err := wait(); err != nil && !errors.Is(err, context.Canceled) {
+			t.Errorf("Run: %v", err)
+		}
+	})
 }
 
 func TestPushStopsOnFatalConnect(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	// Connect always fails with a fatal error; Push must give up
 	// rather than retry forever.
 	var calls atomic.Int32

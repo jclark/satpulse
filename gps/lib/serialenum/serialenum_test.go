@@ -142,6 +142,26 @@ func TestPortJSONUsesNumericUSBIDs(t *testing.T) {
 	}
 }
 
+func TestPortJSONIncludesSerial(t *testing.T) {
+	port := Port{
+		Device:  "/dev/ttyUSB0",
+		Display: "FT232R USB UART",
+		USB: USBID{
+			VID: 0x0403,
+			PID: 0x6001,
+		},
+		Serial: "BG02DBNX",
+	}
+	got, err := json.Marshal(port)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := `{"device":"/dev/ttyUSB0","display":"FT232R USB UART","usb":{"vid":1027,"pid":24577},"serial":"BG02DBNX"}`
+	if string(got) != want {
+		t.Errorf("JSON = %s, want %s", got, want)
+	}
+}
+
 func TestPortJSONIncludesZeroPID(t *testing.T) {
 	port := Port{
 		Device:  "/dev/ttyACM0",
