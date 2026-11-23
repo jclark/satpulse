@@ -495,6 +495,37 @@ func TestSatsNav2SigSVIDs(t *testing.T) {
 	}
 }
 
+func TestSatsNav2SigInvalidSVID(t *testing.T) {
+	tests := []struct {
+		name   string
+		sigs   []casbin.Nav2SigInfo
+		expect []gpsprot.SVID
+	}{
+		{
+			name: "out-of-range svids dropped",
+			sigs: []casbin.Nav2SigInfo{
+				{GNSSID: casbin.GPS, SVID: 5, SigID: casbin.SigGPSL1CA, CNO: 40},
+				{GNSSID: casbin.GPS, SVID: 0, SigID: casbin.SigGPSL1CA, CNO: 40},
+				{GNSSID: casbin.GPS, SVID: 99, SigID: casbin.SigGPSL1CA, CNO: 40},
+				{GNSSID: casbin.BDS, SVID: 70, SigID: casbin.SigBDSB1IMEO, CNO: 40},
+			},
+			expect: []gpsprot.SVID{{GNSS: gpsprot.GPS, Num: 5}},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			m := &casbin.Nav2Sig{Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: uint8(len(tc.sigs))}, Sigs: tc.sigs}
+			var got []gpsprot.SVID
+			for _, sv := range satsNav2Sig(m).SVs {
+				got = append(got, sv.ID)
+			}
+			if !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}
+
 func TestSatsNav2SigEmpty(t *testing.T) {
 	m := &casbin.Nav2Sig{
 		Nav2SigFixed: casbin.Nav2SigFixed{NumTrkTot: 1},
