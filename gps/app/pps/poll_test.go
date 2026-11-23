@@ -29,7 +29,7 @@ var truncatesSubMillisecondSleeps = sleepDuration(time.Microsecond) == 0
 func (h *acquireCapture) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
-	if r.Message != "serial PPS acquired" && r.Message != "serial PPS poll window" {
+	if r.Message != "PPS poll acquired" && r.Message != "PPS poll window" {
 		return nil
 	}
 	var window, spacing time.Duration
@@ -45,7 +45,7 @@ func (h *acquireCapture) Handle(_ context.Context, r slog.Record) error {
 		}
 		return true
 	})
-	if r.Message == "serial PPS acquired" {
+	if r.Message == "PPS poll acquired" {
 		h.window = window
 	} else if !tracking {
 		h.windows = append(h.windows, window)
@@ -860,7 +860,7 @@ func TestPollMissedPulseKeepsLatch(t *testing.T) {
 			t.Errorf("pulses seen = %v, want 15 and 17 published around the missed pulse", seen)
 		}
 		status := logs.String()
-		if !strings.Contains(status, `msg="serial PPS track status" reason=miss`) {
+		if !strings.Contains(status, `msg="PPS poll track status" reason=miss`) {
 			t.Errorf("logs %q do not report the missed pulse at info level", status)
 		}
 		for _, field := range []string{"extent=", "nextExtent=", "stateReads=", "bracket=", "failures=1"} {

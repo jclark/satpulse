@@ -371,9 +371,9 @@ func (h *logHandler) Enabled(context.Context, slog.Level) bool { return true }
 
 func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
 	switch r.Message {
-	case "serial PPS acquired":
+	case "PPS poll acquired":
 		h.s.acquired++
-	case "serial PPS track status":
+	case "PPS poll track status":
 		r.Attrs(func(a slog.Attr) bool {
 			if a.Key == "reason" {
 				switch a.Value.String() {
