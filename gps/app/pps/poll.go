@@ -2,6 +2,7 @@ package pps
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"runtime"
 	"time"
@@ -113,10 +114,11 @@ const widthHistory = 31
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
-	if restore, err := osthread.TightenTimerSlack(); err != nil {
+	// The default 50 us timer slack is several times the wakeup delay itself.
+	if prev, err := osthread.SetTimerSlack(time.Nanosecond); err == nil {
+		defer osthread.SetTimerSlack(prev)
+	} else if !errors.Is(err, errors.ErrUnsupported) {
 		lg.Debug("serial PPS could not tighten timer slack", "err", err)
-	} else {
-		defer restore()
 	}
 	stats.begin()
 	if params.InitialPolls == 0 {
@@ -641,8 +643,8 @@ func (p *poller) wait(t time.Time, precise bool) (bool, error) {
 // scheduled time was already past, or, for a wait that is not precise, nearer
 // than the runtime timer can sleep to. A precise wait always ends at the
 // deadline: the runtime timer takes the whole milliseconds, so the wait stays
-// cancellable, and osthread.SleepUntil takes the rest, which is all of it
-// when the wait is shorter than the timer's resolution.
+// cancellable, and sleepRemainder takes the rest, which is all of it when the
+// wait is shorter than the timer's resolution.
 func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	slept := false
 	if d := sleepDuration(time.Until(t)); d > 0 {
@@ -657,7 +659,7 @@ func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	} else if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if precise && osthread.SleepUntil(t) {
+	if precise && sleepRemainder(t) {
 		slept = true
 	}
 	return slept, nil

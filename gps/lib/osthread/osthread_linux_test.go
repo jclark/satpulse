@@ -79,43 +79,29 @@ func TestSetFIFO(t *testing.T) {
 	}
 }
 
-func TestTightenTimerSlack(t *testing.T) {
+func TestSetTimerSlack(t *testing.T) {
 	onThread(func() {
 		before, err := unix.PrctlRetInt(unix.PR_GET_TIMERSLACK, 0, 0, 0, 0)
 		if err != nil {
 			t.Errorf("PR_GET_TIMERSLACK: %v", err)
 			return
 		}
-		restore, err := TightenTimerSlack()
+		prev, err := SetTimerSlack(time.Nanosecond)
 		if err != nil {
-			t.Errorf("TightenTimerSlack: %v", err)
+			t.Errorf("SetTimerSlack: %v", err)
 			return
+		}
+		if prev != time.Duration(before) {
+			t.Errorf("previous slack is %v; want %v", prev, time.Duration(before))
 		}
 		if slack, _ := unix.PrctlRetInt(unix.PR_GET_TIMERSLACK, 0, 0, 0, 0); slack != 1 {
 			t.Errorf("slack is %d ns; want 1", slack)
 		}
-		restore()
+		if _, err := SetTimerSlack(prev); err != nil {
+			t.Errorf("SetTimerSlack(%v): %v", prev, err)
+		}
 		if slack, _ := unix.PrctlRetInt(unix.PR_GET_TIMERSLACK, 0, 0, 0, 0); slack != before {
 			t.Errorf("slack after restore is %d ns; want %d", slack, before)
 		}
 	})
-}
-
-func TestSleepUntil(t *testing.T) {
-	if SleepUntil(time.Now().Add(-time.Millisecond)) {
-		t.Errorf("SleepUntil reported sleeping until a past time")
-	}
-	// A deadline that passes before SleepUntil reads the clock, when the
-	// test is descheduled, rightly gives false, so retry a few times.
-	for range 5 {
-		deadline := time.Now().Add(time.Millisecond)
-		if !SleepUntil(deadline) {
-			continue
-		}
-		if now := time.Now(); now.Before(deadline) {
-			t.Errorf("woke %v before the deadline", deadline.Sub(now))
-		}
-		return
-	}
-	t.Errorf("SleepUntil never reported sleeping until a future time")
 }

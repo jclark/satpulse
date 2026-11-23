@@ -176,7 +176,7 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/gpiomem/rp1` describes the GPIO controller of the Raspberry Pi 5.
 
-`gps/lib/osthread` tunes the operating system thread a goroutine is locked to, for code that polls with tight timing. It is implemented for Linux.
+`gps/lib/osthread` changes the scheduling settings of an OS thread. It is implemented for Linux.
 
 `gps/lib/serialenum` enumerates serial ports with human-readable display names and composite numeric USB vendor/product IDs. On Linux it reads sysfs and includes top-level `/dev` aliases in display labels without opening device nodes; on FreeBSD it scans `/dev` for call-out devices and takes USB identity from the `dev.` sysctl tree; other platforms use go.bug.st/serial/enumerator.
 
