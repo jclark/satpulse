@@ -36,7 +36,7 @@ func TestFindDevice(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := findDevice(dir, tc.source)
+			got, err := findDevice(dir, "path", tc.source)
 			if tc.expectErr {
 				if err == nil {
 					t.Fatalf("expected error, got %q", got)

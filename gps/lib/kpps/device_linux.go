@@ -21,29 +21,64 @@ func DevicePathForTTY(fd int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	name, err := findDevice(sysClassPPS, ttyPath)
+	name, err := findDevice(sysClassPPS, "path", ttyPath)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join("/dev", name), nil
 }
 
-// findDevice returns the name of the PPS device whose sysfs path attribute is
-// sourcePath. Unreadable entries are skipped because another process's PPS
-// source may vanish during the scan.
-func findDevice(sysDir, sourcePath string) (string, error) {
+// DevicePathForGPIONode returns the path of the kernel PPS device that the
+// pps-gpio driver creates for the device-tree node at node, such as "/pps@12".
+// The kernel documents no link from a PPS device to the device that feeds it,
+// so the device is found by the name the driver gives its source: the name of
+// the node's platform device followed by ".-1", the id of a platform device
+// created from the device tree. This relies on the driver's implementation;
+// a kernel that names the source differently gives an error.
+func DevicePathForGPIONode(node string) (string, error) {
+	pdev, err := platformDevice(filepath.Join("/sys/firmware/devicetree/base", node))
+	if err != nil {
+		return "", err
+	}
+	name, err := findDevice(sysClassPPS, "name", pdev+".-1")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join("/dev", name), nil
+}
+
+// platformDevice returns the name of the platform device whose device-tree
+// node is the sysfs directory node.
+func platformDevice(node string) (string, error) {
+	const dir = "/sys/bus/platform/devices"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if p, err := filepath.EvalSymlinks(filepath.Join(dir, e.Name(), "of_node")); err == nil && p == node {
+			return e.Name(), nil
+		}
+	}
+	return "", fmt.Errorf("%s: no platform device", node)
+}
+
+// findDevice returns the name of the PPS device whose sysfs attribute attr is
+// value. Unreadable entries are skipped because another process's PPS source
+// may vanish during the scan.
+func findDevice(sysDir, attr, value string) (string, error) {
 	entries, err := os.ReadDir(sysDir)
 	if err != nil {
 		return "", err
 	}
 	for _, e := range entries {
-		b, err := os.ReadFile(filepath.Join(sysDir, e.Name(), "path"))
+		b, err := os.ReadFile(filepath.Join(sysDir, e.Name(), attr))
 		if err != nil {
 			continue
 		}
-		if strings.TrimSuffix(string(b), "\n") == sourcePath {
+		if strings.TrimSuffix(string(b), "\n") == value {
 			return e.Name(), nil
 		}
 	}
-	return "", fmt.Errorf("%s: no kernel PPS source in %s", sourcePath, sysDir)
+	return "", fmt.Errorf("%s: no kernel PPS source in %s", value, sysDir)
 }
