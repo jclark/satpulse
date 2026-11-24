@@ -25,6 +25,7 @@ func TestOnlyPPSInput(t *testing.T) {
 		{name: "one", pps: []gpiomem.PPS{gpio18}, expect: "GPIO18"},
 		{name: "none", expectErr: true},
 		{name: "two", pps: []gpiomem.PPS{gpio18, gpio4}, expectErr: true},
+		{name: "two nodes on one GPIO", pps: []gpiomem.PPS{gpio18, {Name: "GPIO18", Line: 18, Node: "/pps@2"}}, expect: "GPIO18"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {

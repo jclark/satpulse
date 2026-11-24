@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"time"
 
@@ -59,13 +60,15 @@ func pollName(name string) (string, error) {
 	return onlyPPSInput(ctrls)
 }
 
-// onlyPPSInput returns the name of the one GPIO of ctrls that a pps-gpio node
-// uses.
+// onlyPPSInput returns the name of the one GPIO of ctrls that pps-gpio nodes
+// use.
 func onlyPPSInput(ctrls []gpiomem.Controller) (string, error) {
 	var names []string
 	for _, c := range ctrls {
 		for _, p := range c.PPS {
-			names = append(names, p.Name)
+			if !slices.Contains(names, p.Name) {
+				names = append(names, p.Name)
+			}
 		}
 	}
 	if len(names) == 0 {
