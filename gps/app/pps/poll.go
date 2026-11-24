@@ -381,7 +381,7 @@ type PollObserver interface {
 	TrackStatus(s TrackStatus)
 }
 
-// TrackStatus is a change in tracking, with the information Poll logs for it.
+// TrackStatus is a change in tracking, with the measurements that go with it.
 type TrackStatus struct {
 	Reason TrackReason
 	// Extent is the extent of the polling window in the attempt that caused
