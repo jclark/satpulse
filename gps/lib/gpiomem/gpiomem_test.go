@@ -159,6 +159,14 @@ func TestDescribe(t *testing.T) {
 			},
 		},
 		{
+			name:  "incomplete specifier",
+			ctrls: pi5[:1],
+			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 18}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+			},
+		},
+		{
 			name:  "Pi 4 without a phandle",
 			ctrls: pi4Ctrls[:1],
 			nodes: []ppsNode{{path: "/pps@12", gpios: []uint32{0, 18, 0}}},
