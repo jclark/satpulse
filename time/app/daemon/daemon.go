@@ -577,7 +577,7 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 	var cf cfgFeatures
 	if usingPHC {
 		cf |= cfgTimePulse | cfgTimePulseMsg
-	} else if (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
+	} else if cfg.PPS != nil || (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {

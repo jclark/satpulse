@@ -18,6 +18,13 @@ func TestConfigFeaturesNMEASendPullUsesPosition(t *testing.T) {
 	}
 }
 
+func TestConfigFeaturesPPSUsesTimePulse(t *testing.T) {
+	cfg := &Config{PPS: &PPSConfig{GPIO: "GPIO18"}}
+	if got := configFeatures(cfg, false); got&cfgTimePulse == 0 {
+		t.Fatalf("configFeatures = %b, want cfgTimePulse set", got)
+	}
+}
+
 func TestGPSConfig(t *testing.T) {
 	// Baseline target that represents the common structure
 	var baseline gpsprot.ConfigTarget
