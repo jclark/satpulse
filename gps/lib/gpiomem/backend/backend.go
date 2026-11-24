@@ -16,7 +16,6 @@ type Controller struct {
 	Node       string   // the path of its node, e.g. "/soc/gpio@7e200000"
 	Compatible []string // the compatible strings of its node, if it has any
 	Phandle    uint32   // the phandle of its node, or 0 if it has none
-	GPIOCells  int      // the #gpio-cells of its node, or 0 if it has none
 }
 
 // Backend handles the GPIO controllers of a family of SoCs, following the
