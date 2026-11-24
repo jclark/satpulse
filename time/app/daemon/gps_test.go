@@ -21,8 +21,8 @@ func TestConfigFeaturesNMEASendPullUsesPosition(t *testing.T) {
 
 func TestConfigFeaturesSerialPPSUsesTimePulse(t *testing.T) {
 	cfg := &Config{Serial: SerialConfig{PPS: &SerialPPSConfig{Pin: gpsio.SerialPinDCD}}}
-	if got := configFeatures(cfg, false); got&cfgTimePulse == 0 {
-		t.Fatalf("configFeatures = %b, want cfgTimePulse set", got)
+	if got := configFeatures(cfg, false); got&(cfgTimePulse|cfgTimePulseMsg) != cfgTimePulse {
+		t.Fatalf("configFeatures = %b, want cfgTimePulse set and cfgTimePulseMsg clear", got)
 	}
 }
 
