@@ -1,18 +1,18 @@
-// Package bcm2835 describes the GPIO controller of the Broadcom BCM2835
-// family, as the kernel's pinctrl-bcm2835 driver handles it: the BCM2837 of
-// the Raspberry Pi 3 and the BCM2711 of the Raspberry Pi 4 and Compute
-// Module 4. GPIOs are named GPIO<n>, numbered from 0 across the controller.
+// Package bcm2835 is the gpiomem backend for the GPIO controller of the
+// Broadcom BCM2835 family, as the kernel's pinctrl-bcm2835 driver handles it:
+// the BCM2837 of the Raspberry Pi 3 and the BCM2711 of the Raspberry Pi 4 and
+// Compute Module 4. GPIOs are named GPIO<n>, numbered from 0 across the controller.
 package bcm2835
 
 import (
 	"fmt"
 	"strconv"
 
-	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/backend"
 )
 
-// SoC describes the BCM2835 family's GPIO controller.
-type SoC struct{}
+// Backend handles the BCM2835 family's GPIO controller.
+type Backend struct{}
 
 // variants lists the compatible strings the family handles, with the number
 // of GPIOs each has. The BCM2837 uses the BCM2835's compatible string.
@@ -24,13 +24,13 @@ var variants = []struct {
 	{"brcm,bcm2711-gpio", 58},
 }
 
-// Backend returns "bcm2835".
-func (SoC) Backend() string {
+// Name returns "bcm2835".
+func (Backend) Name() string {
 	return "bcm2835"
 }
 
 // Compatible returns the compatible strings of the family's controllers.
-func (SoC) Compatible() []string {
+func (Backend) Compatible() []string {
 	s := make([]string, len(variants))
 	for i, v := range variants {
 		s[i] = v.compatible
@@ -39,8 +39,8 @@ func (SoC) Compatible() []string {
 }
 
 // Lookup finds GPIO<n> on the system's one BCM2835-family controller.
-func (SoC) Lookup(name string, ctrls []soc.Controller) (int, int, error) {
-	n, ok := soc.GPIONumber(name)
+func (Backend) Lookup(name string, ctrls []backend.Controller) (int, int, error) {
+	n, ok := backend.GPIONumber(name)
 	if !ok {
 		return 0, 0, fmt.Errorf("expected a name of the form GPIO<n>")
 	}
@@ -53,8 +53,8 @@ func (SoC) Lookup(name string, ctrls []soc.Controller) (int, int, error) {
 	return 0, n, nil
 }
 
-// Name returns GPIO<line>.
-func (SoC) Name(ctrls []soc.Controller, ctrl int, line int) (string, bool) {
+// GPIOName returns GPIO<line>.
+func (Backend) GPIOName(ctrls []backend.Controller, ctrl int, line int) (string, bool) {
 	if len(ctrls) != 1 || line < 0 || line >= gpioCount(ctrls[ctrl]) {
 		return "", false
 	}
@@ -62,7 +62,7 @@ func (SoC) Name(ctrls []soc.Controller, ctrl int, line int) (string, bool) {
 }
 
 // gpioCount returns the number of GPIOs of the variant ctrl is.
-func gpioCount(ctrl soc.Controller) int {
+func gpioCount(ctrl backend.Controller) int {
 	for _, c := range ctrl.Compatible {
 		for _, v := range variants {
 			if c == v.compatible {
@@ -75,12 +75,12 @@ func gpioCount(ctrl soc.Controller) int {
 
 // Level locates line in the GPLEV level registers: 32 GPIOs per register,
 // the first at 0x34.
-func (SoC) Level(ctrl soc.Controller, line int) (int, uint) {
+func (Backend) Level(ctrl backend.Controller, line int) (int, uint) {
 	return 0x34 + 4*(line/32), uint(line % 32)
 }
 
 // GPIOMem returns the gpiomem device of the Raspberry Pi 3 and 4, which maps
 // the GPIO controller's registers, and the length of its window.
-func (SoC) GPIOMem() (string, int) {
+func (Backend) GPIOMem() (string, int) {
 	return "/dev/gpiomem", 0x1000
 }

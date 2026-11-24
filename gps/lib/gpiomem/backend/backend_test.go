@@ -1,4 +1,4 @@
-package soc
+package backend
 
 import "testing"
 

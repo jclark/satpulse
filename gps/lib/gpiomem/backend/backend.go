@@ -1,9 +1,9 @@
-// Package soc defines the interface between gpiomem and the packages that
-// describe the GPIO controllers of a family of SoCs: how the name of a GPIO
-// identifies a controller and a line, and where among the controller's
-// registers the line's level is read. Each family package is pure: it reads
-// nothing from the system, and is given what gpiomem finds there.
-package soc
+// Package backend defines the interface between gpiomem and its backends,
+// the packages that each handle the GPIO controllers of a family of SoCs:
+// how the name of a GPIO identifies a controller and a line, and where among
+// the controller's registers the line's level is read. Each backend is pure:
+// it reads nothing from the system, and is given what gpiomem finds there.
+package backend
 
 import (
 	"strconv"
@@ -19,23 +19,23 @@ type Controller struct {
 	GPIOCells  int      // the #gpio-cells of its device-tree node, or 0 if it has none
 }
 
-// SoC describes the GPIO controllers of a family of SoCs, following the
+// Backend handles the GPIO controllers of a family of SoCs, following the
 // kernel driver that handles them.
-type SoC interface {
-	// Backend returns the name of the gpiomem backend the family package
-	// provides, which is the name of the package, such as "rp1".
-	Backend() string
+type Backend interface {
+	// Name returns the backend's name, which is the name of its package,
+	// such as "rp1".
+	Name() string
 	// Compatible returns the device-tree compatible strings of the GPIO
-	// controllers the family handles.
+	// controllers the backend handles.
 	Compatible() []string
 	// Lookup finds the GPIO with the given name, which is upper-case
-	// ASCII, among ctrls, the controllers on the system that the family
+	// ASCII, among ctrls, the controllers on the system that the backend
 	// handles. It returns the index of the controller in ctrls and the
 	// GPIO's line on that controller.
 	Lookup(name string, ctrls []Controller) (ctrl int, line int, err error)
-	// Name returns the name of line on ctrls[ctrl], the inverse of Lookup;
-	// ok is false if the controller has no such line.
-	Name(ctrls []Controller, ctrl int, line int) (name string, ok bool)
+	// GPIOName returns the name of line on ctrls[ctrl], the inverse of
+	// Lookup; ok is false if the controller has no such line.
+	GPIOName(ctrls []Controller, ctrl int, line int) (name string, ok bool)
 	// Level locates the register holding the level of line on ctrl: its
 	// offset from the start of the controller's first register range, and
 	// the line's bit in it.
