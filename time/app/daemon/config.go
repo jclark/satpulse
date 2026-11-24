@@ -33,7 +33,7 @@ const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
-	PPS        *PPSConfig `toml:"pps"`
+	GPIO       *GPIOConfig `toml:"gpio"`
 	Sample     SampleConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
@@ -68,26 +68,26 @@ type SerialPPSConfig struct {
 	InvertPolarity bool            `toml:"invertPolarity"`
 }
 
-// PPSConfig describes a PPS input that is not a serial modem-control line.
-type PPSConfig struct {
-	// GPIO is the name of the GPIO, such as GPIO18, whose level is polled.
-	GPIO string `toml:"gpio"`
+// GPIOConfig describes a GPIO polled for PPS edges.
+type GPIOConfig struct {
+	// Name is the name of the GPIO, such as GPIO18.
+	Name string `toml:"name"`
 }
 
 type SampleConfig struct {
 	Serial SerialSampleConfig `toml:"serial"`
-	PPS    PPSSampleConfig    `toml:"pps"`
+	GPIO   GPIOSampleConfig   `toml:"gpio"`
 }
 
 type SerialSampleConfig struct {
 	PPS serialpps.Config `toml:"pps"`
 }
 
-// PPSSampleConfig controls how edges from the [pps] table's input are
-// detected and associated with UTC-labelled receiver messages.
-type PPSSampleConfig struct {
+// GPIOSampleConfig controls how the [gpio] table's GPIO is polled for PPS
+// edges and how they are associated with UTC-labelled receiver messages.
+type GPIOSampleConfig struct {
 	pps.GeneratorConfig
-	GPIO pps.GPIOConfig `toml:"gpio"`
+	pps.GPIOConfig
 }
 
 type PHCConfig struct {
@@ -199,7 +199,7 @@ func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
 	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
-	cfg.Sample.PPS.GeneratorConfig = pps.DefaultGeneratorConfig()
+	cfg.Sample.GPIO.GeneratorConfig = pps.DefaultGeneratorConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
@@ -249,15 +249,15 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface or device in the [phc] table")}
 		}
 	}
-	if cfg.PPS != nil {
-		if cfg.PPS.GPIO == "" {
-			return &configError{err: fmt.Errorf("gpio in the [pps] table must be specified")}
+	if cfg.GPIO != nil {
+		if cfg.GPIO.Name == "" {
+			return &configError{err: fmt.Errorf("name in the [gpio] table must be specified")}
 		}
 		if cfg.Serial.PPS != nil {
-			return &configError{err: fmt.Errorf("the [pps] table cannot be used with pps.pin in the [serial] table")}
+			return &configError{err: fmt.Errorf("the [gpio] table cannot be used with pps.pin in the [serial] table")}
 		}
 		if cfg.PHC.specified() {
-			return &configError{err: fmt.Errorf("the [pps] table cannot be used with interface or device in the [phc] table")}
+			return &configError{err: fmt.Errorf("the [gpio] table cannot be used with interface or device in the [phc] table")}
 		}
 	}
 	if cfg.PHC.Interface != "" && cfg.PHC.Device != "" {
@@ -269,7 +269,7 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
 	}
-	if err := cfg.Sample.PPS.Validate(); err != nil {
+	if err := cfg.Sample.GPIO.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	// An explicitly selected method never falls back, so a pin kernel PPS
@@ -303,8 +303,8 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 	return nil
 }
 
-// Validate checks the [sample.pps] table.
-func (cfg PPSSampleConfig) Validate() error {
+// Validate checks the [sample.gpio] table.
+func (cfg GPIOSampleConfig) Validate() error {
 	msgs := check.Validate(cfg)
 	if err := cfg.GeneratorConfig.Validate(); err != nil {
 		msgs = append(msgs, err.Error())
@@ -313,9 +313,9 @@ func (cfg PPSSampleConfig) Validate() error {
 	case 0:
 		return nil
 	case 1:
-		return fmt.Errorf("in sample.pps table: %s", msgs[0])
+		return fmt.Errorf("in sample.gpio table: %s", msgs[0])
 	default:
-		msgs = append([]string{"errors in sample.pps table:"}, msgs...)
+		msgs = append([]string{"errors in sample.gpio table:"}, msgs...)
 		return errors.New(strings.Join(msgs, "\n\t"))
 	}
 }
@@ -420,7 +420,7 @@ func (cfg *Config) shmFixedPrecision() *int8 {
 		p := serialPPSSHMPrecision
 		return &p
 	}
-	if cfg.PPS != nil {
+	if cfg.GPIO != nil {
 		p := gpioPPSSHMPrecision
 		return &p
 	}

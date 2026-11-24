@@ -175,9 +175,9 @@ pps.pin = "cts"
 
 # Uncomment these to have satpulsed poll the GPIO itself, instead of
 # the NTP daemon reading the kernel PPS device
-#[pps]
-#gpio = "GPIO18"
-#[sample.pps.gpio]
+#[gpio]
+#name = "GPIO18"
+#[sample.gpio]
 #cpu = 3
 #priority = 40
 
@@ -230,7 +230,8 @@ If this value is not set, then `satpulsed` will not make any change to power man
 You can experiment with this value using the `--max-wakeup-latency` option of `satpulsetool serial`;
 root is required for this option.
 
-When satpulsed polls the GPIO, the `cpu` key in the `[sample.pps.gpio]` table pins the poller to a CPU,
+When satpulsed polls the GPIO, `satpulsetool gpio` shows the name to give in the `[gpio]` table.
+The `cpu` key in the `[sample.gpio]` table pins the poller to a CPU,
 and `priority` runs it at real-time priority.
 Polling is most precise on a CPU that does not handle the GPIO's interrupt;
 `/proc/interrupts` shows which CPU handles it.

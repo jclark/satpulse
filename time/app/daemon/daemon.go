@@ -163,8 +163,8 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	// is a permission error. The pin is closed after the PPS goroutine
 	// stops, which the worker-wait defer below ensures.
 	var gpioPin *gpiomem.Pin
-	if cfg.PPS != nil {
-		if gpioPin, err = gpiomem.Open(cfg.PPS.GPIO); err != nil {
+	if cfg.GPIO != nil {
+		if gpioPin, err = gpiomem.Open(cfg.GPIO.Name); err != nil {
 			err = fmt.Errorf("GPIO PPS: %w", err)
 			if errors.Is(err, os.ErrPermission) {
 				return err
@@ -172,7 +172,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return &configError{err: err}
 		}
 		defer gpioPin.Close()
-		lg.Info("GPIO PPS polling", "gpio", cfg.PPS.GPIO, "device", gpioPin.Device())
+		lg.Info("GPIO PPS polling", "gpio", cfg.GPIO.Name, "device", gpioPin.Device())
 	}
 
 	var wg sync.WaitGroup
@@ -356,15 +356,15 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
 		})
 	}
-	if cfg.PPS != nil {
-		gpio := cfg.PPS.GPIO
-		ppsGen = pps.NewGenerator(cfg.Sample.PPS.GeneratorConfig)
+	if cfg.GPIO != nil {
+		gpio := cfg.GPIO.Name
+		ppsGen = pps.NewGenerator(cfg.Sample.GPIO.GeneratorConfig)
 		ch := make(chan pps.CandidateEdge, 1)
 		ppsCh = ch
 		wg.Go(func() {
 			defer close(ch)
 			lg.Debug("GPIO PPS goroutine started", "gpio", gpio)
-			if err := pps.DetectGPIO(ctx, lg, gpioPin, cfg.Sample.PPS.GPIO, ch, nil); err != nil && ctx.Err() == nil {
+			if err := pps.DetectGPIO(ctx, lg, gpioPin, cfg.Sample.GPIO.GPIOConfig, ch, nil); err != nil && ctx.Err() == nil {
 				lg.Error("GPIO PPS polling failed", "gpio", gpio, "err", err)
 				cancel(fmt.Errorf("GPIO PPS polling failed on %s: %w", gpio, err))
 			}
@@ -577,7 +577,7 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 	var cf cfgFeatures
 	if usingPHC {
 		cf |= cfgTimePulse | cfgTimePulseMsg
-	} else if cfg.PPS != nil || (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
+	} else if cfg.GPIO != nil || (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {

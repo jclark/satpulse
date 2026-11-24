@@ -101,15 +101,15 @@ speed = 38400
 pps.pin = "cts"
 ```
 
-## `pps` table
+## `gpio` table
 
-The `pps` table describes a PPS input that is not a modem-control pin of the serial port.
+The `gpio` table describes a GPIO on which the receiver's PPS pulses arrive, whose level is polled directly from the GPIO controller's registers.
 It can have the following key:
 
-* `gpio` - a string giving the name of the GPIO on which the receiver's PPS pulses arrive,
+* `name` - a string giving the name of the GPIO,
   as the documentation of the board or SoC names it, such as `"GPIO18"` on a Raspberry Pi;
-  the value is case-insensitive;
-  the GPIO's level is polled directly from the GPIO controller's registers;
+  **satpulsetool-gpio(1)** shows the name of a GPIO that a `pps-gpio` device-tree overlay uses;
+  the value is case-insensitive; this key must be specified;
   the rising edge of the pulse must mark the start of the second;
   the GPIO must already be an input, as the `pps-gpio` device tree overlay makes it;
   cannot be used with `pps.pin` in the `[serial]` table or with `interface` or `device` in the `[phc]` table;
@@ -118,8 +118,8 @@ It can have the following key:
 Example using GPIO 18:
 
 ```
-[pps]
-gpio = "GPIO18"
+[gpio]
+name = "GPIO18"
 ```
 
 ## `sample.serial.pps` table
@@ -158,16 +158,11 @@ delayUncertainty = 0.005
 maxDelay = 0.8
 ```
 
-## `sample.pps` table
+## `sample.gpio` table
 
-The `sample.pps` table controls how PPS edges from the input in the `[pps]` table are associated with UTC-labelled receiver messages.
-It has the `delayUncertainty` and `maxDelay` keys of the `sample.serial.pps` table, with the same meanings and defaults.
-
-## `sample.pps.gpio` table
-
-The `sample.pps.gpio` table controls polling of the GPIO given by `gpio` in the `[pps]` table.
+The `sample.gpio` table controls how the GPIO in the `[gpio]` table is polled for PPS edges and how the edges are associated with UTC-labelled receiver messages.
 Polling reads the GPIO in a short window around each predicted pulse, so it is most precise when it runs promptly and without interruption.
-It can have the following keys:
+It has the `delayUncertainty` and `maxDelay` keys of the `sample.serial.pps` table, with the same meanings and defaults, and the following keys:
 
 * `cpu` - an integer giving the CPU on which to run the poller;
   polling is most precise on a CPU that does not handle the GPIO's interrupt (see `/proc/interrupts`);
@@ -180,7 +175,7 @@ It can have the following keys:
 Example:
 
 ```toml
-[sample.pps.gpio]
+[sample.gpio]
 cpu = 3
 priority = 40
 ```
@@ -298,7 +293,7 @@ It supports two protocols: the refclock SOCK protocol defined by chrony, and the
 If the `[phc]` table is not present, samples are normally based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
 The samples from SatPulse can be used to complete the PPS samples.
-When `pps.pin` in the `[serial]` table or the `[pps]` table is configured, samples instead use the PPS edges detected there;
+When `pps.pin` in the `[serial]` table or the `[gpio]` table is configured, samples instead use the PPS edges detected there;
 serial time messages are still used to identify the UTC second and leap indication.
 
 The following key enables use of the refclock SOCK protocol:

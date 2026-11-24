@@ -260,19 +260,19 @@ interface = "eth0"
 	}
 }
 
-func TestPPSConfig(t *testing.T) {
+func TestGPIOConfig(t *testing.T) {
 	tests := []struct {
 		name      string
 		toml      string
 		expectErr string
 	}{
-		{name: "valid", toml: "[pps]\ngpio = \"GPIO18\"\n[sample.pps.gpio]\ncpu = 3\npriority = 40"},
-		{name: "missing gpio", toml: "[pps]\n", expectErr: "gpio in the [pps] table must be specified"},
-		{name: "with serial PPS", toml: "[serial.pps]\npin = \"cts\"\n[pps]\ngpio = \"GPIO18\"", expectErr: "cannot be used with pps.pin in the [serial] table"},
-		{name: "with PHC", toml: "[pps]\ngpio = \"GPIO18\"\n[phc]\ninterface = \"eth0\"", expectErr: "cannot be used with interface or device in the [phc] table"},
-		{name: "priority too high", toml: "[pps]\ngpio = \"GPIO18\"\n[sample.pps.gpio]\npriority = 100", expectErr: "gpio.priority"},
-		{name: "negative cpu", toml: "[pps]\ngpio = \"GPIO18\"\n[sample.pps.gpio]\ncpu = -1", expectErr: "gpio.cpu"},
-		{name: "delay interval too wide", toml: "[pps]\ngpio = \"GPIO18\"\n[sample.pps]\nmaxDelay = 0.999", expectErr: "in sample.pps table"},
+		{name: "valid", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\ncpu = 3\npriority = 40"},
+		{name: "missing name", toml: "[gpio]\n", expectErr: "name in the [gpio] table must be specified"},
+		{name: "with serial PPS", toml: "[serial.pps]\npin = \"cts\"\n[gpio]\nname = \"GPIO18\"", expectErr: "cannot be used with pps.pin in the [serial] table"},
+		{name: "with PHC", toml: "[gpio]\nname = \"GPIO18\"\n[phc]\ninterface = \"eth0\"", expectErr: "cannot be used with interface or device in the [phc] table"},
+		{name: "priority too high", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\npriority = 100", expectErr: "priority"},
+		{name: "negative cpu", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\ncpu = -1", expectErr: "cpu"},
+		{name: "delay interval too wide", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\nmaxDelay = 0.999", expectErr: "in sample.gpio table"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
@@ -285,9 +285,9 @@ func TestPPSConfig(t *testing.T) {
 				if err != nil {
 					t.Fatalf("unexpected error: %v", err)
 				}
-				g := cfg.Sample.PPS.GPIO
-				if cfg.PPS.GPIO != "GPIO18" || g.CPU == nil || *g.CPU != 3 || g.Priority != 40 {
-					t.Errorf("got [pps] %+v, [sample.pps.gpio] %+v", cfg.PPS, cfg.Sample.PPS.GPIO)
+				g := cfg.Sample.GPIO.GPIOConfig
+				if cfg.GPIO.Name != "GPIO18" || g.CPU == nil || *g.CPU != 3 || g.Priority != 40 {
+					t.Errorf("got [gpio] %+v, [sample.gpio] %+v", cfg.GPIO, cfg.Sample.GPIO)
 				}
 				return
 			}
@@ -473,7 +473,7 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 		t.Fatalf("serial-PPS SHM fixed precision = %v, want %d", got, serialPPSSHMPrecision)
 	}
 	cfg.Serial.PPS = nil
-	cfg.PPS = &PPSConfig{GPIO: "GPIO18"}
+	cfg.GPIO = &GPIOConfig{Name: "GPIO18"}
 	got = cfg.shmFixedPrecision()
 	if got == nil || *got != gpioPPSSHMPrecision {
 		t.Fatalf("GPIO PPS SHM fixed precision = %v, want %d", got, gpioPPSSHMPrecision)
