@@ -1,6 +1,6 @@
 # NAME
 
-satpulsetool-gpio - list GPIO controllers and poll a GPIO for PPS edges
+satpulsetool-gpio - examine PPS on GPIO pins
 
 # SYNOPSIS
 
@@ -10,24 +10,17 @@ satpulsetool-gpio - list GPIO controllers and poll a GPIO for PPS edges
 
 # DESCRIPTION
 
-The **satpulsetool** **gpio** command lists the GPIO controllers of the system's device tree:
-the enabled device-tree nodes with the `gpio-controller` property.
-For each controller, it shows the path of its node and the compatible strings of the node.
-It also shows the gpiochips through which the kernel provides the controller's GPIOs, such as `gpiochip0`, when they can be found.
-A node can have more than one gpiochip.
+The **satpulsetool** **gpio** command can perform the following operations related to a pulse-per-second (PPS) signal connected to a GPIO pin:
 
-For a controller that one of its backends handles, it also shows the backend,
-the device through which the controller's registers are read,
-and the length of that device's mapping.
-The backends are `bcm2835` (Raspberry Pi 3 and 4) and `rp1` (Raspberry Pi 5).
+* show which GPIOs are set up as PPS inputs;
+* detect PPS edges on a GPIO by polling it.
 
-It also shows each GPIO of the controller that a `pps-gpio` device-tree node, such as the one the `pps-gpio` overlay creates, uses as a pulse-per-second (PPS) input,
-with the kernel PPS device created for it, such as `/dev/pps0`, when that device can be found.
-On a controller that a backend handles, the GPIO is shown by the name the SoC's documentation gives it, such as `GPIO18` on a Raspberry Pi, and its line on the controller.
-On any other controller, or if the line is not one the backend names, it is shown by the cells of its GPIO specifier in the device tree, whose meaning the controller's device-tree binding defines.
+A GPIO is set up as a PPS input by a `pps-gpio` device-tree node, such as the one the `pps-gpio` overlay creates on a Raspberry Pi.
+The kernel then provides the pulses through a kernel PPS device, such as `/dev/pps0`.
 
-Each controller is shown as an indented block.
-On a Raspberry Pi 5 with the `pps-gpio` overlay on GPIO 18, the first controller is shown as:
+By default, the command shows the GPIO controllers of the system and the PPS inputs on each.
+A PPS input is shown by the name of its GPIO and its kernel PPS device.
+For example, on a Raspberry Pi 5 with the `pps-gpio` overlay on GPIO 18, the output starts:
 
     /axi/pcie@1000120000/rp1/gpio@d0000
       backend: rp1
@@ -40,18 +33,18 @@ On a Raspberry Pi 5 with the `pps-gpio` overlay on GPIO 18, the first controller
         line: 18
         device: /dev/pps0
 
-A *name* given to the command is a GPIO name of this form, not a header pin number, and is case-insensitive.
-With a *name*, it shows only the controller that has that GPIO, and shows the GPIO only if it is a PPS input.
-Listing needs no special privileges.
+The other lines of a controller's entry are mainly useful in problem reports.
+On a controller that does not support polling, a PPS input is shown by the numbers that identify its GPIO in the device tree.
+With a *name*, such as **GPIO18**, the command shows only the controller of that GPIO.
 
-With the **\-p** option, it instead polls a GPIO for PPS edges, reading the GPIO controller's registers, and prints the time of each rising edge it catches.
-It polls the GPIO called *name*, or, without a *name*, the one GPIO shown by name as a PPS input; it is an error if there is not exactly one.
-The GPIO must already be an input, as the `pps-gpio` overlay makes it.
-It changes nothing on the GPIO.
-Polling requires read access to the device through which the controller's registers are read, which the `gpio` group has on Raspberry Pi OS.
-It is most precise on a CPU that does not handle the GPIO's interrupt (see `/proc/interrupts`).
+With **\-p**, the command instead detects PPS edges on a GPIO by repeatedly reading its level, and prints the time of each rising edge.
+It polls the GPIO *name*, or, without a *name*, the only GPIO set up as a PPS input.
+The GPIO must already be an input, as the `pps-gpio` overlay makes it; the command does not change it.
+Polling works on the Raspberry Pi 3, 4 and 5.
+It needs read access to `/dev/gpiomem` (Raspberry Pi 3 and 4) or `/dev/gpiomem0` (Raspberry Pi 5), which the `gpio` group has on Raspberry Pi OS.
+The times are most precise when the poller runs at real-time priority on a CPU that does not handle the GPIO's interrupt, as listed in `/proc/interrupts`.
 
-The command is supported on 64-bit Arm Linux.
+The command is available only on 64-bit Arm Linux.
 
 # OPTIONS
 
@@ -59,17 +52,14 @@ The command is supported on 64-bit Arm Linux.
 : Show usage help for the **gpio** command.
 
 **\-p**, **\-\-pps**
-: Poll a GPIO for PPS edges and print the time of each rising edge.
-The edge is located between the last read of the GPIO before it and the first read after it.
+: Detect PPS edges on the GPIO instead of showing GPIO controllers.
 
 **\-\-cpu** *N*
 : Run the poller on CPU *N*.
-By default the poller is not pinned to a CPU.
 Requires **\-p**.
 
 **\-\-priority** *N*
 : Run the poller at `SCHED_FIFO` real-time priority *N*, from 1 to 99.
-The default is 0, which leaves it at normal priority.
 Usually requires root privileges.
 Requires **\-p**.
 
@@ -80,20 +70,16 @@ The default is 10.
 Requires **\-p**.
 
 **\-j**, **\-\-jsonl**
-: Write output in JSON Lines format, one object per controller.
-A controller object has a `node` string,
-a `compatible` array of strings if the node has compatible strings,
-and a `chips` array of strings if any gpiochips are found.
-For a controller that a backend handles, it also has a `backend` string, a `device` string and a `length` number.
-If any of its GPIOs is a PPS input, it has a `pps` array.
-A `pps` object has a `gpio` string giving the GPIO's name and a `line` number giving its line on the controller,
-or, where the GPIO is not shown by name, a `cells` array of numbers giving the cells of its GPIO specifier,
-and, when the kernel PPS device can be found, a `device` string.
+: Write output in JSON Lines format.
+A controller object has a `node` string, optional `compatible` and `chips` arrays,
+for a controller that supports polling `backend` and `device` strings and a numeric `length`,
+and, if any of its GPIOs is a PPS input, a `pps` array.
+A `pps` object has a `gpio` string and a numeric `line`,
+or, where the GPIO is not shown by name, a `cells` array of numbers,
+and a `device` string if its kernel PPS device is found.
 With **\-p**, an edge object has a `gpio` string, an RFC 3339 UTC timestamp `t`,
-`uncertainty` and `pollWidths` arrays and an optional `reject` string.
-`uncertainty` gives two durations in seconds: from the start of the read before the edge to `t`, and from `t` to the end of the read after the edge.
-`pollWidths` gives the durations in seconds of those two reads.
-A `reject` string gives the reason the edge is unsuitable for timing, as for **satpulsetool-serial(1)**.
+`uncertainty` and `pollWidths` arrays and an optional `reject` string,
+with the same meanings as for **satpulsetool-serial(1)**.
 
 # EXIT STATUS
 
@@ -104,30 +90,22 @@ A `reject` string gives the reason the edge is unsuitable for timing, as for **s
 : Error
 
 **2**
-: No data found: no GPIO controllers found in the device tree, or no PPS edges detected
+: No data found: no GPIO controllers found, or no PPS edges detected
 
 # EXAMPLES
 
-List the GPIO controllers:
+Show the GPIOs set up as PPS inputs:
 
     satpulsetool gpio
 
-List them in JSON Lines format:
-
-    satpulsetool gpio -j
-
-Show the controller that has GPIO18:
-
-    satpulsetool gpio GPIO18
-
-Poll the GPIO set up as a PPS input for 10 seconds:
+Detect PPS edges on the GPIO set up as a PPS input:
 
     satpulsetool gpio -p
 
-Poll GPIO18 for 150 seconds on CPU 3 at real-time priority 40, writing JSON Lines:
+Detect PPS edges on GPIO18 for 150 seconds, on CPU 3 at real-time priority 40:
 
-    sudo satpulsetool gpio -p GPIO18 --cpu 3 --priority 40 -t 150 -j
+    sudo satpulsetool gpio -p GPIO18 --cpu 3 --priority 40 -t 150
 
 # SEE ALSO
 
-**satpulsetool(1)**, **satpulsetool-serial(1)**, **satpulsetool-sdp(1)**
+**satpulsetool(1)**, **satpulsetool-serial(1)**

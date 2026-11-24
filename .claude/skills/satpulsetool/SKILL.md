@@ -17,7 +17,7 @@ kind of task. Read only the file for the task at hand.
 | Which serial ports exist, what is plugged into each, what speed a receiver runs at, what it is sending, whether PPS arrives on a modem-control pin (CTS, DCD, DSR, RI) | `serial.md` |
 | Whether PPS arrives on a PHC software-defined pin (SDP), or generating a pulse on one | `sdp.md` |
 | Show receiver info, query or change receiver configuration, send a command to a receiver | `gps.md` (which routes to `gps-highlevel.md`, `gps-msgfile.md`, or `gps-adhoc.md`) |
-| Which GPIO a `pps-gpio` device-tree node uses as a PPS input, and its `/dev/ppsN`; what GPIO controllers a board has | satpulsetool-gpio(1) (no separate file) |
+| Which GPIO pin is set up as a PPS input, and its `/dev/ppsN`; whether PPS arrives on a GPIO pin | satpulsetool-gpio(1) (no separate file) |
 | Decode one packet | `decode.md` |
 | Anything with a JSONL packet log: see it decoded, see the events it produces, check a decoding change against captures, filter it, or turn it into a byte stream or back | `packetlog.md` |
 
