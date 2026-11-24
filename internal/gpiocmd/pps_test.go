@@ -16,26 +16,35 @@ func TestOnlyPPSInput(t *testing.T) {
 	brcm := gpiomem.Controller{Node: "/soc@107c000000/gpio@7d508500", Compatible: []string{"brcm,brcmstb-gpio"}}
 	gpio18 := gpiomem.PPS{Name: "GPIO18", Line: 18, Node: "/pps@"}
 	gpio4 := gpiomem.PPS{Name: "GPIO4", Line: 4, Node: "/pps@4"}
+	unnamed := gpiomem.PPS{Cells: []uint32{24, 0}, Node: "/pps-gpio12"}
+	rk := gpiomem.Controller{Node: "/pinctrl/gpio@fe760000", Compatible: []string{"rockchip,gpio-bank"}, PPS: []gpiomem.PPS{unnamed}}
 	tests := []struct {
 		name      string
 		pps       []gpiomem.PPS
+		ctrls     []gpiomem.Controller
 		expect    string
-		expectErr bool
+		expectErr string
 	}{
 		{name: "one", pps: []gpiomem.PPS{gpio18}, expect: "GPIO18"},
-		{name: "none", expectErr: true},
-		{name: "two", pps: []gpiomem.PPS{gpio18, gpio4}, expectErr: true},
-		{name: "one and an unnamed input", pps: []gpiomem.PPS{gpio18, {Cells: []uint32{24, 0}, Node: "/pps-gpio12"}}, expect: "GPIO18"},
+		{name: "none", expectErr: "no GPIO that a backend handles is set up as a PPS input; give the name of the GPIO to poll"},
+		{name: "two", pps: []gpiomem.PPS{gpio18, gpio4}, expectErr: "several GPIOs are set up as PPS inputs (GPIO18, GPIO4); give the name of the one to poll"},
+		{name: "one and an unnamed input", pps: []gpiomem.PPS{gpio18, unnamed}, expect: "GPIO18"},
+		{name: "only an unnamed input", pps: []gpiomem.PPS{unnamed}, expectErr: "no GPIO that a backend handles is set up as a PPS input; give the name of the GPIO to poll"},
 		{name: "two nodes on one GPIO", pps: []gpiomem.PPS{gpio18, {Name: "GPIO18", Line: 18, Node: "/pps@2"}}, expect: "GPIO18"},
+		{name: "no backend", ctrls: []gpiomem.Controller{rk}, expectErr: "no supported GPIO controller found"},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			c := rp1
-			c.PPS = tc.pps
-			got, err := onlyPPSInput([]gpiomem.Controller{c, brcm})
-			if tc.expectErr {
-				if err == nil {
-					t.Fatalf("expected error")
+			ctrls := tc.ctrls
+			if ctrls == nil {
+				c := rp1
+				c.PPS = tc.pps
+				ctrls = []gpiomem.Controller{c, brcm}
+			}
+			got, err := onlyPPSInput(ctrls)
+			if tc.expectErr != "" {
+				if err == nil || err.Error() != tc.expectErr {
+					t.Fatalf("got error %v, want %q", err, tc.expectErr)
 				}
 				return
 			}

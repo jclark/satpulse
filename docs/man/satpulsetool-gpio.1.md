@@ -24,7 +24,7 @@ The backends are `bcm2835` (Raspberry Pi 3 and 4) and `rp1` (Raspberry Pi 5).
 It also shows each GPIO of the controller that a `pps-gpio` device-tree node, such as the one the `pps-gpio` overlay creates, uses as a pulse-per-second (PPS) input,
 with the kernel PPS device created for it, such as `/dev/pps0`, when that device can be found.
 On a controller that a backend handles, the GPIO is shown by the name the SoC's documentation gives it, such as `GPIO18` on a Raspberry Pi, and its line on the controller.
-On any other controller, it is shown by the cells of its GPIO specifier in the device tree, whose meaning the controller's device-tree binding defines.
+On any other controller, or if the line is not one the backend names, it is shown by the cells of its GPIO specifier in the device tree, whose meaning the controller's device-tree binding defines.
 
 Each controller is shown as an indented block.
 On a Raspberry Pi 5 with the `pps-gpio` overlay on GPIO 18, the first controller is shown as:
@@ -87,7 +87,7 @@ and a `chips` array of strings if any gpiochips are found.
 For a controller that a backend handles, it also has a `backend` string, a `device` string and a `length` number.
 If any of its GPIOs is a PPS input, it has a `pps` array.
 A `pps` object has a `gpio` string giving the GPIO's name and a `line` number giving its line on the controller,
-or, on a controller that no backend handles, a `cells` array of numbers giving the cells of its GPIO specifier,
+or, where the GPIO is not shown by name, a `cells` array of numbers giving the cells of its GPIO specifier,
 and, when the kernel PPS device can be found, a `device` string.
 With **\-p**, an edge object has a `gpio` string, an RFC 3339 UTC timestamp `t`,
 `uncertainty` and `pollWidths` arrays and an optional `reject` string.

@@ -30,7 +30,7 @@ type Pin struct {
 // finds the GPIO the SoC calls name, such as GPIO18, maps its controller's
 // registers and returns a reader for its level.
 func Open(name string) (*Pin, error) {
-	ctrls, _, _, err := scan()
+	ctrls, _, _, err := scan(false)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func Open(name string) (*Pin, error) {
 // and finds the GPIO the SoC calls name, as Open does, without opening it. It
 // reads only the device tree, so it needs no privileges.
 func Lookup(name string) (GPIO, error) {
-	ctrls, _, _, err := scan()
+	ctrls, _, _, err := scan(false)
 	if err != nil {
 		return GPIO{}, err
 	}
@@ -68,7 +68,7 @@ func Lookup(name string) (GPIO, error) {
 // paths of their device-tree nodes. It reads only the device tree, /dev and
 // sysfs, so it needs no privileges.
 func List() ([]Controller, error) {
-	ctrls, providers, nodes, err := scan()
+	ctrls, providers, nodes, err := scan(true)
 	if err != nil {
 		return nil, err
 	}
@@ -80,12 +80,13 @@ func List() ([]Controller, error) {
 const deviceTree = "/proc/device-tree"
 
 // scan walks the device tree for its GPIO controllers, the enabled nodes with
-// the gpio-controller property; for the GPIO providers, by phandle; and for
-// its enabled pps-gpio nodes, with the cells of their gpios property. A node
+// the gpio-controller property, and, if pps is true, for the GPIO providers,
+// by phandle, and its enabled pps-gpio nodes, with the cells of their gpios
+// (or gpio) property; otherwise it reads nothing that only they need. A node
 // below a disabled node is not enabled, since the kernel does not create its
 // device; but a provider there can still be a nexus node, which needs no
-// device, so the walk goes on below a disabled node.
-func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
+// device, so for pps the walk goes on below a disabled node.
+func scan(pps bool) ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 	root, err := filepath.EvalSymlinks(deviceTree)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil, nil
@@ -118,6 +119,9 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 				return err
 			}
 			if !ok {
+				if !pps {
+					return fs.SkipDir
+				}
 				disabled = path
 			}
 			return nil
@@ -125,6 +129,9 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 		dir := filepath.Dir(path)
 		switch d.Name() {
 		case "#gpio-cells":
+			if !pps {
+				return nil
+			}
 			phandle, p, err := readProvider(dir)
 			if err != nil {
 				return err
@@ -137,9 +144,10 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 				return nil
 			}
 			// A property of another meaning, such as an alias, can have this
-			// name; the controller's property is empty.
+			// name; the controller's property is empty. It is nil if an
+			// overlay removed the node after the walk listed it.
 			b, err := property(dir, "gpio-controller")
-			if err != nil || len(b) != 0 {
+			if err != nil || b == nil || len(b) != 0 {
 				return err
 			}
 			ctrl, err := controller(dir)
@@ -149,14 +157,18 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 			ctrl.Node = strings.TrimPrefix(dir, root)
 			ctrls = append(ctrls, ctrl)
 		case "compatible":
-			if off {
+			if off || !pps {
 				return nil
 			}
 			b, err := property(dir, "compatible")
 			if err != nil || !slices.Contains(compatibles(b), "pps-gpio") {
 				return err
 			}
+			// The GPIO bindings keep the deprecated gpio for compatibility.
 			b, err = property(dir, "gpios")
+			if err == nil && b == nil {
+				b, err = property(dir, "gpio")
+			}
 			if err != nil {
 				return err
 			}
@@ -164,6 +176,9 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 		}
 		return nil
 	})
+	// The walk sorts the entries of each directory, which is not the order
+	// of the whole paths: /i2c/gpio@20 before /i2c-mux/gpio@21.
+	slices.SortFunc(ctrls, func(a, b backend.Controller) int { return strings.Compare(a.Node, b.Node) })
 	return ctrls, providers, nodes, err
 }
 

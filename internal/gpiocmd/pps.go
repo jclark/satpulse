@@ -61,9 +61,12 @@ func pollName(name string) (string, error) {
 }
 
 // onlyPPSInput returns the name of the one GPIO of ctrls that pps-gpio nodes
-// use. A PPS input on a controller that no backend handles has no name and
-// cannot be polled, so it does not count.
+// use. A PPS input that no backend names cannot be polled, so it does not
+// count.
 func onlyPPSInput(ctrls []gpiomem.Controller) (string, error) {
+	if !slices.ContainsFunc(ctrls, func(c gpiomem.Controller) bool { return c.Backend != "" }) {
+		return "", errors.New("no supported GPIO controller found")
+	}
 	var names []string
 	for _, c := range ctrls {
 		for _, p := range c.PPS {
@@ -73,7 +76,7 @@ func onlyPPSInput(ctrls []gpiomem.Controller) (string, error) {
 		}
 	}
 	if len(names) == 0 {
-		return "", errors.New("no GPIO is set up as a PPS input; give the name of the GPIO to poll")
+		return "", errors.New("no GPIO that a backend handles is set up as a PPS input; give the name of the GPIO to poll")
 	}
 	if len(names) > 1 {
 		return "", fmt.Errorf("several GPIOs are set up as PPS inputs (%s); give the name of the one to poll", strings.Join(names, ", "))
