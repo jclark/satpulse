@@ -5,30 +5,30 @@ import (
 	"slices"
 	"testing"
 
+	"github.com/jclark/satpulse/gps/lib/gpiomem/backend"
 	"github.com/jclark/satpulse/gps/lib/gpiomem/bcm2835"
 	"github.com/jclark/satpulse/gps/lib/gpiomem/rp1"
-	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
 )
 
 // The controllers of real systems, as their sysfs gpiochips report them.
 var (
-	pi5Ctrls = []soc.Controller{
+	pi5Ctrls = []backend.Controller{
 		{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}},
 		{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
 		{Chip: "gpiochip11", Compatible: []string{"brcm,brcmstb-gpio"}},
 		{Chip: "gpiochip12", Compatible: []string{"brcm,brcmstb-gpio"}},
 		{Chip: "gpiochip13", Compatible: []string{"brcm,brcmstb-gpio"}},
 	}
-	pi4Ctrls = []soc.Controller{
+	pi4Ctrls = []backend.Controller{
 		{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}},
 		{Chip: "gpiochip1", Compatible: []string{"raspberrypi,firmware-gpio"}},
 	}
-	pi3Ctrls = []soc.Controller{
+	pi3Ctrls = []backend.Controller{
 		{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2835-gpio"}},
 		{Chip: "gpiochip1", Compatible: []string{"brcm,bcm2835-virtgpio"}},
 		{Chip: "gpiochip2", Compatible: []string{"raspberrypi,firmware-gpio"}},
 	}
-	rk3568Ctrls = []soc.Controller{
+	rk3568Ctrls = []backend.Controller{
 		{Chip: "gpiochip0", Compatible: []string{"rockchip,gpio-bank"}},
 		{Chip: "gpiochip1", Compatible: []string{"rockchip,gpio-bank"}},
 	}
@@ -69,21 +69,21 @@ func TestUpperName(t *testing.T) {
 func TestFindSoC(t *testing.T) {
 	tests := []struct {
 		name        string
-		ctrls       []soc.Controller
-		expect      soc.SoC
-		expectCtrls []soc.Controller
+		ctrls       []backend.Controller
+		expect      backend.Backend
+		expectCtrls []backend.Controller
 		expectErr   bool
 	}{
-		{name: "Pi 5", ctrls: pi5Ctrls, expect: rp1.SoC{}, expectCtrls: pi5Ctrls[:1]},
-		{name: "Pi 4", ctrls: pi4Ctrls, expect: bcm2835.SoC{}, expectCtrls: pi4Ctrls[:1]},
-		{name: "Pi 3", ctrls: pi3Ctrls, expect: bcm2835.SoC{}, expectCtrls: pi3Ctrls[:1]},
-		{name: "two families", ctrls: append(slices.Clone(pi5Ctrls), pi4Ctrls...), expectErr: true},
+		{name: "Pi 5", ctrls: pi5Ctrls, expect: rp1.Backend{}, expectCtrls: pi5Ctrls[:1]},
+		{name: "Pi 4", ctrls: pi4Ctrls, expect: bcm2835.Backend{}, expectCtrls: pi4Ctrls[:1]},
+		{name: "Pi 3", ctrls: pi3Ctrls, expect: bcm2835.Backend{}, expectCtrls: pi3Ctrls[:1]},
+		{name: "two backends", ctrls: append(slices.Clone(pi5Ctrls), pi4Ctrls...), expectErr: true},
 		{name: "unsupported controller", ctrls: rk3568Ctrls, expectErr: true},
 		{name: "no controllers", expectErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			s, ctrls, err := findSoC(tc.ctrls)
+			be, ctrls, err := findBackend(tc.ctrls)
 			if tc.expectErr {
 				if err == nil {
 					t.Fatalf("expected error")
@@ -93,8 +93,8 @@ func TestFindSoC(t *testing.T) {
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
-			if s != tc.expect || !reflect.DeepEqual(ctrls, tc.expectCtrls) {
-				t.Errorf("got  %T %+v\nwant %T %+v", s, ctrls, tc.expect, tc.expectCtrls)
+			if be != tc.expect || !reflect.DeepEqual(ctrls, tc.expectCtrls) {
+				t.Errorf("got  %T %+v\nwant %T %+v", be, ctrls, tc.expect, tc.expectCtrls)
 			}
 		})
 	}
@@ -103,9 +103,9 @@ func TestFindSoC(t *testing.T) {
 func TestLookup(t *testing.T) {
 	tests := []struct {
 		name       string
-		ctrls      []soc.Controller
+		ctrls      []backend.Controller
 		input      string
-		expectCtrl soc.Controller
+		expectCtrl backend.Controller
 		expect     GPIO
 		expectErr  bool
 	}{
@@ -162,7 +162,7 @@ func TestDescribe(t *testing.T) {
 	pps := ppsNode{path: "/pps@", gpios: []uint32{0x2e, 18, 0}}
 	tests := []struct {
 		name   string
-		ctrls  []soc.Controller
+		ctrls  []backend.Controller
 		nodes  []ppsNode
 		expect []Controller
 	}{
