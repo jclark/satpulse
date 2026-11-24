@@ -18,6 +18,7 @@ import (
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/gpsreg"
+	"github.com/jclark/satpulse/gps/lib/gpiomem"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/gpsevent"
@@ -156,6 +157,23 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			lg.Debug("successfully closed the serial port", "path", serialDev)
 		}
 	}()
+	// The GPIO is opened before the receiver is configured, so that a wrong
+	// name or an unsupported platform stops the daemon at once. Retrying
+	// cannot fix such a failure, so it is a configuration error; a failure to
+	// open or map the gpiomem device, which may not exist yet at boot, is
+	// not. The pin is closed after the PPS goroutine stops, which the
+	// worker-wait defer below ensures.
+	var gpioPin *gpiomem.Pin
+	if cfg.GPIO != nil {
+		if _, err := gpiomem.Lookup(cfg.GPIO.Name); err != nil {
+			return &configError{err: fmt.Errorf("GPIO PPS: %w", err)}
+		}
+		if gpioPin, err = gpiomem.Open(cfg.GPIO.Name); err != nil {
+			return fmt.Errorf("GPIO PPS: %w", err)
+		}
+		defer gpioPin.Close()
+		lg.Info("GPIO PPS polling", "gpio", cfg.GPIO.Name, "device", gpioPin.Device())
+	}
 
 	var wg sync.WaitGroup
 	pktFormats := gpsreg.CreatePacketFormats(vendors)
@@ -336,6 +354,29 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 				cancel(fmt.Errorf("serial PPS detection failed on %s: %w", cfg.Serial.PPS.Pin, err))
 			}
 			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
+		})
+	}
+	if cfg.GPIO != nil {
+		gpio := cfg.GPIO.Name
+		ppsGen = pps.NewGenerator(cfg.Sample.GPIO.GeneratorConfig)
+		ch := make(chan pps.CandidateEdge, 1)
+		ppsCh = ch
+		wg.Go(func() {
+			defer close(ch)
+			lg.Debug("GPIO PPS goroutine started", "gpio", gpio)
+			if err := pps.DetectGPIO(ctx, lg, gpioPin, cfg.Sample.GPIO.GPIOConfig, ch, nil); err != nil && ctx.Err() == nil {
+				lg.Error("GPIO PPS polling failed", "gpio", gpio, "err", err)
+				err = fmt.Errorf("GPIO PPS polling failed on %s: %w", gpio, err)
+				// A CPU or priority the system rejects is a configuration
+				// error, which a restart cannot fix; a permission error
+				// keeps its own exit status.
+				var setupErr *pps.ThreadSetupError
+				if errors.As(err, &setupErr) && !errors.Is(err, os.ErrPermission) {
+					err = &configError{err: err}
+				}
+				cancel(err)
+			}
+			lg.Debug("GPIO PPS goroutine exited", "gpio", gpio)
 		})
 	}
 	statsObs := newStatsLogObserver(cfg, lg)
@@ -544,7 +585,7 @@ func configFeatures(cfg *Config, usingPHC bool) cfgFeatures {
 	var cf cfgFeatures
 	if usingPHC {
 		cf |= cfgTimePulse | cfgTimePulseMsg
-	} else if cfg.Serial.PPS != nil || (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
+	} else if cfg.Serial.PPS != nil || cfg.GPIO != nil || (cfg.NTP.Sock != nil && cfg.NTP.Sock.Path != "") || (cfg.NTP.SHM != nil && cfg.NTP.SHM.Segment != nil) {
 		cf |= cfgTimePulse
 	}
 	if cfg.Log.Track || len(cfg.HTTP) > 0 {

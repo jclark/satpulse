@@ -260,6 +260,44 @@ interface = "eth0"
 	}
 }
 
+func TestGPIOConfig(t *testing.T) {
+	tests := []struct {
+		name      string
+		toml      string
+		expectErr string
+	}{
+		{name: "valid", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\ncpu = 3\npriority = 40"},
+		{name: "missing name", toml: "[gpio]\n", expectErr: "name in the [gpio] table must be specified"},
+		{name: "with serial PPS", toml: "[serial.pps]\npin = \"cts\"\n[gpio]\nname = \"GPIO18\"", expectErr: "cannot be used with pps.pin in the [serial] table"},
+		{name: "with PHC", toml: "[gpio]\nname = \"GPIO18\"\n[phc]\ninterface = \"eth0\"", expectErr: "cannot be used with interface or device in the [phc] table"},
+		{name: "priority too high", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\npriority = 100", expectErr: "priority"},
+		{name: "negative cpu", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\ncpu = -1", expectErr: "cpu"},
+		{name: "delay interval too wide", toml: "[gpio]\nname = \"GPIO18\"\n[sample.gpio]\nmaxDelay = 0.999", expectErr: "in sample.gpio table"},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(tc.toml))
+			if err != nil {
+				t.Fatalf("readConfig: %v", err)
+			}
+			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if tc.expectErr == "" {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				g := cfg.Sample.GPIO.GPIOConfig
+				if cfg.GPIO.Name != "GPIO18" || g.CPU == nil || *g.CPU != 3 || g.Priority != 40 {
+					t.Errorf("got [gpio] %+v, [sample.gpio] %+v", cfg.GPIO, cfg.Sample.GPIO)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.expectErr) {
+				t.Fatalf("Validate error = %v, want containing %q", err, tc.expectErr)
+			}
+		})
+	}
+}
+
 func TestPHCInterfaceAndDeviceConflict(t *testing.T) {
 	cfg, err := readConfig(strings.NewReader(`
 [phc]
@@ -435,6 +473,11 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 		t.Fatalf("serial-PPS SHM fixed precision = %v, want %d", got, serialPPSSHMPrecision)
 	}
 	cfg.Serial.PPS = nil
+	cfg.GPIO = &GPIOConfig{Name: "GPIO18"}
+	got = cfg.shmFixedPrecision()
+	if got == nil || *got != gpioPPSSHMPrecision {
+		t.Fatalf("GPIO PPS SHM fixed precision = %v, want %d", got, gpioPPSSHMPrecision)
+	}
 	cfg, err := readConfig(strings.NewReader(`[ntp]
 shm.segment = 2
 shm.precision = -23`))

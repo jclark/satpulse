@@ -14,8 +14,10 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
+	"github.com/jclark/satpulse/gps/lib/check"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -31,6 +33,7 @@ const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
+	GPIO       *GPIOConfig `toml:"gpio"`
 	Sample     SampleConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
@@ -65,12 +68,26 @@ type SerialPPSConfig struct {
 	InvertPolarity bool            `toml:"invertPolarity"`
 }
 
+// GPIOConfig describes a GPIO polled for PPS edges.
+type GPIOConfig struct {
+	// Name is the name of the GPIO, such as GPIO18.
+	Name string `toml:"name"`
+}
+
 type SampleConfig struct {
 	Serial SerialSampleConfig `toml:"serial"`
+	GPIO   GPIOSampleConfig   `toml:"gpio"`
 }
 
 type SerialSampleConfig struct {
 	PPS serialpps.Config `toml:"pps"`
+}
+
+// GPIOSampleConfig controls how the [gpio] table's GPIO is polled for PPS
+// edges and how they are associated with UTC-labelled receiver messages.
+type GPIOSampleConfig struct {
+	pps.GeneratorConfig
+	pps.GPIOConfig
 }
 
 type PHCConfig struct {
@@ -119,6 +136,7 @@ type NTPSHMConfig struct {
 const (
 	serialSHMPrecision    int8 = -1
 	serialPPSSHMPrecision int8 = -11
+	gpioPPSSHMPrecision   int8 = -19
 )
 
 type LogConfig struct {
@@ -181,6 +199,7 @@ func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
 	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
+	cfg.Sample.GPIO.GeneratorConfig = pps.DefaultGeneratorConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
@@ -230,6 +249,17 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface or device in the [phc] table")}
 		}
 	}
+	if cfg.GPIO != nil {
+		if cfg.GPIO.Name == "" {
+			return &configError{err: fmt.Errorf("name in the [gpio] table must be specified")}
+		}
+		if cfg.Serial.PPS != nil {
+			return &configError{err: fmt.Errorf("the [gpio] table cannot be used with pps.pin in the [serial] table")}
+		}
+		if cfg.PHC.specified() {
+			return &configError{err: fmt.Errorf("the [gpio] table cannot be used with interface or device in the [phc] table")}
+		}
+	}
 	if cfg.PHC.Interface != "" && cfg.PHC.Device != "" {
 		return &configError{err: fmt.Errorf("interface and device in the [phc] table cannot both be specified")}
 	}
@@ -237,6 +267,9 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return configErrorf("exttsLatency in the [phc] table must be between -%d and %d (exttsLatency is in nanoseconds)", maxExttsLatency, maxExttsLatency)
 	}
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
+		return &configError{err: err}
+	}
+	if err := cfg.Sample.GPIO.Validate(); err != nil {
 		return &configError{err: err}
 	}
 	// An explicitly selected method never falls back, so a pin kernel PPS
@@ -268,6 +301,23 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	return nil
+}
+
+// Validate checks the [sample.gpio] table.
+func (cfg GPIOSampleConfig) Validate() error {
+	msgs := check.Validate(cfg)
+	if err := cfg.GeneratorConfig.Validate(); err != nil {
+		msgs = append(msgs, err.Error())
+	}
+	switch len(msgs) {
+	case 0:
+		return nil
+	case 1:
+		return fmt.Errorf("in sample.gpio table: %s", msgs[0])
+	default:
+		msgs = append([]string{"errors in sample.gpio table:"}, msgs...)
+		return errors.New(strings.Join(msgs, "\n\t"))
+	}
 }
 
 // wiring is the pulse wiring the table describes.
@@ -368,6 +418,10 @@ func (cfg *Config) shmFixedPrecision() *int8 {
 	}
 	if cfg.Serial.PPS != nil {
 		p := serialPPSSHMPrecision
+		return &p
+	}
+	if cfg.GPIO != nil {
+		p := gpioPPSSHMPrecision
 		return &p
 	}
 	if !cfg.PHC.specified() {

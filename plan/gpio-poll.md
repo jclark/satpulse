@@ -25,26 +25,24 @@ Linux and arm64 only initially. No cgo.
 ## Configuration
 
 ```
-[pps]
-gpio.pin = 18
+[gpio]
+name = "GPIO18"
 
-[sample.pps]
+[sample.gpio]
 delayUncertainty = 0.005
 maxDelay = 0.8
-
-[sample.pps.gpio]
 cpu = 3
 priority = 40
 ```
 
-`[pps]` describes a pulse input that is not a serial modem-control line;
-`[serial]` is unchanged. `gpio.pin` selects the GPIO source. `device` is
-reserved for the kernel PPS device (#412). `[pps]` names one kind, and is
-exclusive with `[serial] pps.pin` and `[phc] interface`.
+`[gpio]` names the GPIO the receiver's PPS arrives on, as the SoC's
+documentation names it; `satpulsetool gpio` shows the name of a GPIO that
+a `pps-gpio` overlay uses. `[serial]` is unchanged. `[gpio]` is exclusive
+with `[serial] pps.pin` and `[phc] interface`.
 
-`[sample.pps]` holds the keys that pair edges with receiver messages, which
-apply to either kind. `[sample.pps.gpio]` holds the polling keys: the CPU
-to pin the poller to and its SCHED_FIFO priority. A `preWarm` key is added
+`[sample.gpio]` holds the keys that pair edges with receiver messages and
+the polling keys: the CPU to pin the poller to and its SCHED_FIFO
+priority. A `preWarm` key is added
 only if the GPIO source proves to need it. There is no `maxWakeupLatency`:
 cpu_dma_latency is for the Intel serial-polling case.
 

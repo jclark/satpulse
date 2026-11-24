@@ -89,6 +89,25 @@ although this can be reduced by disabling PCIe power management.
 The NTP daemon has no knowledge of this delay and its reported statistics do not take account of it.
 If you can estimate this delay, then you can configure the NTP daemon to compensate for it.
 
+### Polling the GPIO with satpulsed
+
+On a Raspberry Pi running a 64-bit OS, satpulsed can instead read the GPIO itself.{% include new-in.html version="0.4" %}
+It polls the GPIO's level in a short window around each expected pulse.
+This is not subject to the interrupt delay described above.
+On a Raspberry Pi 5, with the poller on its own CPU at real-time priority,
+the `ondemand` CPU frequency governor and PCIe power management disabled,
+it locates the rising edge to within about a microsecond.
+The samples satpulsed sends to the NTP daemon then have both the precise edge time and the second it belongs to,
+so the NTP daemon needs no PPS refclock of its own,
+and is configured as for the serial approach.
+The boot configuration below is still needed to make the GPIO an input;
+the `/dev/pps0` device is left unused.
+
+Power management matters more on a Raspberry Pi 3 or 4.
+With the `ondemand` governor, a mostly idle CPU runs at its lowest clock,
+and the interval in which polling locates the edge is two to three times wider than with the `performance` governor:
+3.1 against 1.1 microseconds on a Raspberry Pi 4, and 4.7 against 2.3 microseconds on a Raspberry Pi 3.
+
 ### Raspberry Pi boot configuration
 
 Typically, some system-dependent boot configuration is needed to enable PPS on a GPIO pin.
@@ -154,6 +173,14 @@ speed = 9600
 # comment out if you are using the GPIO approach
 pps.pin = "cts"
 
+# Uncomment these to have satpulsed poll the GPIO itself, instead of
+# the NTP daemon reading the kernel PPS device
+#[gpio]
+#name = "GPIO18"
+#[sample.gpio]
+#cpu = 3
+#priority = 40
+
 [gps]
 config = true
 
@@ -203,18 +230,25 @@ If this value is not set, then `satpulsed` will not make any change to power man
 You can experiment with this value using the `--max-wakeup-latency` option of `satpulsetool serial`;
 root is required for this option.
 
+When satpulsed polls the GPIO, the `name` key in the `[gpio]` table gives the GPIO's name in the SoC's documentation.
+With the `pps-gpio` overlay, `satpulsetool gpio` shows that name.
+The `cpu` key in the `[sample.gpio]` table pins the poller to a CPU,
+and `priority` runs it at real-time priority.
+Polling is most precise on a CPU that does not handle the GPIO's interrupt;
+`/proc/interrupts` shows which CPU handles it.
+
 See [satpulse.toml(5)]({% link man/satpulse.toml.5.md %}) for the full set of configuration keys.
 
 ## Set up chrony
 
 Make sure chrony is installed. The package is called `chrony` on both Fedora and Debian.
 
-For the serial approach a single refclock line needs to be added to the chrony configuration.
+For the serial approach, and when satpulsed polls the GPIO, a single refclock line needs to be added to the chrony configuration.
 With the GPIO approach two refclock lines are needed.
 On Debian, these can be conveniently added to a new file `/etc/chrony/conf.d/satpulse.conf`;
 on Fedora, add them to `/etc/chrony.conf` instead.
 
-For the serial approach, use the following:
+For the serial approach, and when satpulsed polls the GPIO, use the following:
 
 ```
 refclock SOCK /var/run/chrony.satpulse.sock refid GPS
@@ -296,6 +330,8 @@ minimum-agreeing-sources = 1
 [[server]]
 listen = "0.0.0.0:123"
 ```
+
+When satpulsed polls the GPIO, use this configuration too, but with `precision = 2e-6`.
 
 ### GPIO approach
 

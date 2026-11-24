@@ -7,6 +7,7 @@ _Not yet released_
 - The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
 - `satpulsetool` has a new `gpio` command, which shows which GPIO pins are set up as PPS inputs and, on a Raspberry Pi, detects PPS edges on a GPIO pin by polling it. (#460)
 - FreeBSD support is improved. NTP SHM, kernel PPS and serial enumeration now support FreeBSD. There is also an rc.d script. (#426)
+- The new `[gpio]` table in `satpulse.toml` lets `satpulsed` poll a Raspberry Pi GPIO for PPS edges directly, reading the GPIO controller's registers, instead of relying on the kernel's interrupt-driven timestamps; `[sample.gpio]` pins the poller to a CPU and runs it at real-time priority. (#460)
 
 ## Changes in 0.3
 

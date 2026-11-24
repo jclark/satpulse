@@ -16,12 +16,21 @@ type GPIOConfig struct {
 	// CPU, if non-nil, is the CPU the poller's thread is pinned to. It
 	// should not be a CPU that handles interrupts, above all the GPIO's
 	// own, whose handling interrupts the reads that bracket the edge.
-	CPU *int
+	CPU *int `toml:"cpu" check:">=0" comment:"CPU to pin the GPIO poller to; omit to leave it unpinned"`
 	// Priority, if nonzero, is the SCHED_FIFO priority, from 1 to 99, at
 	// which the poller's thread runs, so that its short polling windows
 	// preempt ordinary work.
-	Priority int
+	Priority int `toml:"priority" check:">=0,<100" comment:"SCHED_FIFO priority of the GPIO poller, 1 to 99; 0 leaves normal scheduling"`
 }
+
+// ThreadSetupError is the error DetectGPIO returns when the poller's thread
+// cannot be given the CPU or priority its GPIOConfig asks for.
+type ThreadSetupError struct {
+	Err error
+}
+
+func (e *ThreadSetupError) Error() string { return e.Err.Error() }
+func (e *ThreadSetupError) Unwrap() error { return e.Err }
 
 // DetectGPIO polls pin for the rising edges of its PPS pulses and sends a
 // candidate for each until ctx is done or polling fails. The pin must
@@ -30,8 +39,9 @@ type GPIOConfig struct {
 // starts, and closes it after DetectGPIO returns. The poller runs on its own
 // OS thread, pinned and prioritized as cfg says; the thread is discarded
 // when polling ends, so its settings never reach the rest of the program.
-// Cancellation takes effect at the next poll, at most one period away. If
-// stats is non-nil, it records polling statistics.
+// If the thread cannot be set up as cfg says, the error is a
+// *ThreadSetupError. Cancellation takes effect at the next poll, at most one
+// period away. If stats is non-nil, it records polling statistics.
 func DetectGPIO(ctx context.Context, lg *slog.Logger, pin *gpiomem.Pin, cfg GPIOConfig, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	errCh := make(chan error, 1)
 	go func() {
@@ -39,7 +49,7 @@ func DetectGPIO(ctx context.Context, lg *slog.Logger, pin *gpiomem.Pin, cfg GPIO
 		// discards the thread rather than reusing it with these settings.
 		runtime.LockOSThread()
 		if err := setupThread(cfg); err != nil {
-			errCh <- err
+			errCh <- &ThreadSetupError{err}
 			return
 		}
 		errCh <- Poll(ctx, lg, gpioReader{pin}, gpioPollParams, ceCh, stats)

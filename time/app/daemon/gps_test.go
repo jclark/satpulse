@@ -19,6 +19,13 @@ func TestConfigFeaturesNMEASendPullUsesPosition(t *testing.T) {
 	}
 }
 
+func TestConfigFeaturesGPIOUsesTimePulse(t *testing.T) {
+	cfg := &Config{GPIO: &GPIOConfig{Name: "GPIO18"}}
+	if got := configFeatures(cfg, false); got&cfgTimePulse == 0 {
+		t.Fatalf("configFeatures = %b, want cfgTimePulse set", got)
+	}
+}
+
 func TestConfigFeaturesSerialPPSUsesTimePulse(t *testing.T) {
 	cfg := &Config{Serial: SerialConfig{PPS: &SerialPPSConfig{Pin: gpsio.SerialPinDCD}}}
 	if got := configFeatures(cfg, false); got&(cfgTimePulse|cfgTimePulseMsg) != cfgTimePulse {

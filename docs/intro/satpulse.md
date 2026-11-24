@@ -20,6 +20,7 @@ See [Installing SatPulse]({% link setup/satpulse-install.md %}).
 
 Timing with a PHC is supported only on Linux.
 Timing based on a serial PPS signal is supported on Linux and macOS.
+Timing based on polling a GPIO is supported on a Raspberry Pi running 64-bit Linux.{% include new-in.html version="0.4" %}
 
 ## Timing
 
@@ -27,10 +28,11 @@ SatPulse can be used for timing both with and without a PHC.
 See [Precision timing](timing.md) for the concepts behind these features.
 
 When used without a PHC, SatPulse can provide timing information to an NTP daemon.
-There are two different approaches depending on how the PPS signal is wired up:
+There are three different approaches depending on how the PPS signal is wired up:
 
 - based on serial messages alone: the NTP daemon reads PPS timestamps itself, and uses the timing information from SatPulse to identify which second each pulse corresponds to
 - based on serial PPS: when the PPS signal is wired to a modem control line of the serial port, satpulsed timestamps the pulses itself, and sends samples with sufficient information for the NTP daemon to synchronize the system clock without any additional input
+- based on GPIO polling: when the PPS signal is wired to a GPIO of a Raspberry Pi, satpulsed polls the GPIO itself, and sends samples as with serial PPS
 
 SatPulse supports two protocols for communicating with an NTP daemon:
 - the refclock SOCK protocol used by chrony, and now also supported by ntpd-rs
