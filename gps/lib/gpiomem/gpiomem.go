@@ -150,17 +150,22 @@ type ppsNode struct {
 
 // describe combines ctrls, the GPIO controllers of the system, with the
 // backends that handle them, with chips, which maps the path of a node to its
-// gpiochips, and with nodes, its pps-gpio nodes. A pps-gpio node's gpios
-// property holds the phandle of a controller followed by the controller's
-// #gpio-cells cells of the GPIO specifier. In the binding of every backend's
-// controllers the first cell is the line.
-func describe(ctrls []backend.Controller, chips map[string][]string, nodes []ppsNode) []Controller {
+// gpiochips, and with nodes, its pps-gpio nodes, whose GPIOs providers
+// resolves to controllers. In the binding of every backend's controllers the
+// first cell of a GPIO specifier is the line.
+func describe(ctrls []backend.Controller, providers map[uint32]provider, chips map[string][]string, nodes []ppsNode) []Controller {
 	list := make([]Controller, len(ctrls))
 	for i, c := range ctrls {
 		list[i] = Controller{Node: c.Node, Compatible: c.Compatible, Chips: chips[c.Node]}
-		for _, n := range nodes {
-			if c.Phandle != 0 && c.GPIOCells > 0 && len(n.gpios) >= 1+c.GPIOCells && n.gpios[0] == c.Phandle {
-				list[i].PPS = append(list[i].PPS, PPS{Cells: n.gpios[1 : 1+c.GPIOCells], Node: n.path})
+	}
+	for _, n := range nodes {
+		phandle, spec, ok := resolve(providers, n.gpios)
+		if !ok {
+			continue
+		}
+		for i, c := range ctrls {
+			if c.Phandle == phandle {
+				list[i].PPS = append(list[i].PPS, PPS{Cells: spec, Node: n.path})
 			}
 		}
 	}
@@ -179,6 +184,9 @@ func describe(ctrls []backend.Controller, chips map[string][]string, nodes []pps
 			c.Device, c.Length = be.GPIOMem()
 			var pps []PPS
 			for _, p := range c.PPS {
+				if len(p.Cells) == 0 {
+					continue
+				}
 				line := int(p.Cells[0])
 				if name, ok := be.GPIOName(backendCtrls, j, line); ok {
 					pps = append(pps, PPS{Name: name, Line: line, Node: p.Node})
@@ -188,6 +196,91 @@ func describe(ctrls []backend.Controller, chips map[string][]string, nodes []pps
 		}
 	}
 	return list
+}
+
+// provider is a node of the device tree that a GPIO specifier can name: one
+// with the #gpio-cells property. It is a GPIO controller, or a nexus node,
+// whose gpio-map translates its specifiers to those of other providers
+// (Devicetree Specification, section 2.5).
+type provider struct {
+	cells     int      // its #gpio-cells
+	available bool     // whether its status allows its use
+	gpioMap   []uint32 // its gpio-map, or nil if it is not a nexus node
+	mask      []uint32 // its gpio-map-mask
+	passThru  []uint32 // its gpio-map-pass-thru
+}
+
+// resolve finds the GPIO that gpios, a phandle followed by a GPIO specifier,
+// names, following nexus nodes as the kernel's of_parse_phandle_with_args_map
+// does, and returns the phandle of the GPIO's controller and the cells of its
+// specifier there. ok is false if gpios names no GPIO.
+func resolve(providers map[uint32]provider, gpios []uint32) (phandle uint32, spec []uint32, ok bool) {
+	if len(gpios) == 0 {
+		return 0, nil, false
+	}
+	phandle = gpios[0]
+	p, ok := providers[phandle]
+	if !ok || len(gpios) < 1+p.cells {
+		return 0, nil, false
+	}
+	spec = gpios[1 : 1+p.cells]
+	for hops := 0; p.gpioMap != nil; hops++ {
+		// Only a loop of nexus nodes passes through more nodes than there
+		// are. The kernel's translation never ends on one.
+		if hops == len(providers) {
+			return 0, nil, false
+		}
+		if phandle, spec, ok = p.translate(providers, spec); !ok {
+			return 0, nil, false
+		}
+		p = providers[phandle]
+	}
+	return phandle, spec, true
+}
+
+// translate maps spec, a specifier of the nexus node p, through p's gpio-map,
+// as the kernel does. The map's entries are each a child specifier, the
+// phandle of a parent provider and a specifier of the parent. The first entry
+// whose child specifier equals spec in the bits of gpio-map-mask and whose
+// parent is available gives the parent and its specifier, with the bits of
+// gpio-map-pass-thru taken from spec.
+func (p provider) translate(providers map[uint32]provider, spec []uint32) (uint32, []uint32, bool) {
+	m := p.gpioMap
+	// As in the kernel, an entry is looked at only while more cells remain
+	// than a child specifier and a phandle.
+	for len(m) > len(spec)+1 {
+		match := true
+		for i, c := range spec {
+			if (c^m[i])&cellOr(p.mask, i, ^uint32(0)) != 0 {
+				match = false
+			}
+		}
+		phandle := m[len(spec)]
+		parent, ok := providers[phandle]
+		m = m[len(spec)+1:]
+		if !ok || len(m) < parent.cells {
+			return 0, nil, false
+		}
+		if match && parent.available {
+			out := slices.Clone(m[:parent.cells])
+			for i := range min(len(out), len(spec)) {
+				pass := cellOr(p.passThru, i, 0)
+				out[i] = out[i]&^pass | spec[i]&pass
+			}
+			return phandle, out, true
+		}
+		m = m[parent.cells:]
+	}
+	return 0, nil, false
+}
+
+// cellOr returns c[i], or def if c has no cell i, as when an optional
+// property is absent.
+func cellOr(c []uint32, i int, def uint32) uint32 {
+	if i < len(c) {
+		return c[i]
+	}
+	return def
 }
 
 // cells splits a device-tree property into its big-endian 32-bit cells.
