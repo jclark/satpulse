@@ -13,7 +13,6 @@ import (
 	"slices"
 	"strings"
 	"sync/atomic"
-	"unsafe"
 
 	"github.com/jclark/satpulse/gps/lib/gpiomem/backend"
 	"golang.org/x/sys/unix"
@@ -50,7 +49,7 @@ func Open(name string) (*Pin, error) {
 	if err != nil {
 		return nil, fmt.Errorf("mapping %s: %w", device, err)
 	}
-	return &Pin{mapping: b, level: (*uint32)(unsafe.Pointer(&b[offset])), mask: 1 << bit, device: device}, nil
+	return &Pin{mapping: b, level: word(b, offset), mask: 1 << bit, device: device}, nil
 }
 
 // Lookup identifies the SoC of the running system from its GPIO controllers
