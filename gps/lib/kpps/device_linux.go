@@ -1,5 +1,7 @@
 //go:build linux
 
+//go:generate sh -c "go tool cgo -godefs types_linux.go | gofmt > ztypes_linux.go && rm -rf _obj"
+
 package kpps
 
 import (
@@ -28,11 +30,6 @@ func DevicePathForTTY(fd int) (string, error) {
 	return filepath.Join("/dev", name), nil
 }
 
-// maxGPIOSourceName is the length to which the pps-gpio driver cuts its
-// source's name: it formats the name into PPS_MAX_NAME_LEN - 1 bytes,
-// including the terminating NUL.
-const maxGPIOSourceName = 30
-
 // sysBusPlatform is the directory of the platform devices.
 const sysBusPlatform = "/sys/bus/platform/devices"
 
@@ -41,7 +38,7 @@ const sysBusPlatform = "/sys/bus/platform/devices"
 // The kernel documents no link from a PPS device to the device that feeds it,
 // so the device is found by the name the driver gives its source: the name of
 // the node's platform device followed by ".-1", the id of a platform device
-// created from the device tree, cut to the 30 bytes the driver keeps. This
+// created from the device tree, cut to the bytes the driver keeps. This
 // relies on the driver's implementation; a kernel that names the source
 // differently gives an error, as does a cut name that another platform device
 // could also give.
@@ -55,8 +52,10 @@ func DevicePathForGPIONode(node string) (string, error) {
 		return "", err
 	}
 	source := pdev + ".-1"
-	if len(source) > maxGPIOSourceName {
-		source = source[:maxGPIOSourceName]
+	// The driver formats the name with snprintf into PPS_MAX_NAME_LEN - 1
+	// bytes, which hold the terminating NUL.
+	if keep := ppsMaxNameLen - 2; len(source) > keep {
+		source = source[:keep]
 		n := 0
 		for _, e := range entries {
 			if strings.HasPrefix(e.Name()+".-1", source) {
