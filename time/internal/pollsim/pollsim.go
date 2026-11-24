@@ -102,8 +102,7 @@ type sim struct {
 	misses     int
 }
 
-// logHandler stamps the loop's log records with simulated time and counts
-// the events the statistics report.
+// logHandler stamps the loop's log records with simulated time.
 type logHandler struct {
 	slog.Handler
 	s *sim
@@ -143,6 +142,7 @@ func Simulate(cfg Config, lg *slog.Logger, edges func(EdgeRecord)) (Stats, error
 		PreWarm:    ptime.Seconds(cfg.Poll.PreWarm),
 		Wait:       s.wait,
 		Now:        s.time,
+		Observer:   s,
 	}
 	go func() {
 		errCh <- pps.Poll(context.Background(), slog.New(&logHandler{Handler: lg.Handler(), s: s}), s, params, ceCh, nil)
@@ -367,28 +367,19 @@ func (s *sim) present(n time.Duration) bool {
 	return true
 }
 
-func (h *logHandler) Enabled(context.Context, slog.Level) bool { return true }
+// TrackStatus counts the tracking events the statistics report.
+func (s *sim) TrackStatus(st pps.TrackStatus) {
+	switch st.Reason {
+	case pps.TrackStart:
+		s.acquired++
+	case pps.TrackLost:
+		s.lost++
+	case pps.TrackMiss:
+		s.misses++
+	}
+}
 
 func (h *logHandler) Handle(ctx context.Context, r slog.Record) error {
-	switch r.Message {
-	case "serial PPS acquired":
-		h.s.acquired++
-	case "serial PPS track status":
-		r.Attrs(func(a slog.Attr) bool {
-			if a.Key == "reason" {
-				switch a.Value.String() {
-				case "lost":
-					h.s.lost++
-				case "miss":
-					h.s.misses++
-				}
-			}
-			return true
-		})
-	}
-	if !h.Handler.Enabled(ctx, r.Level) {
-		return nil
-	}
 	r.Time = simBase.Add(h.s.now)
 	return h.Handler.Handle(ctx, r)
 }
