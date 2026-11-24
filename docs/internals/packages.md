@@ -170,11 +170,11 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/gpiomem` reads the level of a GPIO directly from its controller's registers. It is implemented for 64-bit Linux only.
 
-`gps/lib/gpiomem/soc` defines the interface between `gps/lib/gpiomem` and its SoC family packages.
+`gps/lib/gpiomem/backend` defines the interface between `gps/lib/gpiomem` and its backends, the packages that each handle the GPIO controllers of a family of SoCs.
 
-`gps/lib/gpiomem/bcm2835` describes the GPIO controller of the Raspberry Pi 3 and 4.
+`gps/lib/gpiomem/bcm2835` is the gpiomem backend for the GPIO controller of the Raspberry Pi 3 and 4.
 
-`gps/lib/gpiomem/rp1` describes the GPIO controller of the Raspberry Pi 5.
+`gps/lib/gpiomem/rp1` is the gpiomem backend for the GPIO controller of the Raspberry Pi 5.
 
 `gps/lib/osthread` changes the scheduling settings of an OS thread. It is implemented for Linux.
 
