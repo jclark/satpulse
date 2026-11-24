@@ -76,19 +76,34 @@ func List() ([]Controller, error) {
 }
 
 // controllers lists the gpiochips that are bound to a device-tree node, with
-// that node's compatible strings and phandle.
+// that node's compatible strings and phandle. It finds them by the route the
+// kernel documents as ABI: the character devices /dev/gpiochipN
+// (ABI/testing/gpio-cdev), the sysfs directory of each device's number
+// (ABI/testing/sysfs-dev), and its of_node link (ABI/stable/sysfs-devices).
+// A symlink, such as the /dev/gpiochip4 Raspberry Pi OS adds on a Pi 5, is
+// not a gpiochip of its own.
 func controllers() ([]soc.Controller, error) {
-	dir := gpioDevices()
-	entries, err := os.ReadDir(dir)
+	paths, err := filepath.Glob("/dev/gpiochip[0-9]*")
 	if err != nil {
 		return nil, err
 	}
 	var ctrls []soc.Controller
-	for _, e := range entries {
-		if !strings.HasPrefix(e.Name(), "gpiochip") {
+	for _, path := range paths {
+		chip := filepath.Base(path)
+		if strings.Trim(strings.TrimPrefix(chip, "gpiochip"), "0123456789") != "" {
 			continue
 		}
-		node := filepath.Join(dir, e.Name(), "of_node")
+		var st unix.Stat_t
+		if err := unix.Lstat(path, &st); err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue
+			}
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if st.Mode&unix.S_IFMT != unix.S_IFCHR {
+			continue
+		}
+		node := fmt.Sprintf("/sys/dev/char/%d:%d/of_node", unix.Major(st.Rdev), unix.Minor(st.Rdev))
 		b, err := os.ReadFile(filepath.Join(node, "compatible"))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
@@ -100,7 +115,7 @@ func controllers() ([]soc.Controller, error) {
 		if len(c) == 0 {
 			continue
 		}
-		ctrl := soc.Controller{Chip: e.Name(), Compatible: c}
+		ctrl := soc.Controller{Chip: chip, Compatible: c}
 		b, err = os.ReadFile(filepath.Join(node, "phandle"))
 		if errors.Is(err, fs.ErrNotExist) {
 			b, err = os.ReadFile(filepath.Join(node, "linux,phandle"))
@@ -111,17 +126,6 @@ func controllers() ([]soc.Controller, error) {
 		ctrls = append(ctrls, ctrl)
 	}
 	return ctrls, nil
-}
-
-// gpioDevices returns the directory linking to the gpiochips:
-// /sys/subsystem/gpio/devices where the kernel provides /sys/subsystem, which
-// sysfs-rules.rst says then replaces /sys/bus.
-func gpioDevices() string {
-	const subsystem = "/sys/subsystem/gpio/devices"
-	if _, err := os.Stat(subsystem); err == nil {
-		return subsystem
-	}
-	return "/sys/bus/gpio/devices"
 }
 
 // deviceTree is the path through which sysfs-firmware-ofw says userspace
