@@ -40,8 +40,9 @@ type PollParams struct {
 	// Wait, if non-nil, replaces the runtime timer that sleeps until a
 	// scheduled poll. It reports whether it actually waited: false means
 	// the scheduled time was already past or nearer than it can sleep to.
-	// It is not called for a poll whose scheduled time the previous query
-	// already ended past.
+	// It is not called for a read within a polling window whose scheduled
+	// time the previous read already ended past; the first read of a window
+	// always calls it.
 	// A precise wait must end at the scheduled time rather than before it,
 	// however coarse the host's timer; acquisition asks for one because it
 	// polls its way to any deadline it wakes short of.
