@@ -5,8 +5,8 @@
 // A GPIO is named as its SoC's documentation names it, such as GPIO18 on a
 // Raspberry Pi; the name is case-insensitive ASCII. The SoC is identified
 // from the GPIO controllers of the running system: the gpiochips whose
-// device-tree nodes have a compatible string that one of the SoC family
-// packages under this package handles. That package looks up the controller
+// device-tree nodes have a compatible string that one of the backends, the
+// packages under this package, handles. That backend looks up the controller
 // and line the name identifies and locates the line's level register.
 // Currently the registers are mapped through the gpiomem devices that
 // Raspberry Pi OS provides.
@@ -29,16 +29,16 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/jclark/satpulse/gps/lib/gpiomem/backend"
 	"github.com/jclark/satpulse/gps/lib/gpiomem/bcm2835"
 	"github.com/jclark/satpulse/gps/lib/gpiomem/rp1"
-	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
 )
 
-// socs lists the supported SoC families.
-var socs = []soc.SoC{bcm2835.SoC{}, rp1.SoC{}}
+// backends lists the backends.
+var backends = []backend.Backend{bcm2835.Backend{}, rp1.Backend{}}
 
 // upperName checks that name is a non-empty ASCII string and returns it in
-// upper case, the form the SoC family packages parse.
+// upper case, the form the backends parse.
 func upperName(name string) (string, error) {
 	if name == "" {
 		return "", errors.New("empty GPIO name")
@@ -51,17 +51,17 @@ func upperName(name string) (string, error) {
 	return strings.ToUpper(name), nil
 }
 
-// findSoC finds the SoC family whose controllers are among ctrls, the GPIO
+// findBackend finds the backend whose controllers are among ctrls, the GPIO
 // controllers on the system, and returns it with those controllers. A system
-// has one SoC, so controllers of more than one family mean something has gone
-// badly wrong.
-func findSoC(ctrls []soc.Controller) (soc.SoC, []soc.Controller, error) {
-	var found soc.SoC
-	var foundCtrls []soc.Controller
-	for _, s := range socs {
-		var matched []soc.Controller
+// has one SoC, so controllers of more than one backend mean something has
+// gone badly wrong.
+func findBackend(ctrls []backend.Controller) (backend.Backend, []backend.Controller, error) {
+	var found backend.Backend
+	var foundCtrls []backend.Controller
+	for _, be := range backends {
+		var matched []backend.Controller
 		for _, c := range ctrls {
-			if handles(s, c) {
+			if handles(be, c) {
 				matched = append(matched, c)
 			}
 		}
@@ -70,9 +70,9 @@ func findSoC(ctrls []soc.Controller) (soc.SoC, []soc.Controller, error) {
 		}
 		if found != nil {
 			c, d := foundCtrls[0], matched[0]
-			return nil, nil, fmt.Errorf("GPIO controllers of more than one SoC family: %s is %s and %s is %s", c.Chip, c.Compatible[0], d.Chip, d.Compatible[0])
+			return nil, nil, fmt.Errorf("GPIO controllers of more than one backend: %s is %s and %s is %s", c.Chip, c.Compatible[0], d.Chip, d.Compatible[0])
 		}
-		found, foundCtrls = s, matched
+		found, foundCtrls = be, matched
 	}
 	if found == nil {
 		return nil, nil, unsupportedError(ctrls)
@@ -80,14 +80,14 @@ func findSoC(ctrls []soc.Controller) (soc.SoC, []soc.Controller, error) {
 	return found, foundCtrls, nil
 }
 
-// handles reports whether s is the family of ctrl.
-func handles(s soc.SoC, ctrl soc.Controller) bool {
-	return slices.ContainsFunc(ctrl.Compatible, func(compat string) bool { return slices.Contains(s.Compatible(), compat) })
+// handles reports whether be handles ctrl.
+func handles(be backend.Backend, ctrl backend.Controller) bool {
+	return slices.ContainsFunc(ctrl.Compatible, func(compat string) bool { return slices.Contains(be.Compatible(), compat) })
 }
 
 // unsupportedError reports that none of ctrls is a supported controller,
 // listing their compatible strings to identify the hardware.
-func unsupportedError(ctrls []soc.Controller) error {
+func unsupportedError(ctrls []backend.Controller) error {
 	if len(ctrls) == 0 {
 		return errors.New("no GPIO controllers with a device-tree node found")
 	}
@@ -150,7 +150,7 @@ type ppsNode struct {
 // controller's #gpio-cells cells of the GPIO specifier. In the binding of
 // every backend's controllers the first cell is the line, and each
 // device-tree node has one gpiochip.
-func describe(ctrls []soc.Controller, nodes []ppsNode) []Controller {
+func describe(ctrls []backend.Controller, nodes []ppsNode) []Controller {
 	list := make([]Controller, len(ctrls))
 	for i, c := range ctrls {
 		list[i] = Controller{Chip: c.Chip, Compatible: c.Compatible}
@@ -160,23 +160,23 @@ func describe(ctrls []soc.Controller, nodes []ppsNode) []Controller {
 			}
 		}
 	}
-	for _, s := range socs {
+	for _, be := range backends {
 		var idx []int
-		var backendCtrls []soc.Controller
+		var backendCtrls []backend.Controller
 		for i, c := range ctrls {
-			if handles(s, c) {
+			if handles(be, c) {
 				idx = append(idx, i)
 				backendCtrls = append(backendCtrls, c)
 			}
 		}
 		for j, i := range idx {
 			c := &list[i]
-			c.Backend = s.Backend()
-			c.Device, c.Length = s.GPIOMem()
+			c.Backend = be.Name()
+			c.Device, c.Length = be.GPIOMem()
 			var pps []PPS
 			for _, p := range c.PPS {
 				line := int(p.Cells[0])
-				if name, ok := s.Name(backendCtrls, j, line); ok {
+				if name, ok := be.GPIOName(backendCtrls, j, line); ok {
 					pps = append(pps, PPS{Name: name, Line: line, Node: p.Node})
 				}
 			}

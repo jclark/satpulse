@@ -14,7 +14,7 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/backend"
 	"golang.org/x/sys/unix"
 )
 
@@ -38,16 +38,16 @@ func Open(name string) (*Pin, error) {
 	if err != nil {
 		return nil, err
 	}
-	s, ctrls, err := findSoC(ctrls)
+	be, ctrls, err := findBackend(ctrls)
 	if err != nil {
 		return nil, err
 	}
-	i, line, err := s.Lookup(upper, ctrls)
+	i, line, err := be.Lookup(upper, ctrls)
 	if err != nil {
 		return nil, fmt.Errorf("%s: %w", name, err)
 	}
-	offset, bit := s.Level(ctrls[i], line)
-	device, length := s.GPIOMem()
+	offset, bit := be.Level(ctrls[i], line)
+	device, length := be.GPIOMem()
 	f, err := os.OpenFile(device, os.O_RDONLY|unix.O_SYNC, 0)
 	if err != nil {
 		return nil, err
@@ -82,12 +82,12 @@ func List() ([]Controller, error) {
 // (ABI/testing/sysfs-dev), and its of_node link (ABI/stable/sysfs-devices).
 // A symlink, such as the /dev/gpiochip4 Raspberry Pi OS adds on a Pi 5, is
 // not a gpiochip of its own.
-func controllers() ([]soc.Controller, error) {
+func controllers() ([]backend.Controller, error) {
 	paths, err := filepath.Glob("/dev/gpiochip[0-9]*")
 	if err != nil {
 		return nil, err
 	}
-	var ctrls []soc.Controller
+	var ctrls []backend.Controller
 	for _, path := range paths {
 		chip := filepath.Base(path)
 		if strings.Trim(strings.TrimPrefix(chip, "gpiochip"), "0123456789") != "" {
@@ -115,7 +115,7 @@ func controllers() ([]soc.Controller, error) {
 		if len(c) == 0 {
 			continue
 		}
-		ctrl := soc.Controller{Chip: chip, Compatible: c}
+		ctrl := backend.Controller{Chip: chip, Compatible: c}
 		b, err = os.ReadFile(filepath.Join(node, "phandle"))
 		if errors.Is(err, fs.ErrNotExist) {
 			b, err = os.ReadFile(filepath.Join(node, "linux,phandle"))
