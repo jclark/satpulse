@@ -6,7 +6,7 @@ import (
 	"github.com/jclark/satpulse/gps/lib/gpiomem/backend"
 )
 
-var pi5 = backend.Controller{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}}
+var pi5 = backend.Controller{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}}
 
 func TestLookup(t *testing.T) {
 	tests := []struct {

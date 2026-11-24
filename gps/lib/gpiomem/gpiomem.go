@@ -4,9 +4,9 @@
 //
 // A GPIO is named as its SoC's documentation names it, such as GPIO18 on a
 // Raspberry Pi; the name is case-insensitive ASCII. The SoC is identified
-// from the GPIO controllers of the running system: the gpiochips whose
-// device-tree nodes have a compatible string that one of the backends, the
-// packages under this package, handles. That backend looks up the controller
+// from the GPIO controllers of the running system, the enabled nodes of its
+// device tree with the gpio-controller property: those with a compatible
+// string that one of the backends, the packages under this package, handles. That backend looks up the controller
 // and line the name identifies and locates the line's level register.
 // Currently the registers are mapped through the gpiomem devices that
 // Raspberry Pi OS provides.
@@ -40,7 +40,7 @@ var backends = []backend.Backend{bcm2835.Backend{}, rp1.Backend{}}
 // GPIO identifies a GPIO of the running system, as Lookup finds it.
 type GPIO struct {
 	Name string // the SoC's name for the GPIO, such as "GPIO18"
-	Chip string // the gpiochip of its controller, such as "gpiochip0"
+	Node string // the device-tree node of its controller, such as "/soc/gpio@7e200000"
 	Line int    // its line on the controller
 }
 
@@ -64,7 +64,7 @@ func lookup(ctrls []backend.Controller, name string) (backend.Backend, backend.C
 	if !ok {
 		panic(fmt.Sprintf("gpiomem: %s has no name for line %d it looked up", be.Name(), line))
 	}
-	return be, ctrls[i], GPIO{Name: canon, Chip: ctrls[i].Chip, Line: line}, nil
+	return be, ctrls[i], GPIO{Name: canon, Node: ctrls[i].Node, Line: line}, nil
 }
 
 // upperName checks that name is a non-empty ASCII string and returns it in
@@ -100,7 +100,7 @@ func findBackend(ctrls []backend.Controller) (backend.Backend, []backend.Control
 		}
 		if found != nil {
 			c, d := foundCtrls[0], matched[0]
-			return nil, nil, fmt.Errorf("GPIO controllers of more than one backend: %s is %s and %s is %s", c.Chip, c.Compatible[0], d.Chip, d.Compatible[0])
+			return nil, nil, fmt.Errorf("GPIO controllers of more than one backend: %s is %s and %s is %s", c.Node, c.Compatible[0], d.Node, d.Compatible[0])
 		}
 		found, foundCtrls = be, matched
 	}
@@ -119,7 +119,7 @@ func handles(be backend.Backend, ctrl backend.Controller) bool {
 // listing their compatible strings to identify the hardware.
 func unsupportedError(ctrls []backend.Controller) error {
 	if len(ctrls) == 0 {
-		return errors.New("no GPIO controllers with a device-tree node found")
+		return errors.New("no GPIO controllers found in the device tree")
 	}
 	var compats []string
 	for _, c := range ctrls {
@@ -128,6 +128,9 @@ func unsupportedError(ctrls []backend.Controller) error {
 				compats = append(compats, compat)
 			}
 		}
+	}
+	if len(compats) == 0 {
+		return errors.New("no supported GPIO controller found")
 	}
 	return fmt.Errorf("no supported GPIO controller; found %s", strings.Join(compats, ", "))
 }
@@ -148,8 +151,9 @@ func compatibles(b []byte) []string {
 // reports it. Backend, Device and Length are set only for a controller that
 // a gpiomem backend handles.
 type Controller struct {
-	Chip       string   // the gpiochip's device name, such as "gpiochip0"
-	Compatible []string // the compatible strings of its device-tree node
+	Node       string   // the path of its device-tree node, such as "/soc/gpio@7e200000"
+	Compatible []string // the compatible strings of its node, if it has any
+	Chips      []string // the names of its gpiochips that can be found, such as "gpiochip0"
 	Backend    string   // the name of the backend that handles it, such as "rp1"
 	Device     string   // the gpiomem device that maps its registers
 	Length     int      // the length of the mapping
@@ -175,15 +179,15 @@ type ppsNode struct {
 }
 
 // describe combines ctrls, the GPIO controllers of the system, with the
-// backends that handle them and with nodes, its pps-gpio nodes. A node's
-// gpios property holds the phandle of a controller followed by the
-// controller's #gpio-cells cells of the GPIO specifier. In the binding of
-// every backend's controllers the first cell is the line, and each
-// device-tree node has one gpiochip.
-func describe(ctrls []backend.Controller, nodes []ppsNode) []Controller {
+// backends that handle them, with chips, which maps the path of a node to its
+// gpiochips, and with nodes, its pps-gpio nodes. A pps-gpio node's gpios
+// property holds the phandle of a controller followed by the controller's
+// #gpio-cells cells of the GPIO specifier. In the binding of every backend's
+// controllers the first cell is the line.
+func describe(ctrls []backend.Controller, chips map[string][]string, nodes []ppsNode) []Controller {
 	list := make([]Controller, len(ctrls))
 	for i, c := range ctrls {
-		list[i] = Controller{Chip: c.Chip, Compatible: c.Compatible}
+		list[i] = Controller{Node: c.Node, Compatible: c.Compatible, Chips: chips[c.Node]}
 		for _, n := range nodes {
 			if c.Phandle != 0 && c.GPIOCells > 0 && len(n.gpios) >= 1+c.GPIOCells && n.gpios[0] == c.Phandle {
 				list[i].PPS = append(list[i].PPS, PPS{Cells: n.gpios[1 : 1+c.GPIOCells], Node: n.path})
