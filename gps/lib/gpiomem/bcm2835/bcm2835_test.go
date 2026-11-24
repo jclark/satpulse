@@ -7,8 +7,8 @@ import (
 )
 
 var (
-	pi3 = backend.Controller{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2835-gpio"}}
-	pi4 = backend.Controller{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}}
+	pi3 = backend.Controller{Node: "/soc/gpio@7e200000", Compatible: []string{"brcm,bcm2835-gpio"}}
+	pi4 = backend.Controller{Node: "/soc/gpio@7e200000", Compatible: []string{"brcm,bcm2711-gpio"}}
 )
 
 func TestLookup(t *testing.T) {

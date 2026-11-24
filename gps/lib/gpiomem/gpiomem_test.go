@@ -10,27 +10,25 @@ import (
 	"github.com/jclark/satpulse/gps/lib/gpiomem/rp1"
 )
 
-// The controllers of real systems, as their sysfs gpiochips report them.
+// The controllers of real systems, as their device trees give them.
 var (
 	pi5Ctrls = []backend.Controller{
-		{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}},
-		{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
-		{Chip: "gpiochip11", Compatible: []string{"brcm,brcmstb-gpio"}},
-		{Chip: "gpiochip12", Compatible: []string{"brcm,brcmstb-gpio"}},
-		{Chip: "gpiochip13", Compatible: []string{"brcm,brcmstb-gpio"}},
+		{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}},
+		{Node: "/soc@107c000000/gpio@7d508500", Compatible: []string{"brcm,brcmstb-gpio"}},
+		{Node: "/soc@107c000000/gpio@7d517c00", Compatible: []string{"brcm,brcmstb-gpio"}},
 	}
 	pi4Ctrls = []backend.Controller{
-		{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}},
-		{Chip: "gpiochip1", Compatible: []string{"raspberrypi,firmware-gpio"}},
+		{Node: "/soc/firmware/gpio", Compatible: []string{"raspberrypi,firmware-gpio"}},
+		{Node: "/soc/gpio@7e200000", Compatible: []string{"brcm,bcm2711-gpio"}},
 	}
 	pi3Ctrls = []backend.Controller{
-		{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2835-gpio"}},
-		{Chip: "gpiochip1", Compatible: []string{"brcm,bcm2835-virtgpio"}},
-		{Chip: "gpiochip2", Compatible: []string{"raspberrypi,firmware-gpio"}},
+		{Node: "/soc/firmware/expgpio", Compatible: []string{"raspberrypi,firmware-gpio"}},
+		{Node: "/soc/firmware/virtgpio", Compatible: []string{"brcm,bcm2835-virtgpio"}},
+		{Node: "/soc/gpio@7e200000", Compatible: []string{"brcm,bcm2835-gpio"}},
 	}
 	rk3568Ctrls = []backend.Controller{
-		{Chip: "gpiochip0", Compatible: []string{"rockchip,gpio-bank"}},
-		{Chip: "gpiochip1", Compatible: []string{"rockchip,gpio-bank"}},
+		{Node: "/pinctrl/gpio@fdd60000", Compatible: []string{"rockchip,gpio-bank"}},
+		{Node: "/pinctrl/gpio@fe740000", Compatible: []string{"rockchip,gpio-bank"}},
 	}
 )
 
@@ -75,10 +73,11 @@ func TestFindBackend(t *testing.T) {
 		expectErr   bool
 	}{
 		{name: "Pi 5", ctrls: pi5Ctrls, expect: rp1.Backend{}, expectCtrls: pi5Ctrls[:1]},
-		{name: "Pi 4", ctrls: pi4Ctrls, expect: bcm2835.Backend{}, expectCtrls: pi4Ctrls[:1]},
-		{name: "Pi 3", ctrls: pi3Ctrls, expect: bcm2835.Backend{}, expectCtrls: pi3Ctrls[:1]},
+		{name: "Pi 4", ctrls: pi4Ctrls, expect: bcm2835.Backend{}, expectCtrls: pi4Ctrls[1:]},
+		{name: "Pi 3", ctrls: pi3Ctrls, expect: bcm2835.Backend{}, expectCtrls: pi3Ctrls[2:]},
 		{name: "two backends", ctrls: append(slices.Clone(pi5Ctrls), pi4Ctrls...), expectErr: true},
 		{name: "unsupported controller", ctrls: rk3568Ctrls, expectErr: true},
+		{name: "controller without compatible", ctrls: []backend.Controller{{Node: "/soc/pin-controller@50002000/gpio@50002000"}}, expectErr: true},
 		{name: "no controllers", expectErr: true},
 	}
 	for _, tc := range tests {
@@ -125,20 +124,27 @@ func TestDescribe(t *testing.T) {
 	pi5[0].Phandle, pi5[0].GPIOCells = 0x2e, 2
 	pi5[1].Phandle, pi5[1].GPIOCells = 0x30, 2
 	pps := ppsNode{path: "/pps@", gpios: []uint32{0x2e, 18, 0}}
+	pi5Chips := map[string][]string{
+		"/axi/pcie@1000120000/rp1/gpio@d0000": {"gpiochip0"},
+		"/soc@107c000000/gpio@7d508500":       {"gpiochip10", "gpiochip13"},
+	}
+	rp1 := Controller{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000}
 	tests := []struct {
 		name   string
 		ctrls  []backend.Controller
+		chips  map[string][]string
 		nodes  []ppsNode
 		expect []Controller
 	}{
 		{
 			name:  "Pi 5 with pps-gpio on GPIO18",
 			ctrls: pi5[:2],
+			chips: pi5Chips,
 			nodes: []ppsNode{pps},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
-					PPS: []PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}}},
-				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
+				{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}, Chips: []string{"gpiochip0"},
+					Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000, PPS: []PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}}},
+				{Node: "/soc@107c000000/gpio@7d508500", Compatible: []string{"brcm,brcmstb-gpio"}, Chips: []string{"gpiochip10", "gpiochip13"}},
 			},
 		},
 		{
@@ -146,8 +152,8 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:2],
 			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x30, 5, 0}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
-				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}, PPS: []PPS{{Cells: []uint32{5, 0}, Node: "/pps@"}}},
+				rp1,
+				{Node: "/soc@107c000000/gpio@7d508500", Compatible: []string{"brcm,brcmstb-gpio"}, PPS: []PPS{{Cells: []uint32{5, 0}, Node: "/pps@"}}},
 			},
 		},
 		{
@@ -155,7 +161,7 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:1],
 			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 54, 0}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+				rp1,
 			},
 		},
 		{
@@ -163,28 +169,28 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:1],
 			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 18}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+				rp1,
 			},
 		},
 		{
 			name:  "Pi 4 without a phandle",
-			ctrls: pi4Ctrls[:1],
+			ctrls: pi4Ctrls[1:],
 			nodes: []ppsNode{{path: "/pps@12", gpios: []uint32{0, 18, 0}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}, Backend: "bcm2835", Device: "/dev/gpiomem", Length: 0x1000},
+				{Node: "/soc/gpio@7e200000", Compatible: []string{"brcm,bcm2711-gpio"}, Backend: "bcm2835", Device: "/dev/gpiomem", Length: 0x1000},
 			},
 		},
 		{
 			name:  "unsupported SoC",
 			ctrls: rk3568Ctrls[:1],
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"rockchip,gpio-bank"}},
+				{Node: "/pinctrl/gpio@fdd60000", Compatible: []string{"rockchip,gpio-bank"}},
 			},
 		},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := describe(tc.ctrls, tc.nodes); !reflect.DeepEqual(got, tc.expect) {
+			if got := describe(tc.ctrls, tc.chips, tc.nodes); !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
 			}
 		})
