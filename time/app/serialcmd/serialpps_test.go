@@ -30,12 +30,16 @@ func TestEdgePrinter(t *testing.T) {
 	}{
 		{name: "human", edge: pps.CandidateEdge{Edge: edge}, want: "14:23:05.123456\n"},
 		{name: "human with device", edge: pps.CandidateEdge{Edge: edge}, withDevice: true, want: "/dev/ttyS0 14:23:05.123456\n"},
-		{name: "wait JSONL", edge: pps.CandidateEdge{Edge: edge, Settled: true}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\"}\n"},
-		{name: "settling poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016,\"settling\":true}\n"},
-		{name: "settled poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: 16 * time.Microsecond, Settled: true}, jsonl: true,
-			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456Z\",\"uncertainty\":0.000016}\n"},
+		{name: "wait JSONL", edge: pps.CandidateEdge{Edge: edge}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\"}\n"},
+		{name: "poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019]}\n"},
+		{name: "anomalous poll JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}, Reject: pps.RejectAnomalous}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019],\"reject\":\"anomalous\"}\n"},
+		{name: "acquiring poll JSONL", edge: pps.CandidateEdge{Edge: edge, Reject: pps.RejectAcquiring}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"reject\":\"acquiring\"}\n"},
+		{name: "poll widths JSONL", edge: pps.CandidateEdge{Edge: edge, Uncertainty: [2]time.Duration{16 * time.Microsecond, 19 * time.Microsecond}, PollWidths: [2]time.Duration{12 * time.Microsecond, 14 * time.Microsecond}}, jsonl: true,
+			want: "{\"device\":\"/dev/ttyS0\",\"t\":\"2026-08-12T14:23:05.123456499Z\",\"uncertainty\":[0.000016,0.000019],\"pollWidths\":[0.000012,0.000014]}\n"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var output bytes.Buffer
@@ -125,7 +129,7 @@ func TestDetectEdgesAutomaticKernelMethod(t *testing.T) {
 	if got := output.String(); got != "14:23:05.123456\n" {
 		t.Errorf("output = %q, want one kernel timestamp", got)
 	}
-	if strings.Contains(logs.String(), "PPS polling statistics") {
+	if strings.Contains(logs.String(), "serial PPS polling statistics") {
 		t.Errorf("kernel run logged polling statistics: %q", logs.String())
 	}
 	if conn.method != gpsio.PPSMethodKernel {
@@ -148,7 +152,7 @@ func TestDetectEdgesForcedPollingSkipsWaitBackend(t *testing.T) {
 	if conn.waits != 0 {
 		t.Errorf("wait backend called %d times, want 0", conn.waits)
 	}
-	if !strings.Contains(logs.String(), "PPS polling statistics") {
+	if !strings.Contains(logs.String(), "serial PPS polling statistics") {
 		t.Errorf("forced polling run did not log polling statistics: %q", logs.String())
 	}
 }

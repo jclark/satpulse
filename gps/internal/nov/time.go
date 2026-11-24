@@ -11,12 +11,14 @@ import (
 )
 
 func timeMsgFromTime(common *novmsg.CommonHdr, m *novmsg.Time, tag gpsprot.Tag) (*gpsprot.TimeMsg, error) {
-	if m.ClockStatus != novmsg.ClockStatusValid {
-		return nil, nil
-	}
 	t := gpsprot.TimeMsg{
 		Tag:         tag,
 		NativeMsgID: "TIME",
+	}
+	// A TimeMsg with no time says the receiver has no valid time, as
+	// distinct from sending no time message.
+	if m.ClockStatus != novmsg.ClockStatusValid {
+		return &t, nil
 	}
 	// leave t.GNSS zero; we don't know what the reference GNSS is
 	if common.TimeStatus != novmsg.TimeStatusUnknown {
@@ -40,15 +42,16 @@ func TimeMsgSetUTC(t *gpsprot.TimeMsg, m *novmsg.Time) (*gpsprot.TimeMsg, error)
 }
 
 // convertUTCOffset converts GPS-UTC offset to TAI-UTC offset.
-// Returns 0 if the conversion fails (fractional value or out of uint8 range).
+// The TIME log's utc offset is a double that some receivers (SinoGNSS) fill
+// with the sub-second A0 + A1(t - tot) correction as well as the leap seconds,
+// so it is rounded to whole seconds.
+// Returns 0 if the conversion fails (NaN or out of uint8 range).
 func convertUTCOffset(f float64) uint8 {
-	// This looks simple, but it is surprisingly tricky to make it robust in all cases
-	floatOff := ptime.TAIMinusGPS - f
-	intOff := uint8(floatOff)
-	if float64(intOff) != floatOff {
+	off := math.Round(ptime.TAIMinusGPS - f)
+	if !(off >= 1 && off <= math.MaxUint8) {
 		return 0
 	}
-	return intOff
+	return uint8(off)
 }
 
 // convertAccuracy converts float64 seconds to time.Duration for accuracy values.

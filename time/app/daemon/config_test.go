@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -13,6 +14,37 @@ import (
 )
 
 const configsDir = "../../../configs"
+
+func TestPHCPinOmittedVersusZero(t *testing.T) {
+	// Pinless PHCs accept an omitted pin but reject an explicitly selected
+	// pin, including zero. Preserve that distinction through loading.
+	for _, explicit := range []bool{false, true} {
+		name := "omitted"
+		config := "[phc]\ninterface = \"eth0\"\n"
+		if explicit {
+			name = "explicit zero"
+			config += "pin = 0\n"
+		}
+		t.Run(name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "satpulse.toml")
+			if err := os.WriteFile(path, []byte(config), 0600); err != nil {
+				t.Fatal(err)
+			}
+			cfg, _, err := LoadConfig(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			pin := cfg.PHC.PinDesc().PinIndex
+			if !explicit {
+				if pin != nil {
+					t.Fatalf("omitted pin resolved to %d, want nil", *pin)
+				}
+			} else if pin == nil || *pin != 0 {
+				t.Fatalf("explicit pin 0 must remain a non-nil pointer to zero, got %v", pin)
+			}
+		})
+	}
+}
 
 func TestLoadConfig(t *testing.T) {
 	cfgFiles, err := os.ReadDir(configsDir)
@@ -223,90 +255,46 @@ interface = "eth0"
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface in the [phc] table") {
+	if err == nil || !strings.Contains(err.Error(), "pps.pin in the [serial] table cannot be used with interface or device in the [phc] table") {
 		t.Fatalf("Validate error = %v, want serial PPS/PHC conflict", err)
 	}
 }
 
-func TestPPSConfig(t *testing.T) {
+func TestPHCInterfaceAndDeviceConflict(t *testing.T) {
 	cfg, err := readConfig(strings.NewReader(`
-[pps]
-gpio.pin = 18
-
-[sample.pps]
-delayUncertainty = 0.01
-
-[sample.pps.gpio]
-cpu = 3
-priority = 40
-`))
-	if err != nil {
-		t.Fatalf("readConfig: %v", err)
-	}
-	if cfg.PPS == nil || cfg.PPS.GPIO == nil || cfg.PPS.GPIO.Pin == nil || *cfg.PPS.GPIO.Pin != 18 {
-		t.Fatalf("PPS config = %+v, want GPIO 18", cfg.PPS)
-	}
-	gen := cfg.Sample.PPS.GeneratorConfig
-	if gen.DelayUncertainty != 0.01 || gen.MaxDelay != 0.8 {
-		t.Errorf("generator config = %+v, want delayUncertainty 0.01 with the default maxDelay", gen)
-	}
-	gpio := cfg.Sample.PPS.GPIO
-	if gpio.CPU == nil || *gpio.CPU != 3 || gpio.Priority != 40 {
-		t.Errorf("GPIO sample config = %+v, want CPU 3 priority 40", gpio)
-	}
-	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
-		t.Fatalf("Validate: %v", err)
-	}
-	if got := cfg.shmFixedPrecision(); got == nil || *got != gpioPPSSHMPrecision {
-		t.Errorf("SHM fixed precision = %v, want %d", got, gpioPPSSHMPrecision)
-	}
-}
-
-func TestPPSConfigValidation(t *testing.T) {
-	for _, tc := range []struct {
-		name, toml, errText string
-	}{
-		{name: "missing pin", toml: "[pps]\n", errText: "gpio.pin in the [pps] table must be specified"},
-		{name: "with serial PPS", toml: "[pps]\ngpio.pin = 18\n[serial.pps]\npin = \"cts\"\n",
-			errText: "the [pps] table cannot be used with pps.pin in the [serial] table"},
-		{name: "with PHC", toml: "[pps]\ngpio.pin = 18\n[phc]\ninterface = \"eth0\"\n",
-			errText: "the [pps] table cannot be used with interface in the [phc] table"},
-		{name: "priority too high", toml: "[pps]\ngpio.pin = 18\n[sample.pps.gpio]\npriority = 100\n",
-			errText: "in sample.pps table: gpio.priority"},
-		{name: "wide interval", toml: "[pps]\ngpio.pin = 18\n[sample.pps]\ndelayUncertainty = 0.3\n",
-			errText: "delayUncertainty + maxDelay"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			cfg, err := readConfig(strings.NewReader(tc.toml))
-			if err != nil {
-				t.Fatalf("readConfig: %v", err)
-			}
-			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-			if err == nil || !strings.Contains(err.Error(), tc.errText) {
-				t.Fatalf("Validate error = %v, want %q", err, tc.errText)
-			}
-		})
-	}
-}
-
-func TestSerialPPSKernelMethodRequiresDCD(t *testing.T) {
-	cfg, err := readConfig(strings.NewReader(`
-[serial.pps]
-pin = "cts"
-
-[sample.serial.pps]
-method = "kernel"
+[phc]
+interface = "eth0"
+device = "/dev/ptp_tic"
 `))
 	if err != nil {
 		t.Fatal(err)
 	}
 	err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err == nil || !strings.Contains(err.Error(), `requires pps.pin = "DCD"`) {
-		t.Fatalf("Validate error = %v, want the kernel method to require DCD", err)
+	if err == nil || !strings.Contains(err.Error(), "interface and device in the [phc] table cannot both be specified") {
+		t.Fatalf("Validate error = %v, want interface/device conflict", err)
 	}
-	cfg.Serial.PPS.Pin = gpsio.SerialPinDCD
-	if err := cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil))); err != nil {
-		t.Fatalf("Validate with dcd: %v", err)
+}
+
+func TestSerialPPSKernelMethodPin(t *testing.T) {
+	pins := gpsio.KernelPPSPins()
+	for _, pin := range []gpsio.SerialPin{gpsio.SerialPinCTS, gpsio.SerialPinDCD, gpsio.SerialPinRI} {
+		t.Run(pin.String(), func(t *testing.T) {
+			cfg, err := readConfig(strings.NewReader(`
+[serial.pps]
+pin = "dcd"
+
+[sample.serial.pps]
+method = "kernel"
+`))
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.Serial.PPS.Pin = pin
+			err = cfg.Validate(slog.New(slog.NewTextHandler(io.Discard, nil)))
+			if expectErr := !slices.Contains(pins, pin); (err != nil) != expectErr {
+				t.Fatalf("Validate error = %v, want error %v", err, expectErr)
+			}
+		})
 	}
 }
 
@@ -432,6 +420,11 @@ func TestConfigSHMFixedPrecision(t *testing.T) {
 		t.Fatalf("PHC-mode default SHM fixed precision = %v, want nil", *got)
 	}
 	cfg.PHC.Interface = ""
+	cfg.PHC.Device = "/dev/ptp_tic"
+	if got := cfg.shmFixedPrecision(); got != nil {
+		t.Fatalf("PHC device default SHM fixed precision = %v, want nil", *got)
+	}
+	cfg.PHC.Device = ""
 	got := cfg.shmFixedPrecision()
 	if got == nil || *got != serialSHMPrecision {
 		t.Fatalf("serial-mode SHM fixed precision = %v, want %d", got, serialSHMPrecision)

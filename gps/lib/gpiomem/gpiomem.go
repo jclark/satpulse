@@ -1,132 +1,187 @@
-//go:build linux && arm64
-
-// Package gpiomem reads the level of a Raspberry Pi GPIO directly from the
-// GPIO controller's registers, mapped read-only through the gpiomem device
-// that Raspberry Pi OS provides for user-space register access. A read is one
-// bus transaction, taking about a microsecond on a Raspberry Pi 5, which makes
-// it suitable for polling for a pulse edge. The package does not configure
-// the GPIO: it must already be an input, as the pps-gpio overlay or pinctrl
-// makes it. It is built for 64-bit Linux only.
+// Package gpiomem reads the level of a GPIO directly from its controller's
+// registers, mapped read-only, which suits polling for a pulse edge: a read
+// is one bus transaction, taking about a microsecond on a Raspberry Pi 5.
+//
+// A GPIO is named as its SoC's documentation names it, such as GPIO18 on a
+// Raspberry Pi; the name is case-insensitive ASCII. The SoC is identified
+// from the GPIO controllers of the running system: the gpiochips whose
+// device-tree nodes have a compatible string that one of the SoC family
+// packages under this package handles. That package looks up the controller
+// and line the name identifies and locates the line's level register.
+// Currently the registers are mapped through the gpiomem devices that
+// Raspberry Pi OS provides.
+//
+// List describes the GPIO controllers of the running system, including the
+// GPIOs that the device tree gives to the pps-gpio driver, so a user can find
+// the name of the GPIO a PPS signal is on.
+//
+// The package does not configure the GPIO: it must already be an input, as
+// the pps-gpio overlay makes it. Opening a GPIO and listing controllers are
+// implemented for 64-bit Arm Linux only; elsewhere Open and List return an error
+// wrapping errors.ErrUnsupported.
 package gpiomem
 
 import (
 	"bytes"
+	"encoding/binary"
+	"errors"
 	"fmt"
-	"os"
-	"sync/atomic"
-	"unsafe"
+	"slices"
+	"strings"
 
-	"golang.org/x/sys/unix"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/bcm2835"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/rp1"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
 )
 
-// A model describes the GPIO controller of a Raspberry Pi SoC: the device
-// that maps its registers, the length to map, the number of GPIOs, and the
-// location of a GPIO's level bit within the mapping.
-type model struct {
-	soc    string // the SoC's compatible string in the device tree
-	device string
-	length int
-	count  int
-	reg    func(gpio int) (offset int, bit uint)
+// socs lists the supported SoC families.
+var socs = []soc.SoC{bcm2835.SoC{}, rp1.SoC{}}
+
+// upperName checks that name is a non-empty ASCII string and returns it in
+// upper case, the form the SoC family packages parse.
+func upperName(name string) (string, error) {
+	if name == "" {
+		return "", errors.New("empty GPIO name")
+	}
+	for i := 0; i < len(name); i++ {
+		if name[i] >= 0x80 {
+			return "", fmt.Errorf("GPIO name %q: not ASCII", name)
+		}
+	}
+	return strings.ToUpper(name), nil
 }
 
-// Pin is a mapped GPIO whose level can be read.
-type Pin struct {
-	mapping []byte
-	level   *uint32
-	mask    uint32
-	device  string
+// findSoC finds the SoC family whose controllers are among ctrls, the GPIO
+// controllers on the system, and returns it with those controllers. A system
+// has one SoC, so controllers of more than one family mean something has gone
+// badly wrong.
+func findSoC(ctrls []soc.Controller) (soc.SoC, []soc.Controller, error) {
+	var found soc.SoC
+	var foundCtrls []soc.Controller
+	for _, s := range socs {
+		var matched []soc.Controller
+		for _, c := range ctrls {
+			if handles(s, c) {
+				matched = append(matched, c)
+			}
+		}
+		if len(matched) == 0 {
+			continue
+		}
+		if found != nil {
+			c, d := foundCtrls[0], matched[0]
+			return nil, nil, fmt.Errorf("GPIO controllers of more than one SoC family: %s is %s and %s is %s", c.Chip, c.Compatible[0], d.Chip, d.Compatible[0])
+		}
+		found, foundCtrls = s, matched
+	}
+	if found == nil {
+		return nil, nil, unsupportedError(ctrls)
+	}
+	return found, foundCtrls, nil
 }
 
-const compatiblePath = "/proc/device-tree/compatible"
-
-// Open maps the registers of the GPIO controller that the device tree
-// identifies and returns a reader for the level of GPIO gpio.
-func Open(gpio int) (*Pin, error) {
-	compatible, err := os.ReadFile(compatiblePath)
-	if err != nil {
-		return nil, err
-	}
-	m, ok := modelFor(compatible)
-	if !ok {
-		return nil, fmt.Errorf("%s: no supported SoC in %q", compatiblePath, compatible)
-	}
-	if gpio < 0 || gpio >= m.count {
-		return nil, fmt.Errorf("GPIO %d is out of range; %s has GPIOs 0 to %d", gpio, m.soc, m.count-1)
-	}
-	f, err := os.OpenFile(m.device, os.O_RDONLY|unix.O_SYNC, 0)
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-	b, err := unix.Mmap(int(f.Fd()), 0, m.length, unix.PROT_READ, unix.MAP_SHARED)
-	if err != nil {
-		return nil, fmt.Errorf("mapping %s: %w", m.device, err)
-	}
-	offset, bit := m.reg(gpio)
-	return &Pin{mapping: b, level: (*uint32)(unsafe.Pointer(&b[offset])), mask: 1 << bit, device: m.device}, nil
+// handles reports whether s is the family of ctrl.
+func handles(s soc.SoC, ctrl soc.Controller) bool {
+	return slices.ContainsFunc(ctrl.Compatible, func(compat string) bool { return slices.Contains(s.Compatible(), compat) })
 }
 
-// models lists the supported SoCs. The 32-bit-only BCM2835 and BCM2836
-// share the BCM283x layout but are left out until the package is built for
-// 32-bit systems.
-var models = []model{
-	{soc: "brcm,bcm2712", device: "/dev/gpiomem0", length: 0x30000, count: 54, reg: rp1Reg},
-	{soc: "brcm,bcm2711", device: "/dev/gpiomem", length: 0x1000, count: 58, reg: bcm283xReg},
-	{soc: "brcm,bcm2837", device: "/dev/gpiomem", length: 0x1000, count: 54, reg: bcm283xReg},
-}
-
-// modelFor finds the supported SoC among the device tree's NUL-separated
-// compatible strings.
-func modelFor(compatible []byte) (model, bool) {
-	for _, s := range bytes.Split(compatible, []byte{0}) {
-		for _, m := range models {
-			if string(s) == m.soc {
-				return m, true
+// unsupportedError reports that none of ctrls is a supported controller,
+// listing their compatible strings to identify the hardware.
+func unsupportedError(ctrls []soc.Controller) error {
+	if len(ctrls) == 0 {
+		return errors.New("no GPIO controllers with a device-tree node found")
+	}
+	var compats []string
+	for _, c := range ctrls {
+		for _, compat := range c.Compatible {
+			if !slices.Contains(compats, compat) {
+				compats = append(compats, compat)
 			}
 		}
 	}
-	return model{}, false
+	return fmt.Errorf("no supported GPIO controller; found %s", strings.Join(compats, ", "))
 }
 
-// bcm283xReg locates a GPIO in the BCM2835 family's level registers: 32
-// GPIOs per register, the first at 0x34.
-func bcm283xReg(gpio int) (int, uint) {
-	return 0x34 + 4*(gpio/32), uint(gpio % 32)
-}
-
-// rp1Reg locates a GPIO in the RP1's RIO_IN registers on the Raspberry Pi
-// 5, the register the kernel's pinctrl-rp1 driver reads for a GPIO's
-// level. The GPIOs are in three banks of 28, 6 and 20; each bank's
-// registers are 0x4000 apart, with bank 0's RIO_IN at 0x10008.
-func rp1Reg(gpio int) (int, uint) {
-	bank, base := 0, 0
-	if gpio >= 34 {
-		bank, base = 2, 34
-	} else if gpio >= 28 {
-		bank, base = 1, 28
+// compatibles splits the NUL-terminated strings of a device-tree compatible
+// property.
+func compatibles(b []byte) []string {
+	var s []string
+	for _, c := range bytes.Split(bytes.TrimRight(b, "\x00"), []byte{0}) {
+		if len(c) > 0 {
+			s = append(s, string(c))
+		}
 	}
-	return 0x10008 + bank*0x4000, uint(gpio - base)
+	return s
 }
 
-// High reports whether the GPIO currently reads high.
-func (p *Pin) High() bool {
-	return atomic.LoadUint32(p.level)&p.mask != 0
+// Controller describes a GPIO controller of the running system, as List
+// reports it. Family, Device, Length and PPS are set only for a controller of
+// a supported SoC family.
+type Controller struct {
+	Chip       string   // the gpiochip's device name, such as "gpiochip0"
+	Compatible []string // the compatible strings of its device-tree node
+	Family     string   // the name of the SoC family, such as "rp1"
+	Device     string   // the gpiomem device that maps its registers
+	Length     int      // the length of the mapping
+	PPS        []PPS    // its GPIOs that pps-gpio nodes of the device tree use
 }
 
-// Device returns the path of the gpiomem device the GPIO is read through.
-func (p *Pin) Device() string {
-	return p.device
+// PPS is a GPIO that a pps-gpio node of the device tree uses for its pulses.
+type PPS struct {
+	Name string // the SoC's name for the GPIO, such as "GPIO18"
+	Line int    // the GPIO's line on its controller
+	Node string // the path of the pps-gpio node in the device tree
 }
 
-// Close unmaps the registers. It must not be called while High may still
-// run: High has no guard, so a read after Close faults. Calling Close twice
-// is a programmer error and panics.
-func (p *Pin) Close() error {
-	if p.mapping == nil {
-		panic("gpiomem: Pin closed twice")
+// ppsNode is an enabled pps-gpio node of the device tree, with the cells of
+// its gpios property.
+type ppsNode struct {
+	path  string
+	gpios []uint32
+}
+
+// describe combines ctrls, the GPIO controllers of the system, with the SoC
+// families that handle them and with nodes, its pps-gpio nodes. A node's gpios
+// property holds the phandle of the controller followed by the cells of the
+// GPIO specifier: in the bindings of every supported family, two cells, the
+// line and its flags, and one gpiochip per device-tree node.
+func describe(ctrls []soc.Controller, nodes []ppsNode) []Controller {
+	list := make([]Controller, len(ctrls))
+	for i, c := range ctrls {
+		list[i] = Controller{Chip: c.Chip, Compatible: c.Compatible}
 	}
-	err := unix.Munmap(p.mapping)
-	p.mapping = nil
-	return err
+	for _, s := range socs {
+		var idx []int
+		var famCtrls []soc.Controller
+		for i, c := range ctrls {
+			if handles(s, c) {
+				idx = append(idx, i)
+				famCtrls = append(famCtrls, c)
+			}
+		}
+		for j, i := range idx {
+			c := &list[i]
+			c.Family = s.Family()
+			c.Device, c.Length = s.GPIOMem()
+			for _, n := range nodes {
+				if ctrls[i].Phandle == 0 || len(n.gpios) < 3 || n.gpios[0] != ctrls[i].Phandle {
+					continue
+				}
+				line := int(n.gpios[1])
+				if name, ok := s.Name(famCtrls, j, line); ok {
+					c.PPS = append(c.PPS, PPS{Name: name, Line: line, Node: n.path})
+				}
+			}
+		}
+	}
+	return list
+}
+
+// cells splits a device-tree property into its big-endian 32-bit cells.
+func cells(b []byte) []uint32 {
+	c := make([]uint32, len(b)/4)
+	for i := range c {
+		c[i] = binary.BigEndian.Uint32(b[4*i:])
+	}
+	return c
 }

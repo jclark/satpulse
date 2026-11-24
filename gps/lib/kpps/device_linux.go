@@ -12,14 +12,6 @@ import (
 	"strings"
 )
 
-// Device describes a kernel PPS device as sysfs registers it.
-type Device struct {
-	Path       string // the device node, /dev/ppsN
-	Name       string // the sysfs name attribute: the source name the driver registered
-	SourcePath string // the sysfs path attribute: the source's device path, such as a tty; empty for most drivers
-	Mode       Mode   // the sysfs mode attribute: the capabilities, as GetCap reports them
-}
-
 const sysClassPPS = "/sys/class/pps"
 
 // ListDevices returns the kernel PPS devices in /sys/class/pps, in name
@@ -84,6 +76,68 @@ func DevicePathForTTY(fd int) (string, error) {
 		return "", err
 	}
 	return findDevice(sysClassPPS, ttyPath)
+}
+
+// DevicePathForGPIONode returns the path of the kernel PPS device that the
+// pps-gpio driver creates for the device-tree node at node, such as "/pps@12".
+// The kernel documents no link from a PPS device to the device that feeds it,
+// so the device is found by the name the driver gives its source: the name of
+// the node's platform device followed by ".-1", the id of a platform device
+// created from the device tree, cut to the 30 bytes the driver keeps. This
+// relies on the driver's implementation; a kernel that names the source
+// differently gives an error.
+func DevicePathForGPIONode(node string) (string, error) {
+	root, err := filepath.EvalSymlinks("/proc/device-tree")
+	if err != nil {
+		return "", err
+	}
+	pdev, err := platformDevice(filepath.Join(root, node))
+	if err != nil {
+		return "", err
+	}
+	source := pdev + ".-1"
+	if len(source) > maxGPIOSourceName {
+		source = source[:maxGPIOSourceName]
+	}
+	devices, err := listDevices(sysClassPPS)
+	if err != nil {
+		return "", err
+	}
+	var found string
+	for _, d := range devices {
+		if d.Name != source {
+			continue
+		}
+		if found != "" {
+			return "", fmt.Errorf("%s: more than one kernel PPS source in %s", source, sysClassPPS)
+		}
+		found = d.Path
+	}
+	if found == "" {
+		return "", fmt.Errorf("%s: no kernel PPS source in %s", source, sysClassPPS)
+	}
+	return found, nil
+}
+
+// maxGPIOSourceName is the length to which the pps-gpio driver cuts its
+// source's name: it formats the name into PPS_MAX_NAME_LEN - 1 bytes,
+// including the terminating NUL.
+const maxGPIOSourceName = 30
+
+// platformDevice returns the name of the platform device whose device-tree
+// node is the sysfs directory node.
+func platformDevice(node string) (string, error) {
+	const dir = "/sys/bus/platform/devices"
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", err
+	}
+	for _, e := range entries {
+		if p, err := filepath.EvalSymlinks(filepath.Join(dir, e.Name(), "of_node")); err == nil && p == node {
+			return e.Name(), nil
+		}
+	}
+	return "", fmt.Errorf("%s: no platform device", node)
 }
 
 // findDevice returns the path of the PPS device whose sysfs path attribute is

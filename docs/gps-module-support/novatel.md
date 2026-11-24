@@ -24,7 +24,7 @@ For this protocol, SatPulse supports:
 SatPulse does not include a message file for configuring NovAtel modules.
 
 SatPulse has not yet been tested with a NovAtel receiver;
-support for the protocol has been validated with ByNav, SinoGNSS and Unicore modules.
+support for the protocol has been validated with Bynav, SinoGNSS and Unicore modules.
 
 ## Supported logs
 

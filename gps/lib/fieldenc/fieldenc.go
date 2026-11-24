@@ -9,7 +9,8 @@ import (
 
 // PartialDecode parses string fields into a Go struct, similar to encoding/binary.Read.
 // Fields are processed in struct field order. Custom types should implement encoding.TextUnmarshaler.
-// Returns the number of fields consumed and an error.
+// Returns the number of fields consumed and an error. Fields beyond those of the struct
+// are left unconsumed; it is an error for there to be fewer fields than the struct has.
 func PartialDecode(fields []string, v any) (int, error) {
 	// Get reflection info
 	rv := reflect.ValueOf(v)
@@ -42,7 +43,7 @@ func PartialDecode(fields []string, v any) (int, error) {
 				}
 			} else {
 				if fieldIndex >= len(fields) {
-					break // Not enough fields in input
+					return fieldIndex, fmt.Errorf("fieldenc: field %s: missing", fieldType.Name)
 				}
 
 				value := fields[fieldIndex]
@@ -62,7 +63,7 @@ func PartialDecode(fields []string, v any) (int, error) {
 
 // Decode parses string fields into a Go struct, similar to encoding/binary.Read.
 // Fields are processed in struct field order. Custom types should implement encoding.TextUnmarshaler.
-// Returns an error if not all fields are consumed or if parsing fails.
+// Returns an error if the number of fields differs from the struct or if parsing fails.
 func Decode(fields []string, v any) error {
 	fieldsConsumed, err := PartialDecode(fields, v)
 	if err != nil {
@@ -98,7 +99,7 @@ func decodeStruct(fields []string, fieldIndex *int, rv reflect.Value) error {
 				}
 			} else {
 				if *fieldIndex >= len(fields) {
-					break // Not enough fields in input
+					return fmt.Errorf("field %s: missing", fieldType.Name)
 				}
 
 				value := fields[*fieldIndex]

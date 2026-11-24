@@ -55,9 +55,14 @@ to tell the extension which schema to use.
 The `phc` table is about the PTP hardware clock. It can have following keys:
 
 * `interface` - a string giving the name of an ethernet interface with the pin that the GPS's PPS output is attached to
-* `pin` - an integer giving the index of the pin; the default is 0 (which is the only pin on the Raspberry Pi CM4)
-* `channel` - an integer giving the timestamping channel to use; the default is 0; the only case in which you need
-  to change the default is if you have multiple pins in use; in this case, each pin must specify a distinct channel
+* `device` - a string giving the device path of the PHC; use this only for a PHC that is not associated with an interface
+* `pin` - an integer giving the index of the pin; when the PHC has pins, the default is 0 (which is the only pin on the Raspberry Pi CM4);
+  must not be specified if the PHC has no pins
+* `channel` - an integer giving the timestamping channel to use; the default is 0; this needs changing only if
+  multiple pins are in use, in which case each pin must specify a distinct channel, or if the PHC has no
+  pins and the PPS is on another channel
+* `exttsLatency` - an integer giving the external timestamp latency in nanoseconds: how much later the PHC
+  captures a timestamp than the pulse edge arrived at the pin
 
 Example
 
@@ -79,7 +84,7 @@ It can have the following keys:
 * `pps.pin` - a string giving the modem-control input pin on which to detect the receiver's PPS pulses;
   one of `"cts"`, `"dcd"`, `"dsr"`, or `"ri"`, naming the pins of the computer's own serial port or
   adapter; CTS is recommended; requires `device` to be a real TTY rather than a FIFO or socket;
-  cannot be used when `interface` in the `[phc]` table is configured;
+  cannot be used when `interface` or `device` in the `[phc]` table is configured;
   with the `poll` method the pulse must be at least a few milliseconds wide,
   and narrow pulses can take longer to detect;
   the common receiver default of 100 ms works well, and microsecond-width pulses are not supported
@@ -94,24 +99,6 @@ Example using PPS on CTS:
 device = "/dev/cu.usbserial-XXXXXXXX"
 speed = 38400
 pps.pin = "cts"
-```
-
-## `pps` table
-
-The `pps` table describes a PPS input that is not a modem-control pin of the serial port.
-It names one kind of input:
-
-* `gpio.pin` - an integer giving the GPIO number of a Raspberry Pi pin on which the receiver's PPS pulses arrive;
-  the pin's level is polled directly from the GPIO controller's registers, which locates each rising edge to within about a microsecond;
-  the pin must be configured as an input, as the `pps-gpio` device tree overlay does;
-  cannot be used with `pps.pin` in the `[serial]` table or `interface` in the `[phc]` table;
-  currently supported only on 64-bit Linux on a Raspberry Pi
-
-Example using GPIO 18:
-
-```
-[pps]
-gpio.pin = 18
 ```
 
 ## `sample.serial.pps` table
@@ -135,9 +122,6 @@ It can have the following keys:
 * `pollPreWarm` - a number of seconds to busy-wait before each poll window opens;
   this makes the `poll` method more precise on hosts whose modem status reads slow down while the machine is idle, at the cost of that fraction of a CPU core;
   the default is 0, which disables it; a value between 20e-3 and 50e-3 is suggested
-* `pollOutlierRatio` - a number; with the `poll` method, an edge whose two bracketing reads are further apart than this multiple of the lower quartile of recent edges' brackets is marked an outlier and not used for timing,
-  which keeps out edges whose read was stalled by host load;
-  the default is 3; 0 disables the check
 * `maxWakeupLatency` - a number of seconds limiting CPU wakeup latency while serial PPS is active;
   this makes edge detection more precise, at the cost of power;
   omitted by default; 0 requests the lowest latency available; a value between 10e-6 and 50e-6 is suggested;
@@ -154,45 +138,18 @@ maxDelay = 0.8
 ```
 
 
-## `sample.pps` table
-
-The `sample.pps` table controls how PPS edges from the input described by the `[pps]` table are associated with UTC-labelled receiver messages.
-It has the `delayUncertainty` and `maxDelay` keys of the `sample.serial.pps` table, with the same meanings and defaults.
-
-## `sample.pps.gpio` table
-
-The `sample.pps.gpio` table controls polling of the pin given by `gpio.pin` in the `[pps]` table.
-Polling reads the pin in a short window around each predicted pulse, so it needs to run promptly and without interruption;
-on a loaded system it is unreliable without the following keys.
-
-* `cpu` - an integer giving the CPU on which to run the poller;
-  choose one that does not handle the pin's interrupt (see `/proc/interrupts`);
-  omitted by default, which leaves the poller unpinned
-* `priority` - an integer from 1 to 99 giving the `SCHED_FIFO` real-time priority at which to run the poller;
-  the default is 0, which leaves it at normal priority;
-  this needs the `CAP_SYS_NICE` capability, which the packaged systemd service allows
-* `outlierRatio` - a number; an edge whose two bracketing reads are further apart than this multiple of the lower quartile of recent edges' brackets is marked an outlier and not used for timing,
-  which keeps out edges whose reads were interrupted;
-  the default is 3; 0 disables the check
-
-Example:
-
-```toml
-[sample.pps.gpio]
-cpu = 3
-priority = 40
-```
-
 ## `gps` table
 
 The `gps` table relates to configuration of the GPS receiver. It can have the following keys:
 
 * `config` - a boolean saying whether to perform configuration of the GPS receiver; `true` means to perform configuration;
-  currently this works only with GPS receivers that support the UBX protocol (like those from u-blox)
+  currently this works only with u-blox receivers (from the u-blox 6 platform through to the X20 platform),
+  Unicore Nebulas IV receivers (UM980, UM981, UM982, UM960),
+  and Zhongke Microelectronics receivers using CASIC (such as the ATGM332D and ATGM336H);
   this won't make any persistent changes to the GPS receiver, which means you can turn the receiver off and on again to undo any changes made by SatPulse;
   if you use `false` here, then all the other keys in the table other than `vendor` will be ignored
   and it is your responsibility to configure the GPS receiver appropriately
-* `vendor` - a string giving the manufacturer of the GPS module; this restricts which packet formats the scanner recognizes and which configuration protocols are probed; it is also used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; the following values are supported: `"u-blox"`, `"Unicore"`, `"Allystar"`, `"Bynav"`, `"NovAtel"`, `"Quectel"`, `"SinoGNSS"`, `"Techtotop"`, `"Zhongke"` (or `"CASIC"`), `"other"`; in addition, the following values are allowed and currently treated as equivalent to `"other"`: `"Furuno"`, `"MediaTek"`, `"Septentrio"`, `"SkyTraq"`, `"Trimble"`; values are case-insensitive; if `vendor` is not specified, the `SATPULSE_VENDORS` environment variable (see **satpulsed**(8)) applies, and if that too is unset, no restrictions are applied
+* `vendor` - a string giving the manufacturer of the GPS module; this restricts which packet formats the scanner recognizes and which configuration protocols are probed; it is also used to interpret non-standard numbering of space vehicles in NMEA GSV and GSA sentences; the following values are supported: `"u-blox"`, `"Unicore"`, `"Allystar"`, `"Bynav"`, `"NovAtel"`, `"Quectel"`, `"Septentrio"`, `"SinoGNSS"`, `"Techtotop"`, `"Zhongke"` (or `"CASIC"`), `"other"`; in addition, the following values are allowed and currently treated as equivalent to `"other"`: `"Furuno"`, `"MediaTek"`, `"SkyTraq"`, `"Trimble"`; values are case-insensitive; if `vendor` is not specified, the `SATPULSE_VENDORS` environment variable (see **satpulsed**(8)) applies, and if that too is unset, no restrictions are applied
 * `timeGNSS` - a string giving the GNSS system to which the time pulse should be aligned; the GNSS specified here must be already be enabled on the receiver
   (SatPulse will not change the enabled GNSS systems since that is a rather disruptive operation); possible values are
    * `"GPS"` for the GNSS system operated by the USA
@@ -293,7 +250,7 @@ It supports two protocols: the refclock SOCK protocol defined by chrony, and the
 If the `[phc]` table is not present, samples are normally based on the timing of the serial messages.
 This is imprecise but is useful when the NTP daemon has a separate source of PPS samples, which do not include time-of-day information.
 The samples from SatPulse can be used to complete the PPS samples.
-When `pps.pin` in the `[serial]` table or a `[pps]` table is configured, samples instead use PPS edges detected on that pin;
+When `pps.pin` in the `[serial]` table is configured, samples instead use PPS edges detected on that pin;
 serial time messages are still used to identify the UTC second and leap indication.
 
 The following key enables use of the refclock SOCK protocol:

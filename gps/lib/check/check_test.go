@@ -502,3 +502,29 @@ func TestValidate_Embedded(t *testing.T) {
 		t.Errorf("Validate(Outer{}) = %q, want %q", errs, want)
 	}
 }
+
+func TestValidate_Slice(t *testing.T) {
+	type Item struct {
+		Value int `toml:"value" check:">0"`
+	}
+	type Group struct {
+		Items []Item `toml:"items"`
+	}
+	type Config struct {
+		Groups []Group `toml:"groups"`
+		Names  []string
+	}
+	for _, cfg := range []Config{{}, {Groups: []Group{{Items: []Item{{Value: 1}}}}, Names: []string{"one"}}} {
+		if errs := Validate(cfg); errs != nil {
+			t.Errorf("Validate(%v) = %v, want nil", cfg, errs)
+		}
+	}
+	cfg := Config{Groups: []Group{{}, {Items: []Item{{Value: 1}, {Value: 0}, {Value: -1}}}}}
+	want := []string{
+		"groups[1].items[1].value: must be > 0, got 0",
+		"groups[1].items[2].value: must be > 0, got -1",
+	}
+	if errs := Validate(cfg); !reflect.DeepEqual(errs, want) {
+		t.Errorf("Validate() = %v, want %v", errs, want)
+	}
+}

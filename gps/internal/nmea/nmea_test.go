@@ -206,6 +206,55 @@ func TestExtHandlerBlocksNativeMsg(t *testing.T) {
 	}
 }
 
+// epochExtHandler starts an epoch on PSTART, reports a correction on PCOR,
+// and ends the epoch on PEND.
+type epochExtHandler struct{}
+
+func (epochExtHandler) HandleSentence(_ nmeamsg.SentenceSyntaxFlags, payload string, epoch *NavEpoch) ([]gpsprot.Msg, *NavEpoch, error) {
+	switch {
+	case strings.HasPrefix(payload, "PSTART"):
+		return nil, CheckEpoch(epoch, ""), nil
+	case strings.HasPrefix(payload, "PCOR"):
+		return []gpsprot.Msg{&gpsprot.CorReportMsg{Source: gpsprot.CorReportSourceReceiver}}, nil, nil
+	case strings.HasPrefix(payload, "PEND"):
+		return nil, nil, nil
+	}
+	return nil, nil, gpsprot.ErrNotHandled
+}
+
+type corEpochRecorder struct {
+	gpsprot.DefaultHandler
+	cors   int
+	epochs int
+}
+
+func (r *corEpochRecorder) CorReport(*gpsprot.CorReportMsg, time.Time) { r.cors++ }
+func (r *corEpochRecorder) NavEpoch(*gpsprot.NavEpochMsg, time.Time)   { r.epochs++ }
+
+func TestExtHandlerCorReportKeepsEpoch(t *testing.T) {
+	pp := NewPacketProcessor(gpsprot.NewNavEpochManager())
+	pp.AddExtHandler(epochExtHandler{})
+	var r corEpochRecorder
+	pp.SetMsgHandler(&r)
+	for _, payload := range []string{"PSTART", "PCOR", "PCOR"} {
+		if _, err := pp.ProcessPacket(makeSentence(payload), time.Time{}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if r.cors != 2 {
+		t.Errorf("got %d CorReportMsg, want 2", r.cors)
+	}
+	if r.epochs != 0 {
+		t.Errorf("got %d NavEpochMsg before end of epoch, want 0", r.epochs)
+	}
+	if _, err := pp.ProcessPacket(makeSentence("PEND"), time.Time{}); err != nil {
+		t.Fatal(err)
+	}
+	if r.epochs != 1 {
+		t.Errorf("got %d NavEpochMsg after end of epoch, want 1", r.epochs)
+	}
+}
+
 // msgRecorder records dispatched messages for testing.
 type msgRecorder struct {
 	gpsprot.DefaultHandler

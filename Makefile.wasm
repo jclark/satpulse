@@ -1,0 +1,34 @@
+# Browser-only Workbench. No native SatPulse process is needed at runtime.
+WASM_OUT ?= out/workbench-wasm
+WASM_LDFLAGS ?= -s -w
+# nohttp leaves out the Ntrip caster, the browser build's only use of net/http.
+WASM_TAGS ?= nohttp
+
+.PHONY: all bin frontend sizes test-assets test-browser test-go benchmark
+all: bin frontend
+
+bin:
+	mkdir -p $(WASM_OUT)
+	env GOOS=js GOARCH=wasm go build -trimpath -tags '$(WASM_TAGS)' -ldflags '$(WASM_LDFLAGS)' -o $(WASM_OUT)/workbench.wasm ./cmd/satpulsewbwasm
+	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" $(WASM_OUT)/wasm_exec.js
+
+frontend:
+	npm --prefix webui run embed-workbench-wasm
+	mkdir -p $(WASM_OUT)
+	cp -R cmd/satpulsewbwasm/dist/. $(WASM_OUT)/
+
+sizes: all
+	node webui/packages/workbench-wasm/sizes.mjs $(WASM_OUT)
+
+test-assets: all
+	mkdir -p out/wasm-test
+	go build -o out/wasm-test/wasmsim ./webui/packages/e2e/wasmsim
+
+test-browser: test-assets
+	npm --prefix webui/packages/e2e run e2e -- --project=workbench-wasm
+
+test-go:
+	env GOOS=js GOARCH=wasm go test -tags '$(WASM_TAGS)' -exec "$$(go env GOROOT)/lib/wasm/go_js_wasm_exec" ./cmd/satpulsewbwasm
+
+benchmark: test-assets
+	npm --prefix webui/packages/e2e run benchmark

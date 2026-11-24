@@ -11,6 +11,29 @@ import (
 	"golang.org/x/sys/windows"
 )
 
+func TestRestoreExceptHardware(t *testing.T) {
+	saved := windows.DCB{
+		BaudRate: 9600, ByteSize: 7, Parity: windows.EVENPARITY, StopBits: windows.TWOSTOPBITS,
+		Flags:     dcbParity | dcbErrorChar | dcbNull | dcbOutxCtsFlow | dcbOutX | dcbInX,
+		ErrorChar: '?', EofChar: 4,
+		XonLim: 10, XoffLim: 20, XonChar: 17, XoffChar: 19,
+	}
+	current := windows.DCB{
+		BaudRate: 115200, ByteSize: 8, Parity: windows.NOPARITY, StopBits: windows.ONESTOPBIT,
+		Flags:  dcbBinary | dcbRtsControlMask | dcbDtrControlMask,
+		XonLim: 30, XoffLim: 40, XonChar: 1, XoffChar: 2,
+	}
+	want := saved
+	want.BaudRate = 115200
+	want.ByteSize = 8
+	want.Parity = windows.NOPARITY
+	want.StopBits = windows.ONESTOPBIT
+	want.Flags = dcbParity | dcbErrorChar | dcbNull | dcbOutX | dcbInX | dcbRtsControlMask | dcbDtrControlMask
+	if got := restoreExceptHardware(saved, current); got != want {
+		t.Errorf("restoreExceptHardware = %+v, want %+v", got, want)
+	}
+}
+
 func TestNoParity(t *testing.T) {
 	attr := Attr{
 		dcb: windows.DCB{

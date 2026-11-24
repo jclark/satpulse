@@ -1,0 +1,139 @@
+//go:build linux
+
+// Package gpiocmd implements the gpio subcommand of satpulsetool, which lists
+// the GPIO controllers of the system and the GPIOs the device tree sets up as
+// PPS inputs.
+package gpiocmd
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"log/slog"
+	"os"
+	"strings"
+
+	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/lib/gpiomem"
+	"github.com/jclark/satpulse/gps/lib/kpps"
+	"github.com/spf13/pflag"
+)
+
+const summary = `[-h|--help] [-j|--jsonl]`
+
+// Cmd executes the gpio subcommand with the given arguments.
+func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
+	jsonl, help, usageFunc, err := parseFlags(cmdName, args)
+	if err != nil {
+		return usageFunc(progName), err
+	}
+	if help {
+		return usageFunc(progName), nil
+	}
+	lg := cmd.NewDefaultLogger(logWriter, logLevel)
+	ctrls, err := gpiomem.List()
+	if err != nil {
+		return "", err
+	}
+	ppsDevice := func(node string) string {
+		device, err := kpps.DevicePathForGPIONode(node)
+		if err != nil {
+			lg.Debug("no PPS device found for pps-gpio node", "node", node, "error", err)
+		}
+		return device
+	}
+	return "", listControllers(controllerInfos(ctrls, ppsDevice), os.Stdout, jsonl)
+}
+
+func parseFlags(cmdName string, args []string) (jsonl, help bool, usageFunc func(string) string, err error) {
+	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
+	flags.SortFlags = false
+	flags.BoolVarP(&help, "help", "h", false, "show usage help for the gpio command")
+	flags.BoolVarP(&jsonl, "jsonl", "j", false, "write output in JSON Lines format")
+	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
+	if err = flags.Parse(args); err != nil || help {
+		return
+	}
+	if flags.NArg() != 0 {
+		err = fmt.Errorf("gpio command does not accept positional arguments")
+	}
+	return
+}
+
+// controllerInfo is the listing's description of a GPIO controller.
+type controllerInfo struct {
+	Chip       string    `json:"chip"`
+	Compatible []string  `json:"compatible"`
+	Family     string    `json:"family,omitempty"`
+	Device     string    `json:"device,omitempty"`
+	Length     int       `json:"length,omitempty"`
+	PPS        []ppsInfo `json:"pps,omitempty"`
+}
+
+// ppsInfo is the listing's description of a GPIO set up as a PPS input.
+type ppsInfo struct {
+	GPIO   string `json:"gpio"`
+	Line   int    `json:"line"`
+	Device string `json:"device,omitempty"`
+}
+
+// controllerInfos converts ctrls for the listing, using ppsDevice to find the
+// PPS device of a pps-gpio node, which is empty if none is found.
+func controllerInfos(ctrls []gpiomem.Controller, ppsDevice func(node string) string) []controllerInfo {
+	infos := make([]controllerInfo, len(ctrls))
+	for i, c := range ctrls {
+		infos[i] = controllerInfo{Chip: c.Chip, Compatible: c.Compatible, Family: c.Family, Device: c.Device, Length: c.Length}
+		for _, p := range c.PPS {
+			infos[i].PPS = append(infos[i].PPS, ppsInfo{GPIO: p.Name, Line: p.Line, Device: ppsDevice(p.Node)})
+		}
+	}
+	return infos
+}
+
+// noDataError reports that nothing was found, with exit code 2 as for the
+// serial and sdp commands.
+type noDataError struct {
+	msg string
+}
+
+func (e noDataError) Error() string { return e.msg }
+func (e noDataError) ExitCode() int { return 2 }
+
+// listControllers prints infos.
+func listControllers(infos []controllerInfo, out io.Writer, jsonl bool) error {
+	if len(infos) == 0 {
+		return noDataError{msg: "no GPIO controllers with a device-tree node found"}
+	}
+	for _, info := range infos {
+		var err error
+		if jsonl {
+			err = json.NewEncoder(out).Encode(&info)
+		} else {
+			_, err = fmt.Fprintln(out, info.String())
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// String formats info as key=value pairs, repeating a key for each value of
+// a list.
+func (info *controllerInfo) String() string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "chip=%s", info.Chip)
+	for _, c := range info.Compatible {
+		fmt.Fprintf(&b, " compatible=%s", c)
+	}
+	if info.Family != "" {
+		fmt.Fprintf(&b, " family=%s device=%s length=%#x", info.Family, info.Device, info.Length)
+	}
+	for _, p := range info.PPS {
+		fmt.Fprintf(&b, " pps=%s", p.GPIO)
+		if p.Device != "" {
+			fmt.Fprintf(&b, ":%s", p.Device)
+		}
+	}
+	return b.String()
+}

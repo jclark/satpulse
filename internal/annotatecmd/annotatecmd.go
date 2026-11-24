@@ -18,15 +18,20 @@ import (
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [file|-]`
+const summary = `[-h|--help] [--vendor name] [file|-]`
 
 // Cmd implements the annotate subcommand.
 // It reads a JSONL packet log and adds decoded fields
 // (header, payload, cfgData) to each entry.
+// --vendor selects the vendor's variant of the NovAtel protocol for
+// NovAtel packets; it does not restrict the packet formats recognized.
+// Without it, SATPULSE_VENDORS applies, as for other commands.
 func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []string) (usage string, err error) {
 	help := false
+	vendorStr := ""
 	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
 	flags.BoolVarP(&help, "help", "h", false, "show help")
+	flags.StringVar(&vendorStr, "vendor", "", "GPS vendor `name` whose variant of the NovAtel protocol to use for NovAtel packets")
 	usageFunc := cmd.UsageFunc(cmdName, summary, flags)
 	if err := flags.Parse(args); err != nil {
 		return usageFunc(progName), err
@@ -37,14 +42,22 @@ func Cmd(_ io.Writer, _ slog.Level, progName string, cmdName string, args []stri
 	if flags.NArg() > 1 {
 		return usageFunc(progName), fmt.Errorf("expected at most one file argument")
 	}
+	vendor, err := gpsreg.ParseVendor(vendorStr)
+	if err != nil {
+		return usageFunc(progName), err
+	}
+	vendors, err := cmd.ResolveVendors(vendor)
+	if err != nil {
+		return "", err
+	}
 	path := "-"
 	if flags.NArg() == 1 {
 		path = flags.Arg(0)
 	}
-	return "", run(path)
+	return "", run(path, vendors)
 }
 
-func run(path string) error {
+func run(path string, vendors []gpsreg.Vendor) error {
 	var r io.Reader
 	if path == "-" {
 		r = os.Stdin
@@ -61,14 +74,14 @@ func run(path string) error {
 	defer out.Flush()
 	for scanner.Scan() {
 		line := scanner.Bytes()
-		processed := processLine(line)
+		processed := processLine(line, vendors)
 		out.Write(processed)
 		out.WriteByte('\n')
 	}
 	return scanner.Err()
 }
 
-func processLine(line []byte) []byte {
+func processLine(line []byte, vendors []gpsreg.Vendor) []byte {
 	var entry gpsio.PacketLogEntry
 	if err := json.Unmarshal(line, &entry); err != nil {
 		return line
@@ -81,7 +94,7 @@ func processLine(line []byte) []byte {
 	} else {
 		return line
 	}
-	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, entry.Out)
+	_, result, err := gpsdecode.Decode(gpsreg.CreatePacketFormats(nil), data, entry.Out, vendors)
 	if err != nil {
 		var csErr *gpsdecode.ChecksumError
 		if errors.As(err, &csErr) {

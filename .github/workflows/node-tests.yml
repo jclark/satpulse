@@ -4,7 +4,7 @@ name: Node tests
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "master", "workbench-web" ]
   pull_request:
 
 jobs:
@@ -36,10 +36,13 @@ jobs:
     - name: Set up Go
       uses: actions/setup-go@v4
       with:
-        go-version: '1.26.x'
+        go-version: '1.27.x'
 
     - name: Build
       run: make
+
+    - name: Prepare browser Workbench tests
+      run: make -f Makefile.wasm test-assets test-go
 
     - name: Playwright version
       id: playwright

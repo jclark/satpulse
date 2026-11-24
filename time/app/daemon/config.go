@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"math"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,10 +14,8 @@ import (
 
 	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/ntrip"
-	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/app/serialpps"
 	"github.com/jclark/satpulse/gps/app/stream"
-	"github.com/jclark/satpulse/gps/lib/check"
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -34,7 +31,6 @@ const configFileEnvVar = "SATPULSE_CONFIG_FILE"
 
 type Config struct {
 	Serial     SerialConfig
-	PPS        *PPSConfig `toml:"pps"`
 	Sample     SampleConfig
 	GPS        GPSConfig
 	PHC        PHCConfig
@@ -69,37 +65,21 @@ type SerialPPSConfig struct {
 	InvertPolarity bool            `toml:"invertPolarity"`
 }
 
-// PPSConfig describes a PPS input that is not a serial modem-control line.
-// It names one kind of input.
-type PPSConfig struct {
-	GPIO *GPIOPPSConfig `toml:"gpio"`
-}
-
-type GPIOPPSConfig struct {
-	Pin *int `toml:"pin"`
-}
-
 type SampleConfig struct {
 	Serial SerialSampleConfig `toml:"serial"`
-	PPS    PPSSampleConfig    `toml:"pps"`
 }
 
 type SerialSampleConfig struct {
 	PPS serialpps.Config `toml:"pps"`
 }
 
-// PPSSampleConfig controls how edges from the [pps] table's input are
-// detected and associated with UTC-labelled receiver messages.
-type PPSSampleConfig struct {
-	pps.GeneratorConfig
-	GPIO pps.GPIOConfig `toml:"gpio"`
-}
-
 type PHCConfig struct {
-	Interface string `toml:"interface"`
-	Pin       uint8  `toml:"pin"`
-	Channel   uint8  `toml:"channel"`
-	Wait      bool   `toml:"wait"`
+	Interface    string `toml:"interface"`
+	Device       string `toml:"device"`
+	Pin          *uint8 `toml:"pin"` // nil means no pin: 0 on a PHC with pins, none on a PHC without
+	Channel      uint8  `toml:"channel"`
+	Wait         bool   `toml:"wait"`
+	ExttsLatency int64  `toml:"exttsLatency"` // in nanoseconds
 }
 
 type LeapSecondConfig struct {
@@ -139,7 +119,6 @@ type NTPSHMConfig struct {
 const (
 	serialSHMPrecision    int8 = -1
 	serialPPSSHMPrecision int8 = -11
-	gpioPPSSHMPrecision   int8 = -19
 )
 
 type LogConfig struct {
@@ -202,8 +181,6 @@ func defaultConfig() *Config {
 	cfg := new(Config)
 	cfg.GPS = gpsDefault
 	cfg.Sample.Serial.PPS = serialpps.DefaultConfig()
-	cfg.Sample.PPS.GeneratorConfig = pps.DefaultGeneratorConfig()
-	cfg.Sample.PPS.GPIO = pps.DefaultGPIOConfig()
 	cfg.LeapSecond = leapSecondDefault
 	cfg.Log.Interval = 30
 	cfg.Log.Dir = "/var/log/satpulse"
@@ -239,6 +216,8 @@ func (cfg *Config) hasRTCMMSM7To4() bool {
 	return hasRTCMPushMSM7To4(cfg)
 }
 
+const maxExttsLatency = 1_000_000 // in nanoseconds
+
 // Validate validates the configuration and logs warnings for deprecated options.
 // It is separate from LoadConfig because the config contains logging settings.
 func (cfg *Config) Validate(lg *slog.Logger) error {
@@ -247,31 +226,33 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		if cfg.Serial.PPS.Pin == 0 {
 			return &configError{err: fmt.Errorf("pps.pin in the [serial] table must be specified")}
 		}
-		if cfg.PHC.Interface != "" {
-			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface in the [phc] table")}
+		if cfg.PHC.specified() {
+			return &configError{err: fmt.Errorf("pps.pin in the [serial] table cannot be used with interface or device in the [phc] table")}
 		}
 	}
-	if cfg.PPS != nil {
-		if cfg.PPS.GPIO == nil || cfg.PPS.GPIO.Pin == nil {
-			return &configError{err: fmt.Errorf("gpio.pin in the [pps] table must be specified")}
-		}
-		if cfg.Serial.PPS != nil {
-			return &configError{err: fmt.Errorf("the [pps] table cannot be used with pps.pin in the [serial] table")}
-		}
-		if cfg.PHC.Interface != "" {
-			return &configError{err: fmt.Errorf("the [pps] table cannot be used with interface in the [phc] table")}
-		}
+	if cfg.PHC.Interface != "" && cfg.PHC.Device != "" {
+		return &configError{err: fmt.Errorf("interface and device in the [phc] table cannot both be specified")}
+	}
+	if cfg.PHC.ExttsLatency < -maxExttsLatency || cfg.PHC.ExttsLatency > maxExttsLatency {
+		return configErrorf("exttsLatency in the [phc] table must be between -%d and %d (exttsLatency is in nanoseconds)", maxExttsLatency, maxExttsLatency)
 	}
 	if err := cfg.Sample.Serial.PPS.Validate(); err != nil {
 		return &configError{err: err}
 	}
-	if err := cfg.Sample.PPS.Validate(); err != nil {
-		return &configError{err: err}
-	}
-	// An explicitly selected method never falls back, and kernel PPS reports
-	// only DCD changes, so the combination could only fail at startup.
-	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil && cfg.Serial.PPS.Pin != gpsio.SerialPinDCD {
-		return &configError{err: fmt.Errorf(`method = "kernel" in the [sample.serial.pps] table requires pps.pin = %q in the [serial] table, got %q`, gpsio.SerialPinDCD, cfg.Serial.PPS.Pin)}
+	// An explicitly selected method never falls back, so a pin kernel PPS
+	// cannot watch here could only fail at startup.
+	if cfg.Sample.Serial.PPS.Method == gpsio.PPSMethodKernel && cfg.Serial.PPS != nil {
+		pins := gpsio.KernelPPSPins()
+		if len(pins) == 0 {
+			return &configError{err: errors.New("kernel PPS method is not available on this platform")}
+		}
+		if !slices.Contains(pins, cfg.Serial.PPS.Pin) {
+			names := make([]string, len(pins))
+			for i, p := range pins {
+				names[i] = p.String()
+			}
+			return &configError{err: fmt.Errorf("kernel PPS method does not support %v pin; supported pins are %s", cfg.Serial.PPS.Pin, strings.Join(names, ", "))}
+		}
 	}
 	if err := cfg.Sync.Validate(); err != nil {
 		return &configError{err: err}
@@ -287,26 +268,6 @@ func (cfg *Config) Validate(lg *slog.Logger) error {
 		return &configError{err: err}
 	}
 	return nil
-}
-
-// Validate checks the [sample.pps] table.
-func (cfg PPSSampleConfig) Validate() error {
-	msgs := check.Validate(cfg)
-	if err := cfg.GeneratorConfig.Validate(); err != nil {
-		msgs = append(msgs, err.Error())
-	}
-	if r := cfg.GPIO.OutlierRatio; r > 0 && r < 1 || math.IsInf(r, 1) {
-		msgs = append(msgs, fmt.Sprintf("gpio.outlierRatio: must be 0 or a finite number at least 1, got %g", r))
-	}
-	switch len(msgs) {
-	case 0:
-		return nil
-	case 1:
-		return fmt.Errorf("in sample.pps table: %s", msgs[0])
-	default:
-		msgs = append([]string{"errors in sample.pps table:"}, msgs...)
-		return errors.New(strings.Join(msgs, "\n\t"))
-	}
 }
 
 // wiring is the pulse wiring the table describes.
@@ -337,10 +298,17 @@ func (cfg *Config) userSet() (map[string]struct{}, error) {
 }
 
 func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock, error) {
-	if cfg.Interface == "" {
+	if !cfg.specified() {
 		return nil, nil
 	}
-	clk, err := ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait)
+	var clk *ts.Clock
+	var err error
+	lat := time.Duration(cfg.ExttsLatency)
+	if cfg.Device != "" {
+		clk, err = ts.OpenDeviceClock(cfg.Device, cfg.PinDesc(), lat)
+	} else {
+		clk, err = ts.OpenClock(ctx, lg, cfg.Interface, cfg.PinDesc(), cfg.Wait, lat)
+	}
 	if err != nil {
 		var cfgErr *ts.ConfigError
 		if errors.As(err, &cfgErr) {
@@ -351,11 +319,18 @@ func (cfg PHCConfig) OpenClock(ctx context.Context, lg *slog.Logger) (*ts.Clock,
 	return clk, nil
 }
 
+// specified reports whether the configuration names a PHC.
+func (cfg PHCConfig) specified() bool {
+	return cfg.Interface != "" || cfg.Device != ""
+}
+
 func (cff PHCConfig) PinDesc() ts.PinDesc {
-	return ts.PinDesc{
-		PinIndex:  uint32(cff.Pin),
-		ChanIndex: uint32(cff.Channel),
+	pd := ts.PinDesc{ChanIndex: uint32(cff.Channel)}
+	if cff.Pin != nil {
+		pin := uint32(*cff.Pin)
+		pd.PinIndex = &pin
 	}
+	return pd
 }
 
 func (cfg LeapSecondConfig) leapSecond() ptime.LeapSecond {
@@ -395,11 +370,7 @@ func (cfg *Config) shmFixedPrecision() *int8 {
 		p := serialPPSSHMPrecision
 		return &p
 	}
-	if cfg.PPS != nil {
-		p := gpioPPSSHMPrecision
-		return &p
-	}
-	if cfg.PHC.Interface == "" {
+	if !cfg.PHC.specified() {
 		p := serialSHMPrecision
 		return &p
 	}

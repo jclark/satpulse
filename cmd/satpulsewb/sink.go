@@ -87,7 +87,10 @@ func (h *sseHub) Emit(ev session.Event) {
 	case session.MsgEvent:
 		msgKind = ev.Kind
 	case session.ConnState:
-		disconnected = ev == session.StateDisconnected
+		// A Connect that supersedes a connection can merge its
+		// Disconnected state into Connecting, so Connecting also ends
+		// the previous connection's state.
+		disconnected = ev == session.StateDisconnected || ev == session.StateConnecting
 	case session.CorrEvent:
 		dropBaseARP = ev.State == "connecting" || ev.State == "stopped"
 	}

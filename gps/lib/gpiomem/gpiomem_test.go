@@ -1,40 +1,211 @@
-//go:build linux && arm64
-
 package gpiomem
 
-import "testing"
+import (
+	"reflect"
+	"slices"
+	"testing"
 
-func TestModelFor(t *testing.T) {
-	for _, tc := range []struct {
-		compatible string
-		expectSoC  string
-		expectOK   bool
+	"github.com/jclark/satpulse/gps/lib/gpiomem/bcm2835"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/rp1"
+	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
+)
+
+// The controllers of real systems, as their sysfs gpiochips report them.
+var (
+	pi5Ctrls = []soc.Controller{
+		{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}},
+		{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
+		{Chip: "gpiochip11", Compatible: []string{"brcm,brcmstb-gpio"}},
+		{Chip: "gpiochip12", Compatible: []string{"brcm,brcmstb-gpio"}},
+		{Chip: "gpiochip13", Compatible: []string{"brcm,brcmstb-gpio"}},
+	}
+	pi4Ctrls = []soc.Controller{
+		{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}},
+		{Chip: "gpiochip1", Compatible: []string{"raspberrypi,firmware-gpio"}},
+	}
+	pi3Ctrls = []soc.Controller{
+		{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2835-gpio"}},
+		{Chip: "gpiochip1", Compatible: []string{"brcm,bcm2835-virtgpio"}},
+		{Chip: "gpiochip2", Compatible: []string{"raspberrypi,firmware-gpio"}},
+	}
+	rk3568Ctrls = []soc.Controller{
+		{Chip: "gpiochip0", Compatible: []string{"rockchip,gpio-bank"}},
+		{Chip: "gpiochip1", Compatible: []string{"rockchip,gpio-bank"}},
+	}
+)
+
+func TestUpperName(t *testing.T) {
+	tests := []struct {
+		name      string
+		input     string
+		expect    string
+		expectErr bool
 	}{
-		{"raspberrypi,5-model-b\x00brcm,bcm2712\x00", "brcm,bcm2712", true},
-		{"raspberrypi,4-model-b\x00brcm,bcm2711\x00", "brcm,bcm2711", true},
-		{"brcm,bcm2835\x00", "", false},
-	} {
-		if m, ok := modelFor([]byte(tc.compatible)); ok != tc.expectOK || m.soc != tc.expectSoC {
-			t.Errorf("modelFor(%q) = %q, %v; want %q, %v", tc.compatible, m.soc, ok, tc.expectSoC, tc.expectOK)
-		}
+		{name: "upper case", input: "GPIO18", expect: "GPIO18"},
+		{name: "lower case", input: "gpio18", expect: "GPIO18"},
+		{name: "mixed case", input: "Gpio3_d0", expect: "GPIO3_D0"},
+		{name: "non-ASCII folding to ASCII", input: "gp\u0131o18", expectErr: true},
+		{name: "empty", input: "", expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := upperName(tc.input)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.expect {
+				t.Errorf("got %q, want %q", got, tc.expect)
+			}
+		})
 	}
 }
 
-func TestReg(t *testing.T) {
-	for _, tc := range []struct {
-		reg          func(int) (int, uint)
-		gpio         int
-		expectOffset int
-		expectBit    uint
+func TestFindSoC(t *testing.T) {
+	tests := []struct {
+		name        string
+		ctrls       []soc.Controller
+		expect      soc.SoC
+		expectCtrls []soc.Controller
+		expectErr   bool
 	}{
-		{bcm283xReg, 18, 0x34, 18},
-		{bcm283xReg, 40, 0x38, 8},
-		{rp1Reg, 18, 0x10008, 18},
-		{rp1Reg, 30, 0x14008, 2},
-		{rp1Reg, 40, 0x18008, 6},
-	} {
-		if offset, bit := tc.reg(tc.gpio); offset != tc.expectOffset || bit != tc.expectBit {
-			t.Errorf("reg(%d) = %#x, %d; want %#x, %d", tc.gpio, offset, bit, tc.expectOffset, tc.expectBit)
-		}
+		{name: "Pi 5", ctrls: pi5Ctrls, expect: rp1.SoC{}, expectCtrls: pi5Ctrls[:1]},
+		{name: "Pi 4", ctrls: pi4Ctrls, expect: bcm2835.SoC{}, expectCtrls: pi4Ctrls[:1]},
+		{name: "Pi 3", ctrls: pi3Ctrls, expect: bcm2835.SoC{}, expectCtrls: pi3Ctrls[:1]},
+		{name: "two families", ctrls: append(slices.Clone(pi5Ctrls), pi4Ctrls...), expectErr: true},
+		{name: "unsupported controller", ctrls: rk3568Ctrls, expectErr: true},
+		{name: "no controllers", expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			s, ctrls, err := findSoC(tc.ctrls)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if s != tc.expect || !reflect.DeepEqual(ctrls, tc.expectCtrls) {
+				t.Errorf("got  %T %+v\nwant %T %+v", s, ctrls, tc.expect, tc.expectCtrls)
+			}
+		})
+	}
+}
+
+func TestCompatibles(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		expect []string
+	}{
+		{"one", "raspberrypi,rp1-gpio\x00", []string{"raspberrypi,rp1-gpio"}},
+		{"two", "fsl,imx8mp-gpio\x00fsl,imx35-gpio\x00", []string{"fsl,imx8mp-gpio", "fsl,imx35-gpio"}},
+		{"unterminated", "brcm,bcm2711-gpio", []string{"brcm,bcm2711-gpio"}},
+		{"empty", "", nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := compatibles([]byte(tc.input)); !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %q\nwant %q", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestDescribe(t *testing.T) {
+	pi5 := slices.Clone(pi5Ctrls)
+	pi5[0].Phandle = 0x2e
+	pi5[1].Phandle = 0x30
+	pps := ppsNode{path: "/pps@", gpios: []uint32{0x2e, 18, 0}}
+	tests := []struct {
+		name   string
+		ctrls  []soc.Controller
+		nodes  []ppsNode
+		expect []Controller
+	}{
+		{
+			name:  "Pi 5 with pps-gpio on GPIO18",
+			ctrls: pi5[:2],
+			nodes: []ppsNode{pps},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
+					PPS: []PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}}},
+				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
+			},
+		},
+		{
+			name:  "pps-gpio on an unsupported controller",
+			ctrls: pi5[:2],
+			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x30, 5, 0}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
+			},
+		},
+		{
+			name:  "line out of range",
+			ctrls: pi5[:1],
+			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 54, 0}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+			},
+		},
+		{
+			name:  "incomplete specifier",
+			ctrls: pi5[:1],
+			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 18}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+			},
+		},
+		{
+			name:  "Pi 4 without a phandle",
+			ctrls: pi4Ctrls[:1],
+			nodes: []ppsNode{{path: "/pps@12", gpios: []uint32{0, 18, 0}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}, Family: "bcm2835", Device: "/dev/gpiomem", Length: 0x1000},
+			},
+		},
+		{
+			name:  "unsupported SoC",
+			ctrls: rk3568Ctrls[:1],
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"rockchip,gpio-bank"}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := describe(tc.ctrls, tc.nodes); !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestCells(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		expect []uint32
+	}{
+		{"gpios", "\x00\x00\x00\x2e\x00\x00\x00\x12\x00\x00\x00\x00", []uint32{0x2e, 18, 0}},
+		{"trailing bytes", "\x00\x00\x00\x01\x02", []uint32{1}},
+		{"empty", "", []uint32{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cells([]byte(tc.input)); !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
 	}
 }

@@ -32,7 +32,6 @@ import (
 	"github.com/jclark/satpulse/time/internal/ts"
 	"github.com/jclark/satpulse/time/lib/ntpshm"
 	"github.com/jclark/satpulse/time/lib/pmc"
-	"github.com/jclark/satpulse/time/lib/sse"
 	"github.com/jclark/satpulse/time/phc"
 )
 
@@ -124,14 +123,14 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			"poll4Hz", phcFlags&phc.DriverPoll4Hz != 0)
 		defer func() {
 			clk.Close()
-			lg.Debug("closed the PHC", "interface", cfg.PHC.Interface)
+			lg.Debug("closed the PHC", "path", clk.Path())
 		}()
 	}
 	cfgSpeed := 0
 	if cfg.Serial.Speed != nil {
 		cfgSpeed = *cfg.Serial.Speed
 	}
-	conn, speed, err := gpsio.OpenSerial(cfg.Serial.Device, cfgSpeed)
+	conn, err := gpsio.OpenSerial(lg, cfg.Serial.Device, cfgSpeed)
 	if err != nil {
 		return err
 	}
@@ -141,6 +140,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			return fmt.Errorf("serial PPS requires a TTY with modem-control pins: %w", err)
 		}
 	}
+	speed := conn.Speed()
 	if speed == 0 {
 		speed = cfgSpeed
 	}
@@ -175,10 +175,10 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 
 	pb := startBcast(ctx, lg, &wg, pCh)
 
-	var sseCh chan sse.Event
-	var eb *bcast.Bcast[sse.Event]
+	var sseCh chan sseobs.TimedEvent
+	var eb *bcast.Bcast[sseobs.TimedEvent]
 	if cfg.anyHTTP(HTTPConfig.gui) {
-		sseCh = make(chan sse.Event, 1)
+		sseCh = make(chan sseobs.TimedEvent, 1)
 		eb = startBcast(ctx, lg, &wg, sseCh)
 	}
 	// Shut down the broadcast goroutines when the context is cancelled.
@@ -338,21 +338,6 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			lg.Debug("serial PPS goroutine exited", "pin", cfg.Serial.PPS.Pin)
 		})
 	}
-	if cfg.PPS != nil {
-		gpio := *cfg.PPS.GPIO.Pin
-		ppsGen = pps.NewGenerator(cfg.Sample.PPS.GeneratorConfig)
-		ch := make(chan pps.CandidateEdge, 1)
-		ppsCh = ch
-		wg.Go(func() {
-			defer close(ch)
-			lg.Debug("GPIO PPS goroutine started", "gpio", gpio)
-			if err := pps.DetectGPIO(ctx, lg, gpio, cfg.Sample.PPS.GPIO, ch, nil); err != nil && ctx.Err() == nil {
-				lg.Error("GPIO PPS polling failed", "gpio", gpio, "err", err)
-				cancel(fmt.Errorf("GPIO PPS polling failed on GPIO %d: %w", gpio, err))
-			}
-			lg.Debug("GPIO PPS goroutine exited", "gpio", gpio)
-		})
-	}
 	statsObs := newStatsLogObserver(cfg, lg)
 	clockObs, err := newClockLogObserver(cfg, lg, clk, cfg.LeapSecond.leapSecond())
 	if err != nil {
@@ -445,7 +430,7 @@ func NewDispatcher(
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI
-func newSSEObserver(cfg *Config, sseCh chan<- sse.Event, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
+func newSSEObserver(cfg *Config, sseCh chan<- sseobs.TimedEvent, lg *slog.Logger, gcfg *gpscfg.Result) *sseobs.SSEObserver {
 	if cfg.anyHTTP(HTTPConfig.gui) {
 		return sseobs.New(sseCh, cfg.LeapSecond.leapSecond(), lg, gcfg)
 	}
@@ -490,7 +475,7 @@ func newClockLogObserver(cfg *Config, lg *slog.Logger, clk *ts.Clock, ls ptime.L
 	if clk == nil {
 		return nil, nil
 	}
-	clockLogPath := cfg.Log.ClockPath(clk.IfName(), logobs.ClockLogExtension)
+	clockLogPath := cfg.Log.ClockPath(clk.Name(), logobs.ClockLogExtension)
 	if clockLogPath == "" {
 		return nil, nil
 	}

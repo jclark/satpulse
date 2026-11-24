@@ -15,7 +15,7 @@ SatPulse supports modules from the vendors (ordered approximately by maturity an
 - [Allystar]({% link gps-module-support/allystar.md %})
 - [Quectel]({% link gps-module-support/quectel.md %})
 - [Techtotop/Taidou]({% link gps-module-support/techtotop.md %})
-- [ByNav]({% link gps-module-support/bynav.md %})
+- [Bynav]({% link gps-module-support/bynav.md %})
 - [SinoGNSS/ComNav]({% link gps-module-support/sinognss.md %})
 - [NovAtel]({% link gps-module-support/novatel.md %})
 
