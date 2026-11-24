@@ -366,7 +366,15 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 			lg.Debug("GPIO PPS goroutine started", "gpio", gpio)
 			if err := pps.DetectGPIO(ctx, lg, gpioPin, cfg.Sample.GPIO.GPIOConfig, ch, nil); err != nil && ctx.Err() == nil {
 				lg.Error("GPIO PPS polling failed", "gpio", gpio, "err", err)
-				cancel(fmt.Errorf("GPIO PPS polling failed on %s: %w", gpio, err))
+				err = fmt.Errorf("GPIO PPS polling failed on %s: %w", gpio, err)
+				// A CPU or priority the system rejects is a configuration
+				// error, which a restart cannot fix; a permission error
+				// keeps its own exit status.
+				var setupErr *pps.ThreadSetupError
+				if errors.As(err, &setupErr) && !errors.Is(err, os.ErrPermission) {
+					err = &configError{err: err}
+				}
+				cancel(err)
 			}
 			lg.Debug("GPIO PPS goroutine exited", "gpio", gpio)
 		})
