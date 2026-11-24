@@ -40,6 +40,9 @@ type PollParams struct {
 	// Wait, if non-nil, replaces the runtime timer that sleeps until a
 	// scheduled poll. It reports whether it actually waited: false means
 	// the scheduled time was already past or nearer than it can sleep to.
+	// It is not called for a read within a polling window whose scheduled
+	// time the previous read already ended past; the first read of a window
+	// always calls it.
 	// A precise wait must end at the scheduled time rather than before it,
 	// however coarse the host's timer; acquisition asks for one because it
 	// polls its way to any deadline it wakes short of.
@@ -49,6 +52,9 @@ type PollParams struct {
 	// reading serves as both the measurement stamp and the pacing
 	// coordinate.
 	Now func() time.Time
+	// Observer, if non-nil, receives the tracking status changes that Poll
+	// logs.
+	Observer PollObserver
 }
 
 type poller struct {
@@ -109,8 +115,8 @@ const widthHistory = 31
 // tracking catch is usable, regardless of its uncertainty.
 // Every caught edge is logged to lg at debug level. Tracking starts,
 // halvings of the extent, misses, and loss are logged at info level with
-// actual state-read counts. If stats is non-nil,
-// Poll records timing and outcome statistics in it.
+// actual state-read counts, and reported to params.Observer. If stats is
+// non-nil, Poll records timing and outcome statistics in it.
 func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams, ceCh chan<- CandidateEdge, stats *PollStats) error {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
@@ -274,8 +280,9 @@ type trackEvent struct {
 	failures           int
 }
 
-// track adapts the real polling window and logging to the shared tracking
-// control. Tests call the same track function with a simulated attempt.
+// track adapts the real polling window, logging and observer to the shared
+// tracking control. Tests call the same track function with a simulated
+// attempt.
 func (p *poller) track(extent time.Duration) error {
 	attempt := func(extent time.Duration) (trackObservation, error) {
 		o, predictionError, width, err := p.pollWindow(extent, p.params.MinSpacing, true)
@@ -283,7 +290,7 @@ func (p *poller) track(extent time.Duration) error {
 			width: width, bracket: p.lastBracket, stateReads: p.stateReads}, err
 	}
 	advance := func(d time.Duration) { p.nextEdge = p.nextEdge.Add(d) }
-	return track(extent, p.params.MinSpacing, attempt, advance, p.logTrackEvent)
+	return track(extent, p.params.MinSpacing, attempt, advance, p.reportTrackEvent)
 }
 
 // The tracking constants control dynamics and polling work, without a
@@ -367,6 +374,69 @@ func track(extent, minSpacing time.Duration, attempt func(time.Duration) (trackO
 		report(trackEvent{kind: trackMissed, extent: extent, nextExtent: next, observation: obs, failures: failures})
 		logged, extent = next, next
 	}
+}
+
+// PollObserver receives the tracking status changes of Poll. Poll calls it
+// on its polling thread, between queries, so it must return promptly.
+type PollObserver interface {
+	// TrackStatus reports a change in tracking. A start follows each
+	// successful acquisition, so starts count acquisitions.
+	TrackStatus(s TrackStatus)
+}
+
+// TrackStatus is a change in tracking, with the measurements that go with it.
+type TrackStatus struct {
+	Reason TrackReason
+	// Extent is the extent of the polling window in the attempt that caused
+	// the change, or for a start the extent acquisition hands over.
+	Extent time.Duration
+	// NextExtent is the extent of the next attempt; zero for a start.
+	NextExtent time.Duration
+	// StateReads is the number of state reads in the attempt; zero for a
+	// start.
+	StateReads int
+	// Bracket is the most recent caught bracket: for a start, that of the
+	// catch that completed acquisition; for a miss or a loss, the previous
+	// catch's.
+	Bracket time.Duration
+	// PredictionError is the catch's error from the predicted edge; nonzero
+	// only for a shrink.
+	PredictionError time.Duration
+	// Failures is the number of consecutive misses; nonzero only for a miss
+	// or a loss.
+	Failures int
+}
+
+// TrackReason is the kind of change a TrackStatus reports.
+type TrackReason string
+
+const (
+	TrackStart  TrackReason = "start"  // tracking began after acquisition
+	TrackShrink TrackReason = "shrink" // catches halved the extent since it was last reported
+	TrackMiss   TrackReason = "miss"   // an attempt missed the edge
+	TrackLost   TrackReason = "lost"   // failureLimit consecutive misses returned Poll to acquisition
+)
+
+// reportTrackEvent logs a tracking event and reports it to the observer.
+func (p *poller) reportTrackEvent(e trackEvent) {
+	p.logTrackEvent(e)
+	obs := p.params.Observer
+	if obs == nil {
+		return
+	}
+	s := TrackStatus{Extent: e.extent, NextExtent: e.nextExtent, StateReads: e.observation.stateReads,
+		Bracket: e.observation.bracket, PredictionError: e.observation.predictionError, Failures: e.failures}
+	switch e.kind {
+	case trackStarted:
+		s.Reason, s.Bracket = TrackStart, p.lastBracket
+	case trackChanged:
+		s.Reason = TrackShrink
+	case trackMissed:
+		s.Reason = TrackMiss
+	case trackLost:
+		s.Reason = TrackLost
+	}
+	obs.TrackStatus(s)
 }
 
 func (p *poller) logTrackEvent(e trackEvent) {
@@ -584,9 +654,21 @@ func (p *poller) rejectReason(width time.Duration, acquired bool) RejectReason {
 }
 
 // readNext reads the state at the first grid point after prev's start, adding
-// the read to the window's statistics, state-read count, and slept.
+// the read to the window's statistics, state-read count, and slept. When prev
+// already ended at or after that point, as every read does when the queries
+// pace the loop, it skips the wait, which would find nothing to sleep but
+// would still read the clock between the two reads that bracket an edge. It
+// still checks ctx, which costs no clock read, so cancellation remains as
+// prompt as when every read waits.
 func (p *poller) readNext(prev reading, grid time.Time, spacing time.Duration, precise bool) (reading, error) {
-	cur, err := p.readState(nextGridPoint(grid, spacing, prev.start), precise)
+	sched := nextGridPoint(grid, spacing, prev.start)
+	var cur reading
+	var err error
+	if prev.poll.end.mono.Before(sched) {
+		cur, err = p.readState(sched, precise)
+	} else if err = p.ctx.Err(); err == nil {
+		cur, err = p.query(sched, false)
+	}
 	if err != nil {
 		return reading{}, err
 	}
@@ -614,6 +696,10 @@ func (p *poller) readState(sched time.Time, precise bool) (reading, error) {
 	if err != nil {
 		return reading{}, err
 	}
+	return p.query(sched, slept)
+}
+
+func (p *poller) query(sched time.Time, slept bool) (reading, error) {
 	start := p.now()
 	inPulse, err := p.r.InPulse()
 	end := p.now()
