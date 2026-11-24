@@ -168,13 +168,13 @@ These packages are reusable libraries for GPS processing. They are in the librar
 
 `gps/lib/kpps` provides low-level access to kernel PPS sources using the RFC 2783 data model. It is implemented on Linux and FreeBSD; FreeBSD serial drivers implement the RFC 2783 ioctls on the serial device itself, so there the source is created on an open serial device's descriptor with `OpenFD`.
 
-`gps/lib/gpiomem` reads the level of a GPIO directly from its controller's registers. It is implemented for 64-bit Linux only.
+`gps/lib/gpiomem` reads the level of a GPIO directly from its controller's registers, and lists the GPIO controllers of the system with the GPIOs that `pps-gpio` device-tree nodes use. It is implemented for 64-bit Arm Linux only.
 
-`gps/lib/gpiomem/soc` defines the interface between `gps/lib/gpiomem` and its SoC family packages.
+`gps/lib/gpiomem/backend` defines the interface between `gps/lib/gpiomem` and its backends, the packages that each handle the GPIO controllers of a family of SoCs.
 
-`gps/lib/gpiomem/bcm2835` describes the GPIO controller of the Raspberry Pi 3 and 4.
+`gps/lib/gpiomem/bcm2835` is the gpiomem backend for the GPIO controller of the Raspberry Pi 3 and 4.
 
-`gps/lib/gpiomem/rp1` describes the GPIO controller of the Raspberry Pi 5.
+`gps/lib/gpiomem/rp1` is the gpiomem backend for the GPIO controller of the Raspberry Pi 5.
 
 `gps/lib/osthread` changes the scheduling settings of an OS thread. It is implemented for Linux.
 
