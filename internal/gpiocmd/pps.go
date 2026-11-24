@@ -61,12 +61,13 @@ func pollName(name string) (string, error) {
 }
 
 // onlyPPSInput returns the name of the one GPIO of ctrls that pps-gpio nodes
-// use.
+// use. A PPS input on a controller that no backend handles has no name and
+// cannot be polled, so it does not count.
 func onlyPPSInput(ctrls []gpiomem.Controller) (string, error) {
 	var names []string
 	for _, c := range ctrls {
 		for _, p := range c.PPS {
-			if !slices.Contains(names, p.Name) {
+			if p.Name != "" && !slices.Contains(names, p.Name) {
 				names = append(names, p.Name)
 			}
 		}
