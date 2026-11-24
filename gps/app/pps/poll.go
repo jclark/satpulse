@@ -40,6 +40,8 @@ type PollParams struct {
 	// Wait, if non-nil, replaces the runtime timer that sleeps until a
 	// scheduled poll. It reports whether it actually waited: false means
 	// the scheduled time was already past or nearer than it can sleep to.
+	// It is not called for a poll whose scheduled time the previous query
+	// already ended past.
 	// A precise wait must end at the scheduled time rather than before it,
 	// however coarse the host's timer; acquisition asks for one because it
 	// polls its way to any deadline it wakes short of.
@@ -584,9 +586,21 @@ func (p *poller) rejectReason(width time.Duration, acquired bool) RejectReason {
 }
 
 // readNext reads the state at the first grid point after prev's start, adding
-// the read to the window's statistics, state-read count, and slept.
+// the read to the window's statistics, state-read count, and slept. When prev
+// already ended at or after that point, as every read does when the queries
+// pace the loop, it skips the wait, which would find nothing to sleep but
+// would still read the clock between the two reads that bracket an edge. It
+// still checks ctx, which costs no clock read, so cancellation remains as
+// prompt as when every read waits.
 func (p *poller) readNext(prev reading, grid time.Time, spacing time.Duration, precise bool) (reading, error) {
-	cur, err := p.readState(nextGridPoint(grid, spacing, prev.start), precise)
+	sched := nextGridPoint(grid, spacing, prev.start)
+	var cur reading
+	var err error
+	if prev.poll.end.mono.Before(sched) {
+		cur, err = p.readState(sched, precise)
+	} else if err = p.ctx.Err(); err == nil {
+		cur, err = p.query(sched, false)
+	}
 	if err != nil {
 		return reading{}, err
 	}
@@ -614,6 +628,10 @@ func (p *poller) readState(sched time.Time, precise bool) (reading, error) {
 	if err != nil {
 		return reading{}, err
 	}
+	return p.query(sched, slept)
+}
+
+func (p *poller) query(sched time.Time, slept bool) (reading, error) {
 	start := p.now()
 	inPulse, err := p.r.InPulse()
 	end := p.now()
