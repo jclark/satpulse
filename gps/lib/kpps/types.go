@@ -6,14 +6,6 @@ package kpps
 
 import "time"
 
-// Device describes a kernel PPS device as Linux registers it in sysfs.
-type Device struct {
-	Path       string // the device node, /dev/ppsN
-	Name       string // the sysfs name attribute: the source name the driver registered
-	SourcePath string // the sysfs path attribute: the source's device path, such as a tty; empty for most drivers
-	Mode       Mode   // the sysfs mode attribute: the capabilities, as GetCap reports them
-}
-
 // Mode is a set of RFC 2783 mode bits. GetCap can return mode bits for which
 // this package does not define a name.
 type Mode uint32

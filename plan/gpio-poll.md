@@ -72,8 +72,8 @@ maintained by hand.
 the system-dependent and unsafe code: model detection from the device
 tree, the read-only mapping of the gpiomem device, and the level read. It
 is also the pin-reading path for the bias estimator planned for the
-`satpulsetool pps` subcommand, which is where the GPIO source's
-command-line counterpart goes.
+`satpulsetool gpio` subcommand, whose `-p` option is the GPIO source's
+command-line counterpart.
 
 ## GPIO source
 

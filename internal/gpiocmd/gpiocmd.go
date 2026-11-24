@@ -119,7 +119,7 @@ func list(lg *slog.Logger, v flagVars) error {
 	if err != nil {
 		return err
 	}
-	if v.name != "" {
+	if v.name != "" && len(ctrls) > 0 {
 		gpio, err := gpiomem.Lookup(v.name)
 		if err != nil {
 			return err
