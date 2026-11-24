@@ -12,8 +12,8 @@ import (
 )
 
 func TestOnlyPPSInput(t *testing.T) {
-	rp1 := gpiomem.Controller{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1"}
-	brcm := gpiomem.Controller{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}}
+	rp1 := gpiomem.Controller{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1"}
+	brcm := gpiomem.Controller{Node: "/soc@107c000000/gpio@7d508500", Compatible: []string{"brcm,brcmstb-gpio"}}
 	gpio18 := gpiomem.PPS{Name: "GPIO18", Line: 18, Node: "/pps@"}
 	gpio4 := gpiomem.PPS{Name: "GPIO4", Line: 4, Node: "/pps@4"}
 	tests := []struct {

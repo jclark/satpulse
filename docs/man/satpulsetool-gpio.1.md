@@ -10,8 +10,11 @@ satpulsetool-gpio - list GPIO controllers and poll a GPIO for PPS edges
 
 # DESCRIPTION
 
-The **satpulsetool** **gpio** command lists the GPIO controllers that have a device-tree node.
-For each controller, it shows the gpiochip, such as `gpiochip0`, and the compatible strings of its device-tree node.
+The **satpulsetool** **gpio** command lists the GPIO controllers of the system's device tree:
+the enabled device-tree nodes with the `gpio-controller` property.
+For each controller, it shows the path of its node and the compatible strings of the node.
+It also shows the gpiochips through which the kernel provides the controller's GPIOs, such as `gpiochip0`, when they can be found.
+A node can have more than one gpiochip.
 
 For a controller that one of its backends handles, it also shows the backend,
 the device through which the controller's registers are read,
@@ -26,9 +29,10 @@ On any other controller, it is shown by the cells of its GPIO specifier in the d
 Each controller is shown as an indented block.
 On a Raspberry Pi 5 with the `pps-gpio` overlay on GPIO 18, the first controller is shown as:
 
-    gpiochip0
+    /axi/pcie@1000120000/rp1/gpio@d0000
       backend: rp1
       compatible: raspberrypi,rp1-gpio
+      chips: gpiochip0
       device: /dev/gpiomem0
       length: 0x30000
       pps:
@@ -77,7 +81,9 @@ Requires **\-p**.
 
 **\-j**, **\-\-jsonl**
 : Write output in JSON Lines format, one object per controller.
-A controller object has a `chip` string and a `compatible` array of strings.
+A controller object has a `node` string,
+a `compatible` array of strings if the node has compatible strings,
+and a `chips` array of strings if any gpiochips are found.
 For a controller that a backend handles, it also has a `backend` string, a `device` string and a `length` number.
 If any of its GPIOs is a PPS input, it has a `pps` array.
 A `pps` object has a `gpio` string giving the GPIO's name and a `line` number giving its line on the controller,
@@ -98,7 +104,7 @@ A `reject` string gives the reason the edge is unsuitable for timing, as for **s
 : Error
 
 **2**
-: No data found: no GPIO controllers with a device-tree node found, or no PPS edges detected
+: No data found: no GPIO controllers found in the device tree, or no PPS edges detected
 
 # EXAMPLES
 

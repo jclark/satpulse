@@ -10,13 +10,13 @@ import (
 	"strings"
 )
 
-// Controller is a GPIO controller on the running system: a gpiochip and the
-// device-tree node it is bound to.
+// Controller is a GPIO controller on the running system: an enabled node of
+// the device tree with the gpio-controller property.
 type Controller struct {
-	Chip       string   // the gpiochip's device name, e.g. "gpiochip0"
-	Compatible []string // the compatible strings of its device-tree node
-	Phandle    uint32   // the phandle of its device-tree node, or 0 if it has none
-	GPIOCells  int      // the #gpio-cells of its device-tree node, or 0 if it has none
+	Node       string   // the path of its node, e.g. "/soc/gpio@7e200000"
+	Compatible []string // the compatible strings of its node, if it has any
+	Phandle    uint32   // the phandle of its node, or 0 if it has none
+	GPIOCells  int      // the #gpio-cells of its node, or 0 if it has none
 }
 
 // Backend handles the GPIO controllers of a family of SoCs, following the
