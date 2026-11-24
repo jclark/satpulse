@@ -73,8 +73,8 @@ type controllerInfo struct {
 }
 
 // ppsInfo is the listing's description of a GPIO set up as a PPS input: its
-// name and line, or, on a controller that no backend handles, the cells of
-// its GPIO specifier.
+// name and line, or, where the GPIO has no name, the cells of its GPIO
+// specifier.
 type ppsInfo struct {
 	GPIO   string   `json:"gpio,omitempty"`
 	Line   *int     `json:"line,omitempty"`
