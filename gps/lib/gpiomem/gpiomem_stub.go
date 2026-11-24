@@ -33,3 +33,9 @@ func (*Pin) Device() string {
 func (*Pin) Close() error {
 	return errNotSupported
 }
+
+// List reports that listing GPIO controllers is not supported on this
+// platform.
+func List() ([]Controller, error) {
+	return nil, errNotSupported
+}

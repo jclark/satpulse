@@ -6,6 +6,7 @@ package rp1
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
 )
@@ -14,6 +15,11 @@ import (
 type SoC struct{}
 
 const gpioCount = 54
+
+// Family returns "rp1".
+func (SoC) Family() string {
+	return "rp1"
+}
 
 // Compatible returns the compatible string of the RP1's GPIO controller.
 func (SoC) Compatible() []string {
@@ -33,6 +39,14 @@ func (SoC) Lookup(name string, ctrls []soc.Controller) (int, int, error) {
 		return 0, 0, fmt.Errorf("out of range; the controller has GPIO0 to GPIO%d", gpioCount-1)
 	}
 	return 0, n, nil
+}
+
+// Name returns GPIO<line>.
+func (SoC) Name(ctrls []soc.Controller, ctrl int, line int) (string, bool) {
+	if line < 0 || line >= gpioCount {
+		return "", false
+	}
+	return "GPIO" + strconv.Itoa(line), true
 }
 
 // Level locates line in the RIO_IN registers, the registers the kernel's

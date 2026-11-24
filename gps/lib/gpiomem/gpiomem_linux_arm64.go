@@ -3,11 +3,13 @@
 package gpiomem
 
 import (
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"unsafe"
@@ -58,12 +60,26 @@ func Open(name string) (*Pin, error) {
 	return &Pin{mapping: b, level: (*uint32)(unsafe.Pointer(&b[offset])), mask: 1 << bit, device: device}, nil
 }
 
-const gpioDevices = "/sys/bus/gpio/devices"
+// List describes the GPIO controllers of the running system that are bound
+// to device-tree nodes, in the order of their gpiochip names. It reads only
+// sysfs, so it needs no privileges.
+func List() ([]Controller, error) {
+	ctrls, err := controllers()
+	if err != nil {
+		return nil, err
+	}
+	nodes, err := ppsNodes()
+	if err != nil {
+		return nil, err
+	}
+	return describe(ctrls, nodes), nil
+}
 
 // controllers lists the gpiochips that are bound to a device-tree node, with
-// that node's compatible strings.
+// that node's compatible strings and phandle.
 func controllers() ([]soc.Controller, error) {
-	entries, err := os.ReadDir(gpioDevices)
+	dir := gpioDevices()
+	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
@@ -72,18 +88,76 @@ func controllers() ([]soc.Controller, error) {
 		if !strings.HasPrefix(e.Name(), "gpiochip") {
 			continue
 		}
-		b, err := os.ReadFile(filepath.Join(gpioDevices, e.Name(), "of_node", "compatible"))
+		node := filepath.Join(dir, e.Name(), "of_node")
+		b, err := os.ReadFile(filepath.Join(node, "compatible"))
 		if errors.Is(err, fs.ErrNotExist) {
 			continue
 		}
 		if err != nil {
 			return nil, err
 		}
-		if c := compatibles(b); len(c) > 0 {
-			ctrls = append(ctrls, soc.Controller{Chip: e.Name(), Compatible: c})
+		c := compatibles(b)
+		if len(c) == 0 {
+			continue
 		}
+		ctrl := soc.Controller{Chip: e.Name(), Compatible: c}
+		if b, err := os.ReadFile(filepath.Join(node, "phandle")); err == nil && len(b) == 4 {
+			ctrl.Phandle = binary.BigEndian.Uint32(b)
+		}
+		ctrls = append(ctrls, ctrl)
 	}
 	return ctrls, nil
+}
+
+// gpioDevices returns the directory linking to the gpiochips:
+// /sys/subsystem/gpio/devices where the kernel provides /sys/subsystem, which
+// sysfs-rules.rst says then replaces /sys/bus.
+func gpioDevices() string {
+	const subsystem = "/sys/subsystem/gpio/devices"
+	if _, err := os.Stat(subsystem); err == nil {
+		return subsystem
+	}
+	return "/sys/bus/gpio/devices"
+}
+
+const deviceTree = "/sys/firmware/devicetree/base"
+
+// ppsNodes finds the enabled nodes of the device tree that are compatible
+// with pps-gpio, with the cells of their gpios property.
+func ppsNodes() ([]ppsNode, error) {
+	var nodes []ppsNode
+	err := filepath.WalkDir(deviceTree, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || d.Name() != "compatible" {
+			return err
+		}
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		dir := filepath.Dir(path)
+		if !slices.Contains(compatibles(b), "pps-gpio") || !enabled(dir) {
+			return nil
+		}
+		if b, err := os.ReadFile(filepath.Join(dir, "gpios")); err == nil {
+			nodes = append(nodes, ppsNode{path: strings.TrimPrefix(dir, deviceTree), gpios: cells(b)})
+		}
+		return nil
+	})
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	return nodes, err
+}
+
+// enabled reports whether the device-tree node at dir is enabled: it has no
+// status property, or its status is "okay" or "ok".
+func enabled(dir string) bool {
+	b, err := os.ReadFile(filepath.Join(dir, "status"))
+	if errors.Is(err, fs.ErrNotExist) {
+		return true
+	}
+	status := strings.TrimRight(string(b), "\x00")
+	return err == nil && (status == "okay" || status == "ok")
 }
 
 // High reports whether the GPIO currently reads high.

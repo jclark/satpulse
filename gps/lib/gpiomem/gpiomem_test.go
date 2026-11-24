@@ -119,3 +119,85 @@ func TestCompatibles(t *testing.T) {
 		})
 	}
 }
+
+func TestDescribe(t *testing.T) {
+	pi5 := slices.Clone(pi5Ctrls)
+	pi5[0].Phandle = 0x2e
+	pi5[1].Phandle = 0x30
+	pps := ppsNode{path: "/pps@", gpios: []uint32{0x2e, 18, 0}}
+	tests := []struct {
+		name   string
+		ctrls  []soc.Controller
+		nodes  []ppsNode
+		expect []Controller
+	}{
+		{
+			name:  "Pi 5 with pps-gpio on GPIO18",
+			ctrls: pi5[:2],
+			nodes: []ppsNode{pps},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
+					PPS: []PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}}},
+				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
+			},
+		},
+		{
+			name:  "pps-gpio on an unsupported controller",
+			ctrls: pi5[:2],
+			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x30, 5, 0}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
+			},
+		},
+		{
+			name:  "line out of range",
+			ctrls: pi5[:1],
+			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 54, 0}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+			},
+		},
+		{
+			name:  "Pi 4 without a phandle",
+			ctrls: pi4Ctrls[:1],
+			nodes: []ppsNode{{path: "/pps@12", gpios: []uint32{0, 18, 0}}},
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}, Family: "bcm2835", Device: "/dev/gpiomem", Length: 0x1000},
+			},
+		},
+		{
+			name:  "unsupported SoC",
+			ctrls: rk3568Ctrls[:1],
+			expect: []Controller{
+				{Chip: "gpiochip0", Compatible: []string{"rockchip,gpio-bank"}},
+			},
+		},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := describe(tc.ctrls, tc.nodes); !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestCells(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		expect []uint32
+	}{
+		{"gpios", "\x00\x00\x00\x2e\x00\x00\x00\x12\x00\x00\x00\x00", []uint32{0x2e, 18, 0}},
+		{"trailing bytes", "\x00\x00\x00\x01\x02", []uint32{1}},
+		{"empty", "", []uint32{}},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := cells([]byte(tc.input)); !reflect.DeepEqual(got, tc.expect) {
+				t.Errorf("got  %v\nwant %v", got, tc.expect)
+			}
+		})
+	}
+}

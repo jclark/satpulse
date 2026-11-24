@@ -41,6 +41,29 @@ func TestLookup(t *testing.T) {
 	}
 }
 
+func TestName(t *testing.T) {
+	tests := []struct {
+		name     string
+		ctrl     soc.Controller
+		line     int
+		expect   string
+		expectOK bool
+	}{
+		{name: "GPIO18", ctrl: pi5, line: 18, expect: "GPIO18", expectOK: true},
+		{name: "last", ctrl: pi5, line: 53, expect: "GPIO53", expectOK: true},
+		{name: "out of range", ctrl: pi5, line: 54},
+		{name: "negative", ctrl: pi5, line: -1},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, ok := SoC{}.Name([]soc.Controller{tc.ctrl}, 0, tc.line)
+			if got != tc.expect || ok != tc.expectOK {
+				t.Errorf("got %q, %v; want %q, %v", got, ok, tc.expect, tc.expectOK)
+			}
+		})
+	}
+}
+
 func TestLevel(t *testing.T) {
 	tests := []struct {
 		line         int

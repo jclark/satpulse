@@ -6,6 +6,7 @@ package bcm2835
 
 import (
 	"fmt"
+	"strconv"
 
 	"github.com/jclark/satpulse/gps/lib/gpiomem/soc"
 )
@@ -21,6 +22,11 @@ var variants = []struct {
 }{
 	{"brcm,bcm2835-gpio", 54},
 	{"brcm,bcm2711-gpio", 58},
+}
+
+// Family returns "bcm2835".
+func (SoC) Family() string {
+	return "bcm2835"
 }
 
 // Compatible returns the compatible strings of the family's controllers.
@@ -45,6 +51,14 @@ func (SoC) Lookup(name string, ctrls []soc.Controller) (int, int, error) {
 		return 0, 0, fmt.Errorf("out of range; the controller has GPIO0 to GPIO%d", count-1)
 	}
 	return 0, n, nil
+}
+
+// Name returns GPIO<line>.
+func (SoC) Name(ctrls []soc.Controller, ctrl int, line int) (string, bool) {
+	if line < 0 || line >= gpioCount(ctrls[ctrl]) {
+		return "", false
+	}
+	return "GPIO" + strconv.Itoa(line), true
 }
 
 // gpioCount returns the number of GPIOs of the variant ctrl is.
