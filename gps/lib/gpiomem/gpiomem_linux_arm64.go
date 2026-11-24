@@ -34,7 +34,7 @@ func Open(name string) (*Pin, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctrls, _, _, err := scan()
+	ctrls, _, _, err := scan(false)
 	if err != nil {
 		return nil, err
 	}
@@ -64,7 +64,7 @@ func Open(name string) (*Pin, error) {
 // paths of their device-tree nodes. It reads only the device tree, /dev and
 // sysfs, so it needs no privileges.
 func List() ([]Controller, error) {
-	ctrls, providers, nodes, err := scan()
+	ctrls, providers, nodes, err := scan(true)
 	if err != nil {
 		return nil, err
 	}
@@ -76,12 +76,13 @@ func List() ([]Controller, error) {
 const deviceTree = "/proc/device-tree"
 
 // scan walks the device tree for its GPIO controllers, the enabled nodes with
-// the gpio-controller property; for the GPIO providers, by phandle; and for
-// its enabled pps-gpio nodes, with the cells of their gpios (or gpio)
-// property. A node below a disabled node is not enabled, since the kernel
-// does not create its device; but a provider there can still be a nexus node,
-// which needs no device, so the walk goes on below a disabled node.
-func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
+// the gpio-controller property, and, if pps is true, for the GPIO providers,
+// by phandle, and its enabled pps-gpio nodes, with the cells of their gpios
+// (or gpio) property; otherwise it reads nothing that only they need. A node
+// below a disabled node is not enabled, since the kernel does not create its
+// device; but a provider there can still be a nexus node, which needs no
+// device, so for pps the walk goes on below a disabled node.
+func scan(pps bool) ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 	root, err := filepath.EvalSymlinks(deviceTree)
 	if errors.Is(err, fs.ErrNotExist) {
 		return nil, nil, nil, nil
@@ -114,6 +115,9 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 				return err
 			}
 			if !ok {
+				if !pps {
+					return fs.SkipDir
+				}
 				disabled = path
 			}
 			return nil
@@ -121,6 +125,9 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 		dir := filepath.Dir(path)
 		switch d.Name() {
 		case "#gpio-cells":
+			if !pps {
+				return nil
+			}
 			phandle, p, err := readProvider(dir)
 			if err != nil {
 				return err
@@ -146,7 +153,7 @@ func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 			ctrl.Node = strings.TrimPrefix(dir, root)
 			ctrls = append(ctrls, ctrl)
 		case "compatible":
-			if off {
+			if off || !pps {
 				return nil
 			}
 			b, err := property(dir, "compatible")
