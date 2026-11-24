@@ -43,7 +43,7 @@ func (SoC) Lookup(name string, ctrls []soc.Controller) (int, int, error) {
 
 // Name returns GPIO<line>.
 func (SoC) Name(ctrls []soc.Controller, ctrl int, line int) (string, bool) {
-	if line < 0 || line >= gpioCount {
+	if len(ctrls) != 1 || line < 0 || line >= gpioCount {
 		return "", false
 	}
 	return "GPIO" + strconv.Itoa(line), true

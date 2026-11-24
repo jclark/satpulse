@@ -31,7 +31,7 @@ Polling requires read access to the device through which the controller's regist
 It is most precise on a CPU that does not handle the GPIO's interrupt (see `/proc/interrupts`).
 
 The supported SoC families are `bcm2835` (Raspberry Pi 3 and 4) and `rp1` (Raspberry Pi 5).
-The command is supported on 64-bit Linux.
+The command is supported on 64-bit Arm Linux.
 
 # OPTIONS
 

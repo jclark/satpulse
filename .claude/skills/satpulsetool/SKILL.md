@@ -67,8 +67,8 @@ for a while has `-t N` (seconds) instead; always give it when capturing.
 `--packet-log FILE` overwrites an existing file, so use a new filename each
 time.
 
-Exit status 2 from `serial` and `sdp` means no data found (no ports, no
-packets, no edges, no timestamps), not an error.
+Exit status 2 from `serial`, `sdp` and `gpio` means no data found (no ports,
+no packets, no edges, no timestamps, no GPIO controllers), not an error.
 
 ## Confirm with the user first
 
@@ -82,4 +82,5 @@ agreeing to that specific action:
 ## Reference
 
 Man pages: satpulsetool(1), satpulsetool-serial(1), satpulsetool-gps(1),
-satpulsetool-sdp(1), satpulsetool-pack(1), satpulsetool-scan(1). Message files live in `/usr/share/satpulse/gpsmsg`.
+satpulsetool-sdp(1), satpulsetool-gpio(1), satpulsetool-pack(1),
+satpulsetool-scan(1). Message files live in `/usr/share/satpulse/gpsmsg`.

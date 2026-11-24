@@ -66,7 +66,7 @@ func Lookup(name string) (GPIO, error) {
 
 // List describes the GPIO controllers of the running system that are bound
 // to device-tree nodes, in the order of their gpiochip names. It reads only
-// sysfs, so it needs no privileges.
+// sysfs and the device tree, so it needs no privileges.
 func List() ([]Controller, error) {
 	ctrls, err := controllers()
 	if err != nil {
@@ -105,7 +105,11 @@ func controllers() ([]soc.Controller, error) {
 			continue
 		}
 		ctrl := soc.Controller{Chip: e.Name(), Compatible: c}
-		if b, err := os.ReadFile(filepath.Join(node, "phandle")); err == nil && len(b) == 4 {
+		b, err = os.ReadFile(filepath.Join(node, "phandle"))
+		if errors.Is(err, fs.ErrNotExist) {
+			b, err = os.ReadFile(filepath.Join(node, "linux,phandle"))
+		}
+		if err == nil && len(b) == 4 {
 			ctrl.Phandle = binary.BigEndian.Uint32(b)
 		}
 		ctrls = append(ctrls, ctrl)
@@ -124,32 +128,55 @@ func gpioDevices() string {
 	return "/sys/bus/gpio/devices"
 }
 
-const deviceTree = "/sys/firmware/devicetree/base"
+// deviceTree is the path through which sysfs-firmware-ofw says userspace
+// must reach the device tree: a symlink, whose target is not stable ABI.
+const deviceTree = "/proc/device-tree"
 
 // ppsNodes finds the enabled nodes of the device tree that are compatible
-// with pps-gpio, with the cells of their gpios property.
+// with pps-gpio, with the cells of their gpios property. A node below a
+// disabled node is not enabled, since the kernel does not create its device.
 func ppsNodes() ([]ppsNode, error) {
+	root, err := filepath.EvalSymlinks(deviceTree)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
 	var nodes []ppsNode
-	err := filepath.WalkDir(deviceTree, func(path string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || d.Name() != "compatible" {
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		// An overlay can be removed during the walk.
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
+		if err != nil {
 			return err
 		}
+		if d.IsDir() {
+			if !enabled(path) {
+				return fs.SkipDir
+			}
+			return nil
+		}
+		if d.Name() != "compatible" {
+			return nil
+		}
 		b, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
+		}
 		if err != nil {
 			return err
 		}
 		dir := filepath.Dir(path)
-		if !slices.Contains(compatibles(b), "pps-gpio") || !enabled(dir) {
+		if !slices.Contains(compatibles(b), "pps-gpio") {
 			return nil
 		}
 		if b, err := os.ReadFile(filepath.Join(dir, "gpios")); err == nil {
-			nodes = append(nodes, ppsNode{path: strings.TrimPrefix(dir, deviceTree), gpios: cells(b)})
+			nodes = append(nodes, ppsNode{path: strings.TrimPrefix(dir, root), gpios: cells(b)})
 		}
 		return nil
 	})
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
-	}
 	return nodes, err
 }
 

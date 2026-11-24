@@ -17,7 +17,7 @@
 //
 // The package does not configure the GPIO: it must already be an input, as
 // the pps-gpio overlay makes it. Opening or looking up a GPIO and listing
-// controllers are implemented for 64-bit Linux only; elsewhere Open, Lookup
+// controllers are implemented for 64-bit Arm Linux only; elsewhere Open, Lookup
 // and List return an error wrapping errors.ErrUnsupported.
 package gpiomem
 
@@ -173,8 +173,8 @@ type ppsNode struct {
 // describe combines ctrls, the GPIO controllers of the system, with the SoC
 // families that handle them and with nodes, its pps-gpio nodes. A node's gpios
 // property holds the phandle of the controller followed by the cells of the
-// GPIO specifier, whose first cell is the line in the bindings of every
-// supported family.
+// GPIO specifier: in the bindings of every supported family, two cells, the
+// line and its flags, and one gpiochip per device-tree node.
 func describe(ctrls []soc.Controller, nodes []ppsNode) []Controller {
 	list := make([]Controller, len(ctrls))
 	for i, c := range ctrls {
@@ -194,7 +194,7 @@ func describe(ctrls []soc.Controller, nodes []ppsNode) []Controller {
 			c.Family = s.Family()
 			c.Device, c.Length = s.GPIOMem()
 			for _, n := range nodes {
-				if ctrls[i].Phandle == 0 || len(n.gpios) < 2 || n.gpios[0] != ctrls[i].Phandle {
+				if ctrls[i].Phandle == 0 || len(n.gpios) < 3 || n.gpios[0] != ctrls[i].Phandle {
 					continue
 				}
 				line := int(n.gpios[1])

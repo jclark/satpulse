@@ -3,63 +3,13 @@
 package kpps
 
 import (
-	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 )
 
 const sysClassPPS = "/sys/class/pps"
-
-// listDevices returns the kernel PPS devices in sysDir, in name order. A
-// device whose attributes cannot be read, because it was unregistered during
-// the scan, is left out.
-func listDevices(sysDir string) ([]Device, error) {
-	entries, err := os.ReadDir(sysDir)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, nil
-		}
-		return nil, err
-	}
-	var devices []Device
-	for _, e := range entries {
-		d, err := readDevice(sysDir, e.Name())
-		if err != nil {
-			continue
-		}
-		devices = append(devices, d)
-	}
-	return devices, nil
-}
-
-func readDevice(sysDir, name string) (Device, error) {
-	attr := func(a string) (string, error) {
-		b, err := os.ReadFile(filepath.Join(sysDir, name, a))
-		return strings.TrimSuffix(string(b), "\n"), err
-	}
-	d := Device{Path: "/dev/" + name}
-	var err error
-	if d.Name, err = attr("name"); err != nil {
-		return Device{}, err
-	}
-	if d.SourcePath, err = attr("path"); err != nil {
-		return Device{}, err
-	}
-	s, err := attr("mode")
-	if err != nil {
-		return Device{}, err
-	}
-	mode, err := strconv.ParseUint(strings.TrimSpace(s), 16, 32)
-	if err != nil {
-		return Device{}, fmt.Errorf("mode attribute %q: %w", s, err)
-	}
-	d.Mode = Mode(mode)
-	return d, nil
-}
 
 // DevicePathForTTY returns the path of the kernel PPS device fed by the TTY
 // open on fd, which the N_PPS line discipline creates when it is attached to
@@ -71,7 +21,11 @@ func DevicePathForTTY(fd int) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return findDevice(sysClassPPS, ttyPath)
+	name, err := findDevice(sysClassPPS, "path", ttyPath)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join("/dev", name), nil
 }
 
 // DevicePathForGPIONode returns the path of the kernel PPS device that the
@@ -79,24 +33,33 @@ func DevicePathForTTY(fd int) (string, error) {
 // The kernel documents no link from a PPS device to the device that feeds it,
 // so the device is found by the name the driver gives its source: the name of
 // the node's platform device followed by ".-1", the id of a platform device
-// created from the device tree. This relies on the driver's implementation;
-// a kernel that names the source differently gives an error.
+// created from the device tree, cut to the 30 bytes the driver keeps. This
+// relies on the driver's implementation; a kernel that names the source
+// differently gives an error.
 func DevicePathForGPIONode(node string) (string, error) {
-	pdev, err := platformDevice(filepath.Join("/sys/firmware/devicetree/base", node))
+	root, err := filepath.EvalSymlinks("/proc/device-tree")
 	if err != nil {
 		return "", err
 	}
-	devices, err := listDevices(sysClassPPS)
+	pdev, err := platformDevice(filepath.Join(root, node))
 	if err != nil {
 		return "", err
 	}
-	for _, d := range devices {
-		if d.Name == pdev+".-1" {
-			return d.Path, nil
-		}
+	source := pdev + ".-1"
+	if len(source) > maxGPIOSourceName {
+		source = source[:maxGPIOSourceName]
 	}
-	return "", fmt.Errorf("%s: no kernel PPS source in %s", pdev, sysClassPPS)
+	name, err := findDevice(sysClassPPS, "name", source)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join("/dev", name), nil
 }
+
+// maxGPIOSourceName is the length to which the pps-gpio driver cuts its
+// source's name: it formats the name into PPS_MAX_NAME_LEN - 1 bytes,
+// including the terminating NUL.
+const maxGPIOSourceName = 30
 
 // platformDevice returns the name of the platform device whose device-tree
 // node is the sysfs directory node.
@@ -114,17 +77,27 @@ func platformDevice(node string) (string, error) {
 	return "", fmt.Errorf("%s: no platform device", node)
 }
 
-// findDevice returns the path of the PPS device whose sysfs path attribute is
-// sourcePath.
-func findDevice(sysDir, sourcePath string) (string, error) {
-	devices, err := listDevices(sysDir)
+// findDevice returns the name of the one PPS device whose sysfs attribute
+// attr is value. Unreadable entries are skipped because another process's PPS
+// source may vanish during the scan.
+func findDevice(sysDir, attr, value string) (string, error) {
+	entries, err := os.ReadDir(sysDir)
 	if err != nil {
 		return "", err
 	}
-	for _, d := range devices {
-		if d.SourcePath == sourcePath {
-			return d.Path, nil
+	var found string
+	for _, e := range entries {
+		b, err := os.ReadFile(filepath.Join(sysDir, e.Name(), attr))
+		if err != nil || strings.TrimSuffix(string(b), "\n") != value {
+			continue
 		}
+		if found != "" {
+			return "", fmt.Errorf("%s: more than one kernel PPS source in %s", value, sysDir)
+		}
+		found = e.Name()
 	}
-	return "", fmt.Errorf("%s: no kernel PPS source in %s", sourcePath, sysDir)
+	if found == "" {
+		return "", fmt.Errorf("%s: no kernel PPS source in %s", value, sysDir)
+	}
+	return found, nil
 }
