@@ -41,9 +41,6 @@ jobs:
     - name: Build
       run: make
 
-    - name: Prepare browser Workbench tests
-      run: make -f Makefile.wasm test-assets test-go
-
     - name: Playwright version
       id: playwright
       run: |
@@ -65,7 +62,8 @@ jobs:
     # and running as the runner user leaves absolute paths and file ownership
     # as they are outside the container, so the report and rundirs stay
     # readable by the upload step. --ipc=host keeps chromium off the
-    # container's small /dev/shm.
+    # container's small /dev/shm. The browser Workbench project runs in the
+    # js/wasm workflow.
     - name: Run e2e suite
       env:
         SATPULSE_E2E_RUNDIR_PARENT: ${{ github.workspace }}/e2e-run-dirs
@@ -76,7 +74,7 @@ jobs:
           --workdir "$GITHUB_WORKSPACE" \
           --env CI --env HOME=/tmp --env SATPULSE_E2E_RUNDIR_PARENT \
           mcr.microsoft.com/playwright:v${{ steps.playwright.outputs.version }}-noble \
-          npm run e2e --prefix webui --workspace @satpulse/e2e
+          npm run e2e --prefix webui --workspace @satpulse/e2e -- --project=dashboard --project=workbench
 
     - name: Upload e2e artifacts
       if: failure()
