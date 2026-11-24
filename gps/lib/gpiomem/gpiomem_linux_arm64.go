@@ -124,10 +124,17 @@ func controllers() ([]backend.Controller, error) {
 		if errors.Is(err, fs.ErrNotExist) {
 			b, err = os.ReadFile(filepath.Join(node, "linux,phandle"))
 		}
-		if err == nil && len(b) == 4 {
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if len(b) == 4 {
 			ctrl.Phandle = binary.BigEndian.Uint32(b)
 		}
-		if b, err := os.ReadFile(filepath.Join(node, "#gpio-cells")); err == nil && len(b) == 4 {
+		b, err = os.ReadFile(filepath.Join(node, "#gpio-cells"))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return nil, err
+		}
+		if len(b) == 4 {
 			ctrl.GPIOCells = int(binary.BigEndian.Uint32(b))
 		}
 		ctrls = append(ctrls, ctrl)
@@ -160,7 +167,11 @@ func ppsNodes() ([]ppsNode, error) {
 			return err
 		}
 		if d.IsDir() {
-			if !enabled(path) {
+			ok, err := enabled(path)
+			if err != nil {
+				return err
+			}
+			if !ok {
 				return fs.SkipDir
 			}
 			return nil
@@ -179,9 +190,14 @@ func ppsNodes() ([]ppsNode, error) {
 		if !slices.Contains(compatibles(b), "pps-gpio") {
 			return nil
 		}
-		if b, err := os.ReadFile(filepath.Join(dir, "gpios")); err == nil {
-			nodes = append(nodes, ppsNode{path: strings.TrimPrefix(dir, root), gpios: cells(b)})
+		b, err = os.ReadFile(filepath.Join(dir, "gpios"))
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil
 		}
+		if err != nil {
+			return err
+		}
+		nodes = append(nodes, ppsNode{path: strings.TrimPrefix(dir, root), gpios: cells(b)})
 		return nil
 	})
 	return nodes, err
@@ -189,13 +205,16 @@ func ppsNodes() ([]ppsNode, error) {
 
 // enabled reports whether the device-tree node at dir is enabled: it has no
 // status property, or its status is "okay" or "ok".
-func enabled(dir string) bool {
+func enabled(dir string) (bool, error) {
 	b, err := os.ReadFile(filepath.Join(dir, "status"))
 	if errors.Is(err, fs.ErrNotExist) {
-		return true
+		return true, nil
+	}
+	if err != nil {
+		return false, err
 	}
 	status := strings.TrimRight(string(b), "\x00")
-	return err == nil && (status == "okay" || status == "ok")
+	return status == "okay" || status == "ok", nil
 }
 
 // High reports whether the GPIO currently reads high.
