@@ -24,13 +24,15 @@ func sleepDuration(d time.Duration) time.Duration {
 // absolute because the runtime's preemption signal interrupts the sleep, and
 // the Go monotonic clock is CLOCK_MONOTONIC, so resuming needs no arithmetic.
 func sleepUntil(t time.Time) (bool, error) {
-	d := time.Until(t)
-	if d <= 0 {
-		return false, nil
-	}
+	// The clock is read before d is measured, so that a delay between the
+	// two readings makes the deadline early rather than late.
 	var ts unix.Timespec
 	if err := unix.ClockGettime(unix.CLOCK_MONOTONIC, &ts); err != nil {
 		return false, err
+	}
+	d := time.Until(t)
+	if d <= 0 {
+		return false, nil
 	}
 	deadline := unix.NsecToTimespec(unix.TimespecToNsec(ts) + int64(d))
 	for {
