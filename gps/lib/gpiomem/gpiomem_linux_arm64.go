@@ -30,23 +30,15 @@ type Pin struct {
 // finds the GPIO the SoC calls name, such as GPIO18, maps its controller's
 // registers and returns a reader for its level.
 func Open(name string) (*Pin, error) {
-	upper, err := upperName(name)
-	if err != nil {
-		return nil, err
-	}
 	ctrls, err := controllers()
 	if err != nil {
 		return nil, err
 	}
-	s, ctrls, err := findSoC(ctrls)
+	s, ctrl, gpio, err := lookup(ctrls, name)
 	if err != nil {
 		return nil, err
 	}
-	i, line, err := s.Lookup(upper, ctrls)
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", name, err)
-	}
-	offset, bit := s.Level(ctrls[i], line)
+	offset, bit := s.Level(ctrl, gpio.Line)
 	device, length := s.GPIOMem()
 	f, err := os.OpenFile(device, os.O_RDONLY|unix.O_SYNC, 0)
 	if err != nil {
@@ -58,6 +50,18 @@ func Open(name string) (*Pin, error) {
 		return nil, fmt.Errorf("mapping %s: %w", device, err)
 	}
 	return &Pin{mapping: b, level: (*uint32)(unsafe.Pointer(&b[offset])), mask: 1 << bit, device: device}, nil
+}
+
+// Lookup identifies the SoC of the running system from its GPIO controllers
+// and finds the GPIO the SoC calls name, as Open does, without opening it. It
+// reads only sysfs, so it needs no privileges.
+func Lookup(name string) (GPIO, error) {
+	ctrls, err := controllers()
+	if err != nil {
+		return GPIO{}, err
+	}
+	_, _, gpio, err := lookup(ctrls, name)
+	return gpio, err
 }
 
 // List describes the GPIO controllers of the running system that are bound
