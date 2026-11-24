@@ -35,7 +35,7 @@ func Open(name string) (*Pin, error) {
 	if err != nil {
 		return nil, err
 	}
-	ctrls, _, err := scan()
+	ctrls, _, _, err := scan()
 	if err != nil {
 		return nil, err
 	}
@@ -65,11 +65,11 @@ func Open(name string) (*Pin, error) {
 // paths of their device-tree nodes. It reads only the device tree, /dev and
 // sysfs, so it needs no privileges.
 func List() ([]Controller, error) {
-	ctrls, nodes, err := scan()
+	ctrls, providers, nodes, err := scan()
 	if err != nil {
 		return nil, err
 	}
-	return describe(ctrls, gpiochips(ctrls), nodes), nil
+	return describe(ctrls, providers, gpiochips(ctrls), nodes), nil
 }
 
 // deviceTree is the path through which sysfs-firmware-ofw says userspace
@@ -77,19 +77,26 @@ func List() ([]Controller, error) {
 const deviceTree = "/proc/device-tree"
 
 // scan walks the device tree for its GPIO controllers, the enabled nodes with
-// the gpio-controller property, and for its enabled pps-gpio nodes, with the
-// cells of their gpios property. A node below a disabled node is not enabled,
-// since the kernel does not create its device.
-func scan() ([]backend.Controller, []ppsNode, error) {
+// the gpio-controller property; for the GPIO providers, by phandle; and for
+// its enabled pps-gpio nodes, with the cells of their gpios property. A node
+// below a disabled node is not enabled, since the kernel does not create its
+// device; but a provider there can still be a nexus node, which needs no
+// device, so the walk goes on below a disabled node.
+func scan() ([]backend.Controller, map[uint32]provider, []ppsNode, error) {
 	root, err := filepath.EvalSymlinks(deviceTree)
 	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	var ctrls []backend.Controller
+	providers := make(map[uint32]provider)
 	var nodes []ppsNode
+	// disabled is the disabled node whose subtree the walk is in, if any:
+	// the walk is depth-first, so it has left that subtree once a path is not
+	// below the node.
+	var disabled string
 	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		// An overlay can be removed during the walk.
 		if errors.Is(err, fs.ErrNotExist) {
@@ -98,19 +105,34 @@ func scan() ([]backend.Controller, []ppsNode, error) {
 		if err != nil {
 			return err
 		}
+		off := disabled != "" && strings.HasPrefix(path, disabled+"/")
 		if d.IsDir() {
+			if off {
+				return nil
+			}
 			ok, err := enabled(path)
 			if err != nil {
 				return err
 			}
 			if !ok {
-				return fs.SkipDir
+				disabled = path
 			}
 			return nil
 		}
 		dir := filepath.Dir(path)
 		switch d.Name() {
+		case "#gpio-cells":
+			phandle, p, err := readProvider(dir)
+			if err != nil {
+				return err
+			}
+			if phandle != 0 {
+				providers[phandle] = p
+			}
 		case "gpio-controller":
+			if off {
+				return nil
+			}
 			// A property of another meaning, such as an alias, can have this
 			// name; the controller's property is empty.
 			b, err := property(dir, "gpio-controller")
@@ -124,6 +146,9 @@ func scan() ([]backend.Controller, []ppsNode, error) {
 			ctrl.Node = strings.TrimPrefix(dir, root)
 			ctrls = append(ctrls, ctrl)
 		case "compatible":
+			if off {
+				return nil
+			}
 			b, err := property(dir, "compatible")
 			if err != nil || !slices.Contains(compatibles(b), "pps-gpio") {
 				return err
@@ -136,7 +161,7 @@ func scan() ([]backend.Controller, []ppsNode, error) {
 		}
 		return nil
 	})
-	return ctrls, nodes, err
+	return ctrls, providers, nodes, err
 }
 
 // enabled reports whether the device-tree node at dir is enabled: it has no
@@ -161,24 +186,56 @@ func controller(dir string) (backend.Controller, error) {
 		return ctrl, err
 	}
 	ctrl.Compatible = compatibles(b)
-	b, err = property(dir, "phandle")
+	ctrl.Phandle, err = phandle(dir)
+	return ctrl, err
+}
+
+// readProvider reads the phandle and the properties of the GPIO provider
+// node at dir. The phandle is 0 if the node has none, so that no specifier
+// can name it. Its availability is its own status, as the kernel checks it.
+func readProvider(dir string) (uint32, provider, error) {
+	var p provider
+	ph, err := phandle(dir)
+	if err != nil || ph == 0 {
+		return 0, p, err
+	}
+	b, err := property(dir, "#gpio-cells")
+	if err != nil {
+		return 0, p, err
+	}
+	if len(b) != 4 {
+		return 0, p, nil
+	}
+	p.cells = int(binary.BigEndian.Uint32(b))
+	if p.available, err = enabled(dir); err != nil {
+		return 0, p, err
+	}
+	for _, v := range []struct {
+		name string
+		c    *[]uint32
+	}{{"gpio-map", &p.gpioMap}, {"gpio-map-mask", &p.mask}, {"gpio-map-pass-thru", &p.passThru}} {
+		b, err := property(dir, v.name)
+		if err != nil {
+			return 0, p, err
+		}
+		if b != nil {
+			*v.c = cells(b)
+		}
+	}
+	return ph, p, nil
+}
+
+// phandle reads the phandle of the device-tree node at dir, which older
+// device trees give as linux,phandle, or returns 0 if it has none.
+func phandle(dir string) (uint32, error) {
+	b, err := property(dir, "phandle")
 	if err == nil && b == nil {
 		b, err = property(dir, "linux,phandle")
 	}
-	if err != nil {
-		return ctrl, err
+	if err != nil || len(b) != 4 {
+		return 0, err
 	}
-	if len(b) == 4 {
-		ctrl.Phandle = binary.BigEndian.Uint32(b)
-	}
-	b, err = property(dir, "#gpio-cells")
-	if err != nil {
-		return ctrl, err
-	}
-	if len(b) == 4 {
-		ctrl.GPIOCells = int(binary.BigEndian.Uint32(b))
-	}
-	return ctrl, nil
+	return binary.BigEndian.Uint32(b), nil
 }
 
 // property reads the property called name of the device-tree node at dir,
