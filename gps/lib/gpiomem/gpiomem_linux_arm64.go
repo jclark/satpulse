@@ -123,6 +123,9 @@ func controllers() ([]soc.Controller, error) {
 		if err == nil && len(b) == 4 {
 			ctrl.Phandle = binary.BigEndian.Uint32(b)
 		}
+		if b, err := os.ReadFile(filepath.Join(node, "#gpio-cells")); err == nil && len(b) == 4 {
+			ctrl.GPIOCells = int(binary.BigEndian.Uint32(b))
+		}
 		ctrls = append(ctrls, ctrl)
 	}
 	return ctrls, nil

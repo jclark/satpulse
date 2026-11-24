@@ -115,22 +115,26 @@ func compatibles(b []byte) []string {
 }
 
 // Controller describes a GPIO controller of the running system, as List
-// reports it. Family, Device, Length and PPS are set only for a controller of
-// a supported SoC family.
+// reports it. Backend, Device and Length are set only for a controller that
+// a gpiomem backend handles.
 type Controller struct {
 	Chip       string   // the gpiochip's device name, such as "gpiochip0"
 	Compatible []string // the compatible strings of its device-tree node
-	Family     string   // the name of the SoC family, such as "rp1"
+	Backend    string   // the name of the backend that handles it, such as "rp1"
 	Device     string   // the gpiomem device that maps its registers
 	Length     int      // the length of the mapping
 	PPS        []PPS    // its GPIOs that pps-gpio nodes of the device tree use
 }
 
 // PPS is a GPIO that a pps-gpio node of the device tree uses for its pulses.
+// On a controller that a backend handles, the GPIO is given by its Name and
+// Line; on any other, by the Cells of its GPIO specifier, whose meaning the
+// controller's binding defines.
 type PPS struct {
-	Name string // the SoC's name for the GPIO, such as "GPIO18"
-	Line int    // the GPIO's line on its controller
-	Node string // the path of the pps-gpio node in the device tree
+	Name  string   // the SoC's name for the GPIO, such as "GPIO18"
+	Line  int      // the GPIO's line on its controller
+	Cells []uint32 // the cells of the GPIO specifier
+	Node  string   // the path of the pps-gpio node in the device tree
 }
 
 // ppsNode is an enabled pps-gpio node of the device tree, with the cells of
@@ -140,38 +144,43 @@ type ppsNode struct {
 	gpios []uint32
 }
 
-// describe combines ctrls, the GPIO controllers of the system, with the SoC
-// families that handle them and with nodes, its pps-gpio nodes. A node's gpios
-// property holds the phandle of the controller followed by the cells of the
-// GPIO specifier: in the bindings of every supported family, two cells, the
-// line and its flags, and one gpiochip per device-tree node.
+// describe combines ctrls, the GPIO controllers of the system, with the
+// backends that handle them and with nodes, its pps-gpio nodes. A node's
+// gpios property holds the phandle of a controller followed by the
+// controller's #gpio-cells cells of the GPIO specifier. In the binding of
+// every backend's controllers the first cell is the line, and each
+// device-tree node has one gpiochip.
 func describe(ctrls []soc.Controller, nodes []ppsNode) []Controller {
 	list := make([]Controller, len(ctrls))
 	for i, c := range ctrls {
 		list[i] = Controller{Chip: c.Chip, Compatible: c.Compatible}
+		for _, n := range nodes {
+			if c.Phandle != 0 && c.GPIOCells > 0 && len(n.gpios) >= 1+c.GPIOCells && n.gpios[0] == c.Phandle {
+				list[i].PPS = append(list[i].PPS, PPS{Cells: n.gpios[1 : 1+c.GPIOCells], Node: n.path})
+			}
+		}
 	}
 	for _, s := range socs {
 		var idx []int
-		var famCtrls []soc.Controller
+		var backendCtrls []soc.Controller
 		for i, c := range ctrls {
 			if handles(s, c) {
 				idx = append(idx, i)
-				famCtrls = append(famCtrls, c)
+				backendCtrls = append(backendCtrls, c)
 			}
 		}
 		for j, i := range idx {
 			c := &list[i]
-			c.Family = s.Family()
+			c.Backend = s.Backend()
 			c.Device, c.Length = s.GPIOMem()
-			for _, n := range nodes {
-				if ctrls[i].Phandle == 0 || len(n.gpios) < 3 || n.gpios[0] != ctrls[i].Phandle {
-					continue
-				}
-				line := int(n.gpios[1])
-				if name, ok := s.Name(famCtrls, j, line); ok {
-					c.PPS = append(c.PPS, PPS{Name: name, Line: line, Node: n.path})
+			var pps []PPS
+			for _, p := range c.PPS {
+				line := int(p.Cells[0])
+				if name, ok := s.Name(backendCtrls, j, line); ok {
+					pps = append(pps, PPS{Name: name, Line: line, Node: p.Node})
 				}
 			}
+			c.PPS = pps
 		}
 	}
 	return list

@@ -122,8 +122,8 @@ func TestCompatibles(t *testing.T) {
 
 func TestDescribe(t *testing.T) {
 	pi5 := slices.Clone(pi5Ctrls)
-	pi5[0].Phandle = 0x2e
-	pi5[1].Phandle = 0x30
+	pi5[0].Phandle, pi5[0].GPIOCells = 0x2e, 2
+	pi5[1].Phandle, pi5[1].GPIOCells = 0x30, 2
 	pps := ppsNode{path: "/pps@", gpios: []uint32{0x2e, 18, 0}}
 	tests := []struct {
 		name   string
@@ -136,7 +136,7 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:2],
 			nodes: []ppsNode{pps},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
 					PPS: []PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}}},
 				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
 			},
@@ -146,8 +146,8 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:2],
 			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x30, 5, 0}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
-				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+				{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}, PPS: []PPS{{Cells: []uint32{5, 0}, Node: "/pps@"}}},
 			},
 		},
 		{
@@ -155,7 +155,7 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:1],
 			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 54, 0}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
 			},
 		},
 		{
@@ -163,7 +163,7 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:1],
 			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 18}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
+				{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000},
 			},
 		},
 		{
@@ -171,7 +171,7 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi4Ctrls[:1],
 			nodes: []ppsNode{{path: "/pps@12", gpios: []uint32{0, 18, 0}}},
 			expect: []Controller{
-				{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}, Family: "bcm2835", Device: "/dev/gpiomem", Length: 0x1000},
+				{Chip: "gpiochip0", Compatible: []string{"brcm,bcm2711-gpio"}, Backend: "bcm2835", Device: "/dev/gpiomem", Length: 0x1000},
 			},
 		},
 		{

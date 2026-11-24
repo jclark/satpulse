@@ -16,8 +16,8 @@ type SoC struct{}
 
 const gpioCount = 54
 
-// Family returns "rp1".
-func (SoC) Family() string {
+// Backend returns "rp1".
+func (SoC) Backend() string {
 	return "rp1"
 }
 
