@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
@@ -15,6 +16,13 @@ func TestConfigFeaturesNMEASendPullUsesPosition(t *testing.T) {
 	cfg.Stream.Pull.Ntrip = &stream.NtripConfig{NMEASend: true}
 	if got := configFeatures(cfg, false); got&cfgPosition == 0 {
 		t.Fatalf("configFeatures = %b, want cfgPosition set", got)
+	}
+}
+
+func TestConfigFeaturesSerialPPSUsesTimePulse(t *testing.T) {
+	cfg := &Config{Serial: SerialConfig{PPS: &SerialPPSConfig{Pin: gpsio.SerialPinDCD}}}
+	if got := configFeatures(cfg, false); got&cfgTimePulse == 0 {
+		t.Fatalf("configFeatures = %b, want cfgTimePulse set", got)
 	}
 }
 
