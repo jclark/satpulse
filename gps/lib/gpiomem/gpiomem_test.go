@@ -156,8 +156,8 @@ func TestCompatibles(t *testing.T) {
 
 func TestDescribe(t *testing.T) {
 	pi5 := slices.Clone(pi5Ctrls)
-	pi5[0].Phandle, pi5[0].GPIOCells = 0x2e, 2
-	pi5[1].Phandle, pi5[1].GPIOCells = 0x30, 2
+	pi5[0].Phandle, pi5[1].Phandle = 0x2e, 0x30
+	providers := map[uint32]provider{0x2e: {cells: 2, available: true}, 0x30: {cells: 2, available: true}}
 	pps := ppsNode{path: "/pps@", gpios: []uint32{0x2e, 18, 0}}
 	pi5Chips := map[string][]string{
 		"/axi/pcie@1000120000/rp1/gpio@d0000": {"gpiochip0"},
@@ -225,8 +225,49 @@ func TestDescribe(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			if got := describe(tc.ctrls, tc.chips, tc.nodes); !reflect.DeepEqual(got, tc.expect) {
+			if got := describe(tc.ctrls, providers, tc.chips, tc.nodes); !reflect.DeepEqual(got, tc.expect) {
 				t.Errorf("got  %+v\nwant %+v", got, tc.expect)
+			}
+		})
+	}
+}
+
+func TestResolve(t *testing.T) {
+	providers := map[uint32]provider{
+		1: {cells: 2, available: true},
+		2: {cells: 2},
+		// A header whose pin 0 is line 18 of controller 1 (after an entry
+		// for disabled controller 2), pin 1 line 5, with the flags cell
+		// ignored in matching and its bit 0 passed through.
+		3: {cells: 2, available: true, gpioMap: []uint32{0, 0, 2, 7, 0, 0, 0, 1, 18, 0, 1, 0, 1, 5, 0},
+			mask: []uint32{0xff, 0}, passThru: []uint32{0, 1}},
+		// A connector whose pin 9 is pin 1 of header 3.
+		4: {cells: 1, gpioMap: []uint32{9, 3, 1, 0}},
+		5: {cells: 2, gpioMap: []uint32{0, 0, 5, 0, 0}},
+	}
+	tests := []struct {
+		name          string
+		gpios         []uint32
+		expectPhandle uint32
+		expect        []uint32
+		expectOK      bool
+	}{
+		{name: "controller", gpios: []uint32{1, 18, 0}, expectPhandle: 1, expect: []uint32{18, 0}, expectOK: true},
+		{name: "nexus, skipping a disabled parent", gpios: []uint32{3, 0, 0}, expectPhandle: 1, expect: []uint32{18, 0}, expectOK: true},
+		{name: "masked bits", gpios: []uint32{3, 0x100, 0}, expectPhandle: 1, expect: []uint32{18, 0}, expectOK: true},
+		{name: "passed-through flags", gpios: []uint32{3, 1, 1}, expectPhandle: 1, expect: []uint32{5, 1}, expectOK: true},
+		{name: "two nexus nodes", gpios: []uint32{4, 9}, expectPhandle: 1, expect: []uint32{5, 0}, expectOK: true},
+		{name: "no matching entry", gpios: []uint32{3, 2, 0}},
+		{name: "loop of nexus nodes", gpios: []uint32{5, 0, 0}},
+		{name: "unknown phandle", gpios: []uint32{7, 0, 0}},
+		{name: "incomplete specifier", gpios: []uint32{1, 18}},
+		{name: "empty", gpios: nil},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			phandle, spec, ok := resolve(providers, tc.gpios)
+			if phandle != tc.expectPhandle || !reflect.DeepEqual(spec, tc.expect) || ok != tc.expectOK {
+				t.Errorf("got  %d %v %v\nwant %d %v %v", phandle, spec, ok, tc.expectPhandle, tc.expect, tc.expectOK)
 			}
 		})
 	}
