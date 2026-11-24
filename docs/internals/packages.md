@@ -290,7 +290,7 @@ These packages implement subcommands of satpulsetool. They are in the command-li
 
 `internal/replaycmd` implements `replay` subcommand of satpulsetool. It replays a JSONL packet log, generating JSONL events similar to an event log.
 
-`internal/gpiocmd` implements the `gpio` subcommand of satpulsetool, which lists GPIO controllers and the GPIOs set up as PPS inputs, and polls a GPIO for PPS edges through `gps/app/pps`.
+`internal/gpiocmd` implements the `gpio` subcommand of satpulsetool, which shows the GPIOs set up as PPS inputs and polls a GPIO for PPS edges through `gps/app/pps`.
 
 `internal/sdpcmd` implements the `sdp` subcommand of satpulsetool. It provides interfaces to manage software-defined pins (SDPs) on PTP hardware clocks, including listing available interfaces and pins, capturing external timestamps, configuring periodic output, and disabling pins.
 
