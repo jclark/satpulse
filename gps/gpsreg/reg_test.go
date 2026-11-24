@@ -223,7 +223,8 @@ func TestCreateConfigProtocols(t *testing.T) {
 		{"zhongke", []Vendor{VendorZhongke}, []string{"*casic.ConfigProtocol"}},
 		{"vendor order ignored", []Vendor{VendorUnicore, VendorZhongke, VendorUblox},
 			[]string{"*ubx.ConfigProtocol", "*casic.ConfigProtocol", "*unc.ConfigProtocol"}},
-		{"all vendors", AllVendors(), []string{"*ubx.ConfigProtocol", "*casic.ConfigProtocol", "*unc.ConfigProtocol"}},
+		{"septentrio", []Vendor{VendorSeptentrio}, []string{"*septentrio.ConfigProtocol"}},
+		{"all vendors", AllVendors(), []string{"*ubx.ConfigProtocol", "*casic.ConfigProtocol", "*unc.ConfigProtocol", "*septentrio.ConfigProtocol"}},
 		{"vendor without protocol", []Vendor{VendorAllystar}, nil},
 	}
 	for _, tc := range tests {

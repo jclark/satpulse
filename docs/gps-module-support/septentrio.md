@@ -15,43 +15,43 @@ SatPulse supports:
 
 - decoding of the SBF packet format (packet format tag is `SBF`)
 - conversion of blocks into the SatPulse device-independent data model
+- high-level configuration; this is experimental and is enabled only when a vendor is explicitly specified {% include new-in.html version="0.4" %}
 - low-level configuration
-  - message files for configuration
+  - message files
   - a `septentrio` response pattern in message files, for correlation of responses
 - [conversion]({%link man/satpulsetool-convobs.1.md%}) of raw observation (MeasEpoch and MeasExtra) blocks into RINEX
-
-[High-level configuration](https://github.com/jclark/satpulse/pull/354) is under development.
 
 SatPulse has been tested with the mosaic-G5 P3.
 
 ## Supported blocks
 
 SatPulse decodes the following SBF blocks.
+The last column says whether high-level configuration can automatically enable output of the block.
 
-| Block | Number | Used for |
-|-------|--------|----------|
-| MeasExtra | 4000 | raw observations |
-| DOP | 4001 | solution quality |
-| PVTCartesian | 4006 | TAI time, ECEF position, ECEF velocity, solution quality, survey |
-| PVTGeodetic | 4007 | TAI time, geodetic position, geodetic velocity, solution quality |
-| SatVisibility | 4012 | decode only |
-| ChannelStatus | 4013 | satellites |
-| ReceiverStatus | 4014 | decode only |
-| MeasEpoch | 4027 | satellite signals, raw observations |
-| GALUtc | 4031 | leap second |
-| QualityInd | 4082 | decode only |
-| RFStatus | 4092 | decode only |
-| BDSUtc | 4121 | leap second |
-| GALAuthStatus | 4245 | decode only |
-| GPSUtc | 5894 | leap second |
-| ReceiverSetup | 5902 | decode only |
-| PosCovCartesian | 5905 | solution quality |
-| PosCovGeodetic | 5906 | solution quality |
-| VelCovCartesian | 5907 | solution quality |
-| VelCovGeodetic | 5908 | solution quality |
-| xPPSOffset | 5911 | time pulse |
-| ReceiverTime | 5914 | TAI time, UTC time |
-| DiffCorrIn | 5919 | corrections usage |
-| EndOfPVT | 5921 | navigation epoch |
-| EndOfMeas | 5922 | decode only |
-| BaseStation | 5949 | corrections usage |
+| Block | Number | Used for | Automatically enabled |
+|-------|--------|----------|-----------------------|
+| MeasExtra | 4000 | raw observations | yes |
+| DOP | 4001 | solution quality | yes |
+| PVTCartesian | 4006 | TAI time, ECEF position, ECEF velocity, solution quality, survey | yes |
+| PVTGeodetic | 4007 | TAI time, geodetic position, geodetic velocity, solution quality | yes |
+| SatVisibility | 4012 | decode only | no |
+| ChannelStatus | 4013 | satellites | yes |
+| ReceiverStatus | 4014 | decode only | no |
+| MeasEpoch | 4027 | satellite signals, raw observations | yes |
+| GALUtc | 4031 | leap second | yes |
+| QualityInd | 4082 | decode only | no |
+| RFStatus | 4092 | decode only | no |
+| BDSUtc | 4121 | leap second | yes |
+| GALAuthStatus | 4245 | decode only | no |
+| GPSUtc | 5894 | leap second | yes |
+| ReceiverSetup | 5902 | decode only | no |
+| PosCovCartesian | 5905 | solution quality | no |
+| PosCovGeodetic | 5906 | solution quality | no |
+| VelCovCartesian | 5907 | solution quality | no |
+| VelCovGeodetic | 5908 | solution quality | no |
+| xPPSOffset | 5911 | time pulse | yes |
+| ReceiverTime | 5914 | TAI time, UTC time | no |
+| DiffCorrIn | 5919 | corrections usage | yes |
+| EndOfPVT | 5921 | navigation epoch | yes |
+| EndOfMeas | 5922 | decode only | no |
+| BaseStation | 5949 | corrections usage | yes |
