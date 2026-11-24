@@ -24,7 +24,7 @@ The *command* must be one of the following.
 : Manage Software Defined Pins (SDPs) of PTP Hardware Clocks (PHCs)
 
 **gpio**
-: List GPIO controllers and the GPIOs set up as PPS inputs.
+: List GPIO controllers and poll a GPIO for PPS edges.
 
 **syncsim**
 : Simulate synchronizing a PHC with a GPS receiver
