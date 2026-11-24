@@ -42,9 +42,24 @@ test('browser wasm runs the session, configuration, messages and serial lifecycl
     test.setTimeout(120_000);
     const errors: string[] = [];
     let sim: ChildProcessWithoutNullStreams | undefined;
-    let pending: number[][] = [];
+    let pending: Buffer[] = [];
     let forwarding = false;
+    let sending = false;
     let stderr = '';
+    // The simulator writes hundreds of small chunks a second. Forwarding each
+    // in its own evaluate lets the round trips fall behind on a slow runner,
+    // delaying every response; one evaluate at a time carrying everything
+    // received meanwhile keeps up at any speed.
+    const flush = () => {
+        if (!forwarding || sending || pending.length === 0) return;
+        const bytes = [...Buffer.concat(pending)];
+        pending = [];
+        sending = true;
+        page.evaluate(b => (window as any).serialInput(b), bytes).catch(() => {}).finally(() => {
+            sending = false;
+            flush();
+        });
+    };
     page.on('pageerror', e => errors.push(e.message));
     await page.exposeFunction('simOpen', () => {
         if (!sim) {
@@ -54,15 +69,12 @@ test('browser wasm runs the session, configuration, messages and serial lifecycl
             ]);
             sim.stderr.on('data', b => { stderr += b.toString(); });
             sim.stdout.on('data', b => {
-                const bytes = [...b];
-                if (forwarding) {
-                    page.evaluate(b => (window as any).serialInput(b), bytes).catch(() => {});
-                } else pending.push(bytes);
+                pending.push(b);
+                flush();
             });
         }
         forwarding = true;
-        for (const b of pending) page.evaluate(b => (window as any).serialInput(b), b).catch(() => {});
-        pending = [];
+        flush();
     });
     await page.exposeFunction('simWrite', (b: number[]) => new Promise<void>((resolve, reject) => {
         sim!.stdin.write(Buffer.from(b), err => err ? reject(err) : resolve());
