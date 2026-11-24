@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jclark/satpulse/gps/app/gpsio"
 	"github.com/jclark/satpulse/gps/app/stream"
 	"github.com/jclark/satpulse/gps/gpsprot"
 	"github.com/jclark/satpulse/gps/lib/opt"
@@ -22,6 +23,13 @@ func TestConfigFeaturesGPIOUsesTimePulse(t *testing.T) {
 	cfg := &Config{GPIO: &GPIOConfig{Name: "GPIO18"}}
 	if got := configFeatures(cfg, false); got&cfgTimePulse == 0 {
 		t.Fatalf("configFeatures = %b, want cfgTimePulse set", got)
+	}
+}
+
+func TestConfigFeaturesSerialPPSUsesTimePulse(t *testing.T) {
+	cfg := &Config{Serial: SerialConfig{PPS: &SerialPPSConfig{Pin: gpsio.SerialPinDCD}}}
+	if got := configFeatures(cfg, false); got&(cfgTimePulse|cfgTimePulseMsg) != cfgTimePulse {
+		t.Fatalf("configFeatures = %b, want cfgTimePulse set and cfgTimePulseMsg clear", got)
 	}
 }
 

@@ -1637,6 +1637,54 @@ func TestPollWindowUncertainty(t *testing.T) {
 	}
 }
 
+// TestReadNextSkipsLateWait checks that readNext waits only when the previous
+// query ended before the next grid point, and that a skipped wait still
+// observes cancellation.
+func TestReadNextSkipsLateWait(t *testing.T) {
+	base := time.Unix(1_000, 0)
+	for _, tc := range []struct {
+		name        string
+		prevEnd     time.Duration
+		canceled    bool
+		expectWaits int
+		expectErr   error
+	}{
+		{"early", 20 * time.Microsecond, false, 1, nil},
+		{"late", 70 * time.Microsecond, false, 0, nil},
+		{"at grid point", 50 * time.Microsecond, false, 0, nil},
+		{"late canceled", 70 * time.Microsecond, true, 0, context.Canceled},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithCancel(context.Background())
+			if tc.canceled {
+				cancel()
+			} else {
+				defer cancel()
+			}
+			waits := 0
+			p := poller{ctx: ctx,
+				r: pulseReaderFunc(func() (bool, error) { return false, nil }),
+				params: PollParams{
+					Now: func() time.Time { return base.Add(100 * time.Microsecond) },
+					Wait: func(context.Context, time.Time, bool) (bool, error) {
+						waits++
+						return true, nil
+					},
+				},
+			}
+			prev := reading{start: base, poll: poll{start: clockReading{stamp: base, mono: base},
+				end: clockReading{stamp: base.Add(tc.prevEnd), mono: base.Add(tc.prevEnd)}}}
+			cur, err := p.readNext(prev, base, 50*time.Microsecond, false)
+			if err != tc.expectErr {
+				t.Fatalf("readNext error = %v, want %v", err, tc.expectErr)
+			}
+			if waits != tc.expectWaits || cur.slept != (waits > 0) {
+				t.Errorf("waits = %d, slept = %v, want %d waits", waits, cur.slept, tc.expectWaits)
+			}
+		})
+	}
+}
+
 func TestReconciledStampIgnoresCoarseMono(t *testing.T) {
 	// Model Windows FILETIME stamps paired with time.Now readings quantized
 	// to 0.5 ms. Only the closing read crosses a tick; reconciling against
