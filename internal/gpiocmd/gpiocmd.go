@@ -11,6 +11,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
@@ -63,18 +64,21 @@ func parseFlags(cmdName string, args []string) (jsonl, help bool, usageFunc func
 // controllerInfo is the listing's description of a GPIO controller.
 type controllerInfo struct {
 	Chip       string    `json:"chip"`
+	Backend    string    `json:"backend,omitempty"`
 	Compatible []string  `json:"compatible"`
-	Family     string    `json:"family,omitempty"`
 	Device     string    `json:"device,omitempty"`
 	Length     int       `json:"length,omitempty"`
 	PPS        []ppsInfo `json:"pps,omitempty"`
 }
 
-// ppsInfo is the listing's description of a GPIO set up as a PPS input.
+// ppsInfo is the listing's description of a GPIO set up as a PPS input: its
+// name and line, or, on a controller that no backend handles, the cells of
+// its GPIO specifier.
 type ppsInfo struct {
-	GPIO   string `json:"gpio"`
-	Line   int    `json:"line"`
-	Device string `json:"device,omitempty"`
+	GPIO   string   `json:"gpio,omitempty"`
+	Line   *int     `json:"line,omitempty"`
+	Cells  []uint32 `json:"cells,omitempty"`
+	Device string   `json:"device,omitempty"`
 }
 
 // controllerInfos converts ctrls for the listing, using ppsDevice to find the
@@ -82,9 +86,13 @@ type ppsInfo struct {
 func controllerInfos(ctrls []gpiomem.Controller, ppsDevice func(node string) string) []controllerInfo {
 	infos := make([]controllerInfo, len(ctrls))
 	for i, c := range ctrls {
-		infos[i] = controllerInfo{Chip: c.Chip, Compatible: c.Compatible, Family: c.Family, Device: c.Device, Length: c.Length}
+		infos[i] = controllerInfo{Chip: c.Chip, Backend: c.Backend, Compatible: c.Compatible, Device: c.Device, Length: c.Length}
 		for _, p := range c.PPS {
-			infos[i].PPS = append(infos[i].PPS, ppsInfo{GPIO: p.Name, Line: p.Line, Device: ppsDevice(p.Node)})
+			pi := ppsInfo{GPIO: p.Name, Cells: p.Cells, Device: ppsDevice(p.Node)}
+			if p.Name != "" {
+				pi.Line = &p.Line
+			}
+			infos[i].PPS = append(infos[i].PPS, pi)
 		}
 	}
 	return infos
@@ -118,21 +126,31 @@ func listControllers(infos []controllerInfo, out io.Writer, jsonl bool) error {
 	return nil
 }
 
-// String formats info as key=value pairs, repeating a key for each value of
-// a list.
+// String formats info as an indented block: the gpiochip, then a line for
+// each field and a block for each PPS input.
 func (info *controllerInfo) String() string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "chip=%s", info.Chip)
-	for _, c := range info.Compatible {
-		fmt.Fprintf(&b, " compatible=%s", c)
+	b.WriteString(info.Chip)
+	if info.Backend != "" {
+		fmt.Fprintf(&b, "\n  backend: %s", info.Backend)
 	}
-	if info.Family != "" {
-		fmt.Fprintf(&b, " family=%s device=%s length=%#x", info.Family, info.Device, info.Length)
+	fmt.Fprintf(&b, "\n  compatible: %s", strings.Join(info.Compatible, ", "))
+	if info.Device != "" {
+		fmt.Fprintf(&b, "\n  device: %s\n  length: %#x", info.Device, info.Length)
 	}
 	for _, p := range info.PPS {
-		fmt.Fprintf(&b, " pps=%s", p.GPIO)
+		b.WriteString("\n  pps:")
+		if p.GPIO != "" {
+			fmt.Fprintf(&b, "\n    gpio: %s\n    line: %d", p.GPIO, *p.Line)
+		} else {
+			cells := make([]string, len(p.Cells))
+			for i, c := range p.Cells {
+				cells[i] = strconv.FormatUint(uint64(c), 10)
+			}
+			fmt.Fprintf(&b, "\n    cells: %s", strings.Join(cells, ", "))
+		}
 		if p.Device != "" {
-			fmt.Fprintf(&b, ":%s", p.Device)
+			fmt.Fprintf(&b, "\n    device: %s", p.Device)
 		}
 	}
 	return b.String()
