@@ -61,7 +61,7 @@ func TestParseFlags(t *testing.T) {
 func TestSelectGPIO(t *testing.T) {
 	ctrls := []gpiomem.Controller{
 		{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
-			PPS: []gpiomem.PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}, {Name: "GPIO4", Line: 4, Node: "/pps@4"}}},
+			PPS: []gpiomem.PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}, {Name: "GPIO4", Line: 4, Node: "/pps@4"}, {Cells: []uint32{60, 0}, Node: "/pps@60"}}},
 		{Node: "/soc@107c000000/gpio@7d508500", Compatible: []string{"brcm,brcmstb-gpio"}},
 	}
 	tests := []struct {
@@ -78,6 +78,11 @@ func TestSelectGPIO(t *testing.T) {
 		{
 			name:   "not a PPS input",
 			gpio:   gpiomem.GPIO{Name: "GPIO5", Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Line: 5},
+			expect: []gpiomem.Controller{{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000}},
+		},
+		{
+			name:   "line 0 beside an unnamed input",
+			gpio:   gpiomem.GPIO{Name: "GPIO0", Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Line: 0},
 			expect: []gpiomem.Controller{{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000}},
 		},
 	}
