@@ -17,6 +17,7 @@ kind of task. Read only the file for the task at hand.
 | Which serial ports exist, what is plugged into each, what speed a receiver runs at, what it is sending, whether PPS arrives on a modem-control pin (CTS, DCD, DSR, RI) | `serial.md` |
 | Whether PPS arrives on a PHC software-defined pin (SDP), or generating a pulse on one | `sdp.md` |
 | Show receiver info, query or change receiver configuration, send a command to a receiver | `gps.md` (which routes to `gps-highlevel.md`, `gps-msgfile.md`, or `gps-adhoc.md`) |
+| Which GPIO pin is set up as a PPS input, and its `/dev/ppsN`; whether PPS arrives on a GPIO pin | satpulsetool-gpio(1) (no separate file) |
 | Decode one packet | `decode.md` |
 | Anything with a JSONL packet log: see it decoded, see the events it produces, check a decoding change against captures, filter it, or turn it into a byte stream or back | `packetlog.md` |
 
@@ -67,8 +68,8 @@ for a while has `-t N` (seconds) instead; always give it when capturing.
 `--packet-log FILE` overwrites an existing file, so use a new filename each
 time.
 
-Exit status 2 from `serial` and `sdp` means no data found (no ports, no
-packets, no edges, no timestamps), not an error.
+Exit status 2 from `serial`, `sdp` and `gpio` means no data found (no ports,
+no packets, no edges, no timestamps, no GPIO controllers), not an error.
 
 ## Confirm with the user first
 
@@ -82,4 +83,5 @@ agreeing to that specific action:
 ## Reference
 
 Man pages: satpulsetool(1), satpulsetool-serial(1), satpulsetool-gps(1),
-satpulsetool-sdp(1), satpulsetool-pack(1), satpulsetool-scan(1). Message files live in `/usr/share/satpulse/gpsmsg`.
+satpulsetool-sdp(1), satpulsetool-gpio(1), satpulsetool-pack(1),
+satpulsetool-scan(1). Message files live in `/usr/share/satpulse/gpsmsg`.

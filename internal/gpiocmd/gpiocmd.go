@@ -2,29 +2,45 @@
 
 // Package gpiocmd implements the gpio subcommand of satpulsetool, which lists
 // the GPIO controllers of the system and the GPIOs the device tree sets up as
-// PPS inputs.
+// PPS inputs, or polls a GPIO for PPS edges.
 package gpiocmd
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
+	"math"
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/jclark/satpulse/gps/app/cmd"
+	"github.com/jclark/satpulse/gps/app/pps"
 	"github.com/jclark/satpulse/gps/lib/gpiomem"
 	"github.com/jclark/satpulse/gps/lib/kpps"
+	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/spf13/pflag"
 )
 
-const summary = `[-h|--help] [-j|--jsonl]`
+type flagVars struct {
+	name    string
+	poll    bool
+	cfg     pps.GPIOConfig
+	timeout time.Duration
+	jsonl   bool
+}
+
+const summary = `[-h|--help] [-j|--jsonl] [-p|--pps] [--cpu N] [--priority N]
+            [-t|--timeout seconds] [name]`
+
+const defaultTimeout = 10 * time.Second
 
 // Cmd executes the gpio subcommand with the given arguments.
 func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, args []string) (usage string, err error) {
-	jsonl, help, usageFunc, err := parseFlags(cmdName, args)
+	v, help, usageFunc, err := parseFlags(cmdName, args)
 	if err != nil {
 		return usageFunc(progName), err
 	}
@@ -32,9 +48,84 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		return usageFunc(progName), nil
 	}
 	lg := cmd.NewDefaultLogger(logWriter, logLevel)
+	if !v.poll {
+		return "", list(lg, v)
+	}
+	ctx, cancel := cmd.CancelOnSignal(context.Background(), lg)
+	defer cancel()
+	return "", pollPPS(ctx, lg, v, os.Stdout)
+}
+
+func parseFlags(cmdName string, args []string) (v flagVars, help bool, usageFunc func(string) string, err error) {
+	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
+	flags.SortFlags = false
+	var cpu int
+	var timeoutSec float64
+	flags.BoolVarP(&help, "help", "h", false, "show usage help for the gpio command")
+	flags.BoolVarP(&v.jsonl, "jsonl", "j", false, "write output in JSON Lines format")
+	flags.BoolVarP(&v.poll, "pps", "p", false, "poll the GPIO for PPS edges and print the time of each")
+	flags.IntVar(&cpu, "cpu", 0, "run the poller on CPU `N`")
+	flags.IntVar(&v.cfg.Priority, "priority", 0, "run the poller at SCHED_FIFO priority `N` (1 to 99; 0 = normal priority)")
+	flags.Float64VarP(&timeoutSec, "timeout", "t", defaultTimeout.Seconds(), "stop polling after `seconds` (0 = until interrupted)")
+	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
+	if err = flags.Parse(args); err != nil || help {
+		return
+	}
+	if flags.NArg() > 1 {
+		err = fmt.Errorf("too many arguments: expected at most one GPIO name, got %d", flags.NArg())
+		return
+	}
+	if flags.NArg() == 1 {
+		if v.name = flags.Arg(0); v.name == "" {
+			err = fmt.Errorf("GPIO name must not be empty")
+			return
+		}
+	}
+	if !v.poll {
+		for _, name := range []string{"cpu", "priority", "timeout"} {
+			if flags.Changed(name) {
+				err = fmt.Errorf("--%s requires --pps", name)
+				return
+			}
+		}
+		return
+	}
+	if flags.Changed("cpu") {
+		if cpu < 0 {
+			err = fmt.Errorf("--cpu must not be negative")
+			return
+		}
+		v.cfg.CPU = &cpu
+	}
+	if v.cfg.Priority < 0 || v.cfg.Priority > 99 {
+		err = fmt.Errorf("--priority must be from 0 to 99")
+		return
+	}
+	if math.IsNaN(timeoutSec) || math.IsInf(timeoutSec, 0) {
+		err = fmt.Errorf("--timeout must be finite")
+	} else if timeoutSec < 0 {
+		err = fmt.Errorf("--timeout must not be negative")
+	} else if timeoutSec >= float64(math.MaxInt64)/float64(time.Second) {
+		err = fmt.Errorf("--timeout is too large")
+	} else if v.timeout = ptime.Seconds(timeoutSec); timeoutSec > 0 && v.timeout == 0 {
+		err = fmt.Errorf("--timeout is too small")
+	}
+	return
+}
+
+// list prints the GPIO controllers, or, if v names a GPIO, the controller
+// that has it.
+func list(lg *slog.Logger, v flagVars) error {
 	ctrls, err := gpiomem.List()
 	if err != nil {
-		return "", err
+		return err
+	}
+	if v.name != "" && len(ctrls) > 0 {
+		gpio, err := gpiomem.Lookup(v.name)
+		if err != nil {
+			return err
+		}
+		ctrls = selectGPIO(ctrls, gpio)
 	}
 	ppsDevice := func(node string) string {
 		device, err := kpps.DevicePathForGPIONode(node)
@@ -43,22 +134,26 @@ func Cmd(logWriter io.Writer, logLevel slog.Level, progName, cmdName string, arg
 		}
 		return device
 	}
-	return "", listControllers(controllerInfos(ctrls, ppsDevice), os.Stdout, jsonl)
+	return listControllers(controllerInfos(ctrls, ppsDevice), os.Stdout, v.jsonl)
 }
 
-func parseFlags(cmdName string, args []string) (jsonl, help bool, usageFunc func(string) string, err error) {
-	flags := pflag.NewFlagSet(cmdName, pflag.ContinueOnError)
-	flags.SortFlags = false
-	flags.BoolVarP(&help, "help", "h", false, "show usage help for the gpio command")
-	flags.BoolVarP(&jsonl, "jsonl", "j", false, "write output in JSON Lines format")
-	usageFunc = cmd.UsageFunc(cmdName, summary, flags)
-	if err = flags.Parse(args); err != nil || help {
-		return
+// selectGPIO restricts ctrls to the controller that has gpio, and that
+// controller's PPS inputs to gpio.
+func selectGPIO(ctrls []gpiomem.Controller, gpio gpiomem.GPIO) []gpiomem.Controller {
+	for _, c := range ctrls {
+		if c.Node != gpio.Node {
+			continue
+		}
+		var inputs []gpiomem.PPS
+		for _, p := range c.PPS {
+			if p.Name != "" && p.Line == gpio.Line {
+				inputs = append(inputs, p)
+			}
+		}
+		c.PPS = inputs
+		return []gpiomem.Controller{c}
 	}
-	if flags.NArg() != 0 {
-		err = fmt.Errorf("gpio command does not accept positional arguments")
-	}
-	return
+	return nil
 }
 
 // controllerInfo is the listing's description of a GPIO controller.

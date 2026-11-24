@@ -16,9 +16,9 @@
 // the name of the GPIO a PPS signal is on.
 //
 // The package does not configure the GPIO: it must already be an input, as
-// the pps-gpio overlay makes it. Opening a GPIO and listing controllers are
-// implemented for 64-bit Arm Linux only; elsewhere Open and List return an error
-// wrapping errors.ErrUnsupported.
+// the pps-gpio overlay makes it. Opening or looking up a GPIO and listing
+// controllers are implemented for 64-bit Arm Linux only; elsewhere Open, Lookup
+// and List return an error wrapping errors.ErrUnsupported.
 package gpiomem
 
 import (
@@ -36,6 +36,36 @@ import (
 
 // backends lists the backends.
 var backends = []backend.Backend{bcm2835.Backend{}, rp1.Backend{}}
+
+// GPIO identifies a GPIO of the running system, as Lookup finds it.
+type GPIO struct {
+	Name string // the SoC's name for the GPIO, such as "GPIO18"
+	Node string // the device-tree node of its controller, such as "/soc/gpio@7e200000"
+	Line int    // its line on the controller
+}
+
+// lookup finds the GPIO called name among ctrls, the GPIO controllers on the
+// system, returning the backend and the controller that has it. The name
+// in the GPIO is the SoC's, whatever the case of name.
+func lookup(ctrls []backend.Controller, name string) (backend.Backend, backend.Controller, GPIO, error) {
+	upper, err := upperName(name)
+	if err != nil {
+		return nil, backend.Controller{}, GPIO{}, err
+	}
+	be, ctrls, err := findBackend(ctrls)
+	if err != nil {
+		return nil, backend.Controller{}, GPIO{}, err
+	}
+	i, line, err := be.Lookup(upper, ctrls)
+	if err != nil {
+		return nil, backend.Controller{}, GPIO{}, fmt.Errorf("%s: %w", name, err)
+	}
+	canon, ok := be.GPIOName(ctrls, i, line)
+	if !ok {
+		panic(fmt.Sprintf("gpiomem: %s has no name for line %d it looked up", be.Name(), line))
+	}
+	return be, ctrls[i], GPIO{Name: canon, Node: ctrls[i].Node, Line: line}, nil
+}
 
 // upperName checks that name is a non-empty ASCII string and returns it in
 // upper case, the form the backends parse.

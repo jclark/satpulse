@@ -99,6 +99,41 @@ func TestFindBackend(t *testing.T) {
 	}
 }
 
+func TestLookup(t *testing.T) {
+	tests := []struct {
+		name       string
+		ctrls      []backend.Controller
+		input      string
+		expectCtrl backend.Controller
+		expect     GPIO
+		expectErr  bool
+	}{
+		{name: "Pi 5", ctrls: pi5Ctrls, input: "gpio18", expectCtrl: pi5Ctrls[0], expect: GPIO{Name: "GPIO18", Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Line: 18}},
+		{name: "Pi 3", ctrls: pi3Ctrls, input: "GPIO4", expectCtrl: pi3Ctrls[2], expect: GPIO{Name: "GPIO4", Node: "/soc/gpio@7e200000", Line: 4}},
+		{name: "out of range", ctrls: pi5Ctrls, input: "GPIO54", expectErr: true},
+		{name: "not a GPIO name", ctrls: pi5Ctrls, input: "pin12", expectErr: true},
+		{name: "empty", ctrls: pi5Ctrls, input: "", expectErr: true},
+		{name: "unsupported controller", ctrls: rk3568Ctrls, input: "GPIO18", expectErr: true},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			_, ctrl, got, err := lookup(tc.ctrls, tc.input)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatalf("expected error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if !reflect.DeepEqual(ctrl, tc.expectCtrl) || got != tc.expect {
+				t.Errorf("got  %+v %+v\nwant %+v %+v", ctrl, got, tc.expectCtrl, tc.expect)
+			}
+		})
+	}
+}
+
 func TestCompatibles(t *testing.T) {
 	tests := []struct {
 		name   string

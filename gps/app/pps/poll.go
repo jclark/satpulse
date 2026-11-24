@@ -124,7 +124,7 @@ func Poll(ctx context.Context, lg *slog.Logger, r PulseReader, params PollParams
 	if prev, err := osthread.SetTimerSlack(time.Nanosecond); err == nil {
 		defer osthread.SetTimerSlack(prev)
 	} else if !errors.Is(err, errors.ErrUnsupported) {
-		lg.Debug("serial PPS could not tighten timer slack", "err", err)
+		lg.Debug("PPS poll could not tighten timer slack", "err", err)
 	}
 	stats.begin()
 	if params.InitialPolls == 0 {
@@ -207,7 +207,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 				spacing = coarse
 				p.gridOffset = -initialPolls * spacing / 2
 			} else if spacing != coarse {
-				p.lg.Debug("serial PPS pulse lost, restarting acquisition", "window", window)
+				p.lg.Debug("PPS poll pulse lost, restarting acquisition", "window", window)
 				return 0, false, nil
 			}
 			confirming = false
@@ -218,7 +218,7 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 				fine = true
 				spacing = min(spacing, max(maxWindow/startupPolls, minSpacing))
 				p.gridOffset = -maxWindow / 2
-				p.lg.Debug("serial PPS startup fine sweep", "spacing", spacing)
+				p.lg.Debug("PPS poll startup fine sweep", "spacing", spacing)
 			}
 			continue
 		}
@@ -244,13 +244,13 @@ func (p *poller) acquire() (time.Duration, bool, error) {
 		}
 		spacing = max(spacing/time.Duration(divisor), minSpacing)
 		if spacing == minSpacing {
-			p.lg.Debug("serial PPS poll window reached spacing floor", "window", initialPolls*spacing)
+			p.lg.Debug("PPS poll window reached spacing floor", "window", initialPolls*spacing)
 			break
 		}
-		p.lg.Debug("serial PPS poll window reduced", "window", initialPolls*spacing, "divisor", divisor)
+		p.lg.Debug("PPS poll window reduced", "window", initialPolls*spacing, "divisor", divisor)
 	}
 	window := initialPolls * spacing
-	p.lg.Debug("serial PPS acquired", "window", window, "bracket", p.lastBracket)
+	p.lg.Debug("PPS poll acquired", "window", window, "bracket", p.lastBracket)
 	return window, true, nil
 }
 
@@ -442,9 +442,9 @@ func (p *poller) reportTrackEvent(e trackEvent) {
 func (p *poller) logTrackEvent(e trackEvent) {
 	switch e.kind {
 	case trackStarted:
-		p.lg.Info("serial PPS track status", "reason", "start", "extent", e.extent)
+		p.lg.Info("PPS poll track status", "reason", "start", "extent", e.extent)
 	case trackChanged:
-		p.lg.Info("serial PPS track status", "reason", "shrink",
+		p.lg.Info("PPS poll track status", "reason", "shrink",
 			"extent", e.extent, "nextExtent", e.nextExtent,
 			"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
 			"predictionError", e.observation.predictionError)
@@ -457,7 +457,7 @@ func (p *poller) logTrackEvent(e trackEvent) {
 
 // logTrackFailure logs a miss or a loss, which share their attributes.
 func (p *poller) logTrackFailure(reason string, e trackEvent) {
-	p.lg.Info("serial PPS track status", "reason", reason,
+	p.lg.Info("PPS poll track status", "reason", reason,
 		"extent", e.extent, "nextExtent", e.nextExtent,
 		"stateReads", e.observation.stateReads, "bracket", e.observation.bracket,
 		"failures", e.failures)
@@ -579,7 +579,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (o out
 		}
 		edge, missed = classify(prev, cur, deadline)
 	}
-	p.lg.Debug("serial PPS poll window", "tracking", acquired, "caught", !edge.stamp.IsZero(),
+	p.lg.Debug("PPS poll window", "tracking", acquired, "caught", !edge.stamp.IsZero(),
 		"window", window, "spacing", spacing, "stateReads", p.stateReads,
 		"lead", lead, "wakeLate", first.start.Sub(start), "firstEndFromOpen", first.poll.end.mono.Sub(open),
 		"firstPollWidth", first.poll.duration(), "firstInPulse", first.inPulse,
@@ -608,7 +608,7 @@ func (p *poller) pollWindow(window, spacing time.Duration, acquired bool) (o out
 	// "late" is how far past its scheduled time the catching poll started:
 	// sleep overshoot when the loop is sleep-paced, queue debt when the queries
 	// pace it.
-	p.lg.Debug("serial PPS caught edge", "window", window, "bracket", p.lastBracket,
+	p.lg.Debug("PPS poll caught edge", "window", window, "bracket", p.lastBracket,
 		"uncertainty", uncertainty, "pollWidths", pollWidths,
 		"predictionError", predictionError, "late", cur.start.Sub(cur.sched), "stateReads", p.stateReads,
 		"reject", reject)
@@ -729,7 +729,7 @@ func (p *poller) wait(t time.Time, precise bool) (bool, error) {
 // scheduled time was already past, or, for a wait that is not precise, nearer
 // than the runtime timer can sleep to. A precise wait always ends at the
 // deadline: the runtime timer takes the whole milliseconds, so the wait stays
-// cancellable, and sleepRemainder takes the rest, which is all of it when the
+// cancellable, and sleepUntil takes the rest, which is all of it when the
 // wait is shorter than the timer's resolution.
 func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	slept := false
@@ -745,8 +745,11 @@ func waitUntil(ctx context.Context, t time.Time, precise bool) (bool, error) {
 	} else if err := ctx.Err(); err != nil {
 		return false, err
 	}
-	if precise && sleepRemainder(t) {
-		slept = true
+	if precise {
+		// A failed remainder sleep only makes the reads pace the wait.
+		if ok, _ := sleepUntil(t); ok {
+			slept = true
+		}
 	}
 	return slept, nil
 }
