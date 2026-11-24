@@ -16,9 +16,9 @@
 // the name of the GPIO a PPS signal is on.
 //
 // The package does not configure the GPIO: it must already be an input, as
-// the pps-gpio overlay makes it. Opening a GPIO and listing controllers are
-// implemented for 64-bit Linux only; elsewhere Open and List return an error
-// wrapping errors.ErrUnsupported.
+// the pps-gpio overlay makes it. Opening or looking up a GPIO and listing
+// controllers are implemented for 64-bit Linux only; elsewhere Open, Lookup
+// and List return an error wrapping errors.ErrUnsupported.
 package gpiomem
 
 import (
@@ -36,6 +36,36 @@ import (
 
 // socs lists the supported SoC families.
 var socs = []soc.SoC{bcm2835.SoC{}, rp1.SoC{}}
+
+// GPIO identifies a GPIO of the running system, as Lookup finds it.
+type GPIO struct {
+	Name string // the SoC's name for the GPIO, such as "GPIO18"
+	Chip string // the gpiochip of its controller, such as "gpiochip0"
+	Line int    // its line on the controller
+}
+
+// lookup finds the GPIO called name among ctrls, the GPIO controllers on the
+// system, returning the SoC family and the controller that has it. The name
+// in the GPIO is the SoC's, whatever the case of name.
+func lookup(ctrls []soc.Controller, name string) (soc.SoC, soc.Controller, GPIO, error) {
+	upper, err := upperName(name)
+	if err != nil {
+		return nil, soc.Controller{}, GPIO{}, err
+	}
+	s, ctrls, err := findSoC(ctrls)
+	if err != nil {
+		return nil, soc.Controller{}, GPIO{}, err
+	}
+	i, line, err := s.Lookup(upper, ctrls)
+	if err != nil {
+		return nil, soc.Controller{}, GPIO{}, fmt.Errorf("%s: %w", name, err)
+	}
+	canon, ok := s.Name(ctrls, i, line)
+	if !ok {
+		panic(fmt.Sprintf("gpiomem: %s has no name for line %d it looked up", s.Family(), line))
+	}
+	return s, ctrls[i], GPIO{Name: canon, Chip: ctrls[i].Chip, Line: line}, nil
+}
 
 // upperName checks that name is a non-empty ASCII string and returns it in
 // upper case, the form the SoC family packages parse.

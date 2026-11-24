@@ -34,6 +34,11 @@ func (*Pin) Close() error {
 	return errNotSupported
 }
 
+// Lookup reports that looking up a GPIO is not supported on this platform.
+func Lookup(string) (GPIO, error) {
+	return GPIO{}, errNotSupported
+}
+
 // List reports that listing GPIO controllers is not supported on this
 // platform.
 func List() ([]Controller, error) {
