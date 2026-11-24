@@ -161,7 +161,8 @@ func TestDescribe(t *testing.T) {
 			ctrls: pi5[:1],
 			nodes: []ppsNode{{path: "/pps@", gpios: []uint32{0x2e, 54, 0}}},
 			expect: []Controller{
-				rp1,
+				{Node: "/axi/pcie@1000120000/rp1/gpio@d0000", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
+					PPS: []PPS{{Cells: []uint32{54, 0}, Node: "/pps@"}}},
 			},
 		},
 		{

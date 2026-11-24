@@ -132,8 +132,9 @@ type Controller struct {
 
 // PPS is a GPIO that a pps-gpio node of the device tree uses for its pulses.
 // On a controller that a backend handles, the GPIO is given by its Name and
-// Line; on any other, by the Cells of its GPIO specifier, whose meaning the
-// controller's binding defines.
+// Line; on any other, or if the backend has no name for the line, by the
+// Cells of its GPIO specifier, whose meaning the controller's binding
+// defines.
 type PPS struct {
 	Name  string   // the SoC's name for the GPIO, such as "GPIO18"
 	Line  int      // the GPIO's line on its controller
@@ -152,7 +153,8 @@ type ppsNode struct {
 // backends that handle them, with chips, which maps the path of a node to its
 // gpiochips, and with nodes, its pps-gpio nodes, whose GPIOs providers
 // resolves to controllers. In the binding of every backend's controllers the
-// first cell of a GPIO specifier is the line.
+// first cell of a GPIO specifier is the line; a line the backend has no name
+// for is left as its cells.
 func describe(ctrls []backend.Controller, providers map[uint32]provider, chips map[string][]string, nodes []ppsNode) []Controller {
 	list := make([]Controller, len(ctrls))
 	for i, c := range ctrls {
@@ -182,17 +184,15 @@ func describe(ctrls []backend.Controller, providers map[uint32]provider, chips m
 			c := &list[i]
 			c.Backend = be.Name()
 			c.Device, c.Length = be.GPIOMem()
-			var pps []PPS
-			for _, p := range c.PPS {
+			for k, p := range c.PPS {
 				if len(p.Cells) == 0 {
 					continue
 				}
 				line := int(p.Cells[0])
 				if name, ok := be.GPIOName(backendCtrls, j, line); ok {
-					pps = append(pps, PPS{Name: name, Line: line, Node: p.Node})
+					c.PPS[k] = PPS{Name: name, Line: line, Node: p.Node}
 				}
 			}
-			c.PPS = pps
 		}
 	}
 	return list
