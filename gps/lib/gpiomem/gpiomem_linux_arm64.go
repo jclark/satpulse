@@ -65,19 +65,15 @@ func Lookup(name string) (GPIO, error) {
 	return gpio, err
 }
 
-// List describes the GPIO controllers of the running system, in the order of
-// their nodes in the device tree. It reads only the device tree, /dev and
+// List describes the GPIO controllers of the running system, sorted by the
+// paths of their device-tree nodes. It reads only the device tree, /dev and
 // sysfs, so it needs no privileges.
 func List() ([]Controller, error) {
 	ctrls, nodes, err := scan()
 	if err != nil {
 		return nil, err
 	}
-	chips, err := gpiochips()
-	if err != nil {
-		return nil, err
-	}
-	return describe(ctrls, chips, nodes), nil
+	return describe(ctrls, gpiochips(ctrls), nodes), nil
 }
 
 // deviceTree is the path through which sysfs-firmware-ofw says userspace
@@ -119,6 +115,12 @@ func scan() ([]backend.Controller, []ppsNode, error) {
 		dir := filepath.Dir(path)
 		switch d.Name() {
 		case "gpio-controller":
+			// A property of another meaning, such as an alias, can have this
+			// name; the controller's property is empty.
+			b, err := property(dir, "gpio-controller")
+			if err != nil || len(b) != 0 {
+				return err
+			}
 			ctrl, err := controller(dir)
 			if err != nil {
 				return err
@@ -184,35 +186,33 @@ func controller(dir string) (backend.Controller, error) {
 }
 
 // property reads the property called name of the device-tree node at dir,
-// returning nil if the node does not have it.
+// returning nil if the node does not have it. A child node of that name is
+// not the property. A property whose node an overlay removes while it is
+// being read gives ENODEV.
 func property(dir, name string) ([]byte, error) {
 	b, err := os.ReadFile(filepath.Join(dir, name))
-	if errors.Is(err, fs.ErrNotExist) {
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, unix.EISDIR) || errors.Is(err, unix.ENODEV) {
 		return nil, nil
 	}
 	return b, err
 }
 
-// gpiochips finds the gpiochips of the GPIO controllers, mapping the path of
-// a device-tree node to the names of its gpiochips in numeric order. It finds
-// them by the route the kernel documents as ABI: the character devices
-// /dev/gpiochipN (ABI/testing/gpio-cdev), the sysfs directory of each
-// device's number (ABI/testing/sysfs-dev), and its of_node link to its node
-// (ABI/stable/sysfs-devices), resolved against the device tree's root. A
-// symlink, such as the /dev/gpiochip4 Raspberry Pi OS adds on a Pi 5, is not
-// a gpiochip of its own.
-func gpiochips() (map[string][]string, error) {
-	root, err := filepath.EvalSymlinks(deviceTree)
-	if errors.Is(err, fs.ErrNotExist) {
-		return nil, nil
+// gpiochips finds the gpiochips of ctrls, mapping the path of a controller's
+// node to the names of its gpiochips in numeric order. It finds them by the
+// route the kernel documents as ABI: the character devices /dev/gpiochipN
+// (ABI/testing/gpio-cdev), the sysfs directory of each device's number
+// (ABI/testing/sysfs-dev), and its of_node link to its node
+// (ABI/stable/sysfs-devices), which is matched with a controller's node by
+// file identity. A symlink, such as the /dev/gpiochip4 Raspberry Pi OS adds
+// on a Pi 5, is not a gpiochip of its own. The gpiochips only inform, so one
+// that cannot be inspected is left out.
+func gpiochips(ctrls []backend.Controller) map[string][]string {
+	nodes := make([]fs.FileInfo, len(ctrls))
+	for i, c := range ctrls {
+		nodes[i], _ = os.Stat(filepath.Join(deviceTree, c.Node))
 	}
-	if err != nil {
-		return nil, err
-	}
-	paths, err := filepath.Glob("/dev/gpiochip[0-9]*")
-	if err != nil {
-		return nil, err
-	}
+	// The pattern is valid, so Glob returns no error.
+	paths, _ := filepath.Glob("/dev/gpiochip[0-9]*")
 	// With the digits checked below, shorter is smaller.
 	slices.SortFunc(paths, func(a, b string) int { return cmp.Or(cmp.Compare(len(a), len(b)), strings.Compare(a, b)) })
 	chips := make(map[string][]string)
@@ -222,27 +222,21 @@ func gpiochips() (map[string][]string, error) {
 			continue
 		}
 		var st unix.Stat_t
-		if err := unix.Lstat(path, &st); err != nil {
-			if errors.Is(err, fs.ErrNotExist) {
-				continue
-			}
-			return nil, fmt.Errorf("%s: %w", path, err)
-		}
-		if st.Mode&unix.S_IFMT != unix.S_IFCHR {
+		if unix.Lstat(path, &st) != nil || st.Mode&unix.S_IFMT != unix.S_IFCHR {
 			continue
 		}
-		dir, err := filepath.EvalSymlinks(fmt.Sprintf("/sys/dev/char/%d:%d/of_node", unix.Major(st.Rdev), unix.Minor(st.Rdev)))
-		if errors.Is(err, fs.ErrNotExist) {
-			continue
-		}
+		info, err := os.Stat(fmt.Sprintf("/sys/dev/char/%d:%d/of_node", unix.Major(st.Rdev), unix.Minor(st.Rdev)))
 		if err != nil {
-			return nil, err
+			continue
 		}
-		if node, ok := strings.CutPrefix(dir, root); ok && strings.HasPrefix(node, "/") {
-			chips[node] = append(chips[node], chip)
+		for i, n := range nodes {
+			// SameFile is false for a node whose Stat failed.
+			if os.SameFile(n, info) {
+				chips[ctrls[i].Node] = append(chips[ctrls[i].Node], chip)
+			}
 		}
 	}
-	return chips, nil
+	return chips
 }
 
 // High reports whether the GPIO currently reads high.
