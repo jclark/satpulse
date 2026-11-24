@@ -5,6 +5,7 @@ _Not yet released_
 - The `[phc]` table in `satpulse.toml` has a new `device` key, which lets `satpulsed` use a PHC that is not associated with a network interface; `satpulsetool sdp` now allows the path of a PHC (e.g. `/dev/ptp1`) as an alternative to an interface name. (#539)
 - `satpulsed` can send NTP samples with PHC drivers that do not support `PTP_SYS_OFFSET_EXTENDED` (such as stmmac before Linux 7.4). (#547)
 - The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
+- `satpulsetool` has a new `gpio` command, which lists the GPIO controllers of the system and, for a supported SoC, the name of each GPIO that a `pps-gpio` device-tree node uses as a PPS input. (#460)
 - FreeBSD support is improved. NTP SHM, kernel PPS and serial enumeration now support FreeBSD. There is also an rc.d script. (#426)
 
 ## Changes in 0.3
