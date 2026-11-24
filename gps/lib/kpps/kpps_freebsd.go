@@ -26,22 +26,6 @@ type Source struct {
 	closed atomic.Bool
 }
 
-// errNoDevices reports that FreeBSD has no PPS devices of the kind
-// ListDevices and Open handle: its sources are created on TTY descriptors.
-var errNoDevices = fmt.Errorf("kernel PPS devices: %w", errors.ErrUnsupported)
-
-// ListDevices reports that listing kernel PPS devices is not supported on
-// FreeBSD.
-func ListDevices() ([]Device, error) {
-	return nil, errNoDevices
-}
-
-// Open reports that opening a kernel PPS device by path is not supported on
-// FreeBSD; use OpenFD on a TTY descriptor.
-func Open(string) (*Source, error) {
-	return nil, errNoDevices
-}
-
 // fetchSlice bounds each blocking PPS_FETCH ioctl. The kernel wait cannot be
 // interrupted from user space, so a waiting Fetch sleeps in bounded slices
 // and rechecks between them; Close makes it fail within one slice.

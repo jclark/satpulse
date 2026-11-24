@@ -14,13 +14,9 @@ import (
 
 const sysClassPPS = "/sys/class/pps"
 
-// ListDevices returns the kernel PPS devices in /sys/class/pps, in name
-// order. A device whose attributes cannot be read, because it was
-// unregistered during the scan, is left out.
-func ListDevices() ([]Device, error) {
-	return listDevices(sysClassPPS)
-}
-
+// listDevices returns the kernel PPS devices in sysDir, in name order. A
+// device whose attributes cannot be read, because it was unregistered during
+// the scan, is left out.
 func listDevices(sysDir string) ([]Device, error) {
 	entries, err := os.ReadDir(sysDir)
 	if err != nil {

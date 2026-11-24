@@ -36,7 +36,6 @@ install -D -m 644 out/satpulsetool-pack.1.gz %{buildroot}/usr/share/man/man1/sat
 install -D -m 644 out/satpulsetool-scan.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-scan.1.gz
 install -D -m 644 out/satpulsetool-sdp.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-sdp.1.gz
 install -D -m 644 out/satpulsetool-gpio.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-gpio.1.gz
-install -D -m 644 out/satpulsetool-pps.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-pps.1.gz
 install -D -m 644 out/satpulsetool-syncsim.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-syncsim.1.gz
 install -D -m 644 out/satpulsetool-convobs.1.gz %{buildroot}/usr/share/man/man1/satpulsetool-convobs.1.gz
 install -D -m 644 out/satpulsewb.1.gz %{buildroot}/usr/share/man/man1/satpulsewb.1.gz
@@ -71,7 +70,6 @@ fi
 /usr/share/man/man1/satpulsetool-scan.1.gz
 /usr/share/man/man1/satpulsetool-sdp.1.gz
 /usr/share/man/man1/satpulsetool-gpio.1.gz
-/usr/share/man/man1/satpulsetool-pps.1.gz
 /usr/share/man/man1/satpulsetool-syncsim.1.gz
 /usr/share/man/man1/satpulsetool-convobs.1.gz
 /usr/share/man/man1/satpulsewb.1.gz
