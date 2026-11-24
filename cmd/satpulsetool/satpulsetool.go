@@ -106,6 +106,7 @@ var descriptions = []struct {
 	{"serial", "examine serial ports"},
 	{"sdp", "control software-defined pins on PTP hardware clocks"},
 	{"gpio", "list GPIO controllers and the GPIOs set up as PPS inputs"},
+	{"pps", "examine kernel PPS devices and poll GPIOs for PPS edges"},
 	{"syncsim", "run clock synchronization simulation"},
 	{"ubxsim", "run u-blox receiver simulation"},
 	{"convobs", "convert raw and JSON observations"},

@@ -6,6 +6,14 @@ package kpps
 
 import "time"
 
+// Device describes a kernel PPS device as Linux registers it in sysfs.
+type Device struct {
+	Path       string // the device node, /dev/ppsN
+	Name       string // the sysfs name attribute: the source name the driver registered
+	SourcePath string // the sysfs path attribute: the source's device path, such as a tty; empty for most drivers
+	Mode       Mode   // the sysfs mode attribute: the capabilities, as GetCap reports them
+}
+
 // Mode is a set of RFC 2783 mode bits. GetCap can return mode bits for which
 // this package does not define a name.
 type Mode uint32
@@ -15,6 +23,10 @@ const (
 	CaptureAssert Mode = 0x01
 	// CaptureClear is the mode bit for clear-edge capture.
 	CaptureClear Mode = 0x02
+	// EchoAssert is the mode bit for feeding assert edges back to an output.
+	EchoAssert Mode = 0x40
+	// EchoClear is the mode bit for feeding clear edges back to an output.
+	EchoClear Mode = 0x80
 )
 
 // Edge describes the most recently captured edge of one polarity.

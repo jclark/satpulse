@@ -26,6 +26,9 @@ The *command* must be one of the following.
 **gpio**
 : List GPIO controllers and the GPIOs set up as PPS inputs.
 
+**pps**
+: Examine kernel PPS devices and poll GPIOs for PPS edges.
+
 **syncsim**
 : Simulate synchronizing a PHC with a GPS receiver
 
@@ -78,4 +81,4 @@ Show help for satpulsetool gps command:
 
 # SEE ALSO
 
-**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-serial(1)**, **satpulsetool-pack(1)**, **satpulsetool-scan(1)**, **satpulsetool-sdp(1)**, **satpulsetool-gpio(1)**, **satpulsetool-syncsim(1)**, **satpulsetool-convobs(1)**
+**satpulsed(8)**, **satpulsetool-gps(1)**, **satpulsetool-serial(1)**, **satpulsetool-pack(1)**, **satpulsetool-scan(1)**, **satpulsetool-sdp(1)**, **satpulsetool-gpio(1)**, **satpulsetool-pps(1)**, **satpulsetool-syncsim(1)**, **satpulsetool-convobs(1)**

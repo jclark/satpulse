@@ -140,6 +140,8 @@ docs:
         url: "/man/satpulsetool-sdp.1.html"
       - title: "satpulsetool-gpio(1)"
         url: "/man/satpulsetool-gpio.1.html"
+      - title: "satpulsetool-pps(1)"
+        url: "/man/satpulsetool-pps.1.html"
       - title: "satpulsetool-syncsim(1)"
         url: "/man/satpulsetool-syncsim.1.html"
       - title: "satpulsetool-convobs(1)"
