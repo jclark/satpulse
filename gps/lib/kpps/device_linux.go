@@ -37,11 +37,7 @@ func DevicePathForTTY(fd int) (string, error) {
 // relies on the driver's implementation; a kernel that names the source
 // differently gives an error.
 func DevicePathForGPIONode(node string) (string, error) {
-	root, err := filepath.EvalSymlinks("/proc/device-tree")
-	if err != nil {
-		return "", err
-	}
-	pdev, err := platformDevice(filepath.Join(root, node))
+	pdev, err := platformDevice(filepath.Join("/proc/device-tree", node))
 	if err != nil {
 		return "", err
 	}
@@ -62,15 +58,19 @@ func DevicePathForGPIONode(node string) (string, error) {
 const maxGPIOSourceName = 30
 
 // platformDevice returns the name of the platform device whose device-tree
-// node is the sysfs directory node.
+// node is the directory node, matching its of_node link by file identity.
 func platformDevice(node string) (string, error) {
+	info, err := os.Stat(node)
+	if err != nil {
+		return "", err
+	}
 	const dir = "/sys/bus/platform/devices"
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return "", err
 	}
 	for _, e := range entries {
-		if p, err := filepath.EvalSymlinks(filepath.Join(dir, e.Name(), "of_node")); err == nil && p == node {
+		if i, err := os.Stat(filepath.Join(dir, e.Name(), "of_node")); err == nil && os.SameFile(i, info) {
 			return e.Name(), nil
 		}
 	}
