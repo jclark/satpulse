@@ -14,7 +14,7 @@ import (
 // Backend handles the BCM2835 family's GPIO controller.
 type Backend struct{}
 
-// variants lists the compatible strings the family handles, with the number
+// variants lists the compatible strings the backend handles, with the number
 // of GPIOs each has. The BCM2837 uses the BCM2835's compatible string.
 var variants = []struct {
 	compatible string
