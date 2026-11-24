@@ -80,6 +80,36 @@ func unescape(s string) string {
 	return unescaped
 }
 
+// TimeOfDay returns the sentence's time-of-day field (hhmmss.ss) and
+// true, for the time-bearing approved sentences (RMC, GGA, GLL, ZDA);
+// false otherwise. It lets an observer time these sentences without
+// depending on this package's types.
+func (s *Sentence) TimeOfDay() (string, bool) {
+	as := s.ApprovedSentence()
+	if as == nil {
+		return "", false
+	}
+	var idx int
+	switch as.Format {
+	case "RMC", "GGA", "ZDA":
+		idx = 0
+	case "GLL":
+		idx = 4
+	default:
+		return "", false
+	}
+	if idx >= len(as.Fields) {
+		return "", false
+	}
+	return as.Fields[idx], true
+}
+
+// Body returns the sentence between the '$' and the '*'. It lets an
+// observer read a sentence without depending on this package's types.
+func (s *Sentence) Body() string {
+	return s.Payload
+}
+
 func (s *Sentence) AddressField() string {
 	if s.SyntaxFlags&nmeamsg.SentenceApprovedAddressFormat != 0 {
 		return s.Payload[:5] // e.g. GPRMC
@@ -172,8 +202,18 @@ func (p *PacketProcessor) ProcessPacket(data string, tRead time.Time) (string, e
 	approvSen := sen.ApprovedSentence()
 	if approvSen != nil {
 		handled, err := p.Dispatch(approvSen, tRead, p.mh)
-		if err != nil || handled {
+		if err != nil {
 			return msgID, err
+		}
+		if handled {
+			// Offer the consumed sentence to an observer (a configurator
+			// that watches how often each message arrives) via the
+			// optional handled channel: NMEA is the main traffic on a
+			// fresh unit, and its time-bearing sentences carry a time.
+			if hh, ok := p.GetNativeMsgHandler().(gpsprot.HandledNativeMsgHandler); ok {
+				return msgID, hh.HandledNativeMsg(Tag, msgID, sen, tRead)
+			}
+			return msgID, nil
 		}
 	}
 	for _, eh := range p.extHandlers {

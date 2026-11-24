@@ -351,6 +351,7 @@ var configProtocols = []struct {
 }{
 	{VendorUblox, false, func() gpsprot.ConfigProtocol { return ubx.NewConfigProtocol() }},
 	{VendorZhongke, true, func() gpsprot.ConfigProtocol { return casic.NewConfigProtocol() }},
+	{VendorAllystar, true, func() gpsprot.ConfigProtocol { return as.NewConfigProtocol() }},
 	{VendorUnicore, false, func() gpsprot.ConfigProtocol { return unc.NewConfigProtocol() }},
 }
 
