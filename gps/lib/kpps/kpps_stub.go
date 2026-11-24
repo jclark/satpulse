@@ -13,12 +13,6 @@ var errNotSupported = fmt.Errorf("kernel PPS: %w", errors.ErrUnsupported)
 // Source represents a kernel PPS source on supported platforms.
 type Source struct{}
 
-// ListDevices reports that kernel PPS is not yet supported on this
-// platform.
-func ListDevices() ([]Device, error) {
-	return nil, errNotSupported
-}
-
 // DevicePathForTTY reports that kernel PPS is not yet supported on this
 // platform.
 func DevicePathForTTY(int) (string, error) {
