@@ -159,17 +159,17 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	}()
 	// The GPIO is opened before the receiver is configured, so that a wrong
 	// name or an unsupported platform stops the daemon at once. Retrying
-	// cannot fix such a failure, so it is a configuration error, unless it
-	// is a permission error. The pin is closed after the PPS goroutine
-	// stops, which the worker-wait defer below ensures.
+	// cannot fix such a failure, so it is a configuration error; a failure to
+	// open or map the gpiomem device, which may not exist yet at boot, is
+	// not. The pin is closed after the PPS goroutine stops, which the
+	// worker-wait defer below ensures.
 	var gpioPin *gpiomem.Pin
 	if cfg.GPIO != nil {
+		if _, err := gpiomem.Lookup(cfg.GPIO.Name); err != nil {
+			return &configError{err: fmt.Errorf("GPIO PPS: %w", err)}
+		}
 		if gpioPin, err = gpiomem.Open(cfg.GPIO.Name); err != nil {
-			err = fmt.Errorf("GPIO PPS: %w", err)
-			if errors.Is(err, os.ErrPermission) {
-				return err
-			}
-			return &configError{err: err}
+			return fmt.Errorf("GPIO PPS: %w", err)
 		}
 		defer gpioPin.Close()
 		lg.Info("GPIO PPS polling", "gpio", cfg.GPIO.Name, "device", gpioPin.Device())

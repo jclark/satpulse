@@ -107,7 +107,7 @@ The `gpio` table describes a GPIO on which the receiver's PPS pulses arrive, who
 It can have the following key:
 
 * `name` - a string giving the name of the GPIO,
-  as the documentation of the board or SoC names it, such as `"GPIO18"` on a Raspberry Pi;
+  as the SoC's documentation names it, such as `"GPIO18"` on a Raspberry Pi;
   **satpulsetool-gpio(1)** shows the name of a GPIO that a `pps-gpio` device-tree overlay uses;
   the value is case-insensitive; this key must be specified;
   the rising edge of the pulse must mark the start of the second;
@@ -613,4 +613,4 @@ listen = ":2000"
 
 # SEE ALSO
 
-**satpulsed(8)**
+**satpulsed(8)**, **satpulsetool-gpio(1)**
