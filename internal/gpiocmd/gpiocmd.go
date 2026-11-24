@@ -63,9 +63,10 @@ func parseFlags(cmdName string, args []string) (jsonl, help bool, usageFunc func
 
 // controllerInfo is the listing's description of a GPIO controller.
 type controllerInfo struct {
-	Chip       string    `json:"chip"`
+	Node       string    `json:"node"`
 	Backend    string    `json:"backend,omitempty"`
-	Compatible []string  `json:"compatible"`
+	Compatible []string  `json:"compatible,omitempty"`
+	Chips      []string  `json:"chips,omitempty"`
 	Device     string    `json:"device,omitempty"`
 	Length     int       `json:"length,omitempty"`
 	PPS        []ppsInfo `json:"pps,omitempty"`
@@ -86,7 +87,7 @@ type ppsInfo struct {
 func controllerInfos(ctrls []gpiomem.Controller, ppsDevice func(node string) string) []controllerInfo {
 	infos := make([]controllerInfo, len(ctrls))
 	for i, c := range ctrls {
-		infos[i] = controllerInfo{Chip: c.Chip, Backend: c.Backend, Compatible: c.Compatible, Device: c.Device, Length: c.Length}
+		infos[i] = controllerInfo{Node: c.Node, Backend: c.Backend, Compatible: c.Compatible, Chips: c.Chips, Device: c.Device, Length: c.Length}
 		for _, p := range c.PPS {
 			pi := ppsInfo{GPIO: p.Name, Cells: p.Cells, Device: ppsDevice(p.Node)}
 			if p.Name != "" {
@@ -110,7 +111,7 @@ func (e noDataError) ExitCode() int { return 2 }
 // listControllers prints infos.
 func listControllers(infos []controllerInfo, out io.Writer, jsonl bool) error {
 	if len(infos) == 0 {
-		return noDataError{msg: "no GPIO controllers with a device-tree node found"}
+		return noDataError{msg: "no GPIO controllers found in the device tree"}
 	}
 	for _, info := range infos {
 		var err error
@@ -126,15 +127,20 @@ func listControllers(infos []controllerInfo, out io.Writer, jsonl bool) error {
 	return nil
 }
 
-// String formats info as an indented block: the gpiochip, then a line for
-// each field and a block for each PPS input.
+// String formats info as an indented block: the device-tree node, then a
+// line for each field and a block for each PPS input.
 func (info *controllerInfo) String() string {
 	var b strings.Builder
-	b.WriteString(info.Chip)
+	b.WriteString(info.Node)
 	if info.Backend != "" {
 		fmt.Fprintf(&b, "\n  backend: %s", info.Backend)
 	}
-	fmt.Fprintf(&b, "\n  compatible: %s", strings.Join(info.Compatible, ", "))
+	if len(info.Compatible) > 0 {
+		fmt.Fprintf(&b, "\n  compatible: %s", strings.Join(info.Compatible, ", "))
+	}
+	if len(info.Chips) > 0 {
+		fmt.Fprintf(&b, "\n  chips: %s", strings.Join(info.Chips, ", "))
+	}
 	if info.Device != "" {
 		fmt.Fprintf(&b, "\n  device: %s\n  length: %#x", info.Device, info.Length)
 	}
