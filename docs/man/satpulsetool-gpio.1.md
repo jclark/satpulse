@@ -19,8 +19,8 @@ The GPIO is shown by the name the SoC's documentation gives it, such as `GPIO18`
 followed by the kernel PPS device created for it, such as `/dev/pps0`, when that device can be found.
 
 The supported SoC families are `bcm2835` (Raspberry Pi 3 and 4) and `rp1` (Raspberry Pi 5).
-The command reads only sysfs and needs no special privileges.
-It is supported on 64-bit Linux.
+The command needs no special privileges.
+It is supported on 64-bit Arm Linux.
 
 # OPTIONS
 
@@ -44,7 +44,7 @@ and, when the kernel PPS device can be found, a `device` string.
 : Error
 
 **2**
-: No GPIO controllers with a device-tree node found
+: No data found: no GPIO controllers with a device-tree node found
 
 # EXAMPLES
 

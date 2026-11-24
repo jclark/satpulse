@@ -33,19 +33,33 @@ func DevicePathForTTY(fd int) (string, error) {
 // The kernel documents no link from a PPS device to the device that feeds it,
 // so the device is found by the name the driver gives its source: the name of
 // the node's platform device followed by ".-1", the id of a platform device
-// created from the device tree. This relies on the driver's implementation;
-// a kernel that names the source differently gives an error.
+// created from the device tree, cut to the 30 bytes the driver keeps. This
+// relies on the driver's implementation; a kernel that names the source
+// differently gives an error.
 func DevicePathForGPIONode(node string) (string, error) {
-	pdev, err := platformDevice(filepath.Join("/sys/firmware/devicetree/base", node))
+	root, err := filepath.EvalSymlinks("/proc/device-tree")
 	if err != nil {
 		return "", err
 	}
-	name, err := findDevice(sysClassPPS, "name", pdev+".-1")
+	pdev, err := platformDevice(filepath.Join(root, node))
+	if err != nil {
+		return "", err
+	}
+	source := pdev + ".-1"
+	if len(source) > maxGPIOSourceName {
+		source = source[:maxGPIOSourceName]
+	}
+	name, err := findDevice(sysClassPPS, "name", source)
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join("/dev", name), nil
 }
+
+// maxGPIOSourceName is the length to which the pps-gpio driver cuts its
+// source's name: it formats the name into PPS_MAX_NAME_LEN - 1 bytes,
+// including the terminating NUL.
+const maxGPIOSourceName = 30
 
 // platformDevice returns the name of the platform device whose device-tree
 // node is the sysfs directory node.
@@ -63,22 +77,27 @@ func platformDevice(node string) (string, error) {
 	return "", fmt.Errorf("%s: no platform device", node)
 }
 
-// findDevice returns the name of the PPS device whose sysfs attribute attr is
-// value. Unreadable entries are skipped because another process's PPS source
-// may vanish during the scan.
+// findDevice returns the name of the one PPS device whose sysfs attribute
+// attr is value. Unreadable entries are skipped because another process's PPS
+// source may vanish during the scan.
 func findDevice(sysDir, attr, value string) (string, error) {
 	entries, err := os.ReadDir(sysDir)
 	if err != nil {
 		return "", err
 	}
+	var found string
 	for _, e := range entries {
 		b, err := os.ReadFile(filepath.Join(sysDir, e.Name(), attr))
-		if err != nil {
+		if err != nil || strings.TrimSuffix(string(b), "\n") != value {
 			continue
 		}
-		if strings.TrimSuffix(string(b), "\n") == value {
-			return e.Name(), nil
+		if found != "" {
+			return "", fmt.Errorf("%s: more than one kernel PPS source in %s", value, sysDir)
 		}
+		found = e.Name()
 	}
-	return "", fmt.Errorf("%s: no kernel PPS source in %s", value, sysDir)
+	if found == "" {
+		return "", fmt.Errorf("%s: no kernel PPS source in %s", value, sysDir)
+	}
+	return found, nil
 }

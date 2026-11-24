@@ -21,6 +21,8 @@ func TestFindDevice(t *testing.T) {
 	write("pps0", "\n")
 	write("pps1", "/dev/ttyS9\n")
 	write("pps2", "/dev/ttyS0\n")
+	write("pps4", "/dev/ttyS5\n")
+	write("pps5", "/dev/ttyS5\n")
 	if err := os.MkdirAll(filepath.Join(dir, "pps3"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -33,6 +35,7 @@ func TestFindDevice(t *testing.T) {
 		{name: "match", source: "/dev/ttyS0", expect: "pps2"},
 		{name: "other tty", source: "/dev/ttyS9", expect: "pps1"},
 		{name: "no match", source: "/dev/ttyUSB0", expectErr: true},
+		{name: "two sources", source: "/dev/ttyS5", expectErr: true},
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
