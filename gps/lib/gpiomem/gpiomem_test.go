@@ -66,7 +66,7 @@ func TestUpperName(t *testing.T) {
 	}
 }
 
-func TestFindSoC(t *testing.T) {
+func TestFindBackend(t *testing.T) {
 	tests := []struct {
 		name        string
 		ctrls       []backend.Controller
