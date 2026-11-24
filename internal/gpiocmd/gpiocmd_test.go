@@ -60,7 +60,7 @@ func TestParseFlags(t *testing.T) {
 
 func TestSelectGPIO(t *testing.T) {
 	ctrls := []gpiomem.Controller{
-		{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
+		{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
 			PPS: []gpiomem.PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}, {Name: "GPIO4", Line: 4, Node: "/pps@4"}}},
 		{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}},
 	}
@@ -72,13 +72,13 @@ func TestSelectGPIO(t *testing.T) {
 		{
 			name: "PPS input",
 			gpio: gpiomem.GPIO{Name: "GPIO4", Chip: "gpiochip0", Line: 4},
-			expect: []gpiomem.Controller{{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
+			expect: []gpiomem.Controller{{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
 				PPS: []gpiomem.PPS{{Name: "GPIO4", Line: 4, Node: "/pps@4"}}}},
 		},
 		{
 			name:   "not a PPS input",
 			gpio:   gpiomem.GPIO{Name: "GPIO5", Chip: "gpiochip0", Line: 5},
-			expect: []gpiomem.Controller{{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000}},
+			expect: []gpiomem.Controller{{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000}},
 		},
 	}
 	for _, tc := range tests {
@@ -92,11 +92,12 @@ func TestSelectGPIO(t *testing.T) {
 
 func TestListControllers(t *testing.T) {
 	ctrls := []gpiomem.Controller{
-		{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
-			PPS: []gpiomem.PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}, {Name: "GPIO4", Line: 4, Node: "/pps@4"}}},
-		{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio", "brcm,other"}},
+		{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1", Device: "/dev/gpiomem0", Length: 0x30000,
+			PPS: []gpiomem.PPS{{Name: "GPIO18", Line: 18, Node: "/pps@"}, {Name: "GPIO0", Line: 0, Node: "/pps@0"}}},
+		{Chip: "gpiochip3", Compatible: []string{"rockchip,gpio-bank", "rockchip,other"},
+			PPS: []gpiomem.PPS{{Cells: []uint32{24, 0}, Node: "/pps-gpio12"}}},
 	}
-	devices := map[string]string{"/pps@": "/dev/pps0"}
+	devices := map[string]string{"/pps@": "/dev/pps0", "/pps-gpio12": "/dev/pps1"}
 	infos := controllerInfos(ctrls, func(node string) string { return devices[node] })
 	tests := []struct {
 		name   string
@@ -105,15 +106,16 @@ func TestListControllers(t *testing.T) {
 	}{
 		{
 			name: "text",
-			expect: "chip=gpiochip0 compatible=raspberrypi,rp1-gpio family=rp1 device=/dev/gpiomem0 length=0x30000 pps=GPIO18:/dev/pps0 pps=GPIO4\n" +
-				"chip=gpiochip10 compatible=brcm,brcmstb-gpio compatible=brcm,other\n",
+			expect: "gpiochip0\n  backend: rp1\n  compatible: raspberrypi,rp1-gpio\n  device: /dev/gpiomem0\n  length: 0x30000\n" +
+				"  pps:\n    gpio: GPIO18\n    line: 18\n    device: /dev/pps0\n  pps:\n    gpio: GPIO0\n    line: 0\n" +
+				"gpiochip3\n  compatible: rockchip,gpio-bank, rockchip,other\n  pps:\n    cells: 24, 0\n    device: /dev/pps1\n",
 		},
 		{
 			name:  "JSON Lines",
 			jsonl: true,
-			expect: `{"chip":"gpiochip0","compatible":["raspberrypi,rp1-gpio"],"family":"rp1","device":"/dev/gpiomem0","length":196608,` +
-				`"pps":[{"gpio":"GPIO18","line":18,"device":"/dev/pps0"},{"gpio":"GPIO4","line":4}]}` + "\n" +
-				`{"chip":"gpiochip10","compatible":["brcm,brcmstb-gpio","brcm,other"]}` + "\n",
+			expect: `{"chip":"gpiochip0","backend":"rp1","compatible":["raspberrypi,rp1-gpio"],"device":"/dev/gpiomem0","length":196608,` +
+				`"pps":[{"gpio":"GPIO18","line":18,"device":"/dev/pps0"},{"gpio":"GPIO0","line":0}]}` + "\n" +
+				`{"chip":"gpiochip3","compatible":["rockchip,gpio-bank","rockchip,other"],"pps":[{"cells":[24,0],"device":"/dev/pps1"}]}` + "\n",
 		},
 	}
 	for _, tc := range tests {

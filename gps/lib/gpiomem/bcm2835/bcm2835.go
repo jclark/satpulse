@@ -24,8 +24,8 @@ var variants = []struct {
 	{"brcm,bcm2711-gpio", 58},
 }
 
-// Family returns "bcm2835".
-func (SoC) Family() string {
+// Backend returns "bcm2835".
+func (SoC) Backend() string {
 	return "bcm2835"
 }
 

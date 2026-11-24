@@ -16,14 +16,15 @@ type Controller struct {
 	Chip       string   // the gpiochip's device name, e.g. "gpiochip0"
 	Compatible []string // the compatible strings of its device-tree node
 	Phandle    uint32   // the phandle of its device-tree node, or 0 if it has none
+	GPIOCells  int      // the #gpio-cells of its device-tree node, or 0 if it has none
 }
 
 // SoC describes the GPIO controllers of a family of SoCs, following the
 // kernel driver that handles them.
 type SoC interface {
-	// Family returns the family's name, which is the name of its package,
-	// such as "rp1".
-	Family() string
+	// Backend returns the name of the gpiomem backend the family package
+	// provides, which is the name of the package, such as "rp1".
+	Backend() string
 	// Compatible returns the device-tree compatible strings of the GPIO
 	// controllers the family handles.
 	Compatible() []string

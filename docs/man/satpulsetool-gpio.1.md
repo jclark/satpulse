@@ -10,27 +10,43 @@ satpulsetool-gpio - list GPIO controllers and poll a GPIO for PPS edges
 
 # DESCRIPTION
 
-The **satpulsetool** **gpio** command lists the GPIO controllers that have a device-tree node, one per line.
+The **satpulsetool** **gpio** command lists the GPIO controllers that have a device-tree node.
 For each controller, it shows the gpiochip, such as `gpiochip0`, and the compatible strings of its device-tree node.
 
-For a controller of a supported SoC family, it also shows the family,
+For a controller that one of its backends handles, it also shows the backend,
 the device through which the controller's registers are read,
 and the length of that device's mapping.
-It also shows each GPIO of the controller that a `pps-gpio` device-tree node, such as the one the `pps-gpio` overlay creates, uses as a pulse-per-second (PPS) input.
-The GPIO is shown by the name the SoC's documentation gives it, such as `GPIO18` on a Raspberry Pi,
-followed by the kernel PPS device created for it, such as `/dev/pps0`, when that device can be found.
-A *name* given to the command is a name of this form, not a header pin number, and is case-insensitive.
+The backends are `bcm2835` (Raspberry Pi 3 and 4) and `rp1` (Raspberry Pi 5).
+
+It also shows each GPIO of the controller that a `pps-gpio` device-tree node, such as the one the `pps-gpio` overlay creates, uses as a pulse-per-second (PPS) input,
+with the kernel PPS device created for it, such as `/dev/pps0`, when that device can be found.
+On a controller that a backend handles, the GPIO is shown by the name the SoC's documentation gives it, such as `GPIO18` on a Raspberry Pi, and its line on the controller.
+On any other controller, it is shown by the cells of its GPIO specifier in the device tree, whose meaning the controller's device-tree binding defines.
+
+Each controller is shown as an indented block.
+On a Raspberry Pi 5 with the `pps-gpio` overlay on GPIO 18, the first controller is shown as:
+
+    gpiochip0
+      backend: rp1
+      compatible: raspberrypi,rp1-gpio
+      device: /dev/gpiomem0
+      length: 0x30000
+      pps:
+        gpio: GPIO18
+        line: 18
+        device: /dev/pps0
+
+A *name* given to the command is a GPIO name of this form, not a header pin number, and is case-insensitive.
 With a *name*, it shows only the controller that has that GPIO, and shows the GPIO only if it is a PPS input.
-Listing reads only sysfs and needs no special privileges.
+Listing needs no special privileges.
 
 With the **\-p** option, it instead polls a GPIO for PPS edges, reading the GPIO controller's registers, and prints the time of each rising edge it catches.
-It polls the GPIO called *name*, or, without a *name*, the one GPIO shown as a PPS input; it is an error if there is not exactly one.
+It polls the GPIO called *name*, or, without a *name*, the one GPIO shown by name as a PPS input; it is an error if there is not exactly one.
 The GPIO must already be an input, as the `pps-gpio` overlay makes it.
 It changes nothing on the GPIO.
 Polling requires read access to the device through which the controller's registers are read, which the `gpio` group has on Raspberry Pi OS.
 It is most precise on a CPU that does not handle the GPIO's interrupt (see `/proc/interrupts`).
 
-The supported SoC families are `bcm2835` (Raspberry Pi 3 and 4) and `rp1` (Raspberry Pi 5).
 The command is supported on 64-bit Arm Linux.
 
 # OPTIONS
@@ -60,11 +76,12 @@ The default is 10.
 Requires **\-p**.
 
 **\-j**, **\-\-jsonl**
-: Write output in JSON Lines format.
+: Write output in JSON Lines format, one object per controller.
 A controller object has a `chip` string and a `compatible` array of strings.
-For a controller of a supported family, it also has a `family` string, a `device` string, a `length` number,
-and, if any of its GPIOs is a PPS input, a `pps` array.
-A `pps` object has a `gpio` string giving the GPIO's name, a `line` number giving its line on the controller,
+For a controller that a backend handles, it also has a `backend` string, a `device` string and a `length` number.
+If any of its GPIOs is a PPS input, it has a `pps` array.
+A `pps` object has a `gpio` string giving the GPIO's name and a `line` number giving its line on the controller,
+or, on a controller that no backend handles, a `cells` array of numbers giving the cells of its GPIO specifier,
 and, when the kernel PPS device can be found, a `device` string.
 With **\-p**, an edge object has a `gpio` string, an RFC 3339 UTC timestamp `t`,
 `uncertainty` and `pollWidths` arrays and an optional `reject` string.
@@ -89,9 +106,9 @@ List the GPIO controllers:
 
     satpulsetool gpio
 
-On a Raspberry Pi 5 with the `pps-gpio` overlay on GPIO 18, the first line of output is:
+List them in JSON Lines format:
 
-    chip=gpiochip0 compatible=raspberrypi,rp1-gpio family=rp1 device=/dev/gpiomem0 length=0x30000 pps=GPIO18:/dev/pps0
+    satpulsetool gpio -j
 
 Show the controller that has GPIO18:
 
