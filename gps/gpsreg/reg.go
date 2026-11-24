@@ -352,6 +352,7 @@ var configProtocols = []struct {
 	{VendorUblox, false, func() gpsprot.ConfigProtocol { return ubx.NewConfigProtocol() }},
 	{VendorZhongke, true, func() gpsprot.ConfigProtocol { return casic.NewConfigProtocol() }},
 	{VendorUnicore, false, func() gpsprot.ConfigProtocol { return unc.NewConfigProtocol() }},
+	{VendorQuectel, true, func() gpsprot.ConfigProtocol { return quectel.NewConfigProtocol() }},
 }
 
 // CreateConfigProtocols returns the config protocols to probe with, in

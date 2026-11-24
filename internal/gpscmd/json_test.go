@@ -42,10 +42,11 @@ func TestPrintJSON(t *testing.T) {
 		SupportedGNSS: gpsprot.GNSSSetOf(gpsprot.GPS) | gpsprot.GNSSSetOf(gpsprot.GAL),
 	}
 	tests := []struct {
-		name   string
-		rslt   *gpscfg.Result
-		err    error
-		expect map[string]any
+		name     string
+		rslt     *gpscfg.Result
+		err      error
+		warnings []string
+		expect   map[string]any
 	}{
 		{
 			name: "full result",
@@ -55,6 +56,7 @@ func TestPrintJSON(t *testing.T) {
 				ConfigProps:           props,
 				PacketFormatsDetected: []gpsprot.Tag{"UBX", "NMEA"},
 			},
+			warnings: []string{"something was skipped"},
 			expect: map[string]any{
 				"receiver": map[string]any{
 					"vendor":        "u-blox",
@@ -82,6 +84,7 @@ func TestPrintJSON(t *testing.T) {
 					"minElevation":      10.0,
 					"antennaCableDelay": 50.0,
 				},
+				"warnings": []any{"something was skipped"},
 			},
 		},
 		{
@@ -116,7 +119,7 @@ func TestPrintJSON(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			printJSON(f, tc.rslt, tc.err)
+			printJSON(f, tc.rslt, tc.err, tc.warnings)
 			if err := f.Close(); err != nil {
 				t.Fatal(err)
 			}
