@@ -12,7 +12,7 @@ import (
 )
 
 func TestOnlyPPSInput(t *testing.T) {
-	rp1 := gpiomem.Controller{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Family: "rp1"}
+	rp1 := gpiomem.Controller{Chip: "gpiochip0", Compatible: []string{"raspberrypi,rp1-gpio"}, Backend: "rp1"}
 	brcm := gpiomem.Controller{Chip: "gpiochip10", Compatible: []string{"brcm,brcmstb-gpio"}}
 	gpio18 := gpiomem.PPS{Name: "GPIO18", Line: 18, Node: "/pps@"}
 	gpio4 := gpiomem.PPS{Name: "GPIO4", Line: 4, Node: "/pps@4"}
