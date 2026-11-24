@@ -78,7 +78,7 @@ type controllerInfo struct {
 type ppsInfo struct {
 	GPIO   string   `json:"gpio,omitempty"`
 	Line   *int     `json:"line,omitempty"`
-	Cells  []uint32 `json:"cells,omitempty"`
+	Cells  []uint32 `json:"cells,omitzero"`
 	Device string   `json:"device,omitempty"`
 }
 

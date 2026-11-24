@@ -28,6 +28,14 @@ func DevicePathForTTY(fd int) (string, error) {
 	return filepath.Join("/dev", name), nil
 }
 
+// maxGPIOSourceName is the length to which the pps-gpio driver cuts its
+// source's name: it formats the name into PPS_MAX_NAME_LEN - 1 bytes,
+// including the terminating NUL.
+const maxGPIOSourceName = 30
+
+// sysBusPlatform is the directory of the platform devices.
+const sysBusPlatform = "/sys/bus/platform/devices"
+
 // DevicePathForGPIONode returns the path of the kernel PPS device that the
 // pps-gpio driver creates for the device-tree node at node, such as "/pps@12".
 // The kernel documents no link from a PPS device to the device that feeds it,
@@ -35,15 +43,29 @@ func DevicePathForTTY(fd int) (string, error) {
 // the node's platform device followed by ".-1", the id of a platform device
 // created from the device tree, cut to the 30 bytes the driver keeps. This
 // relies on the driver's implementation; a kernel that names the source
-// differently gives an error.
+// differently gives an error, as does a cut name that another platform device
+// could also give.
 func DevicePathForGPIONode(node string) (string, error) {
-	pdev, err := platformDevice(filepath.Join("/proc/device-tree", node))
+	entries, err := os.ReadDir(sysBusPlatform)
+	if err != nil {
+		return "", err
+	}
+	pdev, err := platformDevice(entries, filepath.Join("/proc/device-tree", node))
 	if err != nil {
 		return "", err
 	}
 	source := pdev + ".-1"
 	if len(source) > maxGPIOSourceName {
 		source = source[:maxGPIOSourceName]
+		n := 0
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name()+".-1", source) {
+				n++
+			}
+		}
+		if n > 1 {
+			return "", fmt.Errorf("%s: %d platform devices give PPS source name %q", node, n, source)
+		}
 	}
 	name, err := findDevice(sysClassPPS, "name", source)
 	if err != nil {
@@ -52,25 +74,16 @@ func DevicePathForGPIONode(node string) (string, error) {
 	return filepath.Join("/dev", name), nil
 }
 
-// maxGPIOSourceName is the length to which the pps-gpio driver cuts its
-// source's name: it formats the name into PPS_MAX_NAME_LEN - 1 bytes,
-// including the terminating NUL.
-const maxGPIOSourceName = 30
-
-// platformDevice returns the name of the platform device whose device-tree
-// node is the directory node, matching its of_node link by file identity.
-func platformDevice(node string) (string, error) {
+// platformDevice returns the name of the platform device among entries, the
+// entries of sysBusPlatform, whose device-tree node is the directory node,
+// matching its of_node link by file identity.
+func platformDevice(entries []os.DirEntry, node string) (string, error) {
 	info, err := os.Stat(node)
 	if err != nil {
 		return "", err
 	}
-	const dir = "/sys/bus/platform/devices"
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return "", err
-	}
 	for _, e := range entries {
-		if i, err := os.Stat(filepath.Join(dir, e.Name(), "of_node")); err == nil && os.SameFile(i, info) {
+		if i, err := os.Stat(filepath.Join(sysBusPlatform, e.Name(), "of_node")); err == nil && os.SameFile(i, info) {
 			return e.Name(), nil
 		}
 	}
