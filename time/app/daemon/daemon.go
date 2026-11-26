@@ -23,6 +23,7 @@ import (
 	"github.com/jclark/satpulse/time/internal/gpsevent"
 	"github.com/jclark/satpulse/time/internal/logobs"
 	"github.com/jclark/satpulse/time/internal/obs"
+	"github.com/jclark/satpulse/time/internal/phcsample"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/promobs"
 	"github.com/jclark/satpulse/time/internal/proxy"
@@ -286,7 +287,7 @@ func run(ctx context.Context, lg *slog.Logger, cancel context.CancelCauseFunc, c
 	)
 	// The PHC sync controller owns gm.Close(), which in turn shuts down the
 	// PTP4L worker by closing its request channel.
-	if clk != nil && cfg.PTP.PTP4L != nil {
+	if clk != nil && cfg.PHC.Sync && cfg.PTP.PTP4L != nil {
 		pmcClient, err = cfg.PTP.NewClient()
 		if err != nil {
 			return err
@@ -403,19 +404,25 @@ func NewDispatcher(
 ) (*gpsevent.Dispatcher, error) {
 	ls := cfg.LeapSecond.leapSecond()
 	var controller *phcsync.Controller
+	var generator *phcsample.Generator
 	if clk != nil {
-		var err error
-		controller, err = phcsync.NewController(
-			clk,
-			obs,
-			gm,
-			cfg.Sync,
-			ls,
-			clk.DriverFlags.Edges(),
-			lg,
-		)
-		if err != nil {
-			return nil, err
+		edges := clk.DriverFlags.Edges()
+		if !cfg.PHC.Sync {
+			generator = phcsample.NewGenerator(cfg.Sample.PHC, edges, lg)
+		} else {
+			ctrl, err := phcsync.NewController(
+				clk,
+				obs,
+				gm,
+				cfg.Sync,
+				ls,
+				edges,
+				lg,
+			)
+			if err != nil {
+				return nil, err
+			}
+			controller = ctrl
 		}
 	}
 	eventLogPath := cfg.Log.EventPath(cfg.Serial.Device, gpsevent.LogExtension)
@@ -426,7 +433,7 @@ func NewDispatcher(
 	if ggaSelector != nil {
 		gs = ggaSelector
 	}
-	return gpsevent.NewDispatcher(lg, pktProcs, controller, rc, shmWriter, ppsGen, ls, obs, eventLogPath, tStart, gs)
+	return gpsevent.NewDispatcher(lg, pktProcs, controller, generator, rc, shmWriter, ppsGen, ls, obs, eventLogPath, tStart, gs)
 }
 
 // newSSEObserver creates SSE observer if any HTTP endpoint needs GUI

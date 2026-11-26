@@ -63,6 +63,12 @@ The `phc` table is about the PTP hardware clock. It can have following keys:
   pins and the PPS is on another channel
 * `exttsLatency` - an integer giving the external timestamp latency in nanoseconds: how much later the PHC
   captures a timestamp than the pulse edge arrived at the pin
+* `sync` - a boolean saying whether SatPulse synchronizes the PHC to the GPS receiver; the default is true;
+  when false, SatPulse leaves the PHC free-running and instead sends the NTP daemon samples whose
+  timestamps are readings of the PHC, treated as TAI, with the offset of each PPS pulse edge derived
+  from the GPS time messages, with sawtooth correction; chrony then maps the PHC to the system clock
+  itself, which requires chrony's multi-clock support with the `refclock SOCK` line bound to the PHC;
+  `sync = false` requires `sock.path` in the `ntp` table and cannot be combined with the SHM protocol
 
 Example
 

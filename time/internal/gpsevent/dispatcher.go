@@ -17,6 +17,7 @@ import (
 	"github.com/jclark/satpulse/gps/ptime"
 	"github.com/jclark/satpulse/gps/scan"
 	"github.com/jclark/satpulse/time/internal/obs"
+	"github.com/jclark/satpulse/time/internal/phcsample"
 	"github.com/jclark/satpulse/time/internal/phcsync"
 	"github.com/jclark/satpulse/time/internal/refclock"
 	"github.com/jclark/satpulse/time/internal/timemsg"
@@ -103,11 +104,12 @@ type Dispatcher struct {
 	pktProcs              map[gpsprot.Tag]gpsprot.PacketProcessor
 	obs                   obs.Observer // never nil
 	controller            *phcsync.Controller
+	generator             *phcsample.Generator
 	rc                    *refclock.ProxyRefClock
 	shm                   SHMWriter
 	sps                   samplePrecisionSetter
 	timeMsgBuffer         *timemsg.Buffer
-	ppsGen                 *pps.Generator
+	ppsGen                *pps.Generator
 	timeTicker            gpsprot.TimeTicker
 	pvAccum               gpsprot.PVMsgAccum
 	ls                    ptime.LeapSecond
@@ -121,11 +123,16 @@ type Dispatcher struct {
 	tStart                time.Time
 }
 
-// NewDispatcher creates the GPS event dispatcher.
+// NewDispatcher constructs a Dispatcher. At most one of controller and
+// generator is non-nil and selects the runtime mode: controller for
+// PHC-disciplined (phcsync steers the PHC), generator for PHC
+// free-running (phcsample emits PHC-referenced samples), neither for
+// serial timing (samples come from time messages).
 func NewDispatcher(
 	lg *slog.Logger,
 	pktProcs map[gpsprot.Tag]gpsprot.PacketProcessor,
 	controller *phcsync.Controller,
+	generator *phcsample.Generator,
 	rc *refclock.ProxyRefClock,
 	shm SHMWriter,
 	ppsGen *pps.Generator,
@@ -142,13 +149,17 @@ func NewDispatcher(
 	}
 	timeMsgBuffer := timemsg.NewBuffer(lg, minWindow, ls, gpsprot.GPS)
 
-	// Inject buffer into controller if controller exists
+	// Inject buffer into controller (for pulse/message correlation) or
+	// into generator (as sawtooth pulse-correction source).
 	if controller != nil {
 		controller.SetTimeMsgBuffer(timeMsgBuffer)
+	} else if generator != nil {
+		generator.SetPulseCorrector(timeMsgBuffer)
 	}
 	d := Dispatcher{
 		pktProcs:      pktProcs,
 		controller:    controller,
+		generator:     generator,
 		rc:            rc,
 		timeMsgBuffer: timeMsgBuffer,
 		timeTicker:    *gpsprot.NewTimeTicker(&tickHandler{obs: obs}, ls),
@@ -174,12 +185,18 @@ func NewDispatcher(
 		pp.SetMsgHandler(multiHandler)
 		pp.SetNativeMsgHandler(&d)
 	}
-	if ppsGen != nil {
+	// Route time-message samples. In PHC-base-clock mode the generator
+	// needs TAI labels and a sample sink; with serial PPS the PPS
+	// generator takes the UTC samples; in serial mode the Dispatcher
+	// feeds UTC samples to rc.Sample and SHM; in PHC-disciplined mode no
+	// sink is installed.
+	if generator != nil {
+		generator.SetSampler(&d)
+		timeMsgBuffer.SetMsgTAITimer(&d)
+	} else if ppsGen != nil {
 		d.ppsGen = ppsGen
 		timeMsgBuffer.SetMsgUTCTimer(ppsGen)
 	} else if controller == nil && (rc != nil || shm != nil) {
-		// In serial timing mode (no PHC, but refclock configured), feed
-		// NTP samples directly from time messages.
 		timeMsgBuffer.SetMsgUTCTimer(&d)
 	}
 	err := d.lf.Open(eventLogPath, true)
@@ -249,7 +266,14 @@ func (d *Dispatcher) Run(tsCh <-chan ts.Event, ppsCh <-chan pps.CandidateEdge, p
 				continue
 			}
 			if e.Kind == ts.PauseEvent {
-				d.controller.Pause(e.TReadMono.Sys)
+				if d.controller != nil {
+					d.controller.Pause(e.TReadMono.Sys)
+				} else if d.generator != nil {
+					// Replace with a fresh instance; nothing in
+					// the prior one is worth preserving across
+					// a PHC era transition.
+					d.generator = d.generator.NewInstance()
+				}
 				continue
 			}
 			if e.Kind == ts.ResumeEvent {
@@ -507,15 +531,20 @@ func (e *LogEvent) UnmarshalJSON(data []byte) error {
 }
 
 func (d *Dispatcher) timestamp(e ts.Event) {
-	// timestamp events only occur when PHC is available, so d.controller is non-nil
-	// Pass monotonic sample to controller (for PHC sync logic)
-	d.controller.PulseEdge(phcsync.PulseEdge{
-		Timestamp: e.Ts,
-		TRead:     e.TReadMono,
-	})
-
-	// Pass wallclock sample to sysSample (for NTP refclocks)
-	d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys, e.Precision)
+	// timestamp events only occur when PHC is available, so exactly one
+	// of controller (disciplined) and generator (PHC-base-clock) is set.
+	// Only the disciplined mode consumes the cross-sample: the generator
+	// emits PHC-referenced samples on its own via PHCSample and never
+	// relates the PHC to the system clock.
+	if d.controller != nil {
+		d.controller.PulseEdge(phcsync.PulseEdge{
+			Timestamp: e.Ts,
+			TRead:     e.TReadMono,
+		})
+		d.sysSample(e.TReadWall.PHC.T, e.TReadWall.Sys, e.Precision)
+	} else if d.generator != nil {
+		d.generator.Pulse(e.Ts, e.TReadMono)
+	}
 
 	// Log event with monotonic time and full sample info
 	d.logEvent(LogEvent{
@@ -550,6 +579,28 @@ func (d *Dispatcher) sysSample(ref ptime.Time, sys time.Time, samplePrecision ti
 		d.shm.Write(clockTime, sys, leap)
 	}
 	d.obs.NTPSample(sys, offset, leap, ref)
+}
+
+// PHCSample implements phcsample.Sampler, forwarding a PHC-referenced
+// sample to the refclock. Observer.NTPSample does not fire here: it
+// reports sys-vs-true offsets, which are never computed in this mode.
+func (d *Dispatcher) PHCSample(phc ntime.Time, offset float64, leap ptime.LeapSecondKind) {
+	if d.rc == nil {
+		return
+	}
+	if err := d.rc.Sample(phc, offset, leap); err != nil {
+		d.lg.Warn("refclock sample failed", "err", err)
+	}
+}
+
+// MsgTAITime implements timemsg.MsgTAITimer in PHC-base-clock mode,
+// forwarding TAI time labels to the Generator. The indirection (rather
+// than wiring the Generator as the sink directly) keeps delivery
+// correct across era transitions, which replace d.generator.
+func (d *Dispatcher) MsgTAITime(tai ptime.Time, tRead time.Time, leap ptime.LeapSecondKind) {
+	if d.generator != nil {
+		d.generator.MsgTAITime(tai, tRead, leap)
+	}
 }
 
 // MsgUTCTime implements timemsg.MsgUTCTimer for serial timing mode.

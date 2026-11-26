@@ -6,6 +6,7 @@ _Not yet released_
 - `satpulsed` can send NTP samples with PHC drivers that do not support `PTP_SYS_OFFSET_EXTENDED` (such as stmmac before Linux 7.4). (#547)
 - The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
 - FreeBSD support is improved. NTP SHM, kernel PPS and serial enumeration now support FreeBSD. There is also an rc.d script. (#426)
+- `satpulse.toml`'s `[phc]` table has a new `sync` key. With `sync = false`, `satpulsed` leaves the PHC free-running and sends chrony refclock SOCK samples whose timestamps are PHC readings treated as TAI, with the offset of each pulse edge derived from GPS time messages with sawtooth correction. This is designed for chrony's multi-clock support, where chrony itself disciplines the PHC and maps it to the system clock. A new `[sample.phc]` table tunes the sample-generation algorithm. (#257)
 
 ## Changes in 0.3
 
