@@ -68,6 +68,7 @@ Ways in which PTP support on the PHY is less than ideal.
 ## Other hardware limitations
 
 13. No public hardware documentation
+   - [jclark/bcm54210pe-ptp-re](https://github.com/jclark/bcm54210pe-ptp-re) (my reverse-engineered description of the PTP hardware, from the Linux driver, Broadcom's OpenBCM SDK and measurements on CM4 and CM5)
 
 14. PHY has same ID as the PHY in the Raspberry Pi 5 but is different
    - [mainline matches the model ID only](https://elixir.bootlin.com/linux/v7.3/source/drivers/net/phy/bcm-phy-ptp.c#L926)
@@ -91,3 +92,6 @@ Ways in which PTP support on the PHY is less than ideal.
 18. Disabling EXTTS can deadlock: [satpulse#493](https://github.com/jclark/satpulse/issues/493) (the "Related observation" section)
 
 19. P2P timestamping does not work [rpi-cm4-ptp-guide#34](https://github.com/jclark/rpi-cm4-ptp-guide/issues/34) (CM4), [rpi-cm4-ptp-guide#49](https://github.com/jclark/rpi-cm4-ptp-guide/issues/49) (CM5)
+   - [fix P2P timestamping series](https://lore.kernel.org/netdev/cover.1795772837.git.jjc@jclark.com/) (sent to net, 2026-11-27)
+
+20. PTP over UDPv6 does not work, in either E2E or P2P mode: when the PHY writes a timestamp into an outgoing message, it sets the UDP checksum to zero ([fix P2P timestamping series](https://lore.kernel.org/netdev/cover.1795772837.git.jjc@jclark.com/) cover letter)
