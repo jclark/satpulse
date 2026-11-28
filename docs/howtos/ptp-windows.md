@@ -14,7 +14,7 @@ in `satpulse.toml`. With only linuxptp, you can set this with `pmc` on the Raspb
 #!/bin/sh
 pmc -u -b 0 \
 "set GRANDMASTER_SETTINGS_NP
-        clockCss              6
+        clockClass              6
         clockAccuracy           0x20
         offsetScaledLogVariance 0xffff
         currentUtcOffset        37
