@@ -101,14 +101,20 @@ The use of a slow MDIO bus shows up in a number of ways.
 
 ## Packet timestamping
 
+5. The PHY cannot timestamp PTP 2.1 messages. LinuxPTP 4.x sends PTP 2.1 messages by default;
+   the workaround is to specify `ptp_minor_version 0` in the ptp4l configuration.
 
-5. PHY does not timestamp PTP v2.1 messages (linuxptp 4.x default): [raspberrypi/linux#7515](https://github.com/raspberrypi/linux/issues/7515), [raspberrypi/linux#5947](https://github.com/raspberrypi/linux/issues/5947), [linuxptp-users](https://www.mail-archive.com/linuxptp-users@lists.sourceforge.net/msg03316.html), [rpi-cm4-ptp-guide#23](https://github.com/jclark/rpi-cm4-ptp-guide/issues/23)
+6. The driver does not compensate for packet ingress/egress latency.
+   You can see this by connecting a CM4/CM5 back to back to a NIC with properly calibrated timestamping,
+   such as an Intel i210 or i226: the path delay will be about 140 ns instead of close to 0.
+   Left uncorrected, this will result in a PTP client of a CM4/CM5 grandmaster being ahead by about 140 ns.
+   The fix is to add `ingressLatency 280` to the ptp4l options.
+   The 280 figure is accurate to only 10 ns or so.
 
-6. packet ingress/egress latency uncalibrated
-   - [rpi-cm4-ptp-guide#39](https://github.com/jclark/rpi-cm4-ptp-guide/issues/39) (CM5 PPS constant offset of about 170 ns while ptp4l shows about zero; i210 about 20 ns)
-   - my own measurements are not published (about 280 ns RX-TX asymmetry, all on receive)
-
-7. Can only timestamp PTP packets: means NTP packet timestamping needs NTP-over-PTP
+7. The PHY can only timestamp PTP packets. This is a problem when trying to use chrony's hardware timestamping,
+   which by default needs to be able to timestamp NTP packets. The workaround is to use the NTP over PTP
+   feature (now standardised in RFC 10030). See the documentation for the `ptpport` directive in chrony.conf
+   for how to enable this.
 
 ## External timestamping
 
@@ -160,14 +166,19 @@ The use of a slow MDIO bus shows up in a number of ways.
 
 ## Kernel problems
 
-17. Delay in ptp clock becoming available after interface comes up
-   - [satpulse#7](https://github.com/jclark/satpulse/issues/7) (IFF_UP and carrier needed, even though /dev/ptp0 exists)
-   - [rpi-cm4-ptp-guide#4](https://github.com/jclark/rpi-cm4-ptp-guide/issues/4) (ts2phc "interface eth0 does not have a PHC" at boot)
-   - [raspberrypi/linux#5881](https://github.com/raspberrypi/linux/issues/5881) (Pi 5, so the MAC, not the PHY)
+17. The PTP clock is not attached to its network interface until the network interface is up.
+    With ts2phc this can lead to an error on boot: interface eth0 does not have a PHC.
+    In SatPulse, I work around this by using netlink to wait for the interface to be administratively up
+    i.e. IFF_UP flag set.
+    This is because MAC drivers attach the PHY only when the kernel opens the interface.
 
-18. Disabling EXTTS can deadlock: [satpulse#493](https://github.com/jclark/satpulse/issues/493) (the "Related observation" section)
+18. Disabling external timestamping can occasionally deadlock.
+    This leaves the driver in an unusable state and requires a reboot.
+    I am working on a [patch](https://github.com/jclark/linux/commits/bcm-phy-ptp-deadlock/series) for this.
 
-19. P2P timestamping does not work [rpi-cm4-ptp-guide#34](https://github.com/jclark/rpi-cm4-ptp-guide/issues/34) (CM4), [rpi-cm4-ptp-guide#49](https://github.com/jclark/rpi-cm4-ptp-guide/issues/49) (CM5)
-   - [fix P2P timestamping series](https://lore.kernel.org/netdev/cover.1795772837.git.jjc@jclark.com/) (sent to net, 2026-11-27)
+19. Timestamping in P2P mode does not work.
+    I submitted a [patch](https://lore.kernel.org/netdev/cover.1795772837.git.jjc@jclark.com/) to fix this.
+    In the meantime, the workaround is to stick to the default E2E mode.
 
-20. PTP over UDPv6 does not work, in either E2E or P2P mode: when the PHY writes a timestamp into an outgoing message, it sets the UDP checksum to zero ([fix P2P timestamping series](https://lore.kernel.org/netdev/cover.1795772837.git.jjc@jclark.com/) cover letter)
+20. PTP over UDPv6 does not work, in either E2E or P2P mode:
+    when the PHY writes a timestamp into an outgoing message, it sets the UDP checksum to zero.
