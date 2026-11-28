@@ -95,8 +95,8 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 	offset := edge.Timestamp.T.Sub(refTime)
 
 	// Estimate system time
-	phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
-	sys := edge.TRead.Sys.Add(-phcDelta)
+	phcDelta := edge.TReadMono.PHC.T.Sub(edge.Timestamp.T)
+	sys := edge.TReadMono.Sys.Add(-phcDelta)
 
 	return &Sample{
 		Kind:      SampleOK,
@@ -105,6 +105,7 @@ func (g *convergingSampleGenerator) pulseEdgeSample(edge PulseEdge, edgeIndex ui
 		Era:       edge.Timestamp.Era,
 		EdgeIndex: edgeIndex,
 		Sys:       sys,
+		SysOffset: edge.TReadWall,
 		// Freq and Mode will be filled in by processSample
 	}
 }

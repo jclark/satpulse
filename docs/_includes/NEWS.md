@@ -6,6 +6,7 @@ _Not yet released_
 - `satpulsed` can send NTP samples with PHC drivers that do not support `PTP_SYS_OFFSET_EXTENDED` (such as stmmac before Linux 7.4). (#547)
 - The `[phc]` table has a new `exttsLatency` key, giving the latency in nanoseconds between a pulse edge arriving at the pin and the PHC capturing its timestamp. (#160)
 - FreeBSD support is improved. NTP SHM, kernel PPS and serial enumeration now support FreeBSD. There is also an rc.d script. (#426)
+- `satpulse.toml` has a new `[sample.phc.sync]` table with a `followPulse` key. When it is true, the samples `satpulsed` sends to an NTP daemon follow the PPS edges timestamped by the PHC rather than the synchronized PHC, which helps when the PHC's oscillator wanders more than the pulses jitter. (#536)
 
 ## Changes in 0.3
 

@@ -358,6 +358,7 @@ func (g *resetSampleGenerator) tryAlignment(edgeList pulseEdgeList, lastSec ptim
 		Era:       lastPulseTimestamp.Era,
 		EdgeIndex: g.lastEdgeIndex,
 		Sys:       pulseTimes[len(pulseTimes)-1],
+		SysOffset: edges[len(edges)-1].TReadWall,
 		// Mode will be filled in by processSample
 	}, nil
 }
@@ -477,11 +478,11 @@ func (g *resetSampleGenerator) checkPulseIntervals(edgeList pulseEdgeList, stats
 func (g *resetSampleGenerator) pulseTimes(edges []PulseEdge, avgInterval time.Duration) []time.Time {
 	times := make([]time.Time, len(edges))
 	for i, edge := range edges {
-		phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
+		phcDelta := edge.TReadMono.PHC.T.Sub(edge.Timestamp.T)
 		// Scale from PHC time domain to real time domain: avgInterval is how much PHC time equals 1 real second
 		// Note this is assuming system clock frequency is reasonably accurate
 		realDelta := time.Duration(float64(phcDelta) / avgInterval.Seconds())
-		times[i] = edge.TRead.Sys.Add(-realDelta)
+		times[i] = edge.TReadMono.Sys.Add(-realDelta)
 	}
 	return times
 }

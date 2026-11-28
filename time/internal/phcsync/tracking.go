@@ -279,9 +279,9 @@ func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, 
 	}
 	offset := edge.Timestamp.T.Sub(refTime)
 
-	// Estimate system time: TRead minus the time between reading and timestamp capture
-	phcDelta := edge.TRead.PHC.T.Sub(edge.Timestamp.T)
-	sys := edge.TRead.Sys.Add(-phcDelta)
+	// Estimate system time: TReadMono minus the time between reading and timestamp capture
+	phcDelta := edge.TReadMono.PHC.T.Sub(edge.Timestamp.T)
+	sys := edge.TReadMono.Sys.Add(-phcDelta)
 
 	sample := &Sample{
 		Kind:      SampleOK,
@@ -290,6 +290,7 @@ func (g *trackingSampleGenerator) pulseSample(edge PulseEdge, edgeIndex uint64, 
 		Era:       edge.Timestamp.Era,
 		EdgeIndex: edgeIndex,
 		Sys:       sys,
+		SysOffset: edge.TReadWall,
 		// Freq and Mode will be filled in by processSample
 	}
 
@@ -307,8 +308,8 @@ func (g *trackingSampleGenerator) pendingPulseDeadline() time.Time {
 		return time.Time{}
 	}
 	// Estimate system time when pulse occurred
-	phcDelta := g.pendingPulse.TRead.PHC.T.Sub(g.pendingPulse.Timestamp.T)
-	pulseSysTime := g.pendingPulse.TRead.Sys.Add(-phcDelta)
+	phcDelta := g.pendingPulse.TReadMono.PHC.T.Sub(g.pendingPulse.Timestamp.T)
+	pulseSysTime := g.pendingPulse.TReadMono.Sys.Add(-phcDelta)
 	return pulseSysTime.Add(time.Duration(g.cfg.PulseCorrectionTimeout * float64(time.Second)))
 }
 
