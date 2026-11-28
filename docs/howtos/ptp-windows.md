@@ -3,7 +3,9 @@ title: Windows PTP client
 toc: false
 ---
 
-Windows 10 v1809 includes a PTP client. This has been enhanced in Windows 11. The support for PTP in Windows is not as functional and mature as the support in Linux. 
+Windows 10 v1809 includes a PTP client. This has been enhanced in Windows 11. The support for PTP in Windows is not as functional and mature as the support in Linux.
+
+Windows does not interoperate with LinuxPTP 4.x: you will need to use LinuxPTP 3.1.1.
 
 There is a [Validation Guide](https://github.com/microsoft/W32Time/tree/master/Precision%20Time%20Protocol/docs) from Microsoft, which explains in detail how to enable it.
 
